@@ -9,6 +9,7 @@ import { describeError } from "../account/errors";
 import { signedInLine } from "../account/google";
 import { useCanConnectGoogle } from "../account/GoogleButton";
 import { ListEditor } from "../account/Lists";
+import { listTap } from "../account/listTap";
 import { ratingFor, scoreOf } from "../account/ratingText";
 import { useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
@@ -464,8 +465,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const inList = (entry: Entry, id: string) => saved.has(listKey(entry.url, id));
   /** Whether a title is in any list. */
   const isSaved = (entry: Entry) => lists.some((info) => inList(entry, info.id));
-  /** With one list a press puts a title in it or takes it out; with more, a press asks which. */
+  /** A press of a title's list button puts it in the main list or takes it out (`listTap`); with more lists, a title's page also has "Other lists". */
   const several = lists.length > 1;
+  const tapOf = (entry: Entry) => listTap(lists, saved, entry.url);
   const canAdd = lists.length < MAX_LISTS;
   const shownId = shownList(view, lists).id;
   /** Where the list being changed stands: the first list stays first, so only the others have a place to move to (and need another to change places with). */
@@ -634,7 +636,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     ...(detail
       ? {
           close: [1],
-          detail: [overviewActions(detail.entry, ratingsOn, friends.on, handHeld()).length],
+          detail: [overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
           ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
           ...(aboutList.length > 0 ? { related: aboutList.map((row) => row.items.length) } : {}),
@@ -1065,8 +1067,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       if (detail) closeDetail();
       else go(CONTENT);
     } else if (action === "list") {
-      if (several) setOverlay({ kind: "pick", entry, back: from });
-      else profileStore.setInList(listEntryOf(entry), !isSaved(entry));
+      // One press: into the main list, or out of it; a title that is in another list too asks which (one press cannot say).
+      const tap = tapOf(entry);
+      if (tap === "pick") setOverlay({ kind: "pick", entry, back: from });
+      else profileStore.setInList(listEntryOf(entry), tap === "add", DEFAULT_LIST);
+    } else if (action === "lists") {
+      setOverlay({ kind: "pick", entry, back: from });
     } else if (entry.progressKey) {
       profileStore.removeProgress(entry.progressKey);
       setFocused(null);
@@ -1140,20 +1146,27 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         </>
       );
     }
-    const kept = isSaved(entry);
-    const only = listName(lists[0]!);
-    const text = spelled
-      ? several
-        ? t(kept ? "rows.inLists" : "library.addToAList")
-        : t(kept ? "rows.removeFromList" : "library.addToList", { list: only })
-      : several
-        ? t("rows.myList")
-        : only;
+    if (action === "lists") {
+      return (
+        <>
+          <ListIcon /> {t("rows.otherLists")}
+        </>
+      );
+    }
+    // The main list's name (a title that is in another list: My Lists, and a press asks which). A title's own page spells out what a press does, but beside
+    // Other lists (several lists) it keeps to the name, as the banner does, so that the row of buttons stays one line; what a press does is then its spoken name.
+    const tap = tapOf(entry);
+    const text = spelled && !several ? listSpelled(entry) : tap === "pick" ? t("rows.myList") : listName(lists[0]!);
     return (
       <>
-        {kept ? <CheckIcon /> : <PlusIcon />} {text}
+        {tap === "add" ? <PlusIcon /> : <CheckIcon />} {text}
       </>
     );
+  };
+  /** What a press of a title's list button does, in words: "Add to Favourites", "Remove from Favourites", or (a title in another list too) "In your lists". */
+  const listSpelled = (entry: Entry): string => {
+    const tap = tapOf(entry);
+    return tap === "pick" ? t("rows.inLists") : t(tap === "remove" ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
   };
 
   const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
@@ -1661,7 +1674,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
                 {about && <AboutPeople about={about} />}
                 <div className="tv-hero-actions">
-                  {overviewActions(detail.entry, ratingsOn, friends.on, handHeld()).map((action, col) => (
+                  {overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).map((action, col) => (
                     <button
                       key={action}
                       className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}
@@ -1670,6 +1683,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       data-row={0}
                       data-col={col}
                       aria-pressed={action === "list" ? isSaved(detail.entry) : undefined}
+                      aria-haspopup={action === "lists" || (action === "list" && tapOf(detail.entry) === "pick") ? "dialog" : undefined}
+                      aria-label={action === "list" && several ? listSpelled(detail.entry) : undefined}
                       onClick={() => doAction(action, detail.entry, { zone: "detail", row: 0, col }, series.start)}
                     >
                       {labelOf(action, detail.entry, true)}

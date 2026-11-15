@@ -49,7 +49,7 @@ const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", s
 
 test("the remote's Back goes one step out of every page, menu and window of the TV", async ({ browser }) => {
   test.setTimeout(240_000);
-  // A guest with two lists (so that a title's page asks which one).
+  // A guest with two lists (so that a title's page has Other lists, which asks which one).
   const tv = await openLibrary(browser, withLibrary(library), HD, guestStorage({ listNames: [{ key: "lweekend", at: Date.now() - 5000, name: "Weekend" }] }));
   await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 6_000 });
   const tiles = tv.getByTestId("tv-browse-tile");
@@ -57,7 +57,7 @@ test("the remote's Back goes one step out of every page, menu and window of the 
   const title: Level = { open: () => tiles.first().click(), shown: id("tv-detail") };
 
   await test.step("a title's page, which list it goes in, and the page that makes a list", () =>
-    backOut(tv, [title, { open: click("tv-detail-list"), shown: id("tv-list-picker") }, { open: click("pick-new"), shown: id("tv-list-edit") }]));
+    backOut(tv, [title, { open: click("tv-detail-lists"), shown: id("tv-list-picker") }, { open: click("pick-new"), shown: id("tv-list-edit") }]));
 
   await test.step("the scores, and the note", () =>
     backOut(tv, [

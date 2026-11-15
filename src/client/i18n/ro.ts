@@ -195,10 +195,11 @@ export const ro: Dictionary = {
   /* rows and cards */
   "rows.continue": "Continuă vizionarea",
   "rows.myList": "Listele mele",
-  "rows.myListEmpty": "Ține apăsat pe un titlu, sau apasă Listele mele pe pagina lui, ca să-l salvezi aici.",
+  "rows.myListEmpty": "Ține apăsat pe un titlu, sau apasă + pe pagina lui, ca să-l salvezi aici.",
   "rows.remove": "Scoate din „Continuă vizionarea”",
   "rows.removeFromList": "Scoate din {list}",
   "rows.inLists": "În listele tale",
+  "rows.otherLists": "Alte liste",
   "rows.play": "Redă",
   "rows.open": "Deschide",
   "rows.resume": "Reia",
