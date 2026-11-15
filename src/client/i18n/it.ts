@@ -971,6 +971,7 @@ export const it: Dictionary = {
   "friends.removeHelp": "Confermi? Non vedrete più le rispettive liste, i voti e cosa guardate. Potete tornare amici con un nuovo codice.",
   "friends.removeYes": "Sì, rimuovi",
   "friends.online": "Online",
+  "friends.onlineCount": "{count} online ora",
   "friends.switchPresence": "Gli amici possono vedere quando sono online",
   "friends.popups": "Mostra sullo schermo le novità degli amici",
   "friends.popupsHelp": "Disattivato: inviti e novità aspettano nella campanella e non compaiono mai sopra ciò che guardi. Attivato: mentre qualcosa è in riproduzione compare solo un invito, come una piccola nota nell'angolo.",

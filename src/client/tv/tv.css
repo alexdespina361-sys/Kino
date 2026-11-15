@@ -1766,6 +1766,21 @@
 .tv-person-pic { position: relative; z-index: 1; flex: none; font-size: 4.6em; line-height: 0; }
 .tv-person-pic[data-online="true"]::after { content: ""; position: absolute; right: -0.04em; bottom: -0.04em; width: 0.28em; height: 0.28em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.06em #101012; }
 .tv-person-text { position: relative; z-index: 1; display: flex; flex: 1 1 0; flex-direction: column; justify-content: center; gap: 0.2em; min-width: 0; }
+/*
+ * People are not categories: a friend's card is one quiet surface (no colour of its own from the name, which made a row of them look like a box of sweets),
+ * their picture is what tells them apart. Add a friend and the settings are the same card with a glyph where the picture is, so the row reads as one thing.
+ */
+.tv-tile-person { background: linear-gradient(155deg, #27272c, #18181b 72%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.tv-tile-person::after { display: none; }
+.tv-tile-person .tv-category-name { font-size: 1.45em; font-weight: 700; }
+.tv-tile-person .tv-category-count { font-size: 1.05em; font-weight: 500; color: rgba(255, 255, 255, 0.62); }
+.tv-tile-person:focus { transform: scale(1.06); }
+.tv-tile-person.tv-tile-tool { width: 17em; }
+.tv-tool-icon { position: relative; z-index: 1; display: grid; flex: none; place-items: center; width: 4.6em; height: 4.6em; border-radius: 50%; background: rgba(255, 255, 255, 0.09); color: #fff; font-size: 1em; }
+.tv-tool-icon svg { width: 1.9em; height: 1.9em; }
+.tv-tile-tool[data-tool="add-friend"] { background: transparent; box-shadow: inset 0 0 0 0.12em rgba(255, 255, 255, 0.18); }
+.tv-tile-tool[data-tool="add-friend"] .tv-tool-icon { background: var(--accent); }
+.tv-friends-head .tv-hero-title { margin-bottom: 0.1em; }
 /* The button under a friend's titles: apart from the buttons over them, and red. */
 .tv-view-foot { flex: none; padding: 0.4em 0 1.8em; }
 .tv-choice-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
@@ -1996,6 +2011,8 @@
   .tv-tile-continue { width: 14em; }
   .tv-tile-category { width: 13em; height: 7.3em; }
   .tv-tile-person { width: 18em; }
+  .tv-tool-icon { width: 3.8em; height: 3.8em; }
+  .tv-tile-person.tv-tile-tool { width: 15em; }
   .tv-person-pic { font-size: 3.8em; }
   .tv-tile-ranked { width: auto; }
   .tv-tile-ranked .tv-tile-body { width: 7.2em; }

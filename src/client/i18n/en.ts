@@ -973,6 +973,7 @@ export const en = {
   "friends.removeHelp": "Are you sure? You will stop seeing each other's lists, ratings and what you watch. You can be friends again with a new code.",
   "friends.removeYes": "Yes, remove",
   "friends.online": "Online",
+  "friends.onlineCount": "{count} online now",
   "friends.switchPresence": "Friends can see when I'm online",
   "friends.popups": "Show friends' news on screen",
   "friends.popupsHelp": "Off: invitations and news wait in the bell and never appear over what you watch. On: while something plays, only an invitation shows, as a small note in the corner.",

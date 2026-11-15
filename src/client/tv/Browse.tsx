@@ -18,11 +18,11 @@ import { TvChat } from "../chat/TvChat";
 import { nameOf, recommendationOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
-import { friendGrid, friendRows } from "../friends/pages";
+import { friendGrid, friendRows, friendsSummary } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { browserBack, handHeld, useBackWhile } from "../shared/backButton";
-import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, EyeIcon, FilmIcon, GearIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
@@ -1181,6 +1181,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
   // The banner shows the poster of the title the remote is on, beside what it says of it (a category, a person or an invitation has none).
   const heroPoster = !compact && shown && isTitle(shown.entry) ? sharper(shown.entry.image) : undefined;
+  // The friends page, while the remote is on the friends themselves (or on nothing yet): the banner says what the page is and how many of them there are, not
+  // again the name that is on the card under the remote. Further down (a title they watched, a request, an invitation) it says what that is, as it did.
+  const peopleRow = view.kind === "friends" ? homeRows.find((row) => row.id === "friend-people") : undefined;
+  const friendsHead = view.kind === "friends" && !compact && (!shown || (peopleRow?.entries.some((entry) => entry.id === shown.entry.id) ?? false));
 
   return (
     <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} data-deep={deep} aria-label={t("tv.library")}>
@@ -1258,6 +1262,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 places={places}
                 onConnectGoogle={connectGoogle}
               />
+            ) : friendsHead ? (
+              <div className="tv-hero-text tv-friends-head" key="friends-head">
+                <h1 className="tv-hero-title" data-testid="tv-friends-title">
+                  {t("friends.title")}
+                </h1>
+                <p className="tv-hero-meta" data-testid="tv-friends-summary">
+                  {friendsSummary(friends.state)}
+                </p>
+              </div>
             ) : shown && !compact ? (
               <>
                 {heroPoster && <Poster key={`poster-${shown.entry.id}`} className="tv-hero-poster" title={shown.entry.title} image={heroPoster} seed={shown.entry.id} />}
@@ -1336,7 +1349,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                         onList={() => doAction("list", featured)}
                       />
                     )}
-                    <h2 className="tv-row-title">{row.title}</h2>
+                    {/* (The friends' own row has the page's name over it, in the banner: "Your friends" again would be the same words twice.) */}
+                    {!(friendsHead && row === peopleRow) && <h2 className="tv-row-title">{row.title}</h2>}
                     <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
                       {row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}
                     </RowTiles>
@@ -1960,6 +1974,13 @@ const PLACE_ICON: Record<string, ReactNode> = {
   "profile:history": <ClockIcon />,
 };
 
+/** The cards beside the friends that are not a friend (add one, what is shared, turn on what they watch): a glyph where a friend's picture is, the same card. */
+const TOOL_ICON: Record<string, ReactNode> = {
+  "add-friend": <PlusIcon />,
+  "friend-settings": <GearIcon />,
+  "activity-off": <EyeIcon />,
+};
+
 /** The round button in a title's corner: what it is (its look), what it says, and what it does. */
 interface Corner {
   /** ＋ keeps the title (in the first list), × on a kept one lets it go, × on a card clears it off Continue watching. */
@@ -2002,10 +2023,17 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
 
   if (layout === "categories") {
     const place = PLACE_ICON[entry.id];
+    const tool = TOOL_ICON[entry.id];
     // (The posters of what is in a category, beside its name: where there is room for them, which a phone held upright has not.)
     const fan = !compact && entry.posters !== undefined && entry.posters.length > 0;
     return (
-      <button className={`tv-tile tv-tile-category${entry.avatar ? " tv-tile-person" : ""}${place ? " tv-tile-place" : ""}${fan ? " tv-tile-fan" : ""}`} data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
+      <button
+        className={`tv-tile tv-tile-category${entry.avatar || tool ? " tv-tile-person" : ""}${tool ? " tv-tile-tool" : ""}${place ? " tv-tile-place" : ""}${fan ? " tv-tile-fan" : ""}`}
+        data-testid="tv-category-tile"
+        data-tool={tool ? entry.id : undefined}
+        {...common}
+        style={{ "--hue": hue } as CSSProperties}
+      >
         {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
         {fan && (
           <span className="tv-category-fan" aria-hidden="true">
@@ -2019,11 +2047,17 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
             {place}
           </span>
         )}
-        {entry.avatar ? (
+        {entry.avatar || tool ? (
           <>
-            <span className="tv-person-pic" data-online={entry.online ? "true" : undefined}>
-              <Avatar id={entry.avatar} />
-            </span>
+            {tool ? (
+              <span className="tv-tool-icon" aria-hidden="true">
+                {tool}
+              </span>
+            ) : (
+              <span className="tv-person-pic" data-online={entry.online ? "true" : undefined}>
+                <Avatar id={entry.avatar!} />
+              </span>
+            )}
             <span className="tv-person-text">
               <span className="tv-category-name">{entry.title}</span>
               {entry.note && <span className="tv-category-count">{entry.note}</span>}
