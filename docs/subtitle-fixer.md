@@ -70,28 +70,47 @@ node scripts/subfix.mjs film.ass --lang en --polish-command "node my-model.mjs" 
 - ffsubsync (MIT) times a file to a film's sound, or to another subtitle file. It needs the film, so it is for this computer only. The
   screens' aligner does the same job here, and it is ours.
 
-## For generation on request (Workflow B): what is known, nothing benchmarked yet
+## Generation on request (Workflow B): first measurements (15 Nov 2026, Kaggle T4)
 
-From the model cards. The speed numbers are each card's own, on hardware it often does not name.
+The model cards (licences, sizes, their own numbers):
 
 | Use | Candidates | Notes |
 |---|---|---|
-| English speech | Qwen3-ASR-0.6B (Apache-2.0, ~0.9B); FUTO asr4all-s (28M, CPU, English only, its own "ethical use" licence) | asr4all-s: RTFx 52 single-thread on a desktop i9 (its card); no timestamps stated |
+| English speech | Qwen3-ASR-0.6B / 1.7B (Apache-2.0); FUTO asr4all-s (28M, CPU, English only, its own "ethical use" licence) | asr4all-s: RTFx 52 single-thread on a desktop i9 (its card); no timestamps stated |
 | Japanese speech | Qwen3-ASR-1.7B (Apache-2.0); Parakeet TDT-CTC 0.6B ja (CC-BY-4.0, NeMo, CER 6.4 JSUT) | The anime/galgame fine-tune of Qwen3-ASR-1.7B scores better only on its author's own set, and its licence is "other" with dataset terms: avoid |
-| Timing words | Qwen3-ForcedAligner-0.6B (Apache-2.0) | Audio + transcript to word times, English and Japanese, up to 5 min a call; 42 ms (ja) and 38 ms (en) mean error on its card |
+| Timing words | Qwen3-ForcedAligner-0.6B (Apache-2.0) | Audio + transcript to word times, 11 languages incl. English and Japanese, up to 5 min a call |
 
-**Kaggle:** the browser signed in is "Browser 1" (the other one is not signed in). The account is phone-verified, which GPU notebooks need.
-This week: GPU 0 of 30 h used, TPU 0 of 20 h; Kaggle's own AI-model credit $0 of $10 a day. Nothing was started there.
+**What was run:** `scripts/asr-bench/` (a notebook built from `bench.py`, imported into Kaggle as the private notebook `kino-asr-bench`).
+- **Hardware and setup:** one T4 (16 GB), bf16. Batch size 1, one stream. The sound is cut every 30 s and served in order, as one viewer's request would be.
+- **English clip:** *Tears of Steel* (CC BY 3.0, Blender Foundation), the whole film: 734 s, music and action. It is scored against its official English subtitles, which are not a word-for-word transcript, so the WER is an upper bound.
+- **Japanese clip:** FLEURS ja_jp (CC BY 4.0), 15 sentences joined to 188 s. It is **read speech: it says nothing about anime.**
+
+Version 1, Qwen3-ASR with the forced aligner (numbers read from the run's log):
+
+| model | clip | load (incl. download) | first 30 s | 3 min covered | speed vs playback | WER / CER | VRAM |
+|---|---|---|---|---|---|---|---|
+| 0.6B | Tears of Steel (en) | 58 s | 9.9 s (cold GPU) | 18.2 s | 14.9x | 23% | 3.6 GB |
+| 1.7B | Tears of Steel (en) | 32 s | 3.7 s | 15.2 s | 12.5x | 25% | 6.1 GB |
+| 0.6B | FLEURS (ja) | | 4.3 s | 26.8 s | 6.8x | 14.4% | 3.6 GB |
+| 1.7B | FLEURS (ja) | | 5.0 s | 30.2 s | 6.0x | 10.8% | 6.1 GB |
+
+- **Speed:** both models run far faster than playback, even on a free T4. A viewer would wait about 4-5 s for the first 30 s of subtitles. The 9.9 s is the very first call on a fresh GPU; a server pays that once at start. Dense speech (Japanese) runs at about 6x, sparse film dialogue at 12-15x.
+- **English timing:** the line's first word lands within 1 s of the official subtitle's start for 81% (0.6B) and 85% (1.7B) of the lines that were heard, with a median of 0.3 s.
+- **Japanese words:** the 1.7B model makes clearly fewer errors (10.8% against 14.4% CER). Names written in katakana and rarer kanji are where it slips. For example, ロランド・メンドーサ came out as ロランド面倒差, and 敵対的環境 as 適体適環境.
+- **Japanese timing, problem 1:** in several 30 s chunks, the aligner put Japanese words 1-2 s late (against where each sentence's speech starts, measured from the loudness).
+- **Japanese timing, problem 2:** one whole 7 s sentence (65-72 s) was missing from the text, and the aligner then placed the next sentence's first word in its gap.
+- **Japanese timing, a mistake of mine:** version 1 also measured lines from the start of each FLEURS file, not from where the speech starts, which made all its Japanese timing numbers look worse. Version 2 measures from the speech start.
+- **Baseline:** faster-whisper large-v3-turbo did not run. It needs CUDA 12's cuBLAS, and Kaggle's image is CUDA 13. Version 2 adds the CUDA 12 libraries.
+- **Version 2** (queued on Kaggle at the time of writing) adds:
+  - a mode that cuts at the quietest moment 10-20 s along instead of every 30 s, to test whether short pieces fix the Japanese timing and the lost sentence;
+  - the faster-whisper baseline;
+  - a warm-up call before timing.
+
+**Kaggle:** "Browser 1" is signed in and phone-verified. Version 1 used 6 minutes of the 30 free GPU hours a week. Nothing paid.
 
 ## Next step (one)
 
-A Kaggle notebook (free GPU) that runs Qwen3-ASR-0.6B + Qwen3-ForcedAligner on two short clips that may be shared (one English, one Japanese;
-Creative Commons or made up), and measures:
-
-- the time to the first 30 s of timed subtitles;
-- the time for 3 minutes;
-- the speed against playback;
-- the errors, shown as real lines.
-
-The fixer's report format and the aligner's line placement then carry the result. For the website, the sound for generation would come from
-the watching screen (as the aligner's does), never from fetching the film.
+Read version 2. Then build the generation path on the box's API with the GPU work elsewhere:
+- Qwen3-ASR-1.7B plus the forced aligner, on sound cut at pauses, served from the viewer's position.
+- The sound comes from the watching screen, as the aligner's does; never from fetching the film.
+- Japanese is transcribed and timed first, then translated. The translation is projected onto the Japanese timing, never force-aligned against Japanese audio.
