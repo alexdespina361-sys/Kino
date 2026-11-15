@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test, withLibrary } from "./helpers";
+import { openTv, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * The phone's Back as Chrome presses it. `page.goBack()` (android-back.spec.ts) walks the history one entry at a time and knows nothing of the
@@ -104,12 +104,14 @@ class Phone {
   /** The phone is still on the site (a Back that leaves it lands on the page that was before). */
   stays = () => new URL(this.page.url()).origin === new URL(this.site).origin && !this.page.url().endsWith("/api/health");
 
-  /** The view of the screen, whether a title's page is up, and whether the question at the bottom is. */
+  /** The view of the screen, whether a title's page is up, and whether the question at the bottom is; what the player is doing, and the remote's tab. */
   async look() {
-    return this.ev<{ view: string; detail: boolean; hint: boolean }>(`({
+    return this.ev<{ view: string; detail: boolean; hint: boolean; state: string; tab: string }>(`({
       view: document.querySelector('[data-testid="tv-browse"]')?.getAttribute("data-view") ?? "",
       detail: document.querySelector('[data-testid="tv-detail"]') !== null,
       hint: document.querySelector('[data-testid="exit-hint"]') !== null,
+      state: document.querySelector('[data-testid="tv"]')?.getAttribute("data-state") ?? "",
+      tab: document.querySelector('.tab[aria-current="page"]')?.getAttribute("data-testid") ?? "",
     })`);
   }
 }
@@ -150,7 +152,7 @@ test.describe("Chrome's own Back on a phone", () => {
       expect(phone.stays()).toBe(true);
       expect((await phone.look()).hint).toBe(true);
       await phone.back(); // the answer
-      expect(phone.stays()).toBe(false);
+      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
     } finally {
       await phone.close();
     }
@@ -176,7 +178,58 @@ test.describe("Chrome's own Back on a phone", () => {
       expect(phone.stays()).toBe(true);
       expect((await phone.look()).hint).toBe(true);
       await phone.back();
-      expect(phone.stays()).toBe(false);
+      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
+    } finally {
+      await phone.close();
+    }
+  });
+
+  test("a film chosen on a title's page: Back leaves the film for the library, and the page's own step down the history is not taken for one", async ({ baseURL }) => {
+    const phone = await library(baseURL!);
+    try {
+      await phone.tap("tv-browse-tile");
+      expect((await phone.look()).detail).toBe(true);
+      await phone.tap("tv-detail-play");
+      // (the title's page goes when the film is chosen, and the film opens before the history has arrived where the page sent it: it stays)
+      await expect.poll(async () => (await phone.look()).state, { timeout: 15_000 }).toBe("playing");
+      await phone.page.waitForTimeout(1_500);
+      expect((await phone.look()).state).toBe("playing");
+
+      await phone.back(); // the film
+      await expect.poll(async () => (await phone.look()).state).toBe("idle");
+      expect((await phone.look()).view).toBe("home");
+      expect(phone.stays()).toBe(true);
+      await phone.back(); // the bottom
+      expect(phone.stays()).toBe(true);
+      expect((await phone.look()).hint).toBe(true);
+      await phone.back();
+      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
+    } finally {
+      await phone.close();
+    }
+  });
+
+  test("the remote: Back goes from a tab to Home, and then asks before it leaves the site", async ({ baseURL, browser }) => {
+    const tv = await openTv(browser);
+    const code = await readPairingCode(tv);
+    const phone = await Phone.open(baseURL!);
+    try {
+      await phone.page.goto(`${baseURL}/api/health`);
+      await phone.page.goto(`${baseURL}/?code=${code}`); // (the TV's QR code: this phone is its remote)
+      await phone.waitFor("tv-online");
+      await phone.tap("tab-search");
+      expect((await phone.look()).tab).toBe("tab-search");
+      await phone.tap("tab-you");
+      expect((await phone.look()).tab).toBe("tab-you");
+
+      await phone.back(); // a tab goes to Home, whichever it is (a tab is not a page on top of another)
+      expect((await phone.look()).tab).toBe("tab-home");
+      expect(phone.stays()).toBe(true);
+      await phone.back(); // the bottom
+      expect(phone.stays()).toBe(true);
+      expect((await phone.look()).hint).toBe(true);
+      await phone.back();
+      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
     } finally {
       await phone.close();
     }
