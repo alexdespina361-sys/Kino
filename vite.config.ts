@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -10,7 +11,18 @@ export default defineConfig({
   plugins: [react()],
   // The oldest browser of a TV we know of is Chromium 94 (Hisense VIDAA 6, Samsung Tizen 7, from 2021): the build is made for it, so a newer way of
   // writing something is turned into one it reads (e2e/old-tv.spec.ts opens the site in it). The others are Vite's own defaults.
-  build: { outDir: "dist/client", emptyOutDir: true, target: ["chrome94", "edge107", "firefox104", "safari16"] },
+  build: {
+    outDir: "dist/client",
+    emptyOutDir: true,
+    target: ["chrome94", "edge107", "firefox104", "safari16"],
+    // Two pages: the app, and the upscaler test of Kino Labs (labs/upscale/, a page of its own: it uses no code of the app, only the bundler's loading helper).
+    rolldownOptions: {
+      input: {
+        index: fileURLToPath(new URL("index.html", import.meta.url)),
+        upscale: fileURLToPath(new URL("labs/upscale/index.html", import.meta.url)),
+      },
+    },
+  },
   // Dev only: Vite serves the UI, Fastify serves /api, /ws and /fixtures. In production Fastify serves everything.
   server: {
     host: "0.0.0.0",
