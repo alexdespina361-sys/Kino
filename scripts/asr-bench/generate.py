@@ -696,6 +696,168 @@ class Musci(bench.Engine):
         return bench.stamp_words(r, len(pcm) / SR) or [Word(text, 0.0, len(pcm) / SR)]
 
 
+class Granite(bench.Engine):
+    """IBM Granite-Speech 4.1 2B (Apache-2.0), text with punctuation and capitals, timed by the same forced aligner as Qwen's words."""
+
+    def load(self):
+        import torch
+        from qwen_asr import Qwen3ForcedAligner
+        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+
+        mid = "ibm-granite/granite-speech-4.1-2b"
+        dtype = getattr(torch, os.environ.get("GEN_GRANITE_DTYPE", "float16"))  # (the card uses bfloat16, which a T4 has no hardware for)
+        self.name = f"Granite-Speech-4.1-2B ({dtype}) + ForcedAligner-0.6B".replace("torch.", "")
+        self.proc = AutoProcessor.from_pretrained(mid)
+        self.tok = self.proc.tokenizer
+        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(mid, device_map="cuda:0", dtype=dtype).eval()
+        self.aligner = Qwen3ForcedAligner.from_pretrained("Qwen/Qwen3-ForcedAligner-0.6B", dtype=bench.torch_dtype(), device_map="cuda:0")
+        self.keywords = ""
+
+    def transcribe(self, pcm, lang):
+        import torch
+
+        ask = "transcribe the speech with proper punctuation and capitalization."
+        chat = [{"role": "user", "content": "<|audio|>" + ask}]
+        prompt = self.tok.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+        inputs = self.proc(prompt, torch.from_numpy(np.ascontiguousarray(pcm)).unsqueeze(0), device="cuda:0", return_tensors="pt").to("cuda:0")
+        for k, v in list(inputs.items()):
+            if torch.is_tensor(v) and torch.is_floating_point(v):
+                inputs[k] = v.to(self.model.dtype)
+        with torch.no_grad():
+            out = self.model.generate(**inputs, max_new_tokens=400, do_sample=False, num_beams=1)
+        text = self.tok.batch_decode(out[:, inputs["input_ids"].shape[-1]:], skip_special_tokens=True)[0].strip()
+        if not text:
+            return []
+        r = self.aligner.align(audio=(pcm, SR), text=text, language=bench.LANG_NAME[lang])[0]
+        return bench.stamp_words(r, len(pcm) / SR) or [Word(text, 0.0, len(pcm) / SR)]
+
+
+# Engines whose libraries cannot share one Python with qwen-asr (NeMo; transformers >= 5.4) run in their own virtual environment and
+# write only the text of each piece (`transcribe`); `run aligned:<name>` then times that text with the forced aligner, in the main one.
+
+class Parakeet(bench.Engine):
+    name = "Parakeet-TDT-0.6B-v2"
+    langs = ("en",)
+
+    def load(self):
+        import nemo.collections.asr as nemo_asr
+
+        self.model = nemo_asr.models.ASRModel.from_pretrained("nvidia/parakeet-tdt-0.6b-v2").to("cuda:0").eval()
+
+    def text(self, pcm, lang):
+        import torch
+
+        with torch.no_grad():
+            out = self.model.transcribe([np.ascontiguousarray(pcm, dtype=np.float32)], batch_size=1, verbose=False)
+        h = out[0][0] if isinstance(out, tuple) else out[0]
+        return (h.text if hasattr(h, "text") else str(h)).strip()
+
+
+class Cohere(bench.Engine):
+    name = "Cohere-Transcribe-03-2026"
+    langs = ("en", "ja")
+
+    def load(self):
+        import torch
+        from transformers import AutoProcessor, CohereAsrForConditionalGeneration
+
+        mid = "CohereLabs/cohere-transcribe-03-2026"
+        dtype = getattr(torch, os.environ.get("GEN_COHERE_DTYPE", "float16"))  # (released in bfloat16, which a T4 has no hardware for)
+        self.name += f" ({dtype})".replace("torch.", "")
+        self.proc = AutoProcessor.from_pretrained(mid)
+        self.model = CohereAsrForConditionalGeneration.from_pretrained(mid, dtype=dtype, device_map="cuda:0").eval()
+
+    def text(self, pcm, lang):
+        import torch
+
+        inputs = self.proc(audio=np.ascontiguousarray(pcm, dtype=np.float32), sampling_rate=SR, return_tensors="pt", language=lang)
+        idx = inputs.pop("audio_chunk_index", None) if hasattr(inputs, "pop") else None
+        inputs = inputs.to("cuda:0")
+        for k, v in list(inputs.items()):
+            if torch.is_tensor(v) and torch.is_floating_point(v):
+                inputs[k] = v.to(self.model.dtype)
+        with torch.no_grad():
+            out = self.model.generate(**inputs, max_new_tokens=448)
+        kw = {"audio_chunk_index": idx, "language": lang} if idx is not None else {}
+        text = self.proc.decode(out, skip_special_tokens=True, **kw)
+        return (text[0] if isinstance(text, (list, tuple)) else str(text)).strip()
+
+
+TEXT_ENGINES = {"parakeet": Parakeet, "cohere": Cohere}
+
+
+def pieces_path(which: str, lang: str, sound: str) -> str:
+    return os.path.join(GEN, f"pieces-{which}-{lang}-{sound}.json")
+
+
+def transcribe_pieces(which: str) -> None:
+    """In the engine's own environment: the text of every piece of every prepared sound, cut exactly as generate() cuts it."""
+    engine = TEXT_ENGINES[which]()
+    only = [s for s in os.environ.get("GEN_LANGS", "").split(",") if s]
+    t = time.time()
+    engine.load()
+    engine.text(np.zeros(5 * SR, dtype=np.float32) + np.float32(1e-4), engine.langs[0])
+    log(f"{engine.name}: loaded in {time.time() - t:.0f} s")
+    for lang in engine.langs:
+        if only and lang not in only:
+            continue
+        for sound in sounds(lang):
+            pcm = np.load(os.path.join(GEN, f"{lang}-{sound}.npy"))
+            p = vad_track(pcm)
+            t, first, out = time.time(), None, []
+            for a, b in pieces(pcm, p):
+                try:
+                    text = engine.text(pcm[int(a * SR): int(b * SR)], lang)
+                except Exception as error:  # noqa: BLE001
+                    text = ""
+                    log(f"{lang} {sound} piece at {a:.1f} s: FAILED {error!r}"[:300])
+                out.append([round(a, 3), round(b, 3), text])
+                if first is None:
+                    first = time.time() - t
+                    log(f"  first piece ({lang} {sound}): {text[:120]!r}")
+            took = time.time() - t
+            with open(pieces_path(which, lang, sound), "w", encoding="utf-8") as f:
+                json.dump({"engine": engine.name, "x_realtime": round(len(pcm) / SR / max(took, 1e-6), 1), "first_piece_s": round(first or 0, 2),
+                           "pieces": out}, f, ensure_ascii=False)
+            log(f"{engine.name} | {lang} {sound} | {sum(len(x[2].split()) for x in out)} words | {len(pcm) / SR / max(took, 1e-6):.1f}x, first piece {first or 0:.2f} s")
+
+
+class Aligned(bench.Engine):
+    """The saved text of each piece (transcribe_pieces), timed by Qwen3-ForcedAligner. A retry hears nothing (it cannot listen again)."""
+    retry = False
+
+    def __init__(self, which: str):
+        self.which = which
+        self.name = TEXT_ENGINES[which].name + " + ForcedAligner-0.6B"
+        self.at = 0.0
+        self.texts: dict[float, str] = {}
+
+    def load(self):
+        from qwen_asr import Qwen3ForcedAligner
+
+        self.aligner = Qwen3ForcedAligner.from_pretrained("Qwen/Qwen3-ForcedAligner-0.6B", dtype=bench.torch_dtype(), device_map="cuda:0")
+
+    def use(self, lang: str, sound: str) -> dict:
+        with open(pieces_path(self.which, lang, sound), encoding="utf-8") as f:
+            saved = json.load(f)
+        self.texts = {round(a, 3): text for a, _, text in saved["pieces"]}
+        if saved.get("engine"):
+            self.name = saved["engine"] + " + ForcedAligner-0.6B"
+        return saved
+
+    def transcribe(self, pcm, lang):
+        if self.retry or not self.texts:
+            return []
+        text = self.texts.get(round(self.at, 3))
+        if text is None:
+            near = [k for k in self.texts if abs(k - self.at) < 0.02]
+            text = self.texts[near[0]] if near else ""
+        if not text.strip():
+            return []
+        r = self.aligner.align(audio=(pcm, SR), text=text, language=bench.LANG_NAME[lang])[0]
+        return bench.stamp_words(r, len(pcm) / SR) or [Word(text, 0.0, len(pcm) / SR)]
+
+
 class Replay(bench.Engine):
     """
     Saved word times (diag-*.json) given back for the piece asked (generate() sets `at`): the checks and the lines on CPU, with no model.
@@ -789,6 +951,10 @@ def run(which: str) -> None:
         engine, langs = bench.QwenEngine(QWEN), ("ja", "en")
     elif which == "musci":
         engine, langs = Musci(), ("en",)
+    elif which == "granite":
+        engine, langs = Granite(), ("en", "ja")
+    elif which.startswith("aligned:") and which[8:] in TEXT_ENGINES:
+        engine, langs = Aligned(which[8:]), TEXT_ENGINES[which[8:]].langs
     else:
         raise SystemExit(f"unknown engine {which}")
     try:
@@ -804,6 +970,8 @@ def run(which: str) -> None:
     only = [s for s in os.environ.get("GEN_LANGS", "").split(",") if s]
     langs = tuple(lang for lang in langs if not only or lang in only)
     jobs = [(lang, s, "") for lang in langs for s in sounds(lang)]
+    if isinstance(engine, Aligned):
+        jobs = [j for j in jobs if os.path.exists(pieces_path(engine.which, j[0], j[1]))]
     if which == "qwen" and "ja" in langs and "clean" in sounds("ja"):
         jobs.append(("ja", "clean", "names"))
     for lang, sound, ctx in jobs:
@@ -816,6 +984,7 @@ def run(which: str) -> None:
                 # with a middle dot. It shows what naming the people and places does, it is not a blind test.)
                 names = sorted({m for c in ref for m in re.findall(r"[ァ-ヶー・]{3,}", c.text)})
                 engine.context = "登場する名前・地名: " + "、".join(names)
+            saved = engine.use(lang, sound) if isinstance(engine, Aligned) else None
             second = read_words(words_path("whisper", lang, sound)) if which != "whisper" else None
             if which != "whisper" and second is None:
                 log(f"WARNING: no Whisper words for {lang} {sound} (run whisper first): the second listener is OFF for this run")
@@ -826,7 +995,7 @@ def run(which: str) -> None:
                     engine.context = ""
             if which == "whisper":
                 save_words(words_path("whisper", lang, sound), g["raw"])
-            stem = f"{which}-{lang}-{sound}{'-' + ctx if ctx else ''}"
+            stem = f"{which.replace(':', '-')}-{lang}-{sound}{'-' + ctx if ctx else ''}"
             bench.write_srt(lines_of(g["final"], lang), os.path.join(bench.OUT, f"gen-{stem}.srt"))
             with open(os.path.join(bench.OUT, f"gen-words-{stem}.json"), "w", encoding="utf-8") as f:
                 json.dump({k: [[w.text, round(w.start, 3), round(w.end, 3)] for w in g[k]] for k in ("raw", "fixed", "final")}, f, ensure_ascii=False)
@@ -834,6 +1003,9 @@ def run(which: str) -> None:
                  "first_piece_s": g["first_piece_s"], "total_s": g["total_s"], "x_realtime": g["x_realtime"], "words": len(g["final"])}
             if which != "whisper":
                 r["checks"] = g["checks"]
+            if saved:  # (the recogniser's own speed, in its own environment; x_realtime above is only the aligner and the checks)
+                r["engine"] = engine.name
+                r["x_realtime"], r["first_piece_s"] = saved["x_realtime"], saved["first_piece_s"]
             if not ref:  # (no reference: scored by `agree` against the other engines)
                 append_result(r)
                 rows.append(r)
@@ -913,6 +1085,8 @@ if __name__ == "__main__":
         agree()
     elif cmd == "run":
         run(sys.argv[2])
+    elif cmd == "transcribe":
+        transcribe_pieces(sys.argv[2])
     elif cmd == "replay":
         replay()
     else:

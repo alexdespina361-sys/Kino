@@ -3,7 +3,7 @@ The editing step: a language model reads what the main listener heard (with the 
 title and its names) and writes each segment as a subtitler would. Then `finish.guarded` undoes every content change it cannot justify,
 `finish.carry` puts the text back on the main listener's word times, and `finish.events` makes the subtitle events.
 
-  python editor.py MAIN_WORDS.json OTHER_WORDS.json OUT.srt [--lang en] [--title "..."] [--names "A, B"] [--model ID] [--raw]
+  python editor.py MAIN_WORDS.json OTHER_WORDS.json[,MORE.json] OUT.srt [--lang en] [--title "..."] [--names "A, B"] [--model ID] [--raw]
 
 MAIN_WORDS / OTHER_WORDS: [[text, start, end], ...] or generate.py's {"raw": ..., "fixed": ..., "final": ...} (then "fixed" is used:
 the second listener's additions raised the error rate on every noisy sound). --raw: no model, only tidy + events (the baseline).
@@ -25,14 +25,14 @@ from finish import Word  # noqa: E402
 MODEL = os.environ.get("EDITOR_MODEL", "Qwen/Qwen3-8B")
 PER_PROMPT = int(os.environ.get("EDITOR_SEGMENTS", "16"))
 
-SYSTEM_EN = """You are a professional subtitle editor working from automatic speech recognition.
-For each numbered segment you get A (the main recogniser) and B (a second recogniser that heard the same moment; it may be empty or wrong).
+SYSTEM_EN = """You are a professional subtitle editor working from automatic speech recognition of a film.
+For each numbered segment you get A (the main recogniser) and other recognisers (B, C...) that heard the same moment; any of them may be wrong.
 Write the segment as a professional English subtitler would:
-- the words that were said; where A misheard something, correct it using B, the context and the names list;
-- correct capitals, punctuation and sentence boundaries (a question gets a question mark; proper names capitalised);
+- where the recognisers disagree, choose the reading that makes sense in context; do not write words that none of them heard, except a name from the names list;
+- correct capitals, punctuation and sentence boundaries (a question gets a question mark; names capitalised; numbers zero to ten in words; "okay");
 - drop fillers (um, uh, er) and stutters; keep everything else the speaker said, in their own words and their own grammar;
 - never add, summarise, explain or translate; never move words between segments;
-- if a segment is only noise, music lyrics nobody speaks, or a phrase like "Thank you for watching" that no one in the film says, return "".
+- if a segment is only noise, song lyrics, or a phrase like "Thank you for watching" that no one in the film would say, return "".
 Answer with JSON only, one key per segment number: {"1": "...", "2": "..."}"""
 
 
@@ -109,7 +109,8 @@ def parse_answer(text: str, n: int) -> dict[int, str]:
     return out
 
 
-def edit(main: list[Word], other: list[Word], lang: str, title: str, names: list[str], llm: LLM | None, normalise=None) -> tuple[list[Word], list[dict]]:
+def edit(main: list[Word], others: list[list[Word]], lang: str, title: str, names: list[str], llm: LLM | None, normalise=None) -> tuple[list[Word], list[dict]]:
+    other = sorted((w for o in others for w in o), key=lambda w: w.start)  # (the guard accepts a word any other engine heard there)
     segs = segments(finish.tidy(main), lang)
     log: list[dict] = []
     done: list[str] = []
@@ -121,7 +122,7 @@ def edit(main: list[Word], other: list[Word], lang: str, title: str, names: list
             lines = [f"Film: {title}" if title else "", f"Names: {', '.join(names)}" if names else "",
                      "Context (already subtitled, do not repeat): " + " ".join(done[-6:]) if done else "", "Segments:"]
             for k, seg in enumerate(batch, 1):
-                lines.append(f"{k}. A: {text_of(seg, lang)} | B: {text_of(other_for(seg, other), lang)}")
+                lines.append(f"{k}. A: {text_of(seg, lang)}" + "".join(f" | {'BCDEFG'[n]}: {text_of(other_for(seg, o), lang)}" for n, o in enumerate(others)))
             answers = parse_answer(llm.ask(SYSTEM_EN, "\n".join(x for x in lines if x)), len(batch))
         for k, seg in enumerate(batch, 1):
             before = text_of(seg, lang)
@@ -159,7 +160,8 @@ def main(argv: list[str]) -> None:
     main_path, other_path, out_path = args
     lang = opts.get("lang", "en")
     names = [x.strip() for x in opts.get("names", "").split(",") if x.strip()]
-    main_w, other_w = load_words(main_path), load_words(other_path) if os.path.exists(other_path) else []
+    main_w = load_words(main_path)
+    other_w = [load_words(p) for p in other_path.split(",") if os.path.exists(p)]
     normalise = None
     if lang == "en":
         try:

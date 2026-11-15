@@ -123,8 +123,14 @@ def same_word(a: str, b: str, normalise=None) -> bool:
     return False
 
 
-def guarded(old: list[Word], text: str, other: list[Word], names: set[str] | None = None, normalise=None) -> tuple[str, dict]:
-    """The corrected text with the changes it cannot justify undone, and a count of what was kept and undone."""
+def guarded(old: list[Word], text: str, other: list[Word], names: set[str] | None = None, normalise=None,
+            soundalike: bool = False) -> tuple[str, dict]:
+    """
+    The corrected text with the changes it cannot justify undone, and a count of what was kept and undone. A new word must have been
+    heard by another engine at that moment, or be one of the title's names, or the same word written otherwise. (`soundalike` also
+    lets through a word that sounds like the one it replaces; off by default: published correctors that wrote words no engine heard
+    made error rates worse, not better.)
+    """
     names = {key(n) for n in (names or set()) for n in n.split()}
     new = text.split()
     kept, undone, out = {"changed": 0, "added": 0, "removed": 0}, {"changed": 0, "added": 0, "removed": 0}, []
@@ -149,7 +155,7 @@ def guarded(old: list[Word], text: str, other: list[Word], names: set[str] | Non
         what = "added" if op == "insert" else "changed"
         ok = (heard_by_other(ak, s, e)
               or same_word(" ".join(before), " ".join(after), normalise)
-              or (op == "replace" and sounds("".join(bk)) == sounds("".join(ak)) and len("".join(ak)) <= 2 * len("".join(bk)) + 2))
+              or (soundalike and op == "replace" and sounds("".join(bk)) == sounds("".join(ak)) and len("".join(ak)) <= 2 * len("".join(bk)) + 2))
         (kept if ok else undone)[what] += 1
         out += after if ok else before
     return " ".join(out), {"kept": kept, "undone": undone}

@@ -19,6 +19,20 @@ case "$1" in
     python -c "import importlib.util as u, os; s = u.find_spec('silero_vad'); print('ok silero onnx' if s and os.path.exists(os.path.join(list(s.submodule_search_locations)[0], 'data', 'silero_vad.onnx')) else 'MISSING silero onnx')"
     python -c "import torch, transformers; print('torch', torch.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
     exit ;;
+  venv-nemo)  # (NeMo for Parakeet, in its own environment that still sees the main one's torch)
+    python -m venv --system-site-packages /content/venv-nemo && /content/venv-nemo/bin/pip install -q "nemo_toolkit[asr]" 2>&1 | tail -2
+    /content/venv-nemo/bin/python -c "import nemo.collections.asr; print('ok nemo')"
+    exit ;;
+  venv-cohere)  # (transformers >= 5.4 for Cohere Transcribe; the Hugging Face token comes from the HF_TOKEN environment variable)
+    python -m venv --system-site-packages /content/venv-cohere && /content/venv-cohere/bin/pip install -q "transformers>=5.4.0" sentencepiece protobuf librosa 2>&1 | tail -2
+    /content/venv-cohere/bin/python -c "from transformers import CohereAsrForConditionalGeneration; print('ok cohere')"
+    exit ;;
+  clean-losers)  # (models and sounds that lost, to free the disk: Musci, the two isolators and their sounds, the dry run)
+    rm -rf ~/.cache/huggingface/hub/models--Musci-research--Musci-ASR-2.4B ~/.cache/huggingface/hub/models--JusperLee--DBS-TIGER-DnR \
+      ~/.cache/torch/hub/checkpoints/*htdemucs* ~/.cache/torch/hub/checkpoints/955717e8-8726e21a.th /content/work/gen-dry /content/dry
+    rm -f "${GEN_DIR:-$BENCH_WORK/gen}"/*+tiger.npy "${GEN_DIR:-$BENCH_WORK/gen}"/*+demucs.npy
+    df -h /content | tail -1
+    exit ;;
   table)
     python -c "
 import json, generate
@@ -33,6 +47,8 @@ LIBS=$(python -c "import nvidia.cublas.lib as a, nvidia.cudnn.lib as b; print(li
 export LD_LIBRARY_PATH="$LIBS:$LD_LIBRARY_PATH"
 case "$1" in
   prepare|prepare-film|prepare-corpus|agree) python generate.py "$1" 2>&1 | grep -vE "$quiet" ;;
-  whisper|qwen|musci) python generate.py run "$1" 2>&1 | grep -vE "$quiet" ;;
-  *) echo "sh gen.sh install | prepare | whisper | qwen | musci | table" ;;
+  whisper|qwen|musci|granite) python generate.py run "$1" 2>&1 | grep -vE "$quiet" ;;
+  parakeet) /content/venv-nemo/bin/python generate.py transcribe parakeet 2>&1 | grep -vE "$quiet|^\[NeMo W|^\s*warnings" ; python generate.py run aligned:parakeet 2>&1 | grep -vE "$quiet" ;;
+  cohere) /content/venv-cohere/bin/python generate.py transcribe cohere 2>&1 | grep -vE "$quiet" ; python generate.py run aligned:cohere 2>&1 | grep -vE "$quiet" ;;
+  *) echo "sh gen.sh install | venv-nemo | venv-cohere | clean-losers | prepare | prepare-film | prepare-corpus | whisper | qwen | granite | parakeet | cohere | musci | agree | table" ;;
 esac
