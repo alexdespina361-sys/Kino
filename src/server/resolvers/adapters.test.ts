@@ -319,4 +319,178 @@ describe("createAnimeHeavenAdapter", () => {
     expect(res?.qualities[1]?.url).toBe("https://bcdn.hakunaymatata.com/extto/test1080.mp4?sign=abc&t=123");
     expect(res?.qualities[2]?.url).toBe("https://bcdn.hakunaymatata.com/resource/test720.mp4?sign=def&t=123");
   });
+
+  it("resolves long-running anime with named seasons via AnimeHeaven fallback (e.g. Pokemon S25 E6 Ultimate Journeys)", async () => {
+    const fakeSearchHtml = `
+      <div class='boldtext'>
+        <div class='info3 bc1'>
+          <div class='similarimg'>
+            <div class='p1'>
+              <a href='anime.php?pk999'>
+                <img class='coverimg' src='image.php?pkimg' alt='Pokemon Ultimate Journeys: The Series'>
+              </a>
+              <div class='similarname c'>
+                <a href='anime.php?pk999' class='c'>Pokemon Ultimate Journeys: The Series</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const fakeEpisodesHtml = `
+      <div class='infotitle c'>Pokemon Ultimate Journeys: The Series</div>
+      <a class='c' id="55555555555555555555555555555555" href='gate.php'>
+        <div class='watch1'>Episode</div>
+        <div class='watch2'>5</div>
+      </a>
+      <a class='c' id="66666666666666666666666666666666" href='gate.php'>
+        <div class='watch1'>Episode</div>
+        <div class='watch2'>6</div>
+      </a>
+      <a class='c' id="77777777777777777777777777777777" href='gate.php'>
+        <div class='watch1'>Episode</div>
+        <div class='watch2'>7</div>
+      </a>
+    `;
+
+    const fakeGateHtml = `
+      <video id='vid'>
+        <source src='https://cdn.animeheaven.me/pokemon-s25-e6.mp4?66666666666666666666666666666666' type='video/mp4'>
+      </video>
+    `;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/tv/60572")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 60572,
+            name: "Pokémon",
+            original_language: "ja",
+            genres: [{ id: 16 }],
+            seasons: [
+              { season_number: 1, name: "Indigo League", episode_count: 82 },
+              { season_number: 24, name: "Master Journeys", episode_count: 42 },
+              { season_number: 25, name: "Ultimate Journeys", episode_count: 57 },
+              { season_number: 26, name: "Horizons", episode_count: 45 },
+            ],
+          }),
+        };
+      }
+      if (u.includes("vidlink.pro")) {
+        return { ok: false, status: 404 };
+      }
+      if (u.includes("vidsrc.buzz") || u.includes("screenfetch4.cyou") || u.includes("vidsrc.me")) {
+        return { ok: false, status: 404 };
+      }
+      if (u.includes("animeheaven.me/search.php")) {
+        return { ok: true, status: 200, text: async () => fakeSearchHtml };
+      }
+      if (u.includes("animeheaven.me/anime.php")) {
+        return { ok: true, status: 200, text: async () => fakeEpisodesHtml };
+      }
+      if (u.includes("animeheaven.me/gate.php")) {
+        return { ok: true, status: 200, text: async () => fakeGateHtml };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.title).toBe("Pokémon · S25 E6");
+      expect(res.media.stream.type).toBe("mp4");
+      expect(res.media.stream.directUrl).toContain("pokemon-s25-e6.mp4");
+      expect(res.media.series?.season).toBe(25);
+      expect(res.media.series?.episode).toBe(6);
+    }
+  });
+
+  it("resolves continuous/absolute-numbered anime via AnimeHeaven fallback (e.g. Detective Conan S2 E5 -> Ep 47)", async () => {
+    const fakeSearchHtml = `
+      <div class='boldtext'>
+        <div class='info3 bc1'>
+          <div class='similarimg'>
+            <div class='p1'>
+              <a href='anime.php?conan123'>
+                <img class='coverimg' src='image.php?conanimg' alt='Detective Conan'>
+              </a>
+              <div class='similarname c'>
+                <a href='anime.php?conan123' class='c'>Detective Conan</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const fakeEpisodesHtml = `
+      <div class='infotitle c'>Detective Conan</div>
+      <a class='c' id="11111111111111111111111111111111" href='gate.php'>
+        <div class='watch1'>Episode</div>
+        <div class='watch2'>1</div>
+      </a>
+      <a class='c' id="47474747474747474747474747474747" href='gate.php'>
+        <div class='watch1'>Episode</div>
+        <div class='watch2'>47</div>
+      </a>
+    `;
+
+    const fakeGateHtml = `
+      <video id='vid'>
+        <source src='https://cdn.animeheaven.me/conan-ep-47.mp4?47474747474747474747474747474747' type='video/mp4'>
+      </video>
+    `;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/tv/235")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 235,
+            name: "Detective Conan",
+            original_language: "ja",
+            genres: [{ id: 16 }],
+            seasons: [
+              { season_number: 1, name: "Season 1", episode_count: 42 },
+              { season_number: 2, name: "Season 2", episode_count: 43 },
+            ],
+          }),
+        };
+      }
+      if (u.includes("vidlink.pro")) {
+        return { ok: false, status: 404 };
+      }
+      if (u.includes("vidsrc.buzz") || u.includes("screenfetch4.cyou") || u.includes("vidsrc.me")) {
+        return { ok: false, status: 404 };
+      }
+      if (u.includes("animeheaven.me/search.php")) {
+        return { ok: true, status: 200, text: async () => fakeSearchHtml };
+      }
+      if (u.includes("animeheaven.me/anime.php")) {
+        return { ok: true, status: 200, text: async () => fakeEpisodesHtml };
+      }
+      if (u.includes("animeheaven.me/gate.php")) {
+        return { ok: true, status: 200, text: async () => fakeGateHtml };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/235?s=2&e=5"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.title).toBe("Detective Conan · S2 E5");
+      expect(res.media.stream.type).toBe("mp4");
+      expect(res.media.stream.directUrl).toContain("conan-ep-47.mp4");
+      expect(res.media.series?.season).toBe(2);
+      expect(res.media.series?.episode).toBe(5);
+    }
+  });
 });
