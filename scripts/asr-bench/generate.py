@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # (bench.py besi
 import bench  # noqa: E402
 from bench import SR, Cue, Word
 
-GEN = os.path.join(bench.WORK, "gen")
+GEN = os.environ.get("GEN_DIR", os.path.join(bench.WORK, "gen"))
 RESULTS = os.path.join(bench.OUT, "gen-results.json")
 EN_SECONDS = float(os.environ.get("GEN_EN_SECONDS", "480"))
 JA_SECONDS = float(os.environ.get("GEN_JA_SECONDS", "360"))
@@ -396,9 +396,11 @@ def film_background(length: int) -> np.ndarray:
         if float(p[int(s * 100): int((s + 2) * 100)].max(initial=0)) >= 0.3:
             continue
         wins.append((s, float(np.sqrt(np.mean(film[int(s * SR): int((s + 2) * SR)] ** 2)))))
+    if len(wins) < 4:
+        raise RuntimeError(f"background: only {len(wins)} voice-free windows in Tears of Steel")
     med = float(np.median([r for _, r in wins]))
     keep = [s for s, r in wins if r >= med]
-    log(f"background: {len(keep)} windows of 2 s ({len(wins)} without voices)")
+    log(f"background: {len(keep)} windows of 2 s = {2 * len(keep)} s before it repeats ({len(wins)} without voices)")
     fade = np.linspace(0, 1, int(0.02 * SR), dtype=np.float32)
     parts = []
     for s in keep:
@@ -477,7 +479,8 @@ def isolate(name: str, pcm: np.ndarray) -> np.ndarray:
                 _MODELS["demucs"] = get_model("htdemucs").eval().to(dev)
             m = _MODELS["demucs"]
             x = torch.from_numpy(np.stack([up, up]))[None].to(dev)
-            out = apply_model(m, x, split=True, overlap=0.25, progress=False, device=dev)[0]
+            mean, std = float(x.mean()), float(x.std()) or 1.0  # (normalised in and out, as demucs's own separate tool does)
+            out = apply_model(m, (x - mean) / std, split=True, overlap=0.25, progress=False, device=dev)[0] * std + mean
             speech = out[m.sources.index("vocals")].mean(0).float().cpu().numpy()
     back = resample_poly(speech, 160, 441).astype(np.float32)
     return np.pad(back, (0, max(0, len(pcm) - len(back))))[: len(pcm)]
@@ -667,6 +670,8 @@ def run(which: str) -> None:
                 names = sorted({m for c in ref for m in re.findall(r"[ァ-ヶー・]{3,}", c.text)})
                 engine.context = "登場する名前・地名: " + "、".join(names)
             second = read_words(words_path("whisper", lang, sound)) if which != "whisper" else None
+            if which != "whisper" and second is None:
+                log(f"WARNING: no Whisper words for {lang} {sound} (run whisper first): the second listener is OFF for this run")
             try:
                 g = generate(engine, pcm, lang, p, second)
             finally:
@@ -687,6 +692,7 @@ def run(which: str) -> None:
             if lang == "ja" and len(ref) > 15:
                 # (Lines 1-15 are the clip the checks were tuned on (MIN_MOVE_S, the second listener); lines 16 on were never looked at.)
                 r["first_15_lines"] = score(ref[:15], [w for w in g["final"] if w.start < ref[14].end + 0.5], lang)
+                r["first_15_lines_before_checks"] = score(ref[:15], [w for w in g["raw"] if w.start < ref[14].end + 0.5], lang)
                 r["lines_16_on"] = score(ref[15:], [w for w in g["final"] if w.start >= ref[15].start - 0.5], lang)
                 r["lines_16_on_before_checks"] = score(ref[15:], [w for w in g["raw"] if w.start >= ref[15].start - 0.5], lang)
         except Exception as error:  # noqa: BLE001
@@ -707,7 +713,7 @@ def brief(r: dict) -> str:
     out = (f"{r['engine']} | {r['lang']} {r['sound']} | err {err(raw)} -> {err(f)} | heard {f['lines_heard']} | 0.3 s: {raw['within_0_3']} -> "
            f"{f['within_0_3']}/{f['lines_timed']} (0.1 s: {f['within_0_1']}) | off {f['off_by_more_than_0_3'][:4]} | stray {f['words_where_nobody_speaks']} | "
            f"worse {r['made_worse_by_fix'][:3]} | {r.get('checks', '')} | {r['x_realtime']}x, first piece {r['first_piece_s']} s")
-    for k in ("first_15_lines", "lines_16_on", "lines_16_on_before_checks"):
+    for k in ("first_15_lines_before_checks", "first_15_lines", "lines_16_on_before_checks", "lines_16_on"):
         if k in r:
             s = r[k]
             out += f"\n    {k}: err {err(s)} heard {s['lines_heard']} 0.3 s {s['within_0_3']}/{s['lines_timed']} off {s['off_by_more_than_0_3'][:4]}"
