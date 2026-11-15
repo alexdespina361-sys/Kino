@@ -22,7 +22,8 @@ SR = bench.SR
 
 
 def floor_onset(pcm: np.ndarray) -> float:
-    """Speech start against the recording's own noise: the first 100 ms louder than 4x its quiet level and 10% of its loudest."""
+    """Speech start against the recording's own noise: the first 100 ms louder than 4x its quiet level and 10% of its loudest.
+    (The first try; it misses line 0. bench.speech_onset now uses 3x and 15%, which fits every line.)"""
     rms = bench.frame_rms(pcm)
     if not len(rms):
         return 0.0

@@ -146,12 +146,18 @@ def frame_rms(pcm: np.ndarray, frame: int = 320) -> np.ndarray:
 
 
 def speech_onset(pcm: np.ndarray) -> float:
-    """Where a recording's speech starts: the first 20 ms louder than 5% of its loudest (and than a floor)."""
+    """
+    Where a recording's speech starts: the first 100 ms louder than 3x the recording's own quiet level (its 10th percentile) and 15% of
+    its loudest, less 40 ms. (Version 2 used "the first 20 ms above 5% of the loudest", which fired on the background noise before the
+    speech in 9 of the 15 FLEURS lines and made every engine look 1-2 s late. This rule, checked line by line against faster-whisper's
+    word times, which are independent of it: all 14 lines within 0.3 s, Whisper consistently ~0.17 s early; 2.5-3x and 10-20% agree.)
+    """
     rms = frame_rms(pcm)
     if not len(rms):
         return 0.0
-    loud = np.nonzero(rms > max(0.01, rms.max() * 0.05))[0]
-    return float(loud[0]) * 0.02 if len(loud) else 0.0
+    smooth = np.convolve(rms, np.ones(5) / 5, mode="same")
+    loud = np.nonzero(smooth > max(3 * float(np.percentile(rms, 10)), 0.15 * float(smooth.max())))[0]
+    return float(max(0, loud[0] - 2)) * 0.02 if len(loud) else 0.0
 
 
 @dataclass
