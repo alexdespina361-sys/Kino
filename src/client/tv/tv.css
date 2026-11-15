@@ -1392,6 +1392,11 @@
 }
 .tv-query-hint { color: #6f6f78; font-weight: 500; }
 .tv-caret { width: 0.08em; height: 1.1em; margin-left: 0.1em; background: var(--accent); animation: tv-blink 1s steps(1) infinite; }
+.tv-caret.is-still { animation: none; }
+/* What is selected in the drawn search box (SearchField): lit as a field lights it, in the colour of the page. */
+.tv-query .is-selected { background: rgb(var(--accent-rgb) / 0.45); color: #fff; }
+/* Text that is typed (a box of the TV's own, a phone's or a computer's) and the messages of a chat can be selected and copied, though the rest of the screen cannot. */
+.tv input, .tv textarea, .tv .chat-text { -webkit-user-select: text; user-select: text; }
 @keyframes tv-blink { 50% { opacity: 0; } }
 .tv-keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5em; margin-top: 1.2em; }
 .tv-key {

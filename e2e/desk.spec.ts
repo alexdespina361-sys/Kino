@@ -88,6 +88,61 @@ test("a TV keeps its own size whatever its width, and so does a computer that wa
   expect(await unit(couch)).toBeCloseTo(25.6, 1);
 });
 
+test("what is typed in the search box can be selected as in any field: a double click (a word), dragging, Ctrl+A, Shift with the arrows; typing, Delete, Backspace and Ctrl+X act on it, Ctrl+C copies it", async ({ browser, baseURL }) => {
+  // (the owner: "I can't highlight text to copy here or do something with it like delete")
+  const page = await open(browser, baseURL!, { width: 1280, height: 720 }, { fit: "desk" });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+  await page.getByTestId("rail-search").click();
+  const query = page.getByTestId("tv-query");
+  const letter = (at: number) => query.locator(`[data-at="${at}"]`);
+  const selected = () => query.getAttribute("data-selected");
+  await page.keyboard.type("the night of");
+  await expect(query).toHaveText("the night of");
+
+  // a double click selects the word, lit; what is typed takes its place
+  await letter(5).dblclick();
+  await expect.poll(selected).toBe("4-9");
+  await expect(query.locator(".is-selected")).toHaveCount(5);
+  await page.keyboard.press("Control+c");
+  await expect.poll(clipboard).toBe("night");
+  await page.keyboard.type("d");
+  await expect(query).toHaveText("the d of");
+  expect(await selected()).toBeNull();
+
+  // dragging over the start selects it; Delete takes it out (and the space it leaves at the front)
+  const from = (await letter(0).boundingBox())!;
+  const to = (await letter(3).boundingBox())!;
+  await page.mouse.move(from.x + 1, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 1, to.y + to.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(selected).toBe("0-3");
+  await page.keyboard.press("Delete");
+  await expect(query).toHaveText("d of");
+
+  // Ctrl+A selects it all, and a letter is all there is then
+  await page.keyboard.press("Control+a");
+  await expect.poll(selected).toBe("0-4");
+  await page.keyboard.type("xyz");
+  await expect(query).toHaveText("xyz");
+
+  // Shift with an arrow selects from the caret; Ctrl+X takes what is selected out, onto the clipboard; Backspace takes a selection too
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
+  await expect.poll(selected).toBe("1-3");
+  await page.keyboard.press("Control+x");
+  await expect(query).toHaveText("x");
+  await expect.poll(clipboard).toBe("yz");
+  await page.keyboard.press("Control+v");
+  await expect(query).toHaveText("xyz");
+  await page.keyboard.press("Shift+Home");
+  await expect.poll(selected).toBe("0-3");
+  await page.keyboard.press("Backspace");
+  await expect(query).toHaveText("Search titles"); // (empty: the hint)
+  await expect(page.getByTestId("tv-search")).toBeVisible(); // (Backspace took the selection, and did not leave the page)
+});
+
 test("J, K and L go back, pause and go on in a film, as they do on the video sites; in the search they are letters", async ({ browser, baseURL }) => {
   const page = await open(browser, baseURL!, { width: 1280, height: 720 });
   await page.getByTestId("rail-search").click();

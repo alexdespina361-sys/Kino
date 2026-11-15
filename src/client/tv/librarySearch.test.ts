@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { itemsOf, TitleIndex } from "../../shared";
-import { allExact, appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, onlySection, typedCharacter } from "./librarySearch";
+import { allExact, appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, onlySection, selectedText, selectionOf, typedCharacter } from "./librarySearch";
 
 const item = (id: string, title: string, kind?: "movie" | "series", section?: "cartoon" | "anime") => ({ id, title, url: `/${id}`, ...(kind ? { kind } : {}), ...(section ? { section } : {}) });
 const rows = [
@@ -195,6 +195,51 @@ describe("editBox", () => {
 
   it("empties the box", () => {
     expect(editBox(box("night", 2), { kind: "clear" })).toEqual(box("", 0));
+  });
+
+  // (the owner: "I can't highlight text to copy here or do something with it like delete")
+  describe("a selection", () => {
+    const picked = (text: string, anchor: number, caret: number) => ({ text, caret, anchor });
+
+    it("is what lies between where it began and the caret, either way round, and nothing when they are the same place", () => {
+      expect(selectionOf(picked("the night", 4, 9))).toEqual({ start: 4, end: 9 });
+      expect(selectionOf(picked("the night", 9, 4))).toEqual({ start: 4, end: 9 });
+      expect(selectionOf(picked("the night", 4, 4))).toBeNull();
+      expect(selectionOf(box("the night"))).toBeNull();
+      expect(selectedText(picked("the night", 4, 9))).toBe("night");
+      expect(selectedText(box("the night"))).toBe("");
+    });
+
+    it("is made by dragging (from one place to another), a word (double click), all of it (Ctrl+A, triple click), or Shift with the keys that move the caret", () => {
+      expect(editBox(box("the night of"), { kind: "select", from: 4, to: 7 })).toEqual(picked("the night of", 4, 7));
+      expect(editBox(box("the night of"), { kind: "select", from: 4, to: 4 })).toEqual(box("the night of", 4));
+      expect(editBox(box("the night of"), { kind: "selectWord", at: 6 })).toEqual(picked("the night of", 4, 9));
+      expect(editBox(box("the night of"), { kind: "selectWord", at: 4 })).toEqual(picked("the night of", 4, 9));
+      expect(editBox(box("the night of"), { kind: "selectAll" })).toEqual(picked("the night of", 0, 12));
+      expect(editBox(box(""), { kind: "selectAll" })).toEqual(box("", 0));
+      const once = editBox(box("night", 5), { kind: "move", to: "left", extend: true });
+      expect(once).toEqual(picked("night", 5, 4));
+      expect(editBox(once, { kind: "move", to: "left", extend: true })).toEqual(picked("night", 5, 3));
+      expect(editBox(once, { kind: "move", to: "right", extend: true })).toEqual(box("night", 5)); // (back to where it began: nothing is selected)
+      expect(editBox(box("night", 2), { kind: "move", to: "start", extend: true })).toEqual(picked("night", 2, 0));
+      expect(editBox(box("night", 2), { kind: "move", to: 4, extend: true })).toEqual(picked("night", 2, 4)); // (a click with Shift)
+    });
+
+    it("is replaced by what is typed or pasted, and taken out by Backspace or Delete, the text kept tidy", () => {
+      expect(editBox(picked("the night of", 4, 9), { kind: "type", char: "d" })).toEqual(box("the d of", 5));
+      expect(editBox(picked("the night of", 4, 9), { kind: "paste", text: "day" })).toEqual(box("the day of", 7));
+      expect(editBox(picked("the night of", 4, 9), { kind: "backspace" })).toEqual(box("the of", 4)); // (the two spaces left are one)
+      expect(editBox(picked("the night of", 9, 4), { kind: "delete" })).toEqual(box("the of", 4));
+      expect(editBox(picked("night", 0, 5), { kind: "backspace" })).toEqual(box("", 0));
+      expect(editBox(picked("x".repeat(60), 0, 60), { kind: "type", char: "y" })).toEqual(box("y")); // (a full box takes a letter in place of what is selected)
+    });
+
+    it("is let go by an arrow without Shift, which goes to that end of it, and by a click", () => {
+      expect(editBox(picked("the night", 4, 9), { kind: "move", to: "left" })).toEqual(box("the night", 4));
+      expect(editBox(picked("the night", 9, 4), { kind: "move", to: "right" })).toEqual(box("the night", 9));
+      expect(editBox(picked("the night", 4, 9), { kind: "move", to: 1 })).toEqual(box("the night", 1));
+      expect(editBox(picked("the night", 4, 9), { kind: "clear" })).toEqual(box("", 0));
+    });
   });
 
   // (a narrow screen's own keyboard can type an emoji: two UTF-16 units, one character; cut in half it is a text the address cannot hold)
