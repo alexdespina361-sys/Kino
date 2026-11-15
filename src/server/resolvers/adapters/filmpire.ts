@@ -216,12 +216,21 @@ export function encryptVidLinkToken(mediaId: string): string {
   return fullPayload.toString("base64url");
 }
 
+/**
+ * How long to wait for VidLink on anime titles before aborting and letting the fallback chain proceed.
+ * Live upstream measurements show VidLink responds in <250ms when it has streams; when it lacks streams,
+ * it hangs while scraping external providers until aborted. A 2.5s budget gives ample margin for normal hits
+ * without stalling playback for 12 seconds when the title is absent.
+ */
+export const VIDLINK_ANIME_TIMEOUT_MS = 2500;
+
 export async function resolveVidLinkStream(
   get: typeof fetch,
   tmdbId: string,
   isTv: boolean,
   season?: string | null,
   episode?: string | null,
+  timeoutMs?: number,
 ): Promise<VidLinkResolvedStream | null> {
   try {
     const token = encryptVidLinkToken(tmdbId);
@@ -237,7 +246,7 @@ export async function resolveVidLinkStream(
         origin: "https://vidlink.pro",
         referer: "https://vidlink.pro/",
       },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(timeoutMs ?? 6000),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {
@@ -1018,7 +1027,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }, 2000);
 
           try {
-            const vl = await resolveVidLinkStream(get, id, isTv, s, e);
+            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
             clearTimeout(animeTimer);
             if (vl) return await buildVidLinkResult(vl);
           } catch {
@@ -1063,11 +1072,17 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         return null;
       };
 
+      let fallbackPromise: Promise<ResolveResult | null> | undefined;
+      const runFallback = (): Promise<ResolveResult | null> => {
+        fallbackPromise ??= fallbackStreams();
+        return fallbackPromise;
+      };
+
       // Special-case titles:
       // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
       // 2. Cartoons & Anime (isAnimeOrCartoon): skip slow 15s upstream retries and resolve via fast provider immediately
       if (id === "1400837" || isAnimeOrCartoon) {
-        const fastResult = await fallbackStreams();
+        const fastResult = await runFallback();
         if (fastResult) return fastResult;
       }
 
@@ -1093,14 +1108,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (isSecurityBlock(err)) {
             return { status: "temporary_failure", reason: "Could not reach streaming server." };
           }
-          const fb = await fallbackStreams();
+          const fb = await runFallback();
           if (fb) return fb;
           return { status: "temporary_failure", reason: "Could not reach streaming server." };
         }
       }
 
       if (!containerUrl) {
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         return { status: "unsupported", reason: "Video source currently unavailable." };
       }
@@ -1129,7 +1144,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
         }
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
@@ -1164,7 +1179,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         };
 
         if (config.rateLimited || !config.apiToken) {
-          const fb = await fallbackStreams();
+          const fb = await runFallback();
           if (fb) return fb;
           return {
             status: config.rateLimited ? "temporary_failure" : "unsupported",
@@ -1292,7 +1307,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
         }
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
@@ -1353,7 +1368,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
         }
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
@@ -1390,7 +1405,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       streamUrls = cleanStreams.length > 0 ? [...cleanStreams, ...watermarked] : streamUrls;
 
       if (streamUrls.length === 0) {
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         return { status: "unsupported", reason: "No video streams found." };
       }
