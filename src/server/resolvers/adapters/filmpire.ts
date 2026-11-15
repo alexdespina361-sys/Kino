@@ -510,6 +510,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let title = "Filmpire Video";
       let tmdbImdbId: string | undefined;
       let rawShowTitle: string | undefined;
+      let tmdbSeasons: Array<{ season_number?: number; name?: string; episode_count?: number }> | undefined;
       /** Whether TMDB says the title is animated (genre 16); unknown when TMDB did not answer, or said nothing of its genres. */
       let animated: boolean | undefined;
       let originalLang: string | undefined;
@@ -523,6 +524,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           external_ids?: { imdb_id?: string };
           genres?: Array<{ id?: number }>;
           original_language?: string;
+          seasons?: Array<{
+            season_number?: number;
+            name?: string;
+            episode_count?: number;
+          }>;
         };
         try {
           tmdbData = await fetchJson<{
@@ -532,6 +538,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             external_ids?: { imdb_id?: string };
             genres?: Array<{ id?: number }>;
             original_language?: string;
+            seasons?: Array<{
+              season_number?: number;
+              name?: string;
+              episode_count?: number;
+            }>;
           }>(tmdbUrl(contentType));
         } catch (initialErr) {
           const is404 = (initialErr as { status?: number })?.status === 404 || String(initialErr).includes("HTTP 404");
@@ -544,6 +555,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               external_ids?: { imdb_id?: string };
               genres?: Array<{ id?: number }>;
               original_language?: string;
+              seasons?: Array<{
+                season_number?: number;
+                name?: string;
+                episode_count?: number;
+              }>;
             }>(tmdbUrl("tv"));
             isTv = true;
             contentType = "tv";
@@ -562,6 +578,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         else if (tmdbData.external_ids?.imdb_id) tmdbImdbId = tmdbData.external_ids.imdb_id;
         if (Array.isArray(tmdbData.genres)) animated = tmdbData.genres.some((genre) => genre?.id === 16);
         if (tmdbData.original_language) originalLang = tmdbData.original_language;
+        if (Array.isArray(tmdbData.seasons)) tmdbSeasons = tmdbData.seasons;
       } catch {
         // Non-fatal if TMDB is unreachable
       }
@@ -594,21 +611,80 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const { createAnimeHeavenAdapter } = await import("./animeheaven");
           const ah = animeHeavenSource({ fetch: get });
           if (!ah.search || !ah.episodes) return null;
-          let results = await ah.search(rawShowTitle);
-          if (rawShowTitle.toLowerCase().includes("jujutsu")) {
-            const extra = await ah.search("sorcery fight");
-            const seenUrls = new Set(results.map((r) => r.url));
-            for (const item of extra) {
-              if (!seenUrls.has(item.url)) {
-                seenUrls.add(item.url);
-                results.push(item);
-              }
-            }
-          }
-          if (results.length === 0) return null;
 
           const targetSeason = Number(s || "1");
           const targetEpisode = Number(e || "1");
+
+          // Normalize strings: remove diacritics (e.g. "Pokémon" -> "Pokemon"), lowercase, strip punctuation
+          const normalizeTitle = (str: string): string =>
+            str
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, "")
+              .toLowerCase()
+              .replace(/[^a-z0-9\s]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+
+          const cleanShow = normalizeTitle(rawShowTitle);
+          const targetSeasonObj = tmdbSeasons?.find((sn) => sn.season_number === targetSeason);
+          const targetSeasonName = targetSeasonObj?.name?.trim();
+          const normSeasonName = targetSeasonName ? normalizeTitle(targetSeasonName) : undefined;
+          const isGenericSeasonName =
+            !normSeasonName ||
+            /^season\s*\d+$/i.test(normSeasonName) ||
+            normSeasonName === "specials";
+
+          // Calculate absolute episode number by summing earlier seasons' episode counts (e.g. for Conan, One Piece)
+          let absoluteEpisode: number | undefined;
+          if (tmdbSeasons && targetSeason > 1) {
+            let prevCount = 0;
+            let allPrevFound = true;
+            for (let sn = 1; sn < targetSeason; sn++) {
+              const prev = tmdbSeasons.find((item) => item.season_number === sn);
+              if (prev && typeof prev.episode_count === "number") {
+                prevCount += prev.episode_count;
+              } else {
+                allPrevFound = false;
+                break;
+              }
+            }
+            if (allPrevFound && prevCount > 0) {
+              absoluteEpisode = prevCount + targetEpisode;
+            }
+          }
+
+          // Build search queries: show title, clean show title, show title + season name. (Not the season's name alone: "Ultimate Journeys" or "Final
+          // Season" on its own finds other shows' titles.)
+          const searchQueries = new Set<string>();
+          searchQueries.add(rawShowTitle);
+          if (cleanShow && cleanShow !== rawShowTitle.toLowerCase()) {
+            searchQueries.add(cleanShow);
+          }
+          if (targetSeasonName && !isGenericSeasonName) {
+            searchQueries.add(`${cleanShow} ${targetSeasonName}`);
+          }
+          if (cleanShow.includes("jujutsu")) {
+            searchQueries.add("sorcery fight");
+          }
+
+          // (One search after another: each one opens up to 15 of the titles it finds, and a title one search opened is not opened again by the next.)
+          const results: Array<{ title: string; url: string }> = [];
+          const seenUrls = new Set<string>();
+          for (const query of searchQueries) {
+            try {
+              const found = await ah.search(query);
+              for (const item of found) {
+                if (!seenUrls.has(item.url)) {
+                  seenUrls.add(item.url);
+                  results.push(item);
+                }
+              }
+            } catch {
+              // Ignore individual search failures
+            }
+          }
+
+          if (results.length === 0) return null;
 
           const extractAnimeSeason = (tTitle: string): number => {
             const t = tTitle.toLowerCase();
@@ -622,24 +698,71 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             return 1;
           };
 
-          const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason);
-          let matched = matchedSeasonList[0];
-          if (!matched && targetSeason > 1) {
-            matched = results.find(
-              (r) =>
-                r.title.toLowerCase().includes(`season ${targetSeason}`) ||
-                r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
-                r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
-                r.title.toLowerCase().includes(`${targetSeason}th season`),
-            );
+          // 1. Try matching by season name if this season has a distinct name (e.g. "Ultimate Journeys")
+          let matched: { title: string; url: string } | undefined;
+          let episodeToFind = targetEpisode;
+
+          if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
+            const cleanSeasonWords = normSeasonName.replace(/\b(?:the\s*series|part\s*\d+|arc)\b/g, "").trim();
+            // (The title must have the show's own name in it too: another show can have a season of the same name.)
+            matched = results.find((r) => {
+              const normR = normalizeTitle(r.title);
+              return (
+                normR.includes(cleanShow) &&
+                (normR.includes(normSeasonName) || (cleanSeasonWords.length >= 3 && normR.includes(cleanSeasonWords))) &&
+                !/\b(?:movie|film|special|ova)\b/i.test(r.title)
+              );
+            });
+            if (matched) {
+              episodeToFind = targetEpisode;
+            }
           }
-          if (!matched && targetSeason === 1) {
-            matched = results.find((r) => extractAnimeSeason(r.title) === 1);
+
+          // 2. Try explicit numbered season matching (e.g. "Season 2", "2nd Season", etc.)
+          if (!matched) {
+            const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason);
+            matched = matchedSeasonList[0];
+            if (!matched && targetSeason > 1) {
+              matched = results.find(
+                (r) =>
+                  r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                  r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                  r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                  r.title.toLowerCase().includes(`${targetSeason}th season`),
+              );
+            }
+            if (matched) {
+              episodeToFind = targetEpisode;
+            }
           }
-          if (!matched || extractAnimeSeason(matched.title) !== targetSeason) return null;
+
+          // 3. For Season 1 or fallback to continuous/absolute-numbered series
+          if (!matched) {
+            if (targetSeason === 1) {
+              matched = results.find((r) => extractAnimeSeason(r.title) === 1);
+              if (matched) episodeToFind = targetEpisode;
+            } else if (absoluteEpisode) {
+              // (The numbering from the first episode is only looked for in the show itself: a title of the show's own name, or that name with only "(TV)"
+              // or a year after it, such as "Detective Conan (TV)"; not "Naruto Shippuden", "Pokemon Horizons" or another show the search found.)
+              const itself = (name: string): boolean => {
+                const norm = normalizeTitle(name);
+                if (norm === cleanShow) return true;
+                if (!norm.startsWith(`${cleanShow} `)) return false;
+                return /^(?:tv|(?:tv )?(?:19|20)\d\d)$/.test(norm.slice(cleanShow.length + 1));
+              };
+              const baseMatch = results.find((r) => normalizeTitle(r.title) === cleanShow) ?? results.find((r) => itself(r.title));
+              if (baseMatch) {
+                matched = baseMatch;
+                episodeToFind = absoluteEpisode;
+              }
+            }
+          }
+
+          if (!matched) return null;
 
           const eps = await ah.episodes(matched.url, 1);
-          const targetEp = eps.find((ep) => ep.episode === targetEpisode);
+          // (When the numbering from the first episode is not there, nothing is played: the same number in the first series is another episode.)
+          const targetEp = eps.find((ep) => ep.episode === episodeToFind);
           if (!targetEp?.url) return null;
 
           const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
@@ -860,6 +983,41 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       };
 
       const fallbackStreams = async (): Promise<ResolveResult | null> => {
+        const isAnime = isTv && (originalLang === "ja" || originalLang === "zh");
+        if (isAnime) {
+          // For anime series, VidLink either responds in <300ms or times out after 12s.
+          // If VidLink hasn't responded within 2000ms, start fallbackAnime in parallel. (Its answer is still taken last, after Buzz's, as for every
+          // other title: VidLink, then Buzz, then the anime site; starting it early only saves the wait.)
+          let animePromise: Promise<ResolveResult | null> | undefined;
+          const animeTimer = setTimeout(() => {
+            animePromise = fallbackAnime().catch(() => null);
+          }, 2000);
+
+          try {
+            const vl = await resolveVidLinkStream(get, id, isTv, s, e);
+            clearTimeout(animeTimer);
+            if (vl) return await buildVidLinkResult(vl);
+          } catch {
+            clearTimeout(animeTimer);
+          }
+
+          try {
+            const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+            if (buzz) return await buildBuzzResult(buzz);
+          } catch {
+            // ignore
+          }
+
+          try {
+            const alt = animePromise ? await animePromise : await fallbackAnime();
+            if (alt) return alt;
+          } catch {
+            // ignore
+          }
+
+          return null;
+        }
+
         try {
           const vl = await resolveVidLinkStream(get, id, isTv, s, e);
           if (vl) return await buildVidLinkResult(vl);
