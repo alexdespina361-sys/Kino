@@ -41,5 +41,6 @@ export function useUnavailable(link: string | undefined): Unavailable | undefine
   }, [link, fresh]);
 
   if (link === undefined) return NOTHING;
-  return fresh?.marks ?? (answer?.link === link ? answer.marks : undefined);
+  // (What was kept is shown while it is asked again, so a page opened again does not lose its marks for a moment.)
+  return kept?.marks ?? (answer?.link === link ? answer.marks : undefined);
 }

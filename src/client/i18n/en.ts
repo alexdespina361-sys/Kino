@@ -232,7 +232,7 @@ export const en = {
   "library.results_other": "{count} results",
   "library.kindMovie": "Movie",
   "library.unavailable": "Not available yet",
-  "library.unavailableFilm": "No source had this film the last times it was played. Play looks again.",
+  "library.unavailableFilm": "No source had this film the last times it was tried. You can try again.",
   "library.kindSeries": "Series",
 
   /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */

@@ -357,7 +357,7 @@ async function unavailable({ flags }) {
   const day = (at) => when(at).slice(0, 10);
   console.log(`\n${"Times".padStart(5)}  ${"Last".padEnd(10)}  ${"First".padEnd(10)}  What, and its link`);
   for (const item of data.items) console.log(`${String(item.occasions).padStart(5)}  ${day(item.last)}  ${day(item.first)}  ${what(item)}${item.marked ? "" : "  [not marked]"}\n${" ".repeat(33)}${item.link}`);
-  console.log('\n"Times" is how many separate occasions (10 minutes apart or more) a play found nothing since one last found a video. A play that finds one takes it off.');
+  console.log('\n"Times" is how many separate occasions (6 hours apart or more) a play found nothing since one last found a video. A play that finds one takes it off.');
 }
 
 const parsed = parse(process.argv.slice(2));

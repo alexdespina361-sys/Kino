@@ -14,8 +14,11 @@ import { parseAnimeHeavenLink } from "./animeheaven";
  * Only the library's own links are kept (a film or an episode of the places it lists), never a pasted link, and never who pressed Play.
  */
 
-/** Two "nothing"s closer than this are one occasion (Try again, the screen's second look, the next episode looked up in advance). */
-export const OCCASION_GAP_MS = 10 * 60 * 1000;
+/**
+ * Two "nothing"s closer than this are one occasion: Try again and the screen's second look, and a source that is having a bad spell (a mark that is wrong keeps
+ * people from the Play that would take it away, so it waits for a second, separate time).
+ */
+export const OCCASION_GAP_MS = 6 * 3600 * 1000;
 /** How many occasions mark a title for the screens. */
 export const OCCASIONS_TO_MARK = 2;
 /** How long a mark is shown after the last time a look-up found nothing. */
@@ -232,7 +235,7 @@ export class UnavailableStore {
       link: link.slice(0, 2048),
       occasions: fresh ? fresh.occasions + (at - fresh.last >= OCCASION_GAP_MS ? 1 : 0) : 1,
       first: fresh?.first ?? at,
-      // (The last of the occasions: a second try of the same occasion does not move it, or a viewer pressing Try again every few minutes would never make two.)
+      // (The start of the last occasion: a second try of the same occasion does not move it, or tries every hour would never make two.)
       last: fresh && at - fresh.last < OCCASION_GAP_MS ? fresh.last : at,
     };
     this.records.delete(play.key); // (set again below, so the map stays in the order they were last met)

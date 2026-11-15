@@ -180,7 +180,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // (Registered after the accounts' close, so it runs before it: what is left is written before the accounts close the database they share.)
   const unavailable = options.unavailable ?? (await UnavailableStore.open({ persistence: new MemoryPersistence(), flushMs: 0 }));
   app.addHook("onClose", async () => unavailable.close());
-  // Every try at playing something tells the library how it went, so the titles a place lists but has no video of stop being offered, and what no source had
+  // Every try at playing something (from a phone or the TV: the look-up ahead of the next episode is the resolver's own, and does not come here) tells the library how it went, so the titles a place lists but has no video of stop being offered, and what no source had
   // is kept for the screens to mark and for the team to look for (it is asked about before the library hears it: a title that would not play is no longer one it tells).
   const resolveForPlay: ResolveFn = async (url, isPrefetch, fresh) => {
     const result = await resolve(url, isPrefetch, fresh);

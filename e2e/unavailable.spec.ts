@@ -75,7 +75,7 @@ test.describe("what no source had, on the TV", () => {
     const page = tv.getByTestId("tv-detail");
     const before = await still(page.getByTestId("tv-detail-play"));
     open();
-    await expect(page.getByTestId("tv-detail-unavailable")).toHaveText("No source had this film the last times it was played. Play looks again.");
+    await expect(page.getByTestId("tv-detail-unavailable")).toHaveText("No source had this film the last times it was tried. You can try again.");
     expect((await still(page.getByTestId("tv-detail-play"))).y, "the answer did not move Play").toBe(before.y);
     await page.getByTestId("tv-detail-close").click();
     await expect(page).toHaveCount(0);
@@ -133,7 +133,7 @@ test.describe("what no source had, on the phone", () => {
     await expect(page).toHaveCount(0);
 
     await phone.locator('[data-testid="library-tile"][title="A Quiet Film"]').tap();
-    await expect(page.getByTestId("title-unavailable")).toHaveText("No source had this film the last times it was played. Play looks again.");
+    await expect(page.getByTestId("title-unavailable")).toHaveText("No source had this film the last times it was tried. You can try again.");
     await expect(page.getByTestId("title-play")).toBeVisible();
     const play = await page.getByTestId("title-play").boundingBox();
     const note = await page.getByTestId("title-unavailable").boundingBox();

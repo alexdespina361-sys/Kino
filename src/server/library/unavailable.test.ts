@@ -49,10 +49,10 @@ describe("UnavailableStore", () => {
     const { store, later } = await storeAt();
     store.nothingFound(episode(23, 3), { title: "Pokémon", kind: "series" });
     expect(store.answerFor(episode(1, 1))).toEqual({ title: false, episodes: [] });
-    // (Try again, the screen's second look and the next episode looked up in advance are the same occasion.)
+    // (Try again and the screen's second look are the same occasion, and so is another try the same afternoon.)
     later(2 * MIN);
     store.nothingFound(episode(23, 3));
-    later(5 * MIN);
+    later(3 * 60 * MIN);
     store.nothingFound(episode(23, 3));
     expect(store.answerFor(episode(1, 1)).episodes).toEqual([]);
     later(OCCASION_GAP_MS);
