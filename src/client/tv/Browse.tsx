@@ -412,8 +412,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (isRowsPage(view)) return rowsOfPage(view.kind, data);
     if (view.kind === "friends") return friendRows(friends.state, Date.now(), iGet);
     if (view.kind !== "profile") return [];
-    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: progress.length });
-  }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length, iGet]);
+    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: progress.length, progress });
+  }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress, iGet]);
   // (`data` holds this profile's own lists and ratings: what it has in common with the friend comes first on their page.)
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */

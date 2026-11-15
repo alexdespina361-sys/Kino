@@ -835,6 +835,8 @@ export const en = {
   "profile.friendsCount_one": "{count} friend",
   "profile.friendsCount_other": "{count} friends",
   "profile.friendsNone": "No friends yet",
+  "profile.recent": "Recently watched",
+  "profile.best": "Your highest rated",
   "profile.friendsNew_one": "{count} unread",
   "profile.friendsNew_other": "{count} unread",
   "tv.listEmpty": "Nothing here yet. Open a title and add it to this list.",
