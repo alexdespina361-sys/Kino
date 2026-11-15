@@ -40,6 +40,7 @@ import numpy as np
 
 SR = 16000
 CHUNK_S = 30.0
+CUT = os.environ.get("BENCH_CUT", "fixed")  # "fixed": every 30 s; "pause": at the quietest 20 ms between 10 and 20 s along
 OUT = os.environ.get("BENCH_OUT", "/kaggle/working")
 WORK = os.environ.get("BENCH_WORK", "/kaggle/temp" if os.path.isdir("/kaggle") else os.path.join(OUT, "work"))
 FAKE = os.environ.get("BENCH_FAKE") == "1"
@@ -138,6 +139,21 @@ def write_srt(cues: list[Cue], path: str) -> None:
             f.write(f"{n}\n{srt_time(c.start)} --> {srt_time(c.end)}\n{c.text}\n\n")
 
 
+def frame_rms(pcm: np.ndarray, frame: int = 320) -> np.ndarray:
+    """Loudness of each 20 ms."""
+    usable = len(pcm) // frame * frame
+    return np.sqrt((pcm[:usable].reshape(-1, frame) ** 2).mean(axis=1)) if usable else np.zeros(0)
+
+
+def speech_onset(pcm: np.ndarray) -> float:
+    """Where a recording's speech starts: the first 20 ms louder than 5% of its loudest (and than a floor)."""
+    rms = frame_rms(pcm)
+    if not len(rms):
+        return 0.0
+    loud = np.nonzero(rms > max(0.01, rms.max() * 0.05))[0]
+    return float(loud[0]) * 0.02 if len(loud) else 0.0
+
+
 @dataclass
 class Clip:
     name: str
@@ -180,11 +196,12 @@ def japanese_clip() -> Clip | None:
             pcm = pcm_of(tar.extractfile(member).read())
             if len(pcm) < SR:
                 continue
-            ref.append(Cue(at, at + len(pcm) / SR, texts[name]))
+            ref.append(Cue(at + speech_onset(pcm), at + len(pcm) / SR, texts[name]))
             pieces += [pcm, np.zeros(int(gap * SR), dtype=np.float32)]
             at += len(pcm) / SR + gap
             if at >= JA_SECONDS:
                 break
+    # (Line starts are where each recording's speech begins, found by loudness: exact to ~0.1 s, not to the frame.)
     return Clip("FLEURS ja_jp test, joined (read speech)", "ja", np.concatenate(pieces), ref, exact_timing=True)
 
 
@@ -404,29 +421,44 @@ def peak_vram_gb():
         return None
 
 
+def pieces_of(pcm: np.ndarray) -> list[tuple[int, int]]:
+    if CUT != "pause":
+        step = int(CHUNK_S * SR)
+        return [(at, min(at + step, len(pcm))) for at in range(0, len(pcm), step)]
+    out, at, lo, hi = [], 0, 10 * SR, 20 * SR
+    while at < len(pcm):
+        if len(pcm) - at <= hi:
+            out.append((at, len(pcm)))
+            break
+        rms = frame_rms(pcm[at + lo: at + hi])
+        cut = at + lo + int(np.argmin(rms)) * 320 + 160
+        out.append((at, cut))
+        at = cut
+    return out
+
+
 def run(engine: Engine, clip: Clip) -> dict:
     """One engine on one clip, chunk by chunk from the start, as one viewer's request would be served."""
-    run = {"engine": engine.name, "clip": clip.name, "audio_s": round(len(clip.pcm) / SR, 1)}
+    name = f"{engine.name}, cut {'at pauses' if CUT == 'pause' else 'every 30 s'}"
+    run = {"engine": name, "clip": clip.name, "audio_s": round(len(clip.pcm) / SR, 1)}
     words: list[Word] = []
-    chunk = int(CHUNK_S * SR)
     t0 = time.time()
-    for n, at in enumerate(range(0, len(clip.pcm), chunk)):
-        piece = clip.pcm[at: at + chunk]
+    for n, (at, end) in enumerate(pieces_of(clip.pcm)):
         offset = at / SR
-        words += [Word(w.text, w.start + offset, w.end + offset) for w in engine.transcribe(piece, clip.lang)]
+        words += [Word(w.text, w.start + offset, w.end + offset) for w in engine.transcribe(clip.pcm[at:end], clip.lang)]
         done = time.time() - t0
         if n == 0:
+            run["first_piece_s"] = round(done, 2)
+        if end / SR >= 30 and "first_30s_s" not in run:
             run["first_30s_s"] = round(done, 2)
-        if offset + len(piece) / SR >= 180 and "first_3min_s" not in run:
+        if end / SR >= 180 and "first_3min_s" not in run:
             run["first_3min_s"] = round(done, 2)
-        if n == 1:
-            run["second_chunk_s"] = round(done - run["first_30s_s"], 2)
     total = time.time() - t0
     run["total_s"] = round(total, 1)
     run["x_realtime"] = round(len(clip.pcm) / SR / total, 1)
     run["peak_vram_gb"] = peak_vram_gb()
     run.update(score(clip, words, upto=len(clip.pcm) / SR))
-    stem = re.sub(r"[^a-z0-9]+", "-", f"{engine.name}-{clip.lang}".lower()).strip("-")
+    stem = re.sub(r"[^a-z0-9]+", "-", f"{name}-{clip.lang}".lower()).strip("-")
     write_srt(cues_of(words, clip.lang), os.path.join(OUT, f"{stem}.srt"))
     run["srt"] = f"{stem}.srt"
     return run
@@ -440,6 +472,8 @@ def bench(make_engines, clips) -> None:
             peak_vram_reset()
             t = time.time()
             engine.load()
+            if not isinstance(engine, FakeEngine):
+                engine.transcribe(np.zeros(5 * SR, dtype=np.float32) + np.float32(1e-4), clips[0].lang)
             load_s = round(time.time() - t, 1)
             for clip in clips:
                 try:
@@ -462,7 +496,7 @@ def bench(make_engines, clips) -> None:
 
 
 def summary() -> str:
-    rows = ["| engine | clip | load s | first 30 s | 3 min | x realtime | WER/CER | start error (median) | within 0.3 s / 1 s | VRAM GB |", "|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| engine | clip | load s (incl. warm-up) | first 30 s | 3 min | x realtime | WER/CER | start error (median) | within 0.3 s / 1 s | VRAM GB |", "|---|---|---|---|---|---|---|---|---|---|"]
     for r in results["runs"]:
         if "error" in r:
             rows.append(f"| {r['engine']} | {r.get('clip', '-')} | failed: {r['error'][:80]} |||||||")
@@ -485,6 +519,8 @@ def main(which: str) -> None:
         bench([lambda: FakeEngine(clips[0])], clips)
     elif which == "qwen":
         bench([lambda: QwenEngine("Qwen/Qwen3-ASR-0.6B"), lambda: QwenEngine("Qwen/Qwen3-ASR-1.7B")], clips)
+    elif which == "qwen-1.7b":
+        bench([lambda: QwenEngine("Qwen/Qwen3-ASR-1.7B")], clips)
     elif which == "whisper":
         bench([WhisperEngine], clips)
     save()
