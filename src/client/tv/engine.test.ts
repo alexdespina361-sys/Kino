@@ -743,9 +743,13 @@ describe("the subtitle aligner", () => {
 /** A <video> whose sound a page may take (Chromium's `captureStream`), with the attribute that asks for a film so that it can be read. */
 class CapturingVideo extends FakeVideo {
   crossOrigin: string | null = null;
+  play() {
+    return Promise.resolve();
+  }
   captureStream() {
-    const stream = new EventTarget() as EventTarget & { getAudioTracks(): unknown[]; getTracks(): unknown[] };
+    const stream = new EventTarget() as EventTarget & { getAudioTracks(): unknown[]; getVideoTracks(): unknown[]; getTracks(): unknown[] };
     stream.getAudioTracks = () => [];
+    stream.getVideoTracks = () => [];
     stream.getTracks = () => [];
     return stream;
   }
