@@ -7,7 +7,8 @@ import type { ListEntry } from "./profileStore";
 export const unfinished = (items: readonly LiveProgress[]): LiveProgress[] => items.filter((item) => !item.done);
 
 /** The pictures and year a title is known by, which "Continue watching" shows for it later. */
-export const hintOf = (item: { image?: string | undefined; backdrop?: string | undefined; year?: number | undefined }): PlayHint => ({
+export const hintOf = (item: { image?: string | undefined; backdrop?: string | undefined; year?: number | undefined; title?: string | undefined }): PlayHint => ({
+  ...(item.title ? { title: item.title.slice(0, 300) } : {}),
   ...(item.image ? { poster: item.image } : {}),
   ...(item.backdrop ? { backdrop: item.backdrop } : {}),
   ...(item.year ? { year: item.year } : {}),

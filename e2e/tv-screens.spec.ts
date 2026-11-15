@@ -2427,6 +2427,113 @@ test.describe("a video that will not start", () => {
   });
 });
 
+test.describe("a film on its way", () => {
+  const ART = "/art/slow.svg";
+  /** The picture a title's card has, for the film's screen to show while it waits. */
+  const withArt = (context: BrowserContext) =>
+    context.route(`**${ART}`, (route) =>
+      route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"><rect width="16" height="9" fill="#3a6"/></svg>' }),
+    );
+  /** Every message the page sends the server, kept where the test can read it. */
+  const keepSent = (context: BrowserContext) =>
+    context.addInitScript(() => {
+      const sent: string[] = [];
+      Object.assign(window, { sent });
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (this: WebSocket, data: Parameters<WebSocket["send"]>[0]) {
+        sent.push(String(data));
+        return send.call(this, data);
+      };
+    });
+  const sentOf = (page: Page, type: string) =>
+    page.evaluate((kind) => (window as unknown as { sent: string[] }).sent.map((text) => JSON.parse(text) as { type: string }).filter((message) => message.type === kind), type);
+  const one = (title: string, url: string) => ({ updatedAt: Date.now(), rows: [{ id: "r", title: "Row", source: "S", items: [{ id: "a", title, backdrop: ART, url }] }] });
+
+  test("Play goes straight to the film's own screen, with its name and picture, which stays until the picture moves and then gives way to the player", async ({ browser, baseURL }) => {
+    let letThrough = () => {};
+    const held = new Promise<void>((resolve) => (letThrough = resolve));
+    const tv = await openLibrary(browser, async (context) => {
+      await withLibrary(one("Slow Starter", `${baseURL}/fixtures/pages/video.html`))(context);
+      await withArt(context);
+      await keepSent(context);
+      await context.route("**/fixtures/sample.mp4*", async (route) => {
+        await held;
+        await route.continue();
+      });
+    });
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await tv.keyboard.press("Enter"); // its own page
+    await tv.keyboard.press("Enter"); // Play
+
+    // The film's screen is there at once: its name where the player puts it, its picture, and a line that moves. No page that says it is looking first.
+    const screen = tv.locator(".tv-starting");
+    await expect(screen).toBeVisible();
+    await expect(tv.getByTestId("tv-starting-title")).toHaveText("Slow Starter");
+    await expect(screen.locator("img.tv-starting-art")).toHaveAttribute("src", ART);
+    await expect(tv.getByTestId("tv-browse")).toHaveCount(0);
+
+    // The look-up is done, and the picture is what is waited for: the same screen (the player's own wheel is not shown as well, nor its controls).
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "loading");
+    await expect(screen).toHaveAttribute("data-phase", "loading");
+    await expect(tv.getByTestId("tv-starting-title")).toHaveText("Slow Starter");
+    await expect(screen.locator("img.tv-starting-art")).toHaveAttribute("src", ART); // (kept: the source's own picture would be a jump)
+    await expect(tv.getByTestId("tv-buffering")).toBeVisible();
+    await expect(tv.getByTestId("tv-busy")).toHaveCount(0);
+    await expect(tv.locator(".tv-overlay")).toHaveClass(/hidden/);
+
+    letThrough();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await expect(screen).toHaveCount(0);
+    // The TV said how long the wait was, once, for the team's log.
+    await expect.poll(async () => (await sentOf(tv, "TV_STARTED")).length).toBe(1);
+    const [started] = (await sentOf(tv, "TV_STARTED")) as unknown as Array<{ lookupMs?: number; loadMs: number }>;
+    expect(started!.lookupMs).toBeGreaterThanOrEqual(0);
+    expect(started!.loadMs).toBeGreaterThan(0);
+  });
+
+  test("a film nobody has: its screen stays until the library is back with the line that says so, and the library never shows without it", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, async (context) => {
+      await withLibrary(one("Nobody Has It", `${baseURL}/fixtures/pages/none.html`))(context);
+      await withArt(context);
+    });
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await tv.keyboard.press("Enter"); // its own page
+    await tv.keyboard.press("Enter"); // Play
+    await expect(tv.locator(".tv-starting")).toBeVisible();
+    await tv.evaluate(() => {
+      const seen = { bare: 0 };
+      Object.assign(window, { seen });
+      new MutationObserver(() => {
+        if (document.querySelector('[data-testid="tv-browse"]') && !document.querySelector('[data-testid="tv-notice"]')) seen.bare += 1;
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    await expect(tv.getByTestId("tv-notice")).toBeVisible({ timeout: 15_000 });
+    await expect(tv.locator(".tv-starting")).toHaveCount(0);
+    expect(await tv.evaluate(() => (window as unknown as { seen: { bare: number } }).seen.bare)).toBe(0);
+  });
+
+  test("a film a phone asked for shows the name and picture the phone knew, and Back gives up on it", async ({ browser, baseURL }) => {
+    const server = createServer(() => {}); // (a page that never answers: the look-up does not end)
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const tv = await openLibrary(browser, withArt);
+      await tv.getByTestId("rail-connect").click();
+      const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+      await expect(tv.getByTestId("tv-paired")).toBeVisible();
+      phone.playUrl(`http://127.0.0.1:${(server.address() as AddressInfo).port}/film`, 600, { title: "Asked From The Phone", backdrop: ART });
+      await expect(tv.getByTestId("tv-resolving")).toBeVisible();
+      await expect(tv.getByTestId("tv-starting-title")).toHaveText("Asked From The Phone");
+      await expect(tv.locator(".tv-starting img.tv-starting-art")).toHaveAttribute("src", ART);
+      await tv.keyboard.press("Escape");
+      await expect(tv.getByTestId("tv-resolving")).toHaveCount(0);
+      await expect(tv.getByTestId("tv-paired")).toBeVisible(); // back where it was, still connected
+      phone.close();
+    } finally {
+      server.close();
+    }
+  });
+});
+
 test.describe("a film that has ended", () => {
   const like = (baseURL: string) => [
     { id: "a", title: "Another Film", year: 2001, url: `${baseURL}/fixtures/pages/video.html` },

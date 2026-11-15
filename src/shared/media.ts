@@ -84,8 +84,16 @@ export const NormalizedMediaSchema = z.object({
 });
 export type NormalizedMedia = z.infer<typeof NormalizedMediaSchema>;
 
-/** What a screen knows about a title it asks to play: sent along so the card for it has a picture. */
-export const PlayHintSchema = z.object({ poster: NormalizedMediaSchema.shape.poster, backdrop: NormalizedMediaSchema.shape.backdrop, year: NormalizedMediaSchema.shape.year });
+/**
+ * What a screen knows about a title it asks to play: sent along so the card for it has a picture, and so the screen that plays it can show the
+ * title and its picture while the video is still being found (the title is only shown: what the source calls the film is what is kept).
+ */
+export const PlayHintSchema = z.object({
+  poster: NormalizedMediaSchema.shape.poster,
+  backdrop: NormalizedMediaSchema.shape.backdrop,
+  year: NormalizedMediaSchema.shape.year,
+  title: NormalizedMediaSchema.shape.title,
+});
 export type PlayHint = z.infer<typeof PlayHintSchema>;
 
 /** The media with what the one who asked for it knew about it, without overriding what the source said. */

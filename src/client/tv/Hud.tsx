@@ -74,6 +74,8 @@ export interface HudProps {
   episodeCount: number;
   /** A link is being looked up (the next episode, or one picked from the list). */
   resolving: boolean;
+  /** The film's own screen is up (see Starting.tsx), and says the wait itself: the wheel and its way out are not shown twice. */
+  hideWait?: boolean;
   /**
    * Brief "+10s" / "-10s" flash after a skip (`side` puts it on the half of the picture the skip went towards), or a line
    * of news ("Speed 1.5×"). `id` changes every time so the animation replays.
@@ -569,7 +571,7 @@ export function Hud(p: HudProps) {
       )}
 
       {/* Outside the overlay too: waiting is shown, and given up on, whether or not the controls are up. OK or Back does it from the remote (Tv.tsx). (A screen that watches along shows its wait as FollowStatus does.) */}
-      {busy && !follow && (
+      {busy && !follow && !p.hideWait && (
         <div className="hud-busy" data-testid="tv-busy">
           <div className="spinner hud-spinner" data-testid="tv-buffering" />
           {p.stuck && (

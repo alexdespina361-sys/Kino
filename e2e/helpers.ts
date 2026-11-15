@@ -1,5 +1,5 @@
 import { chromium, expect, test as base, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
-import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
+import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type PlayHint, type ServerMessage } from "../src/shared";
 import { COMPACT_MAX_WIDTH, COMPACT_MIN_HEIGHT } from "../src/client/tv/compact";
 
 /**
@@ -363,9 +363,9 @@ export class RawPhone {
   cmd(command: Command) {
     this.ws.send(JSON.stringify({ type: "CMD", command }));
   }
-  /** What the phone's "play" button sends: the server resolves the link, then tells the TV to load it. */
-  playUrl(url: string, startAt?: number) {
-    this.ws.send(JSON.stringify({ type: "PLAY_URL", url, ...(startAt === undefined ? {} : { startAt }) }));
+  /** What the phone's "play" button sends: the server resolves the link, then tells the TV to load it. `hint` is what a library tile knew about the title. */
+  playUrl(url: string, startAt?: number, hint?: PlayHint) {
+    this.ws.send(JSON.stringify({ type: "PLAY_URL", url, ...(startAt === undefined ? {} : { startAt }), ...(hint ? { hint } : {}) }));
   }
   close() {
     this.ws.close();
