@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { nextWindow, rest, WINDOW } from "./schedule";
+import { LIVE_BEHIND, nextWindow, rest, WINDOW } from "./schedule";
 
 const plan = { playhead: 0, rate: 1, covered: [{ from: 0, to: 120 }], heard: [], speed: 5 };
+
+describe("the next window for the recogniser, when the sound comes as the film plays", () => {
+  const live = { playhead: 47, rate: 1, covered: [{ from: 0, to: 46.8 }], heard: [], speed: 0.5, live: true };
+
+  it("is the newest whole window behind the picture, however slow the device", () => {
+    expect(nextWindow(live)).toBe(30);
+  });
+
+  it("goes back to the ones not heard, as far as it may", () => {
+    expect(nextWindow({ ...live, heard: [{ from: 30, to: 45 }] })).toBe(15);
+    // (the newest whole window at 199 s is 180..195)
+    expect(nextWindow({ ...live, playhead: 200, covered: [{ from: 0, to: 199 }], heard: [{ from: 135, to: 195 }] })).toBe(180 - LIVE_BEHIND * WINDOW);
+    expect(nextWindow({ ...live, playhead: 200, covered: [{ from: 0, to: 199 }], heard: [{ from: 120, to: 195 }] })).toBeUndefined();
+  });
+
+  it("waits for a whole window, and for its sound all through", () => {
+    expect(nextWindow({ ...live, playhead: 14, covered: [{ from: 0, to: 13.9 }] })).toBeUndefined();
+    expect(nextWindow({ ...live, covered: [{ from: 0, to: 35 }, { from: 36, to: 46.8 }] })).toBe(15);
+  });
+
+  it("after a jump, takes the sound around the picture", () => {
+    expect(nextWindow({ ...live, playhead: 500, covered: [{ from: 0, to: 120 }, { from: 470, to: 499.5 }] })).toBe(480);
+  });
+});
 
 describe("the next window for the recogniser", () => {
   it("starts with the window the picture is in", () => {

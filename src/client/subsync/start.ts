@@ -1,6 +1,7 @@
 import type { SyncStarter } from "../tv/engine";
 import { assetUrl } from "./assets";
 import { WorkerBackend } from "./backend";
+import { livePcm } from "./capture";
 import { canDecode, decodeToMono16k } from "./decode";
 import { CrashGuard, type Kept } from "./guard";
 import { SyncSession, type HlsLike, type VideoLike } from "./session";
@@ -32,6 +33,9 @@ const kept: Kept = {
   },
 };
 
+/** In place of hls.js, for a film the browser plays by itself. */
+const STILL: HlsLike = { on: () => undefined, off: () => undefined };
+
 /**
  * The subtitle aligner for a film that plays through hls.js, with the real worker, decoder and recogniser. This module is fetched
  * by the TV page when a film starts (the page does not carry it before), and everything it needs from the browser is checked here:
@@ -45,14 +49,16 @@ export const startSync: SyncStarter = (film) => {
   const session = new SyncSession({
     // (The cues of a subtitle track are VTTCues, which carry the text the library's cue type asks for.)
     video: film.video as unknown as VideoLike,
-    hls: film.hls as unknown as HlsLike,
-    events: film.events,
+    // (A film the browser plays by itself has no hls.js: nothing to say of sound tracks, and no subtitles in the stream.)
+    hls: (film.hls ?? STILL) as unknown as HlsLike,
+    events: film.events ?? { audioSwitching: "none" },
     tap: film.tap,
+    ...(film.live ? { live: true } : {}),
     show: film.show,
     report: film.report,
     ...(film.delay ? { delay: film.delay } : {}),
     backend: () => WorkerBackend.start(assetUrl("silero-vad-16k.bin")),
-    decode: decodeToMono16k,
+    decode: film.live ? livePcm : decodeToMono16k,
     // (What other screens left of this film's subtitles, and a way to leave what this one finds: see share.ts.)
     shared: httpShared(),
     cores: navigator.hardwareConcurrency || 4,

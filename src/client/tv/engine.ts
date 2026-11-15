@@ -12,16 +12,20 @@ import {
 import { reloadForScript, scriptIsMissing } from "../shared/scriptRescue";
 import { isHeld, markNoLanguage, release } from "../subsync/hold";
 import type { SyncStatus } from "../subsync/session";
-import { AudioTap, type HlsEvents } from "../subsync/tap";
+import { canCapture, ElementTap } from "../subsync/capture";
+import { AudioTap, type HlsEvents, type SoundTap } from "../subsync/tap";
 
-/** What the subtitle aligner is given of a film that plays through hls.js (see `subsync/start.ts`), and the handle it gives back. */
+/** What the subtitle aligner is given of a film (see `subsync/start.ts`), and the handle it gives back. */
 export interface SyncFilm {
-  hls: Hls;
+  /** hls.js, for a film that plays through it; none for a file the browser plays by itself. */
+  hls?: Hls;
   video: HTMLVideoElement;
   /** hls.js's name for the event it listens to. */
-  events: { audioSwitching: string };
-  /** The film's sound as hls.js downloads it: the player has listened since the film began, so that the aligner has all of it however late it starts. */
-  tap: AudioTap;
+  events?: { audioSwitching: string };
+  /** The film's sound: as hls.js downloads it (the player has listened since the film began, so that the aligner has all of it however late it starts), or as it comes out of the `<video>`. */
+  tap: SoundTap;
+  /** The sound comes as the film plays, never ahead of it (a file the browser plays by itself). */
+  live?: boolean;
   /** Puts subtitle track `id` on screen. */
   show(id: number): void;
   report(status: SyncStatus): void;
@@ -132,6 +136,21 @@ export const QUALITY_GIVE_UPS = 3;
 /** 1080p and above: what `formatQualityLabel` calls those (a film's own shape counts: 1920x804 is 1080p, 1280x536 is 720p). */
 const isHighDefinition = (width = 0, height = 0): boolean => width >= 1800 || height >= 800;
 
+/**
+ * Whether a page may read the sound of a film from `src`, and so the aligner listen to it (see `subsync/capture.ts`): a film from this
+ * site, or one through the stream relay, which answers every request, a refusal too, with `Access-Control-Allow-Origin: *`. A film
+ * through the relay must then be asked for so (`crossorigin`); one from anywhere else is not read, and is asked for as it always was.
+ */
+export function readableFrom(src: string, here = location.href): "same-origin" | "cors" | undefined {
+  try {
+    const url = new URL(src, here);
+    if (url.origin === new URL(here).origin) return "same-origin";
+    return url.pathname === "/api/proxy" && url.searchParams.has("url") && url.searchParams.has("sig") ? "cors" : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function usesWebsiteProxy(src: string): boolean {
   const url = new URL(src, location.href);
   return url.origin === new URL(location.href).origin && url.pathname === "/api/proxy";
@@ -203,8 +222,10 @@ export class PlayerEngine {
   private syncHandle: SyncHandle | undefined;
   private syncStatus: SyncStatus = "ready";
   /** What listens to the sound hls.js downloads, whether or not the aligner is on (see `AudioTap`), and the name of the event for a switch of the sound track. */
-  private tap: AudioTap | undefined;
+  private tap: SoundTap | undefined;
   private audioSwitching: string | undefined;
+  /** The file playing was asked for with `crossorigin`, so that the aligner may listen, and has not begun yet: should it fail, it is asked for again without (once). */
+  private corsTrial = false;
   /** The aligner has just put another subtitle track on screen: the page says nothing about it (see `quiet`). */
   private quietUntil = 0;
 
@@ -216,6 +237,7 @@ export class PlayerEngine {
     video.setAttribute?.("referrerpolicy", "no-referrer");
     video.addEventListener("loadedmetadata", () => {
       clearTimeout(this.directTimer);
+      this.corsTrial = false;
       this.loading = false;
       if (this.startAt !== undefined) {
         const duration = Number.isFinite(video.duration) ? video.duration : this.startAt;
@@ -241,7 +263,7 @@ export class PlayerEngine {
     }
     video.addEventListener("error", () => {
       if (this.hasSource) {
-        if (this.useFallbackSource()) return;
+        if (this.useFallbackSource() || this.withoutCors()) return;
         // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
         const { code, message } = video.error ?? {};
         this.fail(code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable, `MEDIA_ERR ${code ?? "?"}${message ? `: ${message}` : ""}`);
@@ -291,8 +313,7 @@ export class PlayerEngine {
     }
 
     if (type === "mp4") {
-      this.syncStatus = "unavailable"; // (the browser's own player gives no access to the sound)
-      this.playNatively(src, directUrl, generation);
+      this.playFile(src, directUrl, generation);
       return;
     }
 
@@ -429,6 +450,44 @@ export class PlayerEngine {
     }
   }
 
+  /**
+   * A file the browser plays by itself. The aligner listens to its sound as it comes out of the `<video>` (`ElementTap`) where the
+   * page may read it (`readableFrom`): asked for with `crossorigin` when it comes through the relay, and asked for again without, once,
+   * should it fail to start so (`withoutCors`). A direct address that goes first (the website's own proxy behind it) is not read.
+   */
+  private playFile(src: string, directUrl: string | undefined, generation: number): void {
+    const directFirst = !!directUrl && directUrl !== src && usesWebsiteProxy(src);
+    const reading = this.syncLoader && !directFirst && canCapture(this.video) ? readableFrom(src) : undefined;
+    if (reading === "cors") {
+      this.video.crossOrigin = "anonymous";
+      this.corsTrial = true;
+    }
+    this.playNatively(src, directUrl, generation);
+    if (!reading) {
+      this.syncStatus = "unavailable"; // (the browser gives no access to the sound of this one)
+      return;
+    }
+    this.tap = new ElementTap(this.video);
+    this.attachSync(undefined, generation);
+  }
+
+  /** The file asked for with `crossorigin` failed before it began: it is asked for again as any file is, without the aligner. True when it was. */
+  private withoutCors(): boolean {
+    if (!this.corsTrial || this.video.readyState >= 1) return false;
+    this.corsTrial = false;
+    const src = this.video.src;
+    this.syncHandle?.close();
+    this.syncHandle = undefined;
+    this.tap?.stop();
+    this.tap = undefined;
+    this.syncStatus = "unavailable";
+    this.video.removeAttribute("crossorigin");
+    console.warn("[Kino subtitle sync] The film did not start when asked for so that its sound can be read; asked for again as before, without the aligner");
+    this.video.src = src;
+    this.emit();
+    return true;
+  }
+
   /** Plays with the browser's own player: a direct address, when there is one, goes first and `src` (the server's own) is what it falls back to. */
   private playNatively(src: string, directUrl: string | undefined, generation: number): void {
     // Only the website's explicitly configured proxy has a direct-first path. A separate relay owns its tokens and must be used on Safari too.
@@ -504,8 +563,8 @@ export class PlayerEngine {
       this.syncHandle?.close(true);
       this.syncHandle = undefined;
       this.tap?.keep(false);
-    } else if (this.hls && this.hasSource) {
-      this.attachSync(this.hls, this.generation);
+    } else if (this.tap && this.hasSource) {
+      this.attachSync(this.hls ?? undefined, this.generation);
     }
     this.emit();
   }
@@ -519,20 +578,19 @@ export class PlayerEngine {
    * Gets the aligner going on a film that plays through hls.js. Its code is fetched without the film waiting for it (the tap keeps the
    * first pieces of sound until it is there); nothing happens when the film is gone, or the viewer has turned it off, by then.
    */
-  private attachSync(hls: Hls, generation: number): void {
+  private attachSync(hls: Hls | undefined, generation: number): void {
     const { syncLoader: loader, tap, audioSwitching } = this;
-    if (!loader || !this.syncOn || !tap || !audioSwitching || this.syncHandle) return;
+    if (!loader || !this.syncOn || !tap || (hls && !audioSwitching) || this.syncHandle) return;
     this.syncStatus = "ready";
     tap.keep(true);
     void Promise.resolve()
       .then(() => loader())
       .catch(() => undefined)
       .then((starter) => {
-        if (generation !== this.generation || this.hls !== hls || !this.syncOn || this.syncHandle) return;
+        if (generation !== this.generation || this.hls !== (hls ?? null) || this.tap !== tap || !this.syncOn || this.syncHandle) return;
         const handle = starter?.({
-          hls,
+          ...(hls && audioSwitching ? { hls, events: { audioSwitching } } : { live: true }),
           video: this.video,
-          events: { audioSwitching },
           tap,
           show: (id) => {
             if (generation !== this.generation) return;
@@ -804,6 +862,8 @@ export class PlayerEngine {
       this.video.removeChild(this.video.firstChild);
     }
 
+    this.corsTrial = false;
+    this.video.removeAttribute("crossorigin");
     this.video.removeAttribute("src");
     this.video.load();
   }

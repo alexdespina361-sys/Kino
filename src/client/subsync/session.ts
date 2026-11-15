@@ -11,7 +11,7 @@ import { Borrowed, Lent, timingKeys, type Sent, type Shared } from "./share";
 import { mergeRanges, SAMPLE_RATE, type Range } from "./signals";
 import type { Outcome } from "./solve";
 import { alignerStats as stats, resetAlignerStats } from "./stats";
-import type { AudioTap, HlsEvents } from "./tap";
+import type { HlsEvents, SoundTap } from "./tap";
 import type { Recogniser } from "./whistle";
 
 /** What the aligner is doing, for the menus: off (the viewer's choice), on and waiting for something to time, timing, timed, or not possible here. */
@@ -53,7 +53,9 @@ export interface SessionDeps {
   /** hls.js's name for the event this listens to. */
   events: { audioSwitching: string };
   /** The film's sound as the player downloads it. The player owns it (it has been listening since the film began): this takes the pieces for as long as it runs. */
-  tap: AudioTap;
+  tap: SoundTap;
+  /** The sound comes as the film plays, never ahead of the picture (a film the browser plays by itself: capture.ts). The recogniser then hears what has just been played. */
+  live?: boolean;
   /** Puts subtitle track `id` (the number the menus use) on screen. */
   show(id: number): void;
   backend(): Promise<Backend>;
@@ -249,6 +251,7 @@ export class SyncSession {
     });
     // (Nothing is decoded, and the worker and the voice detector's weights are not fetched, until a subtitle track is on screen: see `awake`. What the player downloads before that is kept, a little, for then.)
     this.feed.pause(true);
+    deps.tap.wanted?.(false);
     this.audioId = audioKey(deps.hls.audioTracks?.[deps.hls.audioTrack ?? 0]);
     deps.tap.connect((piece) => this.feed.push(piece));
     deps.hls.on(deps.events.audioSwitching, this.audioListener);
@@ -533,7 +536,7 @@ export class SyncSession {
       stats.speed = this.speed;
       for (const follow of this.solving()) this.queue(follow, from + WINDOW + SOLVE_AHEAD);
       // (The recogniser works for a share of the time and leaves the rest to the picture; more of it when the picture is about to need the words.)
-      const near = from - playhead < 30;
+      const near = !this.deps.live && from - playhead < 30;
       const duty = (this.deps.cores ?? 4) <= 2 ? (near ? 0.5 : 0.3) : near ? 0.8 : 0.5;
       this.restUntil = this.clock() + rest(busy, duty);
     } catch (error) {
@@ -555,7 +558,7 @@ export class SyncSession {
   /** Where the recogniser would listen next. What a believed timing places is not listened to again. */
   private nextToHear(): number | undefined {
     const done = this.current?.borrowed?.state === "trusted" ? mergeRanges([...this.heard, ...this.current.borrowed.ranges()]) : this.heard;
-    return nextWindow({ playhead: this.deps.video.currentTime, rate: this.deps.video.playbackRate || 1, covered: this.feed.ranges(), heard: done, speed: this.speed });
+    return nextWindow({ playhead: this.deps.video.currentTime, rate: this.deps.video.playbackRate || 1, covered: this.feed.ranges(), heard: done, speed: this.speed, ...(this.deps.live ? { live: true } : {}) });
   }
 
   private clock(): number {
@@ -698,6 +701,7 @@ export class SyncSession {
     // There is something to time now: the worker starts, and the sound that was kept is decoded.
     void this.awake();
     this.feed.pause(false);
+    this.deps.tap.wanted?.(true);
   }
 
   /** There is no track on screen any more (subtitles were turned off): the sound is kept again, and not decoded. */
@@ -707,6 +711,7 @@ export class SyncSession {
     this.switchTo = undefined;
     this.releaseWanted();
     this.feed.pause(true);
+    this.deps.tap.wanted?.(false);
   }
 
   /** A track on screen whose lines have loaded: the aligner starts on it. */

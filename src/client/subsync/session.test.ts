@@ -109,6 +109,8 @@ interface Rigging {
   backend?: () => Promise<Backend>;
   shared?: Shared;
   show?: (id: number) => void;
+  /** The sound comes as the film plays, never ahead of the picture (a film the browser plays by itself). */
+  live?: boolean;
 }
 
 /** A film with its tracks, a player to feed the aligner, and the aligner. */
@@ -159,6 +161,7 @@ class Rig {
         return (rigging.decode ?? decode)(bytes);
       },
       ...(rigging.shared ? { shared: rigging.shared } : {}),
+      ...(rigging.live ? { live: true } : {}),
       report: (status) => this.statuses.push(status),
       now: () => this.clock,
       log: (message) => this.logs.push(message),
@@ -199,13 +202,13 @@ class Rig {
     }
   }
 
-  /** The film plays on to `seconds`: the player downloads it a piece at a time, forty seconds ahead of the picture. */
+  /** The film plays on to `seconds`: the player downloads it a piece at a time, forty seconds ahead of the picture (or, `live`, the sound comes as it is played). */
   async play(seconds: number): Promise<void> {
     if (this.fed === 0) this.hls.emit(APPENDING, event(initSegment(), 0));
     while (this.fed < seconds) {
       this.hls.emit(APPENDING, event(piece(this.fed), this.fed));
       this.fed += PIECE;
-      this.video.currentTime = Math.max(0, this.fed - 40);
+      this.video.currentTime = this.rigging.live ? this.fed : Math.max(0, this.fed - 40);
       this.clock += 1000;
       await this.settle();
     }
@@ -230,6 +233,15 @@ describe("timing the subtitles of a film while it plays", () => {
     expect(rig.session.status()).toBe("synced");
     expect(rig.recogniserCalls).toBe(1);
     expect(rig.shows).toEqual([]);
+    rig.session.close();
+  });
+
+  it("puts the same track where it is said when the sound comes only as the film plays (an MP4): the recogniser hears what has just been played", { timeout: 120_000 }, async () => {
+    const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, live: true });
+    await rig.play(SECONDS);
+    expect(rig.within(0, 0.5, 20, 250)).toBeGreaterThan(0.9);
+    expect(rig.session.status()).toBe("synced");
+    expect(rig.recogniserCalls).toBe(1);
     rig.session.close();
   });
 
