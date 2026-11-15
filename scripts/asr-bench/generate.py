@@ -40,6 +40,9 @@ GEN = os.environ.get("GEN_DIR", os.path.join(bench.WORK, "gen"))
 RESULTS = os.path.join(bench.OUT, "gen-results.json")
 EN_SECONDS = float(os.environ.get("GEN_EN_SECONDS", "480"))
 JA_SECONDS = float(os.environ.get("GEN_JA_SECONDS", "360"))
+# (Speech isolation is off by default since 15 Nov: on every noisy mix it made both engines' words worse, never better. GEN_ISOLATE=tiger,demucs
+# brings it back for a rerun of that test.)
+ISOLATE = [s for s in os.environ.get("GEN_ISOLATE", "").split(",") if s]
 FILM_SNR_DB = 0.0  # speech against the film's music and effects, over the whole clip: an action scene, not a quiet one
 OLD_SNR_DB = 5.0  # the old film: music a little lower, then a narrow band, hum and hiss
 MUSCI = ("Musci-research/Musci-ASR-2.4B", "18dd8264a5e7b79057b6a04ecfc7a03251d232e4")  # the revision whose code was read
@@ -553,7 +556,7 @@ def prepare() -> None:
                 f"  after the level step {heard['levelled']}")
         log(line)
         notes.append(line)
-        for iso in ("tiger", "demucs"):
+        for iso in ISOLATE:
             for name in ("clean", "film", "old"):
                 if iso == "demucs" and name == "clean":
                     continue  # (the control for "always or only as a retry" is TIGER on clean sound)
@@ -596,7 +599,7 @@ def prepare_film() -> None:
         np.save(os.path.join(GEN, f"en-{name}.npy"), x)
         p = vad_track(x)
         log(f"{name}: {len(x) / SR:.0f} s, {len(ref)} reference lines, Silero calls {float((p >= 0.5).mean()):.0%} of it speech")
-        for iso in ("tiger", "demucs"):
+        for iso in ISOLATE:
             try:
                 t = time.time()
                 y = isolate(iso, x)
@@ -769,8 +772,10 @@ def run(which: str) -> None:
         append_result(r)
         log(table([r]))
         return
+    only = [s for s in os.environ.get("GEN_LANGS", "").split(",") if s]
+    langs = tuple(lang for lang in langs if not only or lang in only)
     jobs = [(lang, s, "") for lang in langs for s in sounds(lang)]
-    if which == "qwen" and "clean" in sounds("ja"):
+    if which == "qwen" and "ja" in langs and "clean" in sounds("ja"):
         jobs.append(("ja", "clean", "names"))
     for lang, sound, ctx in jobs:
         try:
