@@ -18,6 +18,14 @@
   touch-action: manipulation; /* (a double tap skips: the page does not zoom to it) */
 }
 .tv[data-hud="hidden"][data-state="playing"] { cursor: none; }
+/*
+ * On a computer (role.ts, `isDesk`) the page stops growing with the window at the size it has on a 1920 by 1080 screen: a wider monitor shows more of the
+ * library, not the same titles larger, and the browser's own zoom (Ctrl and +) makes it bigger for whoever wants that. Up to 1920 by 1080 nothing changes.
+ * (Not in a narrow window: that is laid out as a hand-held screen, with its own size, further down.)
+ */
+@media (min-width: 900px) {
+  :root[data-fit="desk"] .tv { --em: max(min(1vw, 1.7778vh, 19.2px), 9px); }
+}
 
 .tv-video {
   position: absolute;

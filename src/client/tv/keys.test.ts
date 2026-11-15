@@ -44,6 +44,9 @@ describe("actionForKey", () => {
     [{ key: "F" }, "fullscreen"],
     [{ key: "m" }, "mute"],
     [{ key: "M" }, "mute"],
+    [{ key: "j" }, "rewind"],
+    [{ key: "k" }, "playpause"],
+    [{ key: "L" }, "forward"],
   ] as const)("%j means %s", (event, action) => {
     expect(actionForKey(event)).toBe(action);
   });
@@ -82,7 +85,7 @@ describe("actionForKey", () => {
     const field = { tagName: "INPUT", type: "email" } as unknown as EventTarget;
 
     it("leaves letters, Space, Backspace and the sideways arrows to the typing", () => {
-      for (const key of ["b", "c", "f", "m", "n", "p", "s", " ", "Backspace", "ArrowLeft", "ArrowRight"]) expect(actionForKey({ key, target: field })).toBeNull();
+      for (const key of ["b", "c", "f", "j", "k", "l", "m", "n", "p", "s", " ", "Backspace", "ArrowLeft", "ArrowRight"]) expect(actionForKey({ key, target: field })).toBeNull();
       expect(actionForKey({ key: "Unidentified", keyCode: 8, target: field })).toBeNull();
     });
 

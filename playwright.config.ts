@@ -23,6 +23,8 @@ export default defineConfig({
           localStorage: [
             { name: "kino.fullscreen.left", value: "1" },
             { name: "kino.linkbox", value: "1" },
+            // And as a screen that is watched from the couch, whatever its size: the tests of the big screen are of a TV, run in a computer's browser (see `thisIsDesk`; e2e/desk.spec.ts leaves this out).
+            { name: "kino.fit", value: "couch" },
           ],
         },
       ],

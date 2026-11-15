@@ -7,7 +7,7 @@ import { installDiagnostics } from "./feedback/diagnostics";
 import { FeedbackGate } from "./feedback/FeedbackGate";
 import { FriendsProvider } from "./friends/FriendsProvider";
 import { languageReady } from "./i18n";
-import { roleOfThisPage, thisIsHandHeld } from "./role";
+import { roleOfThisPage, thisIsDesk, thisIsHandHeld } from "./role";
 import { installExitGuard } from "./shared/backButton";
 import { ExitHint } from "./shared/ExitHint";
 import { setUpFullscreen } from "./shared/fullscreen";
@@ -23,6 +23,8 @@ const Controller = lazy(loadController);
 
 // One app, two screens, chosen for this device: the TV player or the phone's remote (see role.ts). "/tv" is always the player.
 const role = roleOfThisPage();
+// A computer gets the big screen's page at a computer's size (see `isDesk`).
+if (thisIsDesk()) document.documentElement.dataset.fit = "desk";
 // Its chunk is asked for now, not when the page is first drawn: it comes down beside the words of the language (see `languageReady`), not after them.
 void (role === "tv" ? loadTv() : loadController()).catch(() => undefined);
 // A screen goes full screen at its first press; the remote leaves that to its button (it is where a code gets typed).
