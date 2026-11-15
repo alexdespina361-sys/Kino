@@ -28,6 +28,7 @@ export interface RailEntry {
  * shuts the menu, as a press of OK does; it opens again once the pointer has left and come back.
  * On a phone held upright (`bar`, see compact.ts) it is a bar of a few places along the bottom instead, each with its name under its icon: it is never open or shut,
  * and its places are one row (`data-col`) for the arrow keys.
+ * On a phone on its side (`flat`, see compact.ts) it is the menu down the left with those few places, each a thumb high (polish/tv.css).
  */
 export function Rail({
   open,
@@ -35,12 +36,14 @@ export function Rail({
   entries,
   onArrive,
   bar = false,
+  flat = false,
 }: {
   open: boolean;
   onOpen: (open: boolean) => void;
   entries: readonly RailEntry[];
   onArrive: (element: HTMLElement) => void;
   bar?: boolean;
+  flat?: boolean;
 }) {
   const t = useT();
   const [resting, setResting] = useState(false);
@@ -50,6 +53,7 @@ export function Rail({
       className="tv-rail"
       data-open={wide}
       data-bar={bar ? "true" : undefined}
+      data-flat={flat ? "true" : undefined}
       data-testid="tv-rail"
       aria-label={t("tv.menu")}
       onFocus={() => !bar && onOpen(true)}

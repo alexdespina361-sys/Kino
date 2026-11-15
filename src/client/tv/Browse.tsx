@@ -34,7 +34,7 @@ import { aboutRows, useAbout } from "../shared/about";
 import { addressOf, fetchTitle, linkedTitle, showTitle } from "../shared/titleAddress";
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
-import { isCompact, useCompact } from "./compact";
+import { isCompact, useCompact, useFlatHand } from "./compact";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
@@ -305,6 +305,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const iGet = friendChoices(settings).friendsGet;
   /** A phone held upright (compact.ts): a bar of four places at the bottom, the sections as buttons over the titles, posters, and no banner. */
   const compact = useCompact();
+  /** A phone on its side (compact.ts): the same four places as the upright phone has, down the left; the sections as buttons over the titles. */
+  const flatHand = useFlatHand();
+  /** The menu has the four places of a phone (upright: a bar along the bottom; on its side: down the left), not the TV's ten lines. */
+  const few = compact || flatHand;
   const narrowColumns = useNarrowColumns(true);
   const narrowCategoryColumns = useNarrowColumns(false);
   const narrow = narrowColumns > 0;
@@ -564,17 +568,18 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // none has to be scrolled to. Who is watching is not in it: the button in the corner is, and opens the profile, which holds what the profile rated,
   // its friends and History, with the settings in its own corner.
   // A phone held upright (compact.ts) has a bar of four places along the bottom: Home (with its sections as buttons over the titles), Search, the categories and the lists.
+  // A phone on its side has the same four, down the left (`few`): the TV's ten lines came out a finger's width apart there.
   // The party and the phone are not places but things to do, and have a button each on the profile's page, where Settings is.
   const partyPlace: RailEntry = { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty };
   const phonePlace: RailEntry = phone
     ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
     : { id: "connect", label: t(connected ? "tv.phoneConnected" : "tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { lit: true } : {}), testId: "rail-connect", onPress: onConnect };
   // (On a phone's bar the sections are not lines of the menu but buttons over the titles: Home is lit for any page of rows.)
-  const homeLine: RailEntry = { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: compact ? isRowsPage(view) : view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) };
+  const homeLine: RailEntry = { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: few ? isRowsPage(view) : view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) };
   const searchLine: RailEntry = { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) };
   const categoriesLine: RailEntry = { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) };
   const listLine: RailEntry = { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) };
-  const entries: RailEntry[] = compact
+  const entries: RailEntry[] = few
     ? [homeLine, searchLine, categoriesLine, listLine]
     : [
         searchLine,
@@ -602,13 +607,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (showCat ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, the cat's, then the full screen one
   const signedIn = Boolean(me && profile);
   /** What a phone's bar has no room for, as buttons after Feedback (none on a screen whose menu has a line for each). */
-  const places = compact ? [partyPlace, phonePlace] : [];
+  const places = few ? [partyPlace, phonePlace] : [];
   /** For an account that has no Google account yet: a button after all the others on the profile's page that goes to Google to connect one. */
   const connectGoogle = canConnectGoogle && signedIn ? () => withGoogle("link") : undefined;
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
   const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length + (connectGoogle ? 1 : 0) : 0;
   /** A phone's pages of rows have their sections as a row of buttons where the others have a banner. */
-  const sectionButtons = compact && isRowsPage(view);
+  const sectionButtons = few && isRowsPage(view);
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // The page of a section (Movies, Series, Cartoons or Anime) of a library that has titles, none of them of that section: not "nothing yet", which Retry could not
   // mend. (While the rows that come after the first ones may still bring some, it is waiting for them; the library says there are none when it has no more to bring.)
@@ -636,8 +641,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         }
       : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact });
-  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact, few });
+  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact, few };
 
   /**
    * Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. `leaving` is the block of buttons
@@ -656,7 +661,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const page = latest.current.view;
     // (A guest came to the profile's page for one thing: the way to sign in is where the remote starts.)
     const zones: Zone[] =
-      page.kind === "list" || page.kind === "friend" || (latest.current.compact && isRowsPage(page))
+      page.kind === "list" || page.kind === "friend" || (latest.current.few && isRowsPage(page))
         ? [...CONTENT_ZONES, "chips"]
         : page.kind === "profile" && !latest.current.signedIn
           ? ["hero", ...CONTENT_ZONES]
@@ -706,7 +711,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const at = posOf(document.activeElement);
     const came = hasTiles && !hadTiles.current;
     hadTiles.current = hasTiles;
-    const waited = came && at?.zone === "chips" && latest.current.compact && isRowsPage(latest.current.view);
+    const waited = came && at?.zone === "chips" && latest.current.few && isRowsPage(latest.current.view);
     if (waited) delete remembered.focus[viewKey(latest.current.view)]; // (that button was only where the remote waited: it is not where it was left)
     // (A new object each time: on a page with nothing to stand on the target is never taken, and the same one set again would change nothing, so the
     // next page chosen would not move the remote either.)
@@ -1161,7 +1166,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       <Backdrop image={compact ? undefined : (shown?.entry.backdrop ?? shown?.entry.image)} />
       <div className="tv-browse-shade" />
 
-      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
+      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} flat={flatHand && !compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 
       <header className="tv-browse-top">
         {/* The name is the way home, for a finger or a pointer (the remote has the menu's Home). */}
