@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeTimings, type SharedPlacement, type SharedTiming } from "../../shared";
+import { mergeTimings, OFFICIAL_MIN_LINES, type OfficialOfferLine, type SharedPlacement, type SharedTiming } from "../../shared";
 import { DirectBackend, type Backend } from "./backend";
 import { SyncCore } from "./core";
 import type { Cue } from "./cues";
@@ -108,6 +108,8 @@ interface Rigging {
   decode?: (bytes: Uint8Array) => Promise<Float32Array>;
   backend?: () => Promise<Backend>;
   shared?: Shared;
+  /** Takes what the session offers for a Kino Official subtitle. */
+  offer?: (id: number, offer: { duration: number; lines: OfficialOfferLine[] }, last: boolean) => void;
   show?: (id: number) => void;
   /** The sound comes as the film plays, never ahead of the picture (a film the browser plays by itself). */
   live?: boolean;
@@ -161,6 +163,7 @@ class Rig {
         return (rigging.decode ?? decode)(bytes);
       },
       ...(rigging.shared ? { shared: rigging.shared } : {}),
+      ...(rigging.offer ? { offer: rigging.offer } : {}),
       ...(rigging.live ? { live: true } : {}),
       report: (status) => this.statuses.push(status),
       now: () => this.clock,
@@ -754,6 +757,39 @@ describe("timings that screens leave each other", () => {
     expect(alignerStats.shared).toBe("believed (all of it)");
     expect(alignerStats.recogniser).not.toBe("running");
     rig.session.close();
+  });
+
+  it("offers a file that a believed timing placed by words for a Kino Official subtitle, once, and not one placed by the voice detector alone", { timeout: 120_000 }, async () => {
+    for (const words of [true, false]) {
+      const shared = new FakeShared();
+      const original = late(3);
+      shared.kept.set(keyOf(original), entryFor(original, { words }));
+      const offers: Array<{ id: number; lines: OfficialOfferLine[]; last: boolean }> = [];
+      const rig = new Rig({ tracks: [track("English", original)], shown: 0, shared, offer: (id, offer, last) => offers.push({ id, lines: offer.lines, last }) });
+      await rig.play(90);
+      rig.pass(10 * 60_000);
+      rig.session.tick();
+      rig.session.flush();
+      if (!words) {
+        expect(offers).toEqual([]);
+        rig.session.close();
+        continue;
+      }
+      expect(original.length).toBeGreaterThanOrEqual(OFFICIAL_MIN_LINES);
+      expect(offers).toHaveLength(1);
+      expect(offers[0]!.id).toBe(0);
+      expect(offers[0]!.lines).toHaveLength(original.length);
+      // (Each line where the file has it, and where it was really said.)
+      const placed = offers[0]!.lines.filter((line) => line !== null);
+      expect(placed.length / original.length).toBeGreaterThanOrEqual(0.9);
+      const right = placed.filter((line) => {
+        const i = original.findIndex((cue) => Math.round(cue.start * 100) === line![0]);
+        return i >= 0 && Math.abs(line![1] / 100 - film.truth[i]!.start) <= 0.5;
+      });
+      expect(right.length / placed.length).toBeGreaterThan(0.9);
+      expect(alignerStats.offered).toBe(1);
+      rig.session.close();
+    }
   });
 
   it("does nothing with a timing before its own work has agreed with it", { timeout: 60_000 }, async () => {

@@ -1,4 +1,5 @@
 import { languageName, normalizeLang } from "./lang";
+import { OFFICIAL_NAME } from "./official";
 
 /** What the menus need to know about an audio or subtitle track. */
 export interface TrackLike {
@@ -91,6 +92,8 @@ const PARTIAL_RANK = RELEASES.length + 1;
  * (up to minutes by the end), HDRip ones are 0.84 s early.
  */
 export function releaseRank(label: string): number {
+  // (A Kino Official file is timed on the site's own streams and tidied: before any release. The server keeps the name for its own: `withOfficial`.)
+  if (label.endsWith(` · ${OFFICIAL_NAME}`)) return -1;
   if (PARTIAL.test(label)) return PARTIAL_RANK;
   const rank = RELEASES.findIndex((kind) => kind.test(label));
   return rank < 0 ? RELEASES.length : rank;

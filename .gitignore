@@ -16,6 +16,8 @@ data/
 # the feedback tool's token and the pictures it saves from what people send (scripts/feedback.mjs, docs/feedback.md)
 .kino-feedback.json
 .feedback/
+# the Kino Official subtitles the team saves to correct (scripts/official.mjs): subtitle text, never in this public repo
+.official/
 .kino-cat/
 
 scratch/

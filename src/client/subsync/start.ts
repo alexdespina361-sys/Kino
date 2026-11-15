@@ -61,6 +61,8 @@ export const startSync: SyncStarter = (film) => {
     decode: film.live ? livePcm : decodeToMono16k,
     // (What other screens left of this film's subtitles, and a way to leave what this one finds: see share.ts.)
     shared: httpShared(),
+    // (A file timed well enough is offered for a Kino Official subtitle: see official.ts.)
+    ...(film.offer ? { offer: film.offer } : {}),
     cores: navigator.hardwareConcurrency || 4,
     log: (message) => console.debug("[Kino subtitle sync]", message),
     recogniser: async (): Promise<Recogniser> => {

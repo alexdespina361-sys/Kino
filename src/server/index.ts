@@ -11,6 +11,7 @@ import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
 import { VisitCounter, visitsPersistenceFor } from "./stats/visits";
 import { subsyncStoreFor } from "./subsync/store";
+import { officialStoreFor } from "./subtitles/official";
 import { keepRunning } from "./survive";
 
 const port = Number(process.env.PORT ?? 8787);
@@ -77,6 +78,7 @@ const app = await buildApp({
   storage: kind,
   // (The subtitle timings that screens share live next to the accounts, in the same database or folder.)
   subsync: subsyncStoreFor(persistence, kind),
+  official: officialStoreFor(persistence, kind),
   feedback,
   ...(visits ? { visits } : {}),
   ...(unavailable ? { unavailable } : {}),
