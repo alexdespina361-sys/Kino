@@ -151,12 +151,20 @@ function landed(event: PopStateEvent) {
   const arrived = returning !== null && entry?.mine === true && entry.at === returning;
   returning = null;
   window.clearTimeout(returnTimer);
+  // (The page's own way down, from `clear`: the entries of layers that went by their own button came off, and nothing was pressed.)
+  const ours = leaving;
   // (A Back or a Forward of the person is the browser's own navigation: from it on, what the page makes is held against it until the person touches it.)
   if (!arrived && !leaving) honored = false;
   leaving = false;
   if (arrived) {
     if (vacated > 0) clear();
     else repay();
+    return;
+  }
+  if (ours) {
+    // A layer that opened on the way (a film, chosen on the title's page that went for it) is not closed by it: it is given its entry now.
+    arm();
+    repay();
     return;
   }
   const top = layers[layers.length - 1];
@@ -406,6 +414,12 @@ export function useBackToClose(onBack: () => void): void {
 let held: boolean | undefined;
 /** Whether the system's Back is what this device has (a phone, a tablet), where a TV has a key and a computer a button nobody presses by mistake. */
 export const handHeld = (): boolean => (held ??= thisIsHandHeld());
+/**
+ * Whether the browser's own Back is how this screen is gone back on: a phone's or a tablet's, and a computer's (its Back button, the side key of its mouse),
+ * which goes back a step as a phone's does, without the question at the first page (a computer's Back is not pressed by mistake). A TV's Back is the
+ * remote's key, which the page hears itself.
+ */
+export const browserBack = (): boolean => handHeld() || document.documentElement.dataset.fit === "desk";
 
 /**
  * What the remote's Back does on a screen of the TV (it is a key there), the phone's own Back does too. Without a handler there is nothing

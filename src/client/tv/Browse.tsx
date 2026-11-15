@@ -20,7 +20,7 @@ import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { handHeld, useBackWhile } from "../shared/backButton";
+import { browserBack, handHeld, useBackWhile } from "../shared/backButton";
 import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
@@ -549,12 +549,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
   // A phone or a tablet has no Back key: its own Back does what the remote's does, out of a title's page first, then from a page of the library to the
   // one it is a step in from (Home at the end). Home is as far back as the library goes: the site asks there before it is left (see shared/backButton.ts).
-  // A computer's browser Back does the same, without the question at Home: a computer's Back is not pressed by mistake, and from Home it leaves the site as
-  // any site's does. (A TV's Back is the remote's key, which the page hears itself.)
-  const [desk] = useState(() => document.documentElement.dataset.fit === "desk");
-  const browserBack = handHeld() || desk;
-  useBackWhile(browserBack && view.kind !== "home", () => choose(backOf(view) ?? { kind: "home" }));
-  useBackWhile(browserBack && detail !== null, closeDetail);
+  // A computer's browser Back does the same, without the question at Home: from Home it leaves the site as any site's does (see `browserBack`).
+  const withBrowserBack = browserBack();
+  useBackWhile(withBrowserBack && view.kind !== "home", () => choose(backOf(view) ?? { kind: "home" }));
+  useBackWhile(withBrowserBack && detail !== null, closeDetail);
   // While a title's page is open, the address says which title it is, so that it can be copied and sent; closed, it says nothing of one. (After the Back
   // above: the entry a title's page puts on the history is the one that carries its address, and Back goes to one that has none.)
   const openAddress = detail && !detail.entry.opens ? addressOf(detail.entry) : null;

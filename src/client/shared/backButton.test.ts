@@ -406,6 +406,23 @@ describe("the Back button", () => {
     expect(page.depth()).toBe(0);
   });
 
+  it("does not take its own way down for a Back: a layer that opens while the entry of one that went is being taken off stays, and is given an entry", async () => {
+    // (a title's page goes when its film is chosen, and the film opens a moment later, before the history has arrived where it was sent)
+    const film = vi.fn();
+    const title = open();
+    page.slowly();
+    title.leave();
+    await page.settle();
+    expect(page.pending()).toBe(1);
+    open(film);
+    await page.arrive();
+    expect(film).not.toHaveBeenCalled();
+    expect(page.depth()).toBe(1);
+    await page.press(); // (and the person's Back is for it)
+    expect(film).toHaveBeenCalledTimes(1);
+    expect(page.left()).toBe(false);
+  });
+
   it("works on a screen that has no guard, for a layer that stays through a Back and comes back with the next", async () => {
     const stepBack = vi.fn();
     const layer = open(stepBack);
@@ -646,6 +663,23 @@ describe("the bottom of the site", () => {
     await page.touch();
     await page.press();
     expect(back.hintNow()).not.toBeNull();
+    expect(page.left()).toBe(false);
+  });
+
+  it("keeps a layer that opens on the way down from one that went, above the guard", async () => {
+    await started();
+    const film = vi.fn();
+    const title = open();
+    expect(page.depth()).toBe(2);
+    page.slowly();
+    title.leave();
+    await page.settle();
+    open(film);
+    await page.arrive();
+    expect(film).not.toHaveBeenCalled();
+    expect(page.depth()).toBe(2);
+    await page.press();
+    expect(film).toHaveBeenCalledTimes(1);
     expect(page.left()).toBe(false);
   });
 

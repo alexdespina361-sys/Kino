@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { openDevice, test, withLibrary } from "./helpers";
+import { openDevice, test, tvRoot, withLibrary } from "./helpers";
 
 /*
  * A title's own address: while its page is open the address bar names it (`?title=movie-603`), so the link can be copied and sent; opening that link opens the
@@ -116,6 +116,14 @@ test.describe("a title's own address", () => {
     await expect(pc.getByTestId("tv-detail")).toHaveCount(0);
     await expect.poll(() => search(pc)).toBe("");
     await expect.poll(() => pc.evaluate(() => (history.state as { layers?: number } | null)?.layers ?? 0)).toBe(0);
+
+    // A film is a step too: Back leaves it for the library, and the site stays (it left the site before, from the film).
+    await pc.getByTestId("tv-browse-tile").nth(0).click();
+    await pc.getByTestId("tv-detail-play").click();
+    await expect(tvRoot(pc)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await pc.goBack();
+    await expect(tvRoot(pc)).toHaveAttribute("data-state", "idle");
+    await expect(pc.getByTestId("tv-browse")).toBeVisible();
   });
 
   test("opened on a phone, is the screen that plays, on the title's page: the link is for watching, as a watch party's is", async ({ browser }) => {
