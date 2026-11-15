@@ -462,6 +462,34 @@ describe("how often an address may ask for what makes the server fetch from anot
     expect((await site.inject(search("foxtrot"))).statusCode).toBe(429);
   });
 
+  it("has only a few searches of one address under way at once, and some tens of everyone's: one more is a 429 that the page asks again after", async () => {
+    let open: () => void = () => {};
+    const gate = new Promise<void>((done) => (open = done));
+    let asked = 0;
+    const places: LibrarySource = {
+      id: "places",
+      name: "Places",
+      load: async () => [],
+      search: async (words) => (asked++, await gate, [{ id: words, title: words, url: `https://x.example/${words}` }]),
+    };
+    const { resolve } = resolver();
+    const site = await buildApp({ resolve, librarySources: [places], searchesAtOnce: { perAddress: 2, inAll: 3 } });
+    app = site;
+    const from = (remoteAddress: string, words: string) => site.inject({ url: `/api/library/search?q=${words}`, remoteAddress });
+    const under = [from("203.0.113.7", "alpha"), from("203.0.113.7", "bravo")];
+    await new Promise((done) => setTimeout(done, 20));
+    const third = await from("203.0.113.7", "charlie"); // (two of this address are under way)
+    expect([third.statusCode, third.headers["retry-after"], third.json()]).toEqual([429, "2", { error: "rate_limited", retryAfter: 2 }]);
+    const neighbour = from("198.51.100.9", "delta"); // (another address is let through...)
+    await new Promise((done) => setTimeout(done, 20));
+    expect((await from("192.0.2.1", "echo")).statusCode).toBe(429); // (...until everyone's together are as many as there may be)
+    const askedWhileFull = asked;
+    open();
+    expect((await Promise.all([...under, neighbour])).map((answer) => answer.statusCode)).toEqual([200, 200, 200]);
+    expect(askedWhileFull).toBe(3); // (a search turned away asks no place: the three under way asked once each so far)
+    expect((await from("203.0.113.7", "foxtrot")).statusCode).toBe(200); // (over: room again)
+  });
+
   it("counts the library's rows and the titles of a row together, by themselves, and does not ask the places that list titles for one it turns away", async () => {
     const asked: string[] = [];
     const places: LibrarySource = {

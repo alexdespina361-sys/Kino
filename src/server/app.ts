@@ -76,6 +76,8 @@ export interface AppOptions {
   proxyExemptHosts?: readonly string[];
   /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 60 for its search, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
   fetchesPerMinute?: FetchesPerMinute;
+  /** How many of the library's searches may be under way at once, for one address and in all (3 and 32 unless set; see the search's route). */
+  searchesAtOnce?: { perAddress?: number; inAll?: number };
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
   cat?: boolean;
   /** Socket liveness tuning; tests shorten it. */
@@ -262,11 +264,30 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     if (hasTag(request.headers["if-none-match"], tag)) return reply.code(304).send();
     return reply.type("application/json; charset=utf-8").send(body);
   });
+  // A search asks every place that lists titles, a few guesses at a slip, and checks what they find for video: some tens of fetches. A page has one under way at
+  // a time (the one before is let go of as letters are typed, though here it runs to its end); an address may have a few at once and everyone together some tens.
+  // Past either, a 429 like the minute's limit, and the page asks again in a moment.
+  const searching = new Map<string, number>();
+  let searchingInAll = 0;
+  const { perAddress: searchesPerAddress = 3, inAll: searchesInAll = 32 } = options.searchesAtOnce ?? {};
   app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
     const q = request.query.q ?? "";
     // (A name given twice reaches a handler as a list.)
     if (typeof q !== "string") return reply.code(400).send({ error: "Bad 'q' parameter" });
-    const { items, exact } = await library.search(q);
+    const mine = searching.get(request.ip) ?? 0;
+    if (mine >= searchesPerAddress || searchingInAll >= searchesInAll) return reply.header("Retry-After", 2).code(429).send({ error: "rate_limited", retryAfter: 2 });
+    searching.set(request.ip, mine + 1);
+    searchingInAll += 1;
+    let found: Awaited<ReturnType<typeof library.search>>;
+    try {
+      found = await library.search(q);
+    } finally {
+      searchingInAll -= 1;
+      const left = (searching.get(request.ip) ?? 1) - 1;
+      if (left > 0) searching.set(request.ip, left);
+      else searching.delete(request.ip);
+    }
+    const { items, exact } = found;
     const topItem = items[0];
     if (topItem?.url && process.env.PRELOAD_SEARCH !== "0" && isHttpUrl(topItem.url)) {
       const timer = setTimeout(() => {
