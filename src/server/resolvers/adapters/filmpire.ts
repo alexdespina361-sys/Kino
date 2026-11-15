@@ -1,4 +1,4 @@
-import { isHttpUrl, normalizeLang, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import { providerFetch } from "../providerFetch";
@@ -216,12 +216,21 @@ export function encryptVidLinkToken(mediaId: string): string {
   return fullPayload.toString("base64url");
 }
 
+/**
+ * How long to wait for VidLink on anime titles before aborting and letting the fallback chain proceed.
+ * Live upstream measurements show VidLink responds in <250ms when it has streams; when it lacks streams,
+ * it hangs while scraping external providers until aborted. A 2.5s budget gives ample margin for normal hits
+ * without stalling playback for 12 seconds when the title is absent.
+ */
+export const VIDLINK_ANIME_TIMEOUT_MS = 2500;
+
 export async function resolveVidLinkStream(
   get: typeof fetch,
   tmdbId: string,
   isTv: boolean,
   season?: string | null,
   episode?: string | null,
+  timeoutMs?: number,
 ): Promise<VidLinkResolvedStream | null> {
   try {
     const token = encryptVidLinkToken(tmdbId);
@@ -237,7 +246,7 @@ export async function resolveVidLinkStream(
         origin: "https://vidlink.pro",
         referer: "https://vidlink.pro/",
       },
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(timeoutMs ?? 6000),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {
@@ -402,6 +411,23 @@ export type ExtrasLookup = (ask: ExtrasAsk, get: typeof fetch) => Extras;
  */
 export const EXTRAS_GRACE_MS = 4_000;
 
+/**
+ * Ranks a subtitle file by release quality keywords.
+ * Official/Retail/WEB-DL/BluRay/SDH releases score higher than low-quality cam/dvdrip/xvid rips.
+ * Second to `releaseRank` (shared/tracks.ts), the order the screens turn a track on by: WEB, then BluRay, then DVD, then the rest, and a file of
+ * only songs or forced lines last, as measured against the site's streams. This only tells apart files that order puts level.
+ */
+export function subtitleQualityScore(fileName?: string): number {
+  if (!fileName) return 0;
+  const f = fileName.toLowerCase();
+  let score = 0;
+  if (/\b(?:web-?dl|webrip|bluray|bdrip|remux|retail|official|sdh|proper)\b/i.test(f)) score += 10;
+  if (/\b(?:netflix|amazon|disney|apple|hulu|hbo)\b/i.test(f)) score += 5;
+  if (/\b(?:1080p|2160p|4k|720p)\b/i.test(f)) score += 3;
+  if (/\b(?:dvdrip|xvid|divx|tvrip|cam|ts|tc|telecine|workprint)\b/i.test(f)) score -= 10;
+  return score;
+}
+
 /** The subtitles the subtitle site (OpenSubtitles, through strem.io) lists for a title, as tracks through the proxy: no more than twelve in one language. */
 export async function listedSubtitles(get: typeof fetch, imdbId: string, season?: number, episode?: number): Promise<SubtitleTrack[]> {
   const endpoint =
@@ -410,13 +436,18 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
       : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
   const subData = await getJson<{ subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }> }>(get, endpoint);
   const rawList = subData?.subtitles ?? [];
-  // English (en, eng) and then Romanian (ro, ron, rum) at the top, so both are always included
+  // English (en, eng) and then Romanian (ro, ron, rum) at the top, so both are always included.
+  // Within the same language, higher quality releases (Retail, WEB-DL, BluRay) come first.
   const sortedSubs = [...rawList].sort((a, b) => {
     const lA = normalizeLang(a.lang);
     const lB = normalizeLang(b.lang);
     const prioA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
     const prioB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
-    return prioA - prioB;
+    if (prioA !== prioB) return prioA - prioB;
+    // (The twelve of a language that are kept are the ones the screens would turn on first: the same order as theirs, then the score.)
+    const rank = releaseRank(a.subtitleFileName ?? "") - releaseRank(b.subtitleFileName ?? "");
+    if (rank !== 0) return rank;
+    return subtitleQualityScore(b.subtitleFileName) - subtitleQualityScore(a.subtitleFileName);
   });
 
   const tracks: SubtitleTrack[] = [];
@@ -917,7 +948,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         });
 
-        const combinedSubs = [...roSubs, ...listed, ...vlSubs];
+        // Put stream provider's official release captions before third-party listed crowd subtitles
+        const combinedSubs = [...roSubs, ...vlSubs, ...listed];
         const seenSubUrls = new Set<string>();
         const uniqueSubs: SubtitleTrack[] = [];
         for (const sub of combinedSubs) {
@@ -1018,7 +1050,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }, 2000);
 
           try {
-            const vl = await resolveVidLinkStream(get, id, isTv, s, e);
+            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
             clearTimeout(animeTimer);
             if (vl) return await buildVidLinkResult(vl);
           } catch {
@@ -1063,11 +1095,17 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         return null;
       };
 
+      let fallbackPromise: Promise<ResolveResult | null> | undefined;
+      const runFallback = (): Promise<ResolveResult | null> => {
+        fallbackPromise ??= fallbackStreams();
+        return fallbackPromise;
+      };
+
       // Special-case titles:
       // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
       // 2. Cartoons & Anime (isAnimeOrCartoon): skip slow 15s upstream retries and resolve via fast provider immediately
       if (id === "1400837" || isAnimeOrCartoon) {
-        const fastResult = await fallbackStreams();
+        const fastResult = await runFallback();
         if (fastResult) return fastResult;
       }
 
@@ -1093,14 +1131,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (isSecurityBlock(err)) {
             return { status: "temporary_failure", reason: "Could not reach streaming server." };
           }
-          const fb = await fallbackStreams();
+          const fb = await runFallback();
           if (fb) return fb;
           return { status: "temporary_failure", reason: "Could not reach streaming server." };
         }
       }
 
       if (!containerUrl) {
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         return { status: "unsupported", reason: "Video source currently unavailable." };
       }
@@ -1129,7 +1167,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
         }
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
@@ -1164,7 +1202,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         };
 
         if (config.rateLimited || !config.apiToken) {
-          const fb = await fallbackStreams();
+          const fb = await runFallback();
           if (fb) return fb;
           return {
             status: config.rateLimited ? "temporary_failure" : "unsupported",
@@ -1292,7 +1330,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
         }
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
@@ -1353,7 +1391,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
         }
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
@@ -1390,7 +1428,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       streamUrls = cleanStreams.length > 0 ? [...cleanStreams, ...watermarked] : streamUrls;
 
       if (streamUrls.length === 0) {
-        const fb = await fallbackStreams();
+        const fb = await runFallback();
         if (fb) return fb;
         return { status: "unsupported", reason: "No video streams found." };
       }
