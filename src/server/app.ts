@@ -435,6 +435,17 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     reply.header("Access-Control-Allow-Origin", "*");
     return reply.code(200).send(vtt);
   });
+  app.get<{ Params: { file: string } }>("/api/subtitles/fallback/:file", async (request, reply) => {
+    const file = request.params.file || "";
+    const subId = file.replace(/\.vtt$/i, "");
+    const { getFallbackSubtitleManager } = await import("./subtitles/fallbackSubtitles");
+    const vtt = getFallbackSubtitleManager().getVtt(subId);
+    if (!vtt) return reply.code(404).send({ error: "Subtitle not found" });
+    reply.header("Content-Type", "text/vtt; charset=utf-8");
+    reply.header("Cache-Control", "public, max-age=31536000, immutable");
+    reply.header("Access-Control-Allow-Origin", "*");
+    return reply.code(200).send(vtt);
+  });
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", { compress: false }, async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",

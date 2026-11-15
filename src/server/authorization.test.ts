@@ -446,6 +446,7 @@ const PUBLIC: Record<string, string> = {
   "GET /api/resolve": "finds the video of a public page: no account is involved",
   "GET /api/proxy": "carries a public page or file: no account is involved",
   "GET /api/subtitles/ro/:file": "serves converted Romanian subtitles: no account is involved",
+  "GET /api/subtitles/fallback/:file": "serves converted fallback subtitles (TVSubtitles/SubDL): no account is involved",
   "GET /api/subtitles/official/:file": "serves the Kino Official subtitles: the same for everybody, no account is involved",
   "POST /api/official/offer":
     "open to every screen and slowed per address: only times are taken, for a subtitle site's file the server listed for a title of the library lately, and the text is the file's own, fetched by the server",

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
+import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, finalSubtitles, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
 
 /*
  * What the filmpire adapter does around the stream it finds: the extras (the subtitle sites' lists and the Romanian subtitles) are asked for while the
@@ -223,5 +223,38 @@ describe("subtitle quality scoring and ranking", () => {
       "Film.2024.HDTV",
       "Film.2024.1080p.WEB-DL.Forced",
     ]);
+  });
+
+  describe("finalSubtitles", () => {
+    it("keeps a few of each language: the best source's first, then the others' best, at least three when there are", () => {
+      const tracks = [
+        ...Array.from({ length: 5 }, (_, i) => ({
+          id: i,
+          url: `https://opensubtitles.example/${i}.srt`,
+          label: `English (OS ${i}) · WEB-DL`,
+          lang: "en",
+        })),
+        {
+          id: 5,
+          url: "https://provider.example/sub.vtt",
+          label: "English · Official Stream",
+          lang: "en",
+        },
+      ];
+
+      const res = finalSubtitles(tracks);
+
+      // (The stream's own track first, then the best two of the five crowd files: one language is not cut down to two.)
+      expect(res!.map((t) => t.url)).toEqual([
+        "https://provider.example/sub.vtt",
+        "https://opensubtitles.example/0.srt",
+        "https://opensubtitles.example/1.srt",
+      ]);
+      expect(res!.map((t) => t.id)).toEqual([0, 1, 2]);
+    });
+
+    it("is undefined when there is nothing", () => {
+      expect(finalSubtitles([])).toBeUndefined();
+    });
   });
 });

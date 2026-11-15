@@ -7,6 +7,7 @@ import { signedRelayUrl } from "../../streamRelay/links";
 import { streamAddress } from "./streamAddress";
 import { decryptInThread } from "./wasmDecrypt";
 import nacl from "tweetnacl";
+import { filterDiverseSubtitles } from "../../subtitles/diversity";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -478,10 +479,32 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
   }
   return tracks;
 }
+/**
+ * The subtitles that go with the film: a few of each language from each source (see `filterDiverseSubtitles`), English first, then Romanian, with
+ * clean numbers. Undefined when there are none. (The season-pack sites are asked as one of the extras, see `lookForExtras`: never a wait of their own.)
+ */
+export function finalSubtitles(tracks: SubtitleTrack[]): SubtitleTrack[] | undefined {
+  const diverse = filterDiverseSubtitles(tracks, { maxTotal: MAX_SUBTITLES });
+  return diverse.length > 0 ? diverse : undefined;
+}
+
+/**
+ * The season-pack sites (TVSubtitles, and SubDL when it has a key), for an episode the subtitle site listed nothing for. They are asked only then, and
+ * only for a series: a film of the same name as a show must not get the show's lines. They answer within the same moment as the other extras or not
+ * at all for this look; what they send is kept, so the next episode of the season has it from the start.
+ */
+async function seasonPackSubtitles(ask: ExtrasAsk): Promise<SubtitleTrack[]> {
+  if (!ask.isTv || !ask.title || ask.season === undefined || ask.episode === undefined) return [];
+  const { getFallbackSubtitleManager } = await import("../../subtitles/fallbackSubtitles");
+  return getFallbackSubtitleManager().getSubtitles({ title: ask.title, season: ask.season, episode: ask.episode, imdbId: ask.imdbId, tmdbId: ask.tmdbId });
+}
+
 
 /** The extras as the server looks for them: the subtitle site, the Romanian subtitle sites and the Romanian dub catalogue, all three at once. */
 export const lookForExtras: ExtrasLookup = (ask, get) => ({
-  listed: ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]),
+  listed: (ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]))
+    .catch((): SubtitleTrack[] => [])
+    .then(async (listed) => (listed.length > 0 ? listed : await seasonPackSubtitles(ask).catch((): SubtitleTrack[] => []))),
   romanian: (async () => {
     const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
     return getRomanianSubtitleManager().getSubtitles({ imdbId: ask.imdbId, tmdbId: ask.tmdbId, title: ask.title, season: ask.season, episode: ask.episode });
@@ -943,30 +966,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 ? await extrasByThen(pendingExtras, extrasGraceMs)
                 : [[], []];
 
-              const combinedSubs = [...roSubs, ...hiSubs, ...listed];
-              const seenSubUrls = new Set<string>();
-              const uniqueSubs: SubtitleTrack[] = [];
-              for (const sub of combinedSubs) {
-                if (!seenSubUrls.has(sub.url)) {
-                  seenSubUrls.add(sub.url);
-                  uniqueSubs.push(sub);
-                }
-              }
-              uniqueSubs.sort((a, b) => {
-                const lA = normalizeLang(a.lang);
-                const lB = normalizeLang(b.lang);
-                const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
-                const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
-                return pA - pB;
-              });
-              const subList = uniqueSubs.length > 0 ? uniqueSubs.slice(0, MAX_SUBTITLES) : undefined;
-              if (subList) {
-                subList.forEach((sub, idx) => {
-                  sub.id = idx;
-                  if (sub.label) sub.label = sub.label.slice(0, 100);
-                  if (sub.lang) sub.lang = sub.lang.slice(0, 20);
-                });
-              }
+              const subList = finalSubtitles([...roSubs, ...hiSubs, ...listed]);
 
               const alternates: AlternateSource[] = [];
               if (resolved.altDubStream) {
@@ -1039,22 +1039,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         const [listed, roSubs, dub] = pendingExtras
           ? await extrasByThen(pendingExtras, extrasGraceMs)
           : [[], [], undefined];
-        const allSubs = [...roSubs, ...listed];
-        allSubs.sort((a, b) => {
-          const lA = normalizeLang(a.lang);
-          const lB = normalizeLang(b.lang);
-          const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
-          const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
-          return pA - pB;
-        });
-        const subList = allSubs.length > 0 ? allSubs.slice(0, MAX_SUBTITLES) : undefined;
-        if (subList) {
-          subList.forEach((sub, idx) => {
-            sub.id = idx;
-            if (sub.label) sub.label = sub.label.slice(0, 100);
-            if (sub.lang) sub.lang = sub.lang.slice(0, 20);
-          });
-        }
+        const subList = finalSubtitles([...roSubs, ...listed]);
 
         let sInfo: SeriesInfo | undefined;
         if (isTv) {
@@ -1134,31 +1119,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         });
 
-        // Put stream provider's official release captions before third-party listed crowd subtitles
-        const combinedSubs = [...roSubs, ...vlSubs, ...listed];
-        const seenSubUrls = new Set<string>();
-        const uniqueSubs: SubtitleTrack[] = [];
-        for (const sub of combinedSubs) {
-          if (!seenSubUrls.has(sub.url)) {
-            seenSubUrls.add(sub.url);
-            uniqueSubs.push(sub);
-          }
-        }
-        uniqueSubs.sort((a, b) => {
-          const lA = normalizeLang(a.lang);
-          const lB = normalizeLang(b.lang);
-          const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
-          const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
-          return pA - pB;
-        });
-        const subList = uniqueSubs.length > 0 ? uniqueSubs.slice(0, MAX_SUBTITLES) : undefined;
-        if (subList) {
-          subList.forEach((sub, idx) => {
-            sub.id = idx;
-            if (sub.label) sub.label = sub.label.slice(0, 100);
-            if (sub.lang) sub.lang = sub.lang.slice(0, 20);
-          });
-        }
+        const subList = finalSubtitles([...roSubs, ...vlSubs, ...listed]);
 
         let sInfo: SeriesInfo | undefined;
         if (isTv) {
@@ -1624,22 +1585,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       const imdbId = apiImdbId || tmdbImdbId;
       pendingExtras ??= askExtras(imdbId);
       const [listed, romanian, dub] = await extrasByThen(pendingExtras, extrasGraceMs);
-      subtitles = [...romanian, ...subtitles, ...listed];
-      subtitles.sort((a, b) => {
-        const lA = normalizeLang(a.lang);
-        const lB = normalizeLang(b.lang);
-        const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
-        const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
-        return pA - pB;
-      });
-
-      // Re-index subtitles sequentially so each track ID is unique and contiguous (capped at MAX_SUBTITLES)
-      subtitles = subtitles.slice(0, MAX_SUBTITLES);
-      subtitles.forEach((sub, idx) => {
-        sub.id = idx;
-        if (sub.label) sub.label = sub.label.slice(0, 100);
-        if (sub.lang) sub.lang = sub.lang.slice(0, 20);
-      });
+      const resolvedBaseSubs = finalSubtitles([...romanian, ...subtitles, ...listed]);
+      subtitles = resolvedBaseSubs ?? [];
 
       // 7. Request host token with cache & fallback across streams
       let chosenStream = streamUrls[0]!;
