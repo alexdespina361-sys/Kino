@@ -102,6 +102,25 @@ export class GpuUpscaler {
     return this.device.queue.onSubmittedWorkDone();
   }
 
+  /** Frames given to the graphics chip and not finished yet (see `caughtUp`). */
+  private unfinished = 0;
+
+  /**
+   * Whether the graphics chip has finished all it was given before (asked when the next frame of the video arrives, before drawing it: a frame that
+   * is still being drawn then has fallen behind the video). Never waits.
+   */
+  caughtUp(): boolean {
+    return this.unfinished === 0;
+  }
+
+  /** Marks the end of what was given so far, for `caughtUp`. */
+  mark(): void {
+    this.unfinished++;
+    void this.device.queue.onSubmittedWorkDone().then(() => {
+      this.unfinished--;
+    });
+  }
+
   /** (Re)makes the network for this mode and this size of video: once, not every frame. */
   private build(mode: AnimeMode, width: number, height: number): void {
     const key = `${mode} ${width}x${height}`;

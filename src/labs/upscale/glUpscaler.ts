@@ -27,6 +27,7 @@ export class GlUpscaler {
   private sourceSize = { width: 0, height: 0 };
   private middleSize = { width: 0, height: 0 };
   private readonly pixel = new Uint8Array(4);
+  private fence: WebGLSync | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: "high-performance" });
@@ -81,6 +82,29 @@ export class GlUpscaler {
     gl.uniform2i(this.rcas.uniform("size"), out.width, out.height);
     gl.uniform1f(this.rcas.uniform("sharpness"), rcasAmount(SHARPNESS_STOPS));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /**
+   * Whether the graphics chip has finished all it was given before (asked when the next frame of the video arrives, before drawing it: a frame that
+   * is still being drawn then has fallen behind the video). Never waits.
+   */
+  caughtUp(): boolean {
+    const gl = this.gl;
+    if (!this.fence) return true;
+    const done = gl.getSyncParameter(this.fence, gl.SYNC_STATUS) === gl.SIGNALED;
+    if (done) {
+      gl.deleteSync(this.fence);
+      this.fence = null;
+    }
+    return done;
+  }
+
+  /** Marks the end of what was given so far, for `caughtUp`. */
+  mark(): void {
+    const gl = this.gl;
+    if (this.fence) gl.deleteSync(this.fence);
+    this.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
   }
 
   /** Waits for the graphics chip to finish what it was given (reading one pixel back makes it), so that a time measured around it is the real one. */

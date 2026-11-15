@@ -198,11 +198,17 @@ async function choose(wanted: Mode): Promise<void> {
 /** The frames counted while a speed test plays the video (by the loop below). */
 const counted = { on: false, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] as number[] };
 
+const engineOf = (drawn: Mode): { caughtUp(): boolean; mark(): void } | undefined => (isAnime(drawn) ? gpu : gl);
+
 function onVideoFrame(_now: number, frame: VideoFrameCallbackMetadata): void {
+  const counting = counted.on && !timing;
+  // (A frame counts as drawn only if the chip had finished the one before when this one arrived: work that is merely queued has not been seen.)
+  const onTime = counting ? (engineOf(mode)?.caughtUp() ?? false) : true;
   render();
-  if (counted.on && !timing) {
+  if (counting) {
+    engineOf(mode)?.mark();
     if (counted.firstPresented < 0) counted.firstPresented = frame.presentedFrames;
-    else counted.drawn++;
+    else if (onTime) counted.drawn++;
     counted.lastPresented = frame.presentedFrames;
     counted.mediaTimes.push(frame.mediaTime);
   }
@@ -328,8 +334,11 @@ interface Result {
 
 const results = new Map<Mode, Result>();
 
-/** Plays the video for a few seconds and counts the frames the mode drew of those the video showed (and the browser dropped). */
-async function playThrough(): Promise<Played | undefined> {
+/**
+ * Plays the video for a few seconds and counts the frames the mode drew in time of those the video showed (and the browser dropped). "unseen": the
+ * video played but the browser showed the page none of its frames, as it does for a page it is not drawing (hidden, or behind other windows).
+ */
+async function playThrough(): Promise<Played | "unseen" | undefined> {
   const before = video.getVideoPlaybackQuality?.();
   Object.assign(counted, { on: true, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] });
   const looped = video.loop;
@@ -347,8 +356,8 @@ async function playThrough(): Promise<Played | undefined> {
   }
   const after = video.getVideoPlaybackQuality?.();
   const dropped = before && after ? Math.max(0, after.droppedVideoFrames - before.droppedVideoFrames) : 0;
-  // (A browser that showed the page no frames at all, as one does for a page it is not drawing, gives nothing to count: not "none kept up".)
-  if (counted.mediaTimes.length < 3 && counted.drawn < 3) return undefined;
+  // (A browser that showed the page no frames at all gives nothing to count: not "none kept up", and its times are a throttled page's.)
+  if (frameCallbacks ? counted.mediaTimes.length < 3 : counted.drawn < 3) return "unseen";
   const shown = frameCallbacks ? Math.max(0, counted.lastPresented - counted.firstPresented) : Math.round(PLAY_SECONDS * frameRate(counted.mediaTimes));
   return { drawn: counted.drawn, expected: Math.max(1, shown + dropped), dropped, fps: frameRate(counted.mediaTimes) };
 }
@@ -358,7 +367,7 @@ let wentAway = false;
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && testing) wentAway = true;
 });
-const AWAY = "The page was in the background during the test, which slows it down: test again with this page in front.";
+const AWAY = "The page was not on screen during the test (another tab, minimised, or behind other windows), which slows it down and shows no frames: test again with this page in front.";
 
 async function speedTest(tested: Mode): Promise<Result> {
   const why = await ready(tested);
@@ -390,10 +399,12 @@ async function speedTest(tested: Mode): Promise<Result> {
     const was = mode;
     mode = tested; // (the playing loop draws with the mode under test)
     say(`${nameOf(tested)}: playing for ${PLAY_SECONDS} seconds and counting the frames...`);
-    played = await playThrough();
+    const seen = await playThrough();
     mode = was;
     showCanvasFor(mode);
     render();
+    if (seen === "unseen") wentAway = true;
+    else played = seen;
   }
   if (wentAway) return { mode: tested, problem: AWAY };
   const fps = played?.fps ?? 30;
@@ -432,7 +443,7 @@ function showResults(): void {
           ? `${Math.min(played.drawn, played.expected)} of ${played.expected} frames drawn${played.dropped ? `, ${played.dropped} dropped` : ""}, at ${played.fps.toFixed(played.fps % 1 ? 2 : 0)} fps (${ms(1000 / played.fps)} a frame)`
           : time.median >= 1000
             ? "not played: too slow to try"
-            : "not counted: the browser showed no frames (judged on the time alone)",
+            : "not played (the video did not start)",
       );
       const word = cell(VERDICT_WORDS[result.verdict!], `verdict ${result.verdict!}`);
       word.dataset.testid = `upscale-verdict-${each}`;
