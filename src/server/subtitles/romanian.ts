@@ -1,5 +1,5 @@
 import { lookup } from "node:dns/promises";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -593,6 +593,8 @@ export class RomanianSubtitleManager {
       const safeKey = Buffer.from(key).toString("hex");
       const filePath = path.join(this.dataDir, "subtitles", "ro", `${safeKey}.json`);
       const raw = await readFile(filePath, "utf8");
+      const now = new Date();
+      await utimes(filePath, now, now).catch(() => {}); // (read again: the last to go, see `trimKept`)
       return JSON.parse(raw) as RomanianSubtitle[];
     } catch {
       return undefined;
@@ -606,10 +608,39 @@ export class RomanianSubtitleManager {
       const dir = path.join(this.dataDir, "subtitles", "ro");
       await mkdir(dir, { recursive: true });
       const filePath = path.join(dir, `${safeKey}.json`);
-      await writeFile(filePath, JSON.stringify(subs), "utf8");
+      const text = JSON.stringify(subs);
+      if (Buffer.byteLength(text) > MAX_DISK_BYTES) return;
+      await writeFile(filePath, text, "utf8");
+      await trimKept(dir);
     } catch {
       // non-fatal
     }
+  }
+}
+
+/**
+ * How many titles' subtitles are kept on disk (under `DATA_DIR`), and how much they may come to together. A title is a few hundred kilobytes; every title
+ * that has subtitles writes one file, and anyone can ask about any title, so the folder is not let grow without end: past either, the files written or read
+ * longest ago go (a title whose file went is asked of the sites again when it is looked up).
+ */
+export const MAX_DISK_TITLES = 3000;
+export const MAX_DISK_BYTES = 1024 * 1024 * 1024;
+
+/** Lets go of the oldest titles' files in `dir` (by when each was last written or read) until there are no more than `titles` of them, together no larger than `bytes`. */
+export async function trimKept(dir: string, titles = MAX_DISK_TITLES, bytes = MAX_DISK_BYTES): Promise<void> {
+  const names = (await readdir(dir)).filter((name) => name.endsWith(".json"));
+  const files = await Promise.all(
+    names.map(async (name) => {
+      const found = await stat(path.join(dir, name)).catch(() => undefined);
+      return found?.isFile() ? { name, size: found.size, at: found.mtimeMs } : undefined;
+    }),
+  );
+  let count = 0;
+  let total = 0;
+  for (const file of files.filter((file) => file !== undefined).sort((a, b) => b.at - a.at)) {
+    count += 1;
+    total += file.size;
+    if (count > titles || total > bytes) await unlink(path.join(dir, file.name)).catch(() => {});
   }
 }
 

@@ -1,9 +1,12 @@
 import { lookup } from "node:dns/promises";
+import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import zlib from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isListedFile, siteFetch } from "./romanian";
+import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isListedFile, siteFetch, trimKept } from "./romanian";
 
 /*
  * The manager asks the Romanian subtitle sites, which send whole archives. These tests are about how it asks: the archives of a site at once rather than one
@@ -306,5 +309,32 @@ describe("siteFetch", () => {
     expect(asked).toEqual([]);
     await expect(siteFetch(send, publicOnly)("https://203.0.113.7/a")).rejects.toThrow("too many redirects");
     expect(asked).toHaveLength(6);
+  });
+});
+
+describe("trimKept", () => {
+  it("lets go of the files written or read longest ago, past so many titles or so many bytes together, and of nothing else in the folder", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "kino-ro-"));
+    try {
+      const at = (name: string, minutesAgo: number, size = 10) => {
+        const file = path.join(dir, name);
+        writeFileSync(file, "x".repeat(size));
+        const when = new Date(Date.now() - minutesAgo * 60_000);
+        utimesSync(file, when, when);
+      };
+      at("a.json", 50);
+      at("b.json", 40);
+      at("c.json", 30);
+      at("d.json", 20);
+      at("e.json", 10);
+      at("notes.txt", 60); // (not a title's file)
+      await trimKept(dir, 3, 1_000);
+      expect(readdirSync(dir).sort()).toEqual(["c.json", "d.json", "e.json", "notes.txt"]);
+      at("big.json", 5, 25);
+      await trimKept(dir, 3, 40); // (the newest, 25 bytes, and the one before it, 10: a third would be 45)
+      expect(readdirSync(dir).sort()).toEqual(["big.json", "e.json", "notes.txt"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
