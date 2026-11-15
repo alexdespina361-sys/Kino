@@ -4,7 +4,7 @@ import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { CHAT_REPORT_LINES, CHAT_TEXT_MAX } from "../src/shared";
 import { FEEDBACK_TOKEN } from "./feedbackToken";
-import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, seeded, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, seeded, test, showProfilePage } from "./helpers";
 
 /**
  * The chat between two friends, on the phone and on the TV: writing and reading it, how what waits is told (a line, a number, a row in the bell, never a
@@ -91,12 +91,8 @@ async function signUp(page: Page, account: Account) {
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
-/** The account page is open: friends on, in the settings, and back. */
+/** The account page is open: it has Friends (they are on for everybody since 15 Nov 2026: there is no switch to turn on). */
 async function turnOnFriends(page: Page) {
-  await page.getByTestId("menu-settings").click();
-  await page.getByTestId("friends-switch").click();
-  await expect(page.getByTestId("friends-switch")).toHaveAttribute("aria-checked", "true");
-  await page.keyboard.press("Escape"); // (back to the account page)
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
 
@@ -379,7 +375,7 @@ test.describe("the chat on the phone", () => {
 
     // Bob had turned messages off before the switch went: the server has it, and his page is loaded anew to have it too
     await chose(bob.page, { friendsMessages: false });
-    await expect.poll(() => kept(bob.page)).toMatchObject({ friends: true, friendsMessages: false });
+    await expect.poll(() => kept(bob.page)).toMatchObject({ friendsMessages: false });
 
     // Ann writes before she has heard of it: the server turns it away and the page says so in a plain line, the box gives way to it
     await write(ann.page, "Are you free tonight?");
@@ -572,10 +568,7 @@ async function screenWithFriends(browser: Browser, name: string, options: { view
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
-  await openProfilePlace(page, "settings");
-  await page.getByTestId("tv-friends-switch").click();
-  await expect(page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("tv-account-back").click();
+  await showProfilePage(page); // (friends are on for everybody: the profile's page has them at once)
   await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible();
   return { page, name: nameOf(account) };
 }
@@ -833,7 +826,7 @@ test.describe("the chat on the TV", () => {
 
     // Bob had turned messages off before the switch went: the server has it, and his screen is loaded anew to have it too
     await chose(bob.page, { friendsMessages: false });
-    await expect.poll(() => kept(bob.page)).toMatchObject({ friends: true, friendsMessages: false });
+    await expect.poll(() => kept(bob.page)).toMatchObject({ friendsMessages: false });
 
     // Ann's chat with Bob says so, plainly, and has no Write: the remote is on Back
     await tile(ann.page, bob.name).click();

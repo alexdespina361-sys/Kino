@@ -3135,30 +3135,25 @@ test.describe("ratings on the TV", () => {
     await expect(tv.getByTestId("tv-ratings")).toContainText("The titles and seasons you gave a score.");
   });
 
-  test("the switch on the account page hides ratings from the profile's page and the titles, and what was rated is kept", async ({ browser }) => {
-    const seed = guestStorage({ ratings: [{ key: "rate:https://films.example/1", at: day(2), title: "Rated 1", url: "https://films.example/1", score: 8, ratedAt: day(2) }] });
+  test("ratings show for a profile that had turned them off (their switch is gone), and what was rated is all there", async ({ browser }) => {
+    const seed = guestStorage({
+      ratings: [{ key: "rate:https://films.example/1", at: day(2), title: "Rated 1", url: "https://films.example/1", score: 8, ratedAt: day(2) }],
+      settings: [{ key: "ratings", at: day(1), value: false }], // (turned off before the switch went: kept as it was, and not read)
+    });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await openProfilePage(tv);
     await expect(tv.locator('[data-entry="profile:ratings"]')).toHaveCount(1);
 
     await tv.getByTestId("tv-profile-settings").click(); // (a guest's settings are the button in the corner of the profile's page)
-    const rate = tv.getByTestId("tv-ratings-switch");
-    await expect(rate).toHaveAttribute("aria-checked", "true");
-    await rate.click();
-    await expect(rate).toHaveAttribute("aria-checked", "false");
+    await expect(tv.getByTestId("tv-account")).toBeVisible();
+    await expect(tv.getByTestId("tv-ratings-switch")).toHaveCount(0);
     await tv.getByTestId("tv-account-back").click();
-    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile"); // (back where it was)
-    await expect(tv.locator('[data-entry="profile:ratings"]')).toHaveCount(0);
     await tv.getByTestId("rail-home").click();
     await tiles(tv).first().click();
     await expect(tv.getByTestId("tv-detail")).toBeVisible();
-    await expect(tv.getByTestId("tv-detail-rate")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-detail-rate")).toHaveCount(1);
     await tv.getByTestId("tv-detail-close").click();
 
-    await openProfilePlace(tv, "settings");
-    await tv.getByTestId("tv-ratings-switch").click();
-    await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "true");
-    await tv.getByTestId("tv-account-back").click();
     await openProfilePlace(tv, "ratings");
     await expect(tiles(tv)).toHaveCount(1); // kept
     await expect(tiles(tv).first()).toContainText("8/10");
@@ -3169,11 +3164,11 @@ test.describe("ratings on the TV", () => {
     { name: "1080p", width: 1920, height: 1080 },
     { name: "4:3", width: 1024, height: 768 },
   ]) {
-    test(`the account page, with the ratings switch among its settings, is all on the screen: ${screen.name}`, async ({ browser }) => {
+    test(`the account page is all on the screen: ${screen.name}`, async ({ browser }) => {
       const tv = await openLibrary(browser, withLibrary(library), { width: screen.width, height: screen.height });
       await openProfilePlace(tv, "settings");
-      await expect(tv.getByTestId("tv-ratings-switch")).toBeVisible();
-      for (const id of ["tv-lang-en", "tv-autoplay", "tv-subtitle-languages", "tv-tap-to-pause", "tv-adaptive-quality", "tv-ratings-switch", "tv-account-back"]) {
+      await expect(tv.getByTestId("tv-account")).toBeVisible();
+      for (const id of ["tv-lang-en", "tv-autoplay", "tv-subtitle-languages", "tv-tap-to-pause", "tv-adaptive-quality", "tv-account-back"]) {
         const at = (await tv.getByTestId(id).boundingBox())!;
         expect(at.x, `${id} from the left`).toBeGreaterThanOrEqual(0);
         expect(at.y, `${id} from the top`).toBeGreaterThanOrEqual(0);

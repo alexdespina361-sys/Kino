@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { LibraryItemsSchema, titleLink, type LibraryItem, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
+import { LibraryItemsSchema, ratingsShown, titleLink, type LibraryItem, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { useProfileData } from "../account/store";
 import { feed } from "./feed";
 
@@ -142,7 +142,7 @@ export const likeThis: LikeThis = createLikeThis({ learn: (items) => feed.learn(
 /** The rows of "Because you ..." for the profile in use (the scores count only while ratings are on). */
 export function useBecause(store: LikeThis = likeThis): Because[] {
   const { progress, list, ratings, settings } = useProfileData();
-  const ratingsOn = settings.ratings ?? true;
+  const ratingsOn = ratingsShown(settings);
   const seeds = useMemo(() => seedsOf(progress, ratingsOn ? ratings : []), [progress, ratings, ratingsOn]);
   const version = useSyncExternalStore(store.subscribe, store.version, store.version);
   useEffect(() => {

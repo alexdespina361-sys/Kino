@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { filmFacts, showFacts, type LiveProgress, type LiveWatched, type WatchFacts } from "../../shared";
+import { filmFacts, ratingsShown, showFacts, type LiveProgress, type LiveWatched, type WatchFacts } from "../../shared";
 import { cardOf, showKeyOf, type Entry } from "../tv/pages";
 import type { RatedTitle } from "./profileStore";
 import { mergeFacts, ratingFor, scoresOf, storedFacts } from "./ratingText";
@@ -28,15 +28,15 @@ export function watchFacts(entry: Entry, isShow: boolean, season: number | undef
   return filmFacts(cardOf({ ...entry, kind: "movie" }, progress));
 }
 
-/** Whether ratings are on for this profile: they are, unless it turned them off in the settings. */
-export const useRatingsOn = (): boolean => useProfileData().settings.ratings ?? true;
+/** Whether ratings show for this profile: they do for everybody (they had a switch until 15 Nov 2026: see `ratingsShown`). */
+export const useRatingsOn = (): boolean => ratingsShown(useProfileData().settings);
 
 const NO_SCORES: ReadonlyMap<string, number> = new Map();
 
 /** The score given to each title (see `scoresOf`), for the badge on its picture in a row or a grid; none while ratings are off. */
 export function useScores(): ReadonlyMap<string, number> {
   const { ratings, settings } = useProfileData();
-  const on = settings.ratings ?? true;
+  const on = ratingsShown(settings);
   return useMemo(() => (on ? scoresOf(ratings) : NO_SCORES), [ratings, on]);
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { canAskTogether, FRIEND_NOTE_MAX, PLAN_MAX_AHEAD_MS, planTimeProblem, friendChoices, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite, type PlanItem } from "../../shared";
+import { canAskTogether, FRIEND_NOTE_MAX, PLAN_MAX_AHEAD_MS, planTimeProblem, friendChoices, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, ratingsShown, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite, type PlanItem } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -121,12 +121,11 @@ function TagCard({ text, onDone }: { text: string; onDone: () => void }) {
   );
 }
 
-/** The sheet a friend's link opens (`/?friend=ABCD2345`): sign in if need be, turn friends on if need be, then who it is from and a button to add them. */
+/** The sheet a friend's link opens (`/?friend=ABCD2345`): sign in if need be, then who it is from and a button to add them (a profile friends are turned off for is told so). */
 export function FriendInvite({ code, onClose, onSignIn }: { code: string; onClose: () => void; onSignIn: () => void }) {
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
-  const { set } = useSettings();
   const signedIn = account.me !== null && account.profile !== null;
 
   return (
@@ -139,19 +138,9 @@ export function FriendInvite({ code, onClose, onSignIn }: { code: string; onClos
           </button>
         </>
       ) : !friends.on ? (
-        <>
-          <p className="muted">{t("friends.linkTurnOn")}</p>
-          <button
-            className="btn btn-red btn-block"
-            onClick={() => {
-              set("friends", true);
-              account.syncNow();
-            }}
-            data-testid="friend-link-turn-on"
-          >
-            {t("friends.linkTurnOnButton")}
-          </button>
-        </>
+        <p className="muted" data-testid="friend-link-off">
+          {t("friends.off")}
+        </p>
       ) : friends.status === "ready" ? (
         <CodeCard code={code} onDone={onClose} />
       ) : friends.status === "offline" ? (
@@ -692,7 +681,7 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
   const ratings = sortRatings(ratedBy(answer.data), "new");
   const progress = answer.data.progress;
   // (A title both rated says this profile's score after the friend's: none while this profile has ratings turned off.)
-  const scores = scoresByTitle((settings.ratings ?? true) ? mine : []);
+  const scores = scoresByTitle(ratingsShown(settings) ? mine : []);
   if (ratings.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noRatings", { name: friend.name })}</p>;
   return (
     <ul className="rating-list" data-testid="friend-ratings">

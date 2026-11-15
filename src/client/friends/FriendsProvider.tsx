@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ONLINE_MS, planDue, type AskOutcome, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InviteView, type Message, type OpenInvite, type Sent, type TagView } from "../../shared";
+import { friendChoices, ONLINE_MS, planDue, type AskOutcome, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InviteView, type Message, type OpenInvite, type Sent, type TagView } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { ApiError } from "../account/api";
 import { useProfileData } from "../account/store";
@@ -73,7 +73,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
   const account = useAccount();
   const { settings } = useProfileData();
   const profileId = account.me && account.profile ? account.profile.id : undefined;
-  const on = profileId !== undefined && settings.friends === true;
+  const on = profileId !== undefined && friendChoices(settings).friends; // (on for everybody: see friendChoices)
 
   const [state, setState] = useState<FriendsState | null>(null);
   const [status, setStatus] = useState<FriendsValue["status"]>("off");

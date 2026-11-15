@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { Profile } from "../../shared";
+import { ratingsShown, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
@@ -133,7 +133,7 @@ export function AccountScreen({
   /** An account that has no Google account yet is offered to connect one, here on its profile and not only on the Security page. */
   const canConnectGoogle = useCanConnectGoogle();
   const { ratings, settings } = useProfileData();
-  const ratingsOn = settings.ratings ?? true;
+  const ratingsOn = ratingsShown(settings);
   /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
   const [view, setView] = useState<View>(initial);

@@ -259,13 +259,20 @@ export const SETTING_SCHEMAS = {
   subtitleLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)).max(12),
   /** Leave every other subtitle language out of the lists. */
   onlySubtitleLanguages: z.boolean(),
-  /** Scores and notes for films, shows and seasons (on unless turned off). Turned off, nothing of it shows; what was rated stays. */
+  /**
+   * Ratings were on unless turned off here. Since 15 Nov 2026 they are on for everybody and have no switch (the owner: "remove the ratings and friends
+   * and turn it on for all accounts"): a `false` kept from before is not read for showing them, only for not showing them to friends until the profile
+   * says otherwise (see `ratingsShown` and `friendChoices` in friends.ts). It is kept as it was, never deleted, so that this can be undone.
+   */
   ratings: z.boolean(),
   /**
-   * Friends (see friends.ts for what each is when it is not set): the master switch, and what a friend may do while it is on. They are
-   * settings of the profile, so the server reads them to know what a friend may be given, and they follow the profile everywhere.
+   * Friends (see friends.ts for what each is when it is not set): what a friend may do. They are settings of the profile, so the server reads them to know what
+   * a friend may be given, and they follow the profile everywhere. `friends` was the master switch; since 15 Nov 2026 friends are on for everybody, and a
+   * `false` kept from before only keeps what is watched from being shared until the profile shares it again (see `friendChoices`).
    */
   friends: z.boolean(),
+  /** Friends are off for this profile, whatever else is set: the one way left to turn them off (for the child profile to come; no switch sets it yet). */
+  friendsOff: z.boolean(),
   friendsLists: z.boolean(),
   friendsRatings: z.boolean(),
   friendsGive: z.boolean(),

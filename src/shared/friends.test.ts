@@ -37,7 +37,9 @@ import {
   sharesRatings,
   sunsetSwitches,
   tagLabel,
+  ratingsShown,
   takesMessages,
+  friendSwitchWrites,
   type Friend,
 } from "./friends";
 import { SETTING_SCHEMAS } from "./account";
@@ -45,10 +47,31 @@ import { SETTING_SCHEMAS } from "./account";
 const friend = (changes: Partial<Friend> = {}): Friend => ({ id: "pro_1", name: "Sam", avatar: "fox", since: 1, on: true, lists: true, ratings: true, activity: false, inbox: true, ...changes });
 
 describe("the switches", () => {
-  it("are all settings of a profile, and are all off or on as the defaults say until they are set", () => {
+  it("are all settings of a profile, and are all off or on as the defaults say until they are set: friends themselves are on for everybody", () => {
     for (const key of FRIEND_SETTINGS) expect(SETTING_SCHEMAS[key]).toBeDefined();
-    expect(friendChoices({})).toEqual({ friends: false, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true, friendsMessages: true });
+    expect(SETTING_SCHEMAS.friendsOff).toBeDefined();
+    expect(friendChoices({})).toEqual({ friends: true, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true, friendsMessages: true });
+    expect(friendChoices({ friends: false }).friends).toBe(true); // (the old master switch is not read for it)
+    expect(friendChoices({ friendsOff: true }).friends).toBe(false); // (the one way left to turn them off, for the child profile to come)
     expect(FRIEND_DEFAULTS.friends).toBe(false);
+  });
+
+  it("do not share what a profile that had turned friends off watches, or show the ratings of one that had turned them off, until it says so", () => {
+    expect(friendChoices({ friends: false, friendsGive: true })).toMatchObject({ friends: true, friendsGive: false, friendsGet: false });
+    expect(friendSwitchWrites({ friends: false, friendsGive: true }, "friendsGive", true)).toEqual([
+      ["friendsGive", true],
+      ["friends", true],
+    ]);
+    expect(friendChoices({ friends: true, friendsGive: true })).toMatchObject({ friendsGive: true, friendsGet: true });
+    expect(friendChoices({ ratings: false })).toMatchObject({ friendsRatings: false });
+    expect(sunsetSwitches({ ratings: false })).toEqual(["friendsRatings"]); // (so it has the switch to say so)
+    expect(friendSwitchWrites({ ratings: false }, "friendsRatings", true)).toEqual([
+      ["friendsRatings", true],
+      ["ratings", true],
+    ]);
+    expect(friendSwitchWrites({ ratings: false }, "friendsRatings", false)).toEqual([["friendsRatings", false]]);
+    expect(friendSwitchWrites({}, "friendsGive", true)).toEqual([["friendsGive", true]]);
+    expect(ratingsShown({ ratings: false })).toBe(true); // (ratings show for everybody)
   });
 
   it("are what was chosen, one at a time", () => {
@@ -62,7 +85,7 @@ describe("the switches", () => {
       friendsPresence: true,
       friendsMessages: true,
     });
-    expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: false }); // (being seen as online is its own switch, on until it is turned off)
+    expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: true }); // (being seen as online is its own switch, on until it is turned off)
   });
 
   it("tell and hear what is watched together: what an earlier version stored for hearing is not read", () => {
@@ -88,27 +111,26 @@ describe("the switches", () => {
   });
 
   it("let lists be looked at only when friends are on and they are shared", () => {
-    expect(sharesLists({})).toBe(false);
-    expect(sharesLists({ friends: true })).toBe(true);
-    expect(sharesLists({ friends: true, friendsLists: false })).toBe(false);
-    expect(sharesLists({ friends: false, friendsLists: true })).toBe(false);
+    expect(sharesLists({})).toBe(true);
+    expect(sharesLists({ friends: false })).toBe(true); // (the old master switch is not read)
+    expect(sharesLists({ friendsLists: false })).toBe(false);
+    expect(sharesLists({ friendsOff: true, friendsLists: true })).toBe(false);
   });
 
   it("let a friend write to a profile only when friends are on and messages are not turned off (they are on until they are)", () => {
     expect(friendChoices({}).friendsMessages).toBe(true);
-    expect(takesMessages({})).toBe(false); // (friends are off until they are turned on)
-    expect(takesMessages({ friends: true })).toBe(true);
-    expect(takesMessages({ friends: true, friendsMessages: false })).toBe(false);
-    expect(takesMessages({ friends: false, friendsMessages: true })).toBe(false);
+    expect(takesMessages({})).toBe(true);
+    expect(takesMessages({ friendsMessages: false })).toBe(false);
+    expect(takesMessages({ friendsOff: true, friendsMessages: true })).toBe(false);
   });
 
-  it("let ratings be looked at only when friends are on, they are shared, and ratings are not turned off for the profile itself", () => {
-    expect(sharesRatings({})).toBe(false); // (friends are off until they are turned on)
-    expect(sharesRatings({ friends: true })).toBe(true);
-    expect(sharesRatings({ friends: true, ratings: true })).toBe(true);
-    expect(sharesRatings({ friends: true, friendsRatings: false })).toBe(false);
-    expect(sharesRatings({ friends: true, ratings: false })).toBe(false); // what was rated stays kept, but it is not shown to anybody
-    expect(sharesRatings({ friends: false, friendsRatings: true })).toBe(false);
+  it("let ratings be looked at only when friends are on, they are shared, and a profile that had turned ratings off has not kept them from friends", () => {
+    expect(sharesRatings({})).toBe(true);
+    expect(sharesRatings({ ratings: true })).toBe(true);
+    expect(sharesRatings({ friendsRatings: false })).toBe(false);
+    expect(sharesRatings({ ratings: false })).toBe(false); // (turned off before: kept from friends until the profile shares them again)
+    expect(sharesRatings({ ratings: true, friendsRatings: true })).toBe(true);
+    expect(sharesRatings({ friendsOff: true, friendsRatings: true })).toBe(false);
   });
 });
 

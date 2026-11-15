@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, sunsetSwitches, UI_LANGUAGES, type FriendSetting, type KeptFriend, type SessionInfo, type SunsetSwitch } from "../../shared";
+import { ACCENTS, DEVICE_NAME_MAX, friendChoices, friendSwitchWrites, preferredLanguages, sunsetSwitches, UI_LANGUAGES, type FriendSetting, type KeptFriend, type SessionInfo, type SunsetSwitch } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { Avatar } from "../account/Avatar";
@@ -206,7 +206,9 @@ function KeptFriends({ profileId }: { profileId: string }) {
 }
 
 /**
- * Friends: the master switch and, once it is on, whether what each watches is shared (and, for a profile that turned something else off before, that too).
+ * Friends: whether what each watches is shared (and, for a profile that turned something else off before, that too). Friends themselves are on for
+ * everybody and have no switch (the owner, 15 Nov 2026: "remove the ratings and friends and turn it on for all accounts"); for a profile they are turned off
+ * for (`friendsOff`, nothing sets it yet), the friendships kept are listed instead.
  * These are settings of the profile (so they follow it onto every screen), and each change is sent to the server at once: the server is
  * what decides what a friend is shown, from what the profile has chosen here.
  */
@@ -227,17 +229,16 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
   }
   const choices = friendChoices(settings);
   const change = (key: FriendSetting, on: boolean) => {
-    set(key, on);
+    for (const [name, value] of friendSwitchWrites(settings, key, on)) set(name, value);
     account.syncNow();
   };
   return (
     <Group title={t("friends.settings")} help={t("friends.settingsHelp")}>
-      <Switch label={t("friends.switch")} checked={choices.friends} onChange={(on) => change("friends", on)} testId="friends-switch" />
       {choices.friends && (
         <>
           <Rows>
             <Switch label={t("friends.switchGive")} hint={t("friends.switchGiveHint")} checked={choices.friendsGive} onChange={(on) => change("friendsGive", on)} testId="friends-give" />
-            {SUNSET_SWITCH_ROWS.filter(({ key }) => sunset.includes(key) && (key !== "friendsRatings" || settings.ratings !== false)).map(({ key, label, testId }) => (
+            {SUNSET_SWITCH_ROWS.filter(({ key }) => sunset.includes(key)).map(({ key, label, testId }) => (
               <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
             ))}
             {sunset.includes("friendsMessages") && <Switch label={t("chat.settingsSwitch")} checked={choices.friendsMessages} onChange={(on) => change("friendsMessages", on)} testId="friends-messages" />}
@@ -253,7 +254,7 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
           </button>
         </>
       )}
-      {!choices.friends && settings.friends === false && <KeptFriends profileId={account.profile.id} />}
+      {!choices.friends && <KeptFriends profileId={account.profile.id} />}
     </Group>
   );
 }
@@ -301,9 +302,6 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
         </Rows>
       </Group>
       <SubtitleLanguages />
-      <Group title={t("rating.settings")}>
-        <Switch label={t("rating.settingsSwitch")} hint={t("rating.settingsHelp")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
-      </Group>
       <FriendsGroup onOpen={onOpenFriends} />
       {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
       <Group title={t("settings.labs")} help={t("settings.labsHelp")}>

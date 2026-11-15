@@ -96,8 +96,8 @@ async function friends(persistence?: MemoryPersistence, feedbackOptions?: { maxR
   const world = await start(persistence, feedbackOptions);
   const alex = await person(world.app, "alex");
   const sam = await person(world.app, "sam");
-  await alex.choose({ friends: true });
-  await sam.choose({ friends: true });
+  await alex.choose({ friendsOff: false });
+  await sam.choose({ friendsOff: false });
   const made = await alex.client.call("POST", `/api/profiles/${alex.id}/friends/invites`, {});
   expect((await sam.client.call("POST", `/api/profiles/${sam.id}/friends/accept`, { code: made.data.code })).statusCode).toBe(201);
   return { ...world, alex, sam };
@@ -134,7 +134,7 @@ describe("Friends can message me", () => {
 
   it("is shut with friends: a friend who turned friends off takes no messages either", async () => {
     const { alex, sam } = await friends();
-    await sam.choose({ friends: false });
+    await sam.choose({ friendsOff: true });
     expect((await alex.say(sam, "hello")).data).toEqual({ error: "chat_off" });
   });
 });

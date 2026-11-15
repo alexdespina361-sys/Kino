@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ACCENTS, friendChoices, LINK_TTL_MS, MAX_PROFILES, preferredLanguages, UI_LANGUAGES, type Profile } from "../../shared";
+import { ACCENTS, LINK_TTL_MS, MAX_PROFILES, preferredLanguages, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
@@ -479,8 +479,6 @@ export function TvAccountPanel({
   const autoplay = settings.autoplayNext ?? true;
   const tapToPause = settings.tapToPause ?? false;
   const adaptiveQuality = settings.adaptiveQuality ?? true;
-  const ratingsOn = settings.ratings ?? true;
-  const friendsOn = friendChoices(settings).friends;
   const several = Boolean(me && me.profiles.length > 1);
   const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
   const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
@@ -584,20 +582,7 @@ export function TvAccountPanel({
               <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
             </SettingsGroup>
 
-            <SettingsGroup title={t("settings.ratingsFriends")} testId="tv-group-share">
-              <SettingsSwitch label={t("rating.settingsSwitch")} on={ratingsOn} onToggle={() => set("ratings", !ratingsOn)} testId="tv-ratings-switch" />
-              {me && profile && (
-                <SettingsSwitch
-                  label={t("friends.switch")}
-                  on={friendsOn}
-                  onToggle={() => {
-                    set("friends", !friendsOn);
-                    account.syncNow(); // (the server hears of it now: it is what decides what a friend is shown)
-                  }}
-                  testId="tv-friends-switch"
-                />
-              )}
-            </SettingsGroup>
+            {/* (Ratings and friends had a group of two switches here: they are on for everybody since 15 Nov 2026, and what a friend may see is chosen on the friends' page.) */}
           </div>
 
           <div className="tv-set-col" data-nav-column>

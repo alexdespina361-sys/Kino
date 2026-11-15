@@ -99,13 +99,14 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("rail-home")).toBeFocused();
   });
 
-  test("has no place for ratings once they are off in the settings, and the remote comes back to Settings", async ({ browser }) => {
-    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+  test("keeps its place for ratings for a profile that had turned them off (they are on for everybody), and the remote comes back to Settings", async ({ browser }) => {
+    const off = guestStorage({ ratings: [rated(film(1).url, film(1).title, 8)], settings: [{ key: "ratings", at: Date.now(), value: false }] });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, off);
     await openProfilePlace(tv, "settings");
-    await tv.getByTestId("tv-ratings-switch").click();
-    await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
+    await expect(tv.getByTestId("tv-account")).toBeVisible();
+    await expect(tv.getByTestId("tv-ratings-switch")).toHaveCount(0);
     await tv.getByTestId("tv-account-back").click();
-    expect(await places(tv)).toEqual(["profile:history"]);
+    expect(await places(tv)).toEqual(["profile:ratings", "profile:history"]);
     await expect(tv.getByTestId("tv-profile-settings")).toBeFocused(); // (the button it left from)
   });
 
@@ -168,14 +169,13 @@ test.describe("the profile's page", () => {
 });
 
 test.describe("the score a profile gave a title", () => {
-  const seed = guestStorage({
-    ratings: [
-      rated(film(1).url, film(1).title, 8),
-      rated(film(3).url, film(3).title, 10),
-      rated(show.url, show.title, 7),
-      rated(film(4).url, film(4).title, 2, 2), // (a score for one season only: the title has no score of its own to show)
-    ],
-  });
+  const SCORES = [
+    rated(film(1).url, film(1).title, 8),
+    rated(film(3).url, film(3).title, 10),
+    rated(show.url, show.title, 7),
+    rated(film(4).url, film(4).title, 2, 2), // (a score for one season only: the title has no score of its own to show)
+  ];
+  const seed = guestStorage({ ratings: SCORES });
   const badge = (tv: Page, title: string) => tileOf(tv, title).getByTestId("score-badge");
 
   test("shows in the corner of its picture in the rows and the grids, and in a search; a title with none shows none", async ({ browser }) => {
@@ -270,23 +270,13 @@ test.describe("the score a profile gave a title", () => {
     await expect(tiles(tv)).toHaveCount(1);
   });
 
-  test("is gone with ratings turned off, and back, with what was rated, once they are on", async ({ browser }) => {
-    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+  test("is there for a profile that had turned ratings off (they are on for everybody), with what was rated, and the settings have no switch for it", async ({ browser }) => {
+    const off = guestStorage({ ratings: SCORES, settings: [{ key: "ratings", at: Date.now(), value: false }] });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, off);
     await expect(tv.getByTestId("score-badge")).toHaveCount(3);
     await openProfilePlace(tv, "settings");
-    await tv.getByTestId("tv-ratings-switch").click();
-    await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
-    await tv.getByTestId("tv-account-back").click();
-    await tv.getByTestId("rail-home").click();
-    await expect(tiles(tv).first()).toBeVisible();
-    await expect(tv.getByTestId("score-badge")).toHaveCount(0);
-
-    await openProfilePlace(tv, "settings");
-    await tv.getByTestId("tv-ratings-switch").click();
-    await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "true");
-    await tv.getByTestId("tv-account-back").click();
-    await tv.getByTestId("rail-home").click();
-    await expect(tv.getByTestId("score-badge")).toHaveCount(3);
+    await expect(tv.getByTestId("tv-account")).toBeVisible();
+    await expect(tv.getByTestId("tv-ratings-switch")).toHaveCount(0);
   });
 
   test("follows a score as it is given and taken back on a title's page", async ({ browser }) => {

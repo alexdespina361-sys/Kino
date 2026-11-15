@@ -3596,47 +3596,24 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("ratings-sheet")).toHaveCount(0);
     });
 
-    test("Settings has a switch for ratings: off, every sign of them is gone and what was rated is kept; on again, it is all back", async ({ browser, baseURL }) => {
-      const { phone } = await connect(browser, baseURL!, { library: wholeLibrary(baseURL!), seed: guestStorage({ ratings: [given(baseURL!, 0, 8, 2)] }) });
-      await place(phone, "list");
-      await expect(phone.getByTestId("ratings-row")).toBeVisible();
-      await place(phone, "home");
-      await tile(phone, "Film number 2").click();
-      await expect(phone.getByTestId("rate-title")).toBeVisible();
-      await phone.getByTestId("title-back").click();
-
-      const toggle = async (to: "true" | "false") => {
-        await place(phone, "you");
-        await phone.getByTestId("menu-settings").click();
-        const rate = phone.getByTestId("ratings-switch");
-        await expect(rate).toHaveAttribute("aria-checked", to === "true" ? "false" : "true");
-        await rate.click();
-        await expect(rate).toHaveAttribute("aria-checked", to);
-        await phone.getByTestId("page-back").click(); // (the settings; the You place is under it)
-      };
-
-      await toggle("false");
-      await place(phone, "list");
-      await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
-      await place(phone, "home");
-      await tile(phone, "Film number 2").click();
-      await expect(phone.getByTestId("title-sheet")).toBeVisible();
-      await expect(phone.getByTestId("rate-title")).toHaveCount(0);
-      await phone.getByTestId("title-back").click();
-      await phone.reload();
-      await expect(phone.getByTestId("library")).toBeVisible();
-      await place(phone, "list");
-      await expect(phone.getByTestId("ratings-row")).toHaveCount(0); // (kept off)
-
-      await toggle("true");
+    test("ratings show for everybody: a profile that had turned them off has them all the same, with what it rated, and the settings have no switch for them", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const off = [{ key: "ratings", at: Date.now(), value: false }]; // (turned off before the switch went: kept as it was, and not read)
+      const { phone } = await connect(browser, url, { library: wholeLibrary(url), seed: guestStorage({ ratings: [given(url, 0, 8, 2)], settings: off }) });
       await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
       await place(phone, "home");
+      await expect(tile(phone, "Film number 1").getByTestId("score-badge")).toHaveText("8");
       await tile(phone, "Film number 1").click();
       await expect(phone.getByTestId("rate-title-value")).toHaveText("8/10");
+      await phone.getByTestId("title-back").click();
+      await place(phone, "you");
+      await phone.getByTestId("menu-settings").click();
+      await expect(phone.getByTestId("settings-page")).toBeVisible();
+      await expect(phone.getByTestId("ratings-switch")).toHaveCount(0);
     });
 
-    test("a rated title shows its score in the corner of its picture, in the rows, a search, Continue watching and a list; one not rated shows none, and with ratings off nothing does", async ({ browser, baseURL }) => {
+    test("a rated title shows its score in the corner of its picture, in the rows, a search, Continue watching and a list; one not rated shows none", async ({ browser, baseURL }) => {
       const url = baseURL!;
       const link = (n: number) => `${url}/fixtures/sample.mp4?n=${n}`;
       const started = { key: `url:${link(4)}`, at: day(5), title: "Film number 5", url: link(4), position: 1500, duration: 6000 };
@@ -3694,16 +3671,6 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await phone.getByTestId("rate-title-remove").click();
       await phone.getByTestId("title-back").click();
       await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
-
-      // With ratings off in the settings there is none anywhere.
-      await place(phone, "you");
-      await phone.getByTestId("menu-settings").click();
-      await phone.getByTestId("ratings-switch").click();
-      await expect(phone.getByTestId("ratings-switch")).toHaveAttribute("aria-checked", "false");
-      await phone.getByTestId("page-back").click();
-      await place(phone, "home");
-      await expect(tile(phone, "Film number 1")).toBeVisible();
-      await expect(phone.getByTestId("score-badge")).toHaveCount(0);
     });
 
     test("the account page has My ratings among the profile's places, for a guest too, saying how many; it opens the list over the page, and a title opened from it shows over the list", async ({ browser, baseURL }) => {
@@ -3727,13 +3694,6 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await sheet.getByTestId("sheet-close").click();
       await expect(sheet).toHaveCount(0);
       await expect(phone.getByTestId("account-screen")).toBeVisible();
-
-      // Off in the settings, the place is gone from the page; what was rated is kept.
-      await phone.getByTestId("menu-settings").click();
-      await phone.getByTestId("ratings-switch").click();
-      await phone.getByTestId("page-back").click();
-      await expect(phone.getByTestId("account-screen")).toBeVisible();
-      await expect(phone.getByTestId("menu-ratings")).toHaveCount(0);
     });
 
     test("My ratings works on a phone with no TV: the keyboard is in the sheet, a title opens from it (with no Play), its rating can be taken back, and with none the sheet says what to do", async ({ browser, baseURL }) => {

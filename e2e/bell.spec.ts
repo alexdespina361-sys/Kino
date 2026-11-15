@@ -2,7 +2,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openDevice, openLibrary, openProfilePlace, openTv, openTvSignIn, PHONE, place, readPairingCode, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTv, openTvSignIn, PHONE, place, readPairingCode, test, showProfilePage } from "./helpers";
 
 /**
  * The bell: a button beside the profile's picture, on the phone and on the TV. A number on it is what waits for an answer from this profile
@@ -70,12 +70,8 @@ async function signUp(page: Page, account: Account) {
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
-/** The account page is open: friends on, in the settings, and back. */
+/** The account page is open: it has Friends (they are on for everybody since 15 Nov 2026: there is no switch to turn on). */
 async function turnOnFriends(page: Page) {
-  await page.getByTestId("menu-settings").click();
-  await page.getByTestId("friends-switch").click();
-  await expect(page.getByTestId("friends-switch")).toHaveAttribute("aria-checked", "true");
-  await page.keyboard.press("Escape"); // (back to the account page)
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
 
@@ -134,10 +130,7 @@ async function screenWithFriends(browser: Browser, name: string, options: { lang
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
-  await openProfilePlace(page, "settings");
-  await page.getByTestId("tv-friends-switch").click();
-  await expect(page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("tv-account-back").click();
+  await showProfilePage(page); // (friends are on for everybody: the profile's page has them at once)
   await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible(); // (back on the profile's page, which has its friends now)
   return { page, name: nameOf(account) };
 }
@@ -207,7 +200,7 @@ const rowProblems = (page: Page, rows: string, parts: string) =>
 /* ------------------------------ on a phone ------------------------------ */
 
 test.describe("the bell on the phone", () => {
-  test("it is there with friends on, a request is a number on it that the list answers, and what a friend watches is only a quiet dot", async ({ browser }) => {
+  test("it is there once signed in (friends are on for everybody), a request is a number on it that the list answers, and what a friend watches is only a quiet dot", async ({ browser }) => {
     test.setTimeout(180_000);
     const annAccount = fresh("Ann");
     const ann = await openDevice(browser, { ...PHONE, locale: "en-US" });
@@ -216,11 +209,7 @@ test.describe("the bell on the phone", () => {
     await expect(bell(ann)).toHaveCount(0); // signed out
     await signUp(ann, annAccount);
     await home(ann);
-    await expect(bell(ann)).toHaveCount(0); // signed in, with friends off
-    await ann.getByTestId("account-button").click();
-    await turnOnFriends(ann);
-    await home(ann);
-    await expect(bell(ann)).toBeVisible();
+    await expect(bell(ann)).toBeVisible(); // signed in: friends are on for everybody since 15 Nov 2026
     await expect(badge(ann)).toHaveCount(0);
     await expect(dot(ann)).toHaveCount(0);
 
