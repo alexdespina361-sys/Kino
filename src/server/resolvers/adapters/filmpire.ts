@@ -411,6 +411,21 @@ export type ExtrasLookup = (ask: ExtrasAsk, get: typeof fetch) => Extras;
  */
 export const EXTRAS_GRACE_MS = 4_000;
 
+/**
+ * Ranks a subtitle file by release quality keywords.
+ * Official/Retail/WEB-DL/BluRay/SDH releases score higher than low-quality cam/dvdrip/xvid rips.
+ */
+export function subtitleQualityScore(fileName?: string): number {
+  if (!fileName) return 0;
+  const f = fileName.toLowerCase();
+  let score = 0;
+  if (/\b(?:web-?dl|webrip|bluray|bdrip|remux|retail|official|sdh|proper)\b/i.test(f)) score += 10;
+  if (/\b(?:netflix|amazon|disney|apple|hulu|hbo)\b/i.test(f)) score += 5;
+  if (/\b(?:1080p|2160p|4k|720p)\b/i.test(f)) score += 3;
+  if (/\b(?:dvdrip|xvid|divx|tvrip|cam|ts|tc|telecine|workprint)\b/i.test(f)) score -= 10;
+  return score;
+}
+
 /** The subtitles the subtitle site (OpenSubtitles, through strem.io) lists for a title, as tracks through the proxy: no more than twelve in one language. */
 export async function listedSubtitles(get: typeof fetch, imdbId: string, season?: number, episode?: number): Promise<SubtitleTrack[]> {
   const endpoint =
@@ -419,13 +434,15 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
       : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
   const subData = await getJson<{ subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }> }>(get, endpoint);
   const rawList = subData?.subtitles ?? [];
-  // English (en, eng) and then Romanian (ro, ron, rum) at the top, so both are always included
+  // English (en, eng) and then Romanian (ro, ron, rum) at the top, so both are always included.
+  // Within the same language, higher quality releases (Retail, WEB-DL, BluRay) come first.
   const sortedSubs = [...rawList].sort((a, b) => {
     const lA = normalizeLang(a.lang);
     const lB = normalizeLang(b.lang);
     const prioA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
     const prioB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
-    return prioA - prioB;
+    if (prioA !== prioB) return prioA - prioB;
+    return subtitleQualityScore(b.subtitleFileName) - subtitleQualityScore(a.subtitleFileName);
   });
 
   const tracks: SubtitleTrack[] = [];
@@ -926,7 +943,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         });
 
-        const combinedSubs = [...roSubs, ...listed, ...vlSubs];
+        // Put stream provider's official release captions before third-party listed crowd subtitles
+        const combinedSubs = [...roSubs, ...vlSubs, ...listed];
         const seenSubUrls = new Set<string>();
         const uniqueSubs: SubtitleTrack[] = [];
         for (const sub of combinedSubs) {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFilmpireAdapter, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
+import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
 
 /*
  * What the filmpire adapter does around the stream it finds: the extras (the subtitle sites' lists and the Romanian subtitles) are asked for while the
@@ -181,5 +181,33 @@ describe("the anime site", () => {
     const res = await createFilmpireAdapter({ fetch: net.fetch, extras: none }).resolve(EPISODE);
     expect(res.status).toBe("success");
     expect([...net.hosts()].some((host) => host.endsWith("animeheaven.me"))).toBe(true);
+  });
+});
+
+describe("subtitle quality scoring and ranking", () => {
+  it("scores official, WEB-DL, BluRay and Retail releases higher than dvdrip/cam/xvid", () => {
+    expect(subtitleQualityScore("Movie.1080p.WEB-DL.DDP5.1.Atmos.H.264-FLUX.srt")).toBeGreaterThanOrEqual(10);
+    expect(subtitleQualityScore("Movie.2024.BluRay.Retail.Official.srt")).toBeGreaterThanOrEqual(10);
+    expect(subtitleQualityScore("Movie.dvdrip.xvid-orpheus.srt")).toBeLessThan(0);
+    expect(subtitleQualityScore("Movie.CAM.HDCAM.x264.srt")).toBeLessThan(0);
+    expect(subtitleQualityScore(undefined)).toBe(0);
+  });
+
+  it("sorts listed subtitles so higher quality release tracks appear before low-quality rips in the same language", async () => {
+    const fakeFetch = (async () =>
+      Response.json({
+        subtitles: [
+          { id: "1", lang: "eng", subtitleFileName: "Show.S01E01.DVDRip.XviD.srt", url: "https://subs.example/dvdrip.srt" },
+          { id: "2", lang: "eng", subtitleFileName: "Show.S01E01.1080p.WEB-DL.Official.Retail.srt", url: "https://subs.example/official.srt" },
+          { id: "3", lang: "ron", subtitleFileName: "Show.S01E01.RoSub.srt", url: "https://subs.example/ro.srt" },
+        ],
+      })) as typeof fetch;
+
+    const subs = await listedSubtitles(fakeFetch, "tt0001", 1, 1);
+    expect(subs.length).toBe(3);
+    // English comes first, with the official/WEB-DL release ranked before DVDRip
+    expect(subs[0]?.label).toContain("Show.S01E01.1080p.WEB-DL.Official.Retail");
+    expect(subs[1]?.label).toContain("Show.S01E01.DVDRip.XviD");
+    expect(subs[2]?.lang).toBe("ro");
   });
 });
