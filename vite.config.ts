@@ -8,7 +8,9 @@ const http = `http://127.0.0.1:${port}`;
 // last wins, which dropped the proxy and plugins and made /ws hang. vite-config.test.ts guards this.
 export default defineConfig({
   plugins: [react()],
-  build: { outDir: "dist/client", emptyOutDir: true },
+  // The oldest browser of a TV we know of is Chromium 94 (Hisense VIDAA 6, Samsung Tizen 7, from 2021): the build is made for it, so a newer way of
+  // writing something is turned into one it reads (e2e/old-tv.spec.ts opens the site in it). The others are Vite's own defaults.
+  build: { outDir: "dist/client", emptyOutDir: true, target: ["chrome94", "edge107", "firefox104", "safari16"] },
   // Dev only: Vite serves the UI, Fastify serves /api, /ws and /fixtures. In production Fastify serves everything.
   server: {
     host: "0.0.0.0",
