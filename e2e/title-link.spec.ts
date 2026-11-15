@@ -69,6 +69,25 @@ test.describe("a title's own address", () => {
     await expect.poll(() => search(tv)).toBe("");
   });
 
+  test("opens its page once: the library after a film from it, and a reload, are Home (the owner's report: the same page kept coming back)", async ({ browser }) => {
+    const asked: string[] = [];
+    const tv = await open(browser, "/tv?title=movie-603", asked);
+    await expect(tv.getByTestId("tv-detail")).toContainText("The Matrix");
+    await tv.getByTestId("tv-detail-play").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await expect.poll(() => search(tv)).toBe(""); // (a film plays: the address names no page)
+    await tv.keyboard.press("Escape"); // back to the library
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeVisible();
+    await tv.waitForTimeout(600); // (time for a look-up, had one been asked)
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    expect(asked).toEqual(["filmpire-movie-603"]); // (asked once, when the link was opened)
+    await tv.reload();
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeVisible();
+    await tv.waitForTimeout(600);
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    expect(asked).toEqual(["filmpire-movie-603"]);
+  });
+
   test("of a title nobody knows leaves Home as it is, and the address without it", async ({ browser }) => {
     const asked: string[] = [];
     const tv = await open(browser, "/tv?title=movie-999", asked);
