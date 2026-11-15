@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseRole, isHandHeld, isPhone, type RoleInput } from "./role";
+import { chooseRole, isDesk, isHandHeld, isPhone, type RoleInput } from "./role";
 
 const DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
@@ -107,5 +107,19 @@ describe("isHandHeld", () => {
     expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 10, coarsePointer: false })).toBe(false);
     expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: true })).toBe(false); // (a coarse pointer and nothing to touch)
     for (const userAgent of [FIRE_TV, TIZEN, WEBOS, VIDAA, ANDROID_TV]) expect(isHandHeld({ userAgent, touchPoints: 1, coarsePointer: true })).toBe(false);
+  });
+});
+
+describe("isDesk", () => {
+  it("is a laptop or a PC with a mouse or a pad, whose big-screen page stops growing with the window", () => {
+    expect(isDesk({ userAgent: DESKTOP, finePointer: true })).toBe(true);
+    expect(isDesk({ userAgent: IPAD, finePointer: true })).toBe(true); // (a Mac says the same as an iPad: the pointer tells them apart)
+  });
+
+  it("is not a TV, a TV box with a mouse, a phone or a tablet", () => {
+    for (const userAgent of [TIZEN, WEBOS, FIRE_TV, ANDROID_TV]) expect(isDesk({ userAgent, finePointer: true })).toBe(false);
+    for (const userAgent of [PIXEL, IPHONE, FIRE_TABLET]) expect(isDesk({ userAgent, finePointer: true })).toBe(false);
+    expect(isDesk({ userAgent: DESKTOP, finePointer: false })).toBe(false); // (a touch screen with no mouse)
+    expect(isDesk({ userAgent: IPAD, finePointer: false })).toBe(false);
   });
 });

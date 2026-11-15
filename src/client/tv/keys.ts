@@ -56,6 +56,13 @@ const BY_KEY: Record<string, RemoteAction> = {
   P: "previous",
   s: "stop",
   S: "stop",
+  // (The three keys under a hand on a keyboard, as the video sites have them: back, pause, on.)
+  j: "rewind",
+  J: "rewind",
+  k: "playpause",
+  K: "playpause",
+  l: "forward",
+  L: "forward",
 };
 
 /** TV key codes, for browsers that report no usable `key` for the remote's buttons: Android TV's, then Hisense's (VIDAA), webOS's and Tizen's. */

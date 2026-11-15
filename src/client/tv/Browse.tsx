@@ -39,6 +39,7 @@ import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, Notific
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
+import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
@@ -142,6 +143,18 @@ function useNarrowColumns(posters: boolean): number {
   }, [posters]);
   return columns;
 }
+/** The page's width in units (columns.ts, `pageWidth`), kept as the window changes. */
+function usePageWidth(): number {
+  const read = () => pageWidth(innerWidth, innerHeight, document.documentElement.dataset.fit === "desk");
+  const [width, setWidth] = useState(read);
+  useEffect(() => {
+    const update = () => setWidth(read());
+    addEventListener("resize", update);
+    return () => removeEventListener("resize", update);
+  }, []);
+  return width;
+}
+
 /** What the banner and the picture behind the screen show: the title the remote is on. */
 interface Focused {
   entry: Entry;
@@ -294,7 +307,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const narrowColumns = useNarrowColumns(true);
   const narrowCategoryColumns = useNarrowColumns(false);
   const narrow = narrowColumns > 0;
-  const resultColumns = narrowColumns || RESULT_COLUMNS;
+  const wide = usePageWidth();
+  const resultColumns = narrowColumns || columnsFor(wide, RESULT_COLUMNS, PITCH_EM.poster);
   const [library, setLibrary] = useState<Library | null>(remembered.library);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
@@ -395,7 +409,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /* eslint-enable react-hooks/exhaustive-deps */
   // (A phone's categories are tiles of words, not pictures: two across, where the posters of the other pages are three.)
   const posterGrid = !!grid && grid.layout !== "categories" && grid.entries.every(isTitle);
-  const gridColumns = grid?.layout === "categories" ? (compact ? 2 : narrowCategoryColumns || CATEGORY_COLUMNS) : posterGrid ? narrowColumns || GRID_COLUMNS : narrowCategoryColumns || WIDE_COLUMNS;
+  // (A window wider than 16 by 9, or a computer's wide monitor, has room for more across: see `columnsFor`.)
+  const gridColumns =
+    grid?.layout === "categories"
+      ? compact
+        ? 2
+        : narrowCategoryColumns || columnsFor(wide, CATEGORY_COLUMNS, PITCH_EM.category)
+      : posterGrid
+        ? narrowColumns || columnsFor(wide, GRID_COLUMNS, PITCH_EM.poster)
+        : narrowCategoryColumns || columnsFor(wide, WIDE_COLUMNS, PITCH_EM.wide);
   // (A grid in sections, a friend's lists, has each section start a row of its own, under its heading.)
   const sectionPlace = grid?.sections ? sectionPlaces(grid.sections, gridColumns) : undefined;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.

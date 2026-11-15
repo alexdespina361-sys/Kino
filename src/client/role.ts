@@ -71,6 +71,28 @@ export const thisIsPhone = (): boolean => isPhone({ ...thisDevice(), shortSide: 
 
 export const thisIsHandHeld = (): boolean => isHandHeld(thisDevice());
 
+export interface DeskInput {
+  userAgent: string;
+  /** `(hover: hover) and (pointer: fine)`: a mouse or a pad is the main way in. */
+  finePointer: boolean;
+}
+
+/**
+ * A computer: a laptop or a PC, worked with a mouse or a pad from an arm's length. Not a TV (its browser says so, and it is looked at from across a room),
+ * and not a phone, a tablet or a TV box that happens to have a mouse (Android, iOS). The big screen's page is sized for the couch; on a computer it stops
+ * growing with the window past a laptop's width, so a wide monitor shows more titles and not bigger ones (tv.css, `data-fit="desk"`).
+ */
+export const isDesk = (input: DeskInput): boolean => input.finePointer && !TV_AGENT.test(input.userAgent) && !/android|iphone|ipad|ipod/i.test(input.userAgent);
+
+/** What somebody chose for this device, whatever it looks like: "couch" for a computer that is watched from across a room (plugged into a TV), "desk" for a computer the guess missed. */
+export const FIT_KEY = "kino.fit";
+
+export const thisIsDesk = (): boolean => {
+  const chosen = readStorage(FIT_KEY);
+  if (chosen === "couch" || chosen === "desk") return chosen === "desk";
+  return isDesk({ userAgent: navigator.userAgent, finePointer: typeof matchMedia === "function" && matchMedia("(hover: hover) and (pointer: fine)").matches });
+};
+
 export const roleOfThisPage = (): Role =>
   chooseRole({
     pathname: location.pathname,
