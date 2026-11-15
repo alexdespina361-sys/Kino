@@ -958,6 +958,8 @@ export const it: Dictionary = {
   "friends.tabLists": "Liste",
   "friends.tabRatings": "Valutazioni",
   "friends.noLists": "{name} non ha niente nelle liste.",
+  "friends.bothWant": "Volete vederli entrambi",
+  "friends.yourScore": "Tu: {score}/10",
   "friends.noRatings": "{name} non ha ancora valutato niente.",
   "friends.notSharingLists": "{name} non condivide le sue liste.",
   "friends.notSharingRatings": "{name} non condivide le sue valutazioni.",

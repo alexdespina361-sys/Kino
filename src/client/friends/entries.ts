@@ -1,4 +1,4 @@
-import { activityVerb, isLive, listOf, resolveLists, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type ListInfo, type LiveListItem, type LiveRating, type Message } from "../../shared";
+import { activityVerb, isLive, listOf, ratingKey, resolveLists, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type ListInfo, type LiveListItem, type LiveRating, type Message } from "../../shared";
 import { ago } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
@@ -115,6 +115,29 @@ export function listsOf(shared: FriendLists): SharedList[] {
 }
 
 export const entriesOfList = (list: SharedList): Entry[] => list.items.map(entryOfSaved);
+
+/**
+ * The titles a friend keeps in a list that this profile keeps in a list of its own too, whichever lists those are: each title once (where it first is among the
+ * friend's lists), in the friend's order. What two friends both mean to watch is something to watch together.
+ */
+export function bothWant(lists: readonly SharedList[], mine: readonly { url: string }[]): LiveListItem[] {
+  const ours = new Set(mine.map((item) => titleLink(item.url)));
+  const taken = new Set<string>();
+  return lists
+    .flatMap((list) => list.items)
+    .filter((item) => {
+      const link = titleLink(item.url);
+      if (!ours.has(link) || taken.has(link)) return false;
+      taken.add(link);
+      return true;
+    });
+}
+
+/** This profile's own scores, to be found by the title (and the season) that a friend's rating is of. */
+export const scoresByTitle = (ratings: readonly Pick<LiveRating, "url" | "season" | "score">[]): ReadonlyMap<string, number> =>
+  new Map(ratings.map((rating) => [ratingKey(rating.url, rating.season), rating.score] as const));
+/** The score this profile gave the title (or the season) a friend rated, if it gave one. */
+export const myScoreFor = (scores: ReadonlyMap<string, number>, rating: Pick<LiveRating, "url" | "season">): number | undefined => scores.get(ratingKey(rating.url, rating.season));
 
 /** What a friend rated (the ones that were not taken back). */
 export const ratedBy = (shared: FriendRatings): LiveRating[] => shared.ratings.filter(isLive) as LiveRating[];

@@ -1,15 +1,15 @@
-import { activityVerb, canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState, type PlanItem } from "../../shared";
+import { activityVerb, canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState, type LiveRating, type PlanItem } from "../../shared";
 import { listName } from "../account/cards";
 import { chatWaiting, waitingFrom } from "../chat/notices";
 import { sortRatings } from "../account/ratingText";
 import { ago, formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
-import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
+import { entryOfRating, entryOfSaved, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
 import { BELL_WAITING, bellView } from "./bell";
 import type { Cleared } from "./cleared";
 import { inboxToShow, planLines, planStatus, type PlanStatus } from "./plans";
-import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
+import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, myScoreFor, nameOf, ratedBy, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
 /**
  * What the TV's friends pages are made of, worked out from what the server says of the friends: pure, like tv/pages.ts, so what
@@ -221,12 +221,21 @@ export function bellRows(state: FriendsState | null, now: number, cleared: Clear
 /** What was asked of the server for a friend's page: nothing yet (null), the answer, or why there is none. */
 export type Asked<T> = { data?: T; problem?: string } | null;
 
+/** What this profile keeps itself, for what it has in common with a friend: the titles in its lists, and its ratings (none while ratings are off). */
+export interface Mine {
+  list: readonly { url: string }[];
+  ratings: readonly Pick<LiveRating, "url" | "season" | "score">[];
+}
+const NOTHING_MINE: Mine = { list: [], ratings: [] };
+
 /**
  * A friend's page: the titles in the lists they keep (each list a section of its own, under its name, one under the other) or the ones they rated, the newest first.
  * Null for a friend who is gone. When there is nothing to show, `empty` says why: not shared, turned off, still asked, or nothing yet.
  * Under the name: what they are doing (watching, else online) and since when they are friends; and, when what they watch is not shown, the line that says why.
+ * What the two have in common comes first: the titles both keep in a list are a section of their own above the friend's lists, and a title both rated says
+ * this profile's score after the friend's.
  */
-export function friendGrid(view: View, state: FriendsState | null, lists: Asked<FriendLists>, ratings: Asked<FriendRatings>, iGet = true, now = Date.now()): GridPage | null {
+export function friendGrid(view: View, state: FriendsState | null, lists: Asked<FriendLists>, ratings: Asked<FriendRatings>, iGet = true, now = Date.now(), mine: Mine = NOTHING_MINE): GridPage | null {
   if (view.kind !== "friend") return null;
   const friend = state?.friends.find((each) => each.id === view.id);
   if (!friend) return null;
@@ -241,8 +250,13 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
     if (!friend.lists) return none(t("friends.notSharingLists", { name: friend.name }));
     if (!lists) return none(t("common.loading"));
     if (!lists.data) return none(lists.problem ?? t("common.loading"));
-    // (Each list is a section under its name, one under the other. A title in two lists is in both, so its id says which.)
-    const shown = listsOf(lists.data).map((list) => ({ title: listName(list.info), entries: entriesOfList(list).map((entry): Entry => ({ ...entry, id: `${list.info.id}:${entry.id}` })) }));
+    // (Each list is a section under its name, one under the other. A title in two lists is in both, so its id says which. The titles both keep come first.)
+    const theirs = listsOf(lists.data);
+    const both = bothWant(theirs, mine.list);
+    const shown = [
+      ...(both.length > 0 ? [{ title: t("friends.bothWant"), entries: both.map((item): Entry => ({ ...entryOfSaved(item), id: `both:${item.id}` })) }] : []),
+      ...theirs.map((list) => ({ title: listName(list.info), entries: entriesOfList(list).map((entry): Entry => ({ ...entry, id: `${list.info.id}:${entry.id}` })) })),
+    ];
     return {
       ...page,
       entries: withProgress(shown.flatMap((section) => section.entries), lists.data.progress),
@@ -254,5 +268,11 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
   if (!friend.ratings) return none(t("friends.notSharingRatings", { name: friend.name }));
   if (!ratings) return none(t("common.loading"));
   if (!ratings.data) return none(ratings.problem ?? t("common.loading"));
-  return { ...page, entries: withProgress(sortRatings(ratedBy(ratings.data), "new").map(entryOfRating), ratings.data.progress), empty: t("friends.noRatings", { name: friend.name }) };
+  const scores = scoresByTitle(mine.ratings);
+  const rated = sortRatings(ratedBy(ratings.data), "new").map((rating): Entry => {
+    const entry = entryOfRating(rating);
+    const yours = myScoreFor(scores, rating);
+    return yours === undefined ? entry : { ...entry, note: [entry.note, t("friends.yourScore", { score: yours })].filter(Boolean).join(" · ") };
+  });
+  return { ...page, entries: withProgress(rated, ratings.data.progress), empty: t("friends.noRatings", { name: friend.name }) };
 }

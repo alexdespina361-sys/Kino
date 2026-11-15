@@ -374,6 +374,45 @@ describe("a friend's page", () => {
     expect(new Set(grid?.entries.map((entry) => entry.id)).size).toBe(2);
   });
 
+  it("puts first, as a section of its own, the titles both keep in a list (whichever lists those are), each once, and leaves the friend's lists as they are", () => {
+    const twice: FriendLists = {
+      listNames: [{ key: "horror", at: 1, name: "Horror" }],
+      list: [
+        { key: "k1", at: 1, id: "k1", title: "Alien", url: "https://x.example/alien" },
+        { key: "k2", at: 2, list: "horror", id: "k2", title: "It", url: "https://x.example/it" },
+        { key: "horror|k1", at: 3, list: "horror", id: "k1", title: "Alien", url: "https://x.example/alien" },
+      ],
+    };
+    // (Which of my lists a title is in does not matter: the title is what counts.)
+    const mine = { list: [{ url: "https://x.example/alien" }, { url: "https://x.example/heat" }], ratings: [] };
+    const grid = friendGrid(view, state(), { data: twice }, null, true, NOW, mine);
+    expect(grid?.sections).toEqual([{ title: t("friends.bothWant"), count: 1 }, { title: t("list.favourites"), count: 1 }, { title: "Horror", count: 2 }]);
+    expect(grid?.entries.map((entry) => entry.title)).toEqual(["Alien", "Alien", "It", "Alien"]);
+    expect(new Set(grid?.entries.map((entry) => entry.id)).size).toBe(4);
+    expect(grid?.entries[0]).toMatchObject({ url: "https://x.example/alien" });
+  });
+
+  it("has no such section when nothing is kept by both", () => {
+    const grid = friendGrid(view, state(), { data: lists() }, null, true, NOW, { list: [{ url: "https://x.example/heat" }], ratings: [] });
+    expect(grid?.sections?.map((section) => section.title)).toEqual([t("list.favourites"), "Horror"]);
+  });
+
+  it("says this profile's score after the friend's on a title (or a season) both rated, and nothing on the others", () => {
+    const mine = {
+      list: [],
+      ratings: [
+        { url: "https://x.example/alien", score: 6 },
+        { url: "https://x.example/dark", season: 2, score: 9 },
+        { url: "https://x.example/dark", score: 4 }, // (the show as a whole: not the season the friend rated)
+      ],
+    };
+    const grid = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: ratings() }, true, NOW, mine);
+    const notes = new Map(grid?.entries.map((entry) => [entry.title, entry.note]));
+    expect(notes.get("Alien")).toBe(`9/10 · ${t("friends.yourScore", { score: 6 })}`);
+    expect(notes.get("Dark")).toBe(`${t("player.season", { n: 2 })} · 7/10 · ${t("friends.yourScore", { score: 9 })}`);
+    expect(notes.get("Heat")).toBe("8/10");
+  });
+
   it("makes no section of a list with no titles, and none at all of the ratings", () => {
     const empty: FriendLists = { ...lists(), listNames: [{ key: "horror", at: 1, name: "Horror" }, { key: "later", at: 2, name: "Later" }] };
     expect(friendGrid(view, state(), { data: empty }, null)?.sections?.map((section) => section.title)).toEqual([t("list.favourites"), "Horror"]);

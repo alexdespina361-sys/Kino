@@ -9,7 +9,7 @@ import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
 import { waitingFrom } from "../chat/notices";
 import { PhoneChat } from "../chat/PhoneChat";
-import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
+import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, myScoreFor, nameOf, progressFor, progressNote, ratedBy, recommendationOf, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { friendOrder, watchedLately } from "../friends/pages";
 import { dateValue, defaultPlan, duePlans, inboxToShow, momentOf, planLines, planMoment, planStatus, timeValue, whenLabel } from "../friends/plans";
@@ -23,7 +23,8 @@ import { ChevronIcon, ClockIcon, CloseIcon, MessageIcon, PlusIcon, StarIcon, Use
 import { linkCodeOf, partyLink, typedLinkCode } from "../shared/launch";
 import { Poster } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
-import { entryOfRating, type Entry } from "../tv/pages";
+import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
+import { useProfileData } from "../account/store";
 import { listName } from "../account/cards";
 import { Group } from "./AccountPages";
 import { Sheet } from "./Sheet";
@@ -631,6 +632,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
 
 function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: OpenTitle }) {
   const t = useT();
+  const { list: mine } = useProfileData();
   const answer = useShared<FriendLists>(friend.id, friend.lists, askLists, friend.activity);
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   if (!friend.lists) return <p className="muted" data-testid="friend-not-sharing">{friend.on ? t("friends.notSharingLists", { name: friend.name }) : t("friends.theirsOff", { name: friend.name })}</p>;
@@ -639,8 +641,17 @@ function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: Ope
   const lists = listsOf(answer.data);
   const progress = answer.data.progress;
   if (lists.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noLists", { name: friend.name })}</p>;
+  // (What both keep in a list comes first: something to watch together.)
+  const both = bothWant(lists, mine);
   return (
     <div className="page-stack" data-testid="friend-lists">
+      {both.length > 0 && (
+        <CardRow title={t("friends.bothWant")} testId="friend-both">
+          {withProgress(both.map(entryOfSaved), progress).map((entry) => (
+            <Card key={entry.id} testId="friend-both-card" title={entry.title} image={entry.image ?? entry.backdrop} note={entry.note ?? (entry.year ? String(entry.year) : undefined)} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
+          ))}
+        </CardRow>
+      )}
       {lists.map((list) => (
         <CardRow key={list.info.id} title={listName(list.info)} testId="friend-list">
           {withProgress(entriesOfList(list), progress).map((entry) => (
@@ -673,12 +684,15 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
   const t = useT();
   const language = useLanguage();
   const answer = useShared<FriendRatings>(friend.id, friend.ratings, askRatings, friend.activity);
+  const { ratings: mine, settings } = useProfileData();
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   if (!friend.ratings) return <p className="muted" data-testid="friend-not-sharing">{friend.on ? t("friends.notSharingRatings", { name: friend.name }) : t("friends.theirsOff", { name: friend.name })}</p>;
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;
   if (answer.problem || !answer.data) return <p className="auth-error" role="alert">{answer.problem}</p>;
   const ratings = sortRatings(ratedBy(answer.data), "new");
   const progress = answer.data.progress;
+  // (A title both rated says this profile's score after the friend's: none while this profile has ratings turned off.)
+  const scores = scoresByTitle((settings.ratings ?? true) ? mine : []);
   if (ratings.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noRatings", { name: friend.name })}</p>;
   return (
     <ul className="rating-list" data-testid="friend-ratings">
@@ -693,6 +707,11 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
                   <StarIcon filled /> {rating.score}/10
                 </span>
                 <span className="muted">{scoreWord(t, rating.score)}</span>
+                {myScoreFor(scores, rating) !== undefined && (
+                  <span className="muted" data-testid="friend-rating-mine">
+                    {t("friends.yourScore", { score: myScoreFor(scores, rating)! })}
+                  </span>
+                )}
               </span>
               <HowFar progress={progressFor(progress, rating.url)} />
               {rating.note && <span className="rating-quote">{rating.note}</span>}

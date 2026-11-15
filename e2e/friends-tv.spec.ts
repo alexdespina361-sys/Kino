@@ -447,6 +447,27 @@ test.describe("a friend's page", () => {
     await expect(tile(ann.page, bob.name)).toHaveCount(0);
   });
 
+  test("puts first what both keep in a list, as a section above their lists, and a title both rated says one's own score after theirs", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await seed(ann.page, filmCards());
+    // (Bob keeps the same film and rated it, as another screen of his would have: this one hears it when it loads)
+    const at = Date.now();
+    await seed(bob.page, { list: [{ key: listKey(FILM), at, id: "f17", title: "Alpha Film", url: FILM, year: 1931 }], ratings: [{ key: ratingKey(FILM), at, title: "Alpha Film", url: FILM, year: 1931, kind: "movie", score: 6, ratedAt: at }] });
+    await bob.page.reload();
+
+    const page = bob.page;
+    await openFriends(page);
+    await tile(page, ann.name).click();
+    await expect(view(page)).toHaveAttribute("data-view", /^friend:/);
+    await expect(page.getByTestId("tv-grid-heading")).toHaveText([en["friends.bothWant"], en["list.favourites"]]);
+    await expect(tile(page, "Alpha Film")).toHaveCount(2); // (once in common, once in her list)
+    await page.getByTestId("friend-tab-ratings").click();
+    await expect(tile(page, "Alpha Film")).toContainText(`8/10 · ${en["friends.yourScore"].replace("{score}", "6")}`);
+  });
+
   test("shows each of their lists as a section of its own, one under the other under its name (a title in two lists in both), and the remote walks from one section to the next", async ({ browser }) => {
     test.setTimeout(150_000);
     const ann = await screenWithFriends(browser, "Ann");

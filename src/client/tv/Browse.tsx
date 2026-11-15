@@ -411,7 +411,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (view.kind !== "profile") return [];
     return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: progress.length });
   }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length, iGet]);
-  const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
+  // (`data` holds this profile's own lists and ratings: what it has in common with the friend comes first on their page.)
+  const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */
   // (A phone's categories are tiles of words, not pictures: two across, where the posters of the other pages are three.)
   const posterGrid = !!grid && grid.layout !== "categories" && grid.entries.every(isTitle);
