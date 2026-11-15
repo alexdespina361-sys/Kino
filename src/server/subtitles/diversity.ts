@@ -36,7 +36,9 @@ export function inferSubtitleSource(track: SubtitleTrack & { source?: SubtitleSo
   if (u.includes("subdl") || l.includes("subdl")) {
     return "subdl";
   }
-  if (u.includes("opensubtitles") || l.includes("opensubtitles")) {
+  // (The subtitle site's files come through the proxy, from strem.io's hosts: `/api/proxy?url=https%3A%2F%2Fsubs5.strem.io%2F...`. Without this they
+  // counted as the stream's own captions, and a stream caption with no release name lost its place to three crowd files.)
+  if (u.includes("opensubtitles") || l.includes("opensubtitles") || u.includes("strem.io")) {
     return "opensubtitles";
   }
   return "provider";
