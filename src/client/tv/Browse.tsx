@@ -1670,6 +1670,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   {detail.entry.title}
                 </h1>
                 <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
+                {/* (Above the buttons, as what the movie database knows is: the page stands on its foot, so what comes after it has opened grows upwards and Play stays where it was.) */}
+                {series.unavailable && (
+                  <p className="tv-detail-gone" data-testid="tv-detail-unavailable">
+                    {t("library.unavailableFilm")}
+                  </p>
+                )}
                 {about && <AboutFacts about={about} hasRoDub={detail.entry.hasRoDub || about.hasRoDub} />}
                 {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
                 {about && <AboutPeople about={about} />}

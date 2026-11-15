@@ -9,6 +9,8 @@
 //   node scripts/feedback.mjs delete <id> --yes     node scripts/feedback.mjs export [file]
 //   node scripts/feedback.mjs watch                 (one line for each new report and each thing a sender adds; for a Monitor)
 //   node scripts/feedback.mjs stats [--days 14] [--json]    (how many accounts and how many visitors, by day: counts only; `node scripts/stats.mjs` is the same; docs/stats.md)
+//   node scripts/feedback.mjs unavailable [--all] [--json]  (what nobody could play, the most asked for first, to look for sources with; `node scripts/unavailable.mjs` is the same;
+//                                                            --all adds what found nothing only once, or not for two weeks: docs/unavailable.md)
 //
 // Where: KINO_URL (the site, http://localhost:8787 when not set) and FEEDBACK_ADMIN_TOKEN, or both in .kino-feedback.json ({ "url": "...", "token": "..." },
 // which git ignores): beside the scripts folder, else in the main folder of the repository when this is a git worktree, else the file KINO_FEEDBACK_FILE names.
@@ -102,6 +104,7 @@ async function call(method, route, body, { timeoutMs = 90_000 } = {}) {
   }
   if (response.status === 401) throw new Error("The server did not take the token (401).");
   if (response.status === 404 && route.startsWith("/api/admin/feedback") && !/\/\d/.test(route)) throw new Error("The server has no team side: FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters (404).");
+  if (response.status === 404 && route.startsWith("/api/admin/unavailable")) throw new Error("The server has no list for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the list was added.");
   if (response.status === 404 && route.startsWith("/api/admin/stats")) throw new Error("The server has no stats for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the stats were added.");
   if (response.status === 429) throw new Error("Too many wrong tries from this address: wait a quarter of an hour.");
   return response;
@@ -340,6 +343,23 @@ async function stats({ flags }) {
   for (const row of data.days) console.log(columns.map(([key, , width]) => String(row[key] ?? "").padStart(width)).join("  "));
 }
 
+/** What nobody could play: the films and episodes no source had a video of, the most asked for first (titles and dates only: nothing about who pressed Play). */
+async function unavailable({ flags }) {
+  const data = await json("GET", `/api/admin/unavailable${flags.all ? "?all=1" : ""}`);
+  if (flags.json) return console.log(JSON.stringify(data, null, 2));
+  console.log(`Kino on ${connection.url}, at ${when(data.at)} UTC: ${data.marked} marked "Not available yet" on the screens, ${data.total} kept in all.`);
+  console.log(flags.all ? "Every one kept is listed." : "Only the marked are listed (two separate plays found nothing, the last in the past two weeks); --all lists every one.");
+  if (data.items.length === 0) return console.log("\nNothing to list.");
+  const what = (item) => {
+    const name = item.title ?? `(${item.titleId})`;
+    return item.season !== undefined ? `${name} S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}` : `${name}${item.kind === "series" ? "" : " (film)"}`;
+  };
+  const day = (at) => when(at).slice(0, 10);
+  console.log(`\n${"Times".padStart(5)}  ${"Last".padEnd(10)}  ${"First".padEnd(10)}  What, and its link`);
+  for (const item of data.items) console.log(`${String(item.occasions).padStart(5)}  ${day(item.last)}  ${day(item.first)}  ${what(item)}${item.marked ? "" : "  [not marked]"}\n${" ".repeat(33)}${item.link}`);
+  console.log('\n"Times" is how many separate occasions (6 hours apart or more) a play found nothing since one last found a video. A play that finds one takes it off.');
+}
+
 const parsed = parse(process.argv.slice(2));
 const command = parsed.words[0];
 const commands = {
@@ -348,6 +368,7 @@ const commands = {
   reply,
   watch,
   stats,
+  unavailable,
   export: exportAll,
   status: ({ words }) => {
     if (!STATUSES.includes(words[2])) fail(`status <id> <${STATUSES.join("|")}>`);

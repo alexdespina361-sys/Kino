@@ -229,6 +229,8 @@ export const ro: Dictionary = {
   "library.results_few": "{count} rezultate",
   "library.results_other": "{count} de rezultate",
   "library.kindMovie": "Film",
+  "library.unavailable": "Încă indisponibil",
+  "library.unavailableFilm": "Nicio sursă nu a avut acest film la ultimele încercări. Poți încerca din nou.",
   "library.kindSeries": "Serial",
 
   /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */

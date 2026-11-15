@@ -110,6 +110,15 @@ export type EpisodeDetail = z.infer<typeof EpisodeDetailSchema>;
 
 export const EpisodeDetailsSchema = z.object({ episodes: z.array(EpisodeDetailSchema).max(500) });
 
+/**
+ * What no source had of one title, as the screens mark it "Not available yet" (the server's `library/unavailable.ts`): the film itself, or episodes of the
+ * show. A label only: Play looks the title up as always.
+ */
+export const UnavailableSchema = z.object({
+  title: z.boolean(),
+  episodes: z.array(z.object({ season: z.number().int().min(0).max(200), episode: z.number().int().min(0).max(5000) })).max(500),
+});
+
 /** The seasons of a show that can be watched, in order (a show's specials are not among them). */
 export const SeasonsSchema = z.object({ seasons: z.array(z.number().int().min(1).max(200)).max(200) });
 

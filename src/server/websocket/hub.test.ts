@@ -7,6 +7,7 @@ import { MAX_PHONE_TVS, parseServerMessage, type ClientMessage, type Command, ty
 import { MemoryPersistence } from "../accounts/persistence";
 import { buildApp } from "../app";
 import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
+import { OCCASION_GAP_MS, UnavailableStore } from "../library/unavailable";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
 import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
@@ -3419,6 +3420,73 @@ describe("what playing teaches the library", () => {
     resolveImpl = async () => ({ status: "unsupported", reason: "nothing" });
     await app.inject({ url: `/api/resolve?url=${encodeURIComponent(alive.url)}` }); // (anyone can ask this route: it must not hide titles for everyone)
     expect(await listed()).toEqual(["alive"]);
+  });
+});
+
+describe("what nobody could play is marked for the screens and listed for the team", () => {
+  const episode = (season: number, number: number) => `https://filmpire.sc/watch/60572?s=${season}&e=${number}`;
+  const show: LibrarySource = {
+    id: "fake",
+    name: "Fake",
+    load: async () => [{ id: "r", title: "Row", source: "Fake", items: [{ id: "filmpire-tv-60572", title: "Pokémon", kind: "series", url: episode(1, 1) }] }],
+  };
+  const TOKEN = "team-token-for-the-unavailable-list".padEnd(32, "-");
+  const marks = async (link: string) => (await app.inject({ url: `/api/library/unavailable?url=${encodeURIComponent(link)}` })).json() as { title: boolean; episodes: unknown[] };
+
+  it("marks an episode after two separate plays found nothing, tells every link of the show, lists it for the team, and a play that finds it takes the mark away", async () => {
+    await app.close();
+    let time = Date.now();
+    const unavailable = await UnavailableStore.open({ persistence: new MemoryPersistence(), now: () => time, flushMs: 0 });
+    resolveImpl = async () => ({ status: "unsupported", reason: "no source has it" });
+    app = await buildApp({ resolve: (url) => resolveImpl(url), librarySources: [show], unavailable, feedbackAdminToken: TOKEN });
+    await app.ready();
+    await app.inject({ url: "/api/library" }); // (the library has met the show, so the team's list can call it by its name)
+
+    const { phone } = await pairedSetup();
+    const play = async (link: string, phase: "failed" | "found") => {
+      phone.send({ type: "PLAY_URL", url: link });
+      await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === phase);
+    };
+    await play(episode(23, 3), "failed");
+    await play(episode(23, 3), "failed"); // (Try again, straight away: the same occasion)
+    expect(await marks(episode(1, 1))).toEqual({ title: false, episodes: [] });
+    time += OCCASION_GAP_MS;
+    await play(episode(23, 3), "failed");
+    const answer = await app.inject({ url: `/api/library/unavailable?url=${encodeURIComponent(episode(1, 1))}` });
+    expect(answer.headers["cache-control"]).toBe("no-store");
+    expect(answer.json()).toEqual({ title: false, episodes: [{ season: 23, episode: 3 }] });
+
+    const team = await app.inject({ url: "/api/admin/unavailable", headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(team.statusCode).toBe(200);
+    expect(team.json()).toMatchObject({ total: 1, marked: 1, items: [{ title: "Pokémon", kind: "series", titleId: "filmpire-tv-60572", season: 23, episode: 3, occasions: 2, marked: true }] });
+    expect((await app.inject({ url: "/api/admin/unavailable" })).statusCode).toBe(401);
+
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    await play(episode(23, 3), "found");
+    expect(await marks(episode(1, 1))).toEqual({ title: false, episodes: [] });
+  });
+
+  it("keeps nothing of a link that is not the library's, of a source that could only not be reached, or of the plain resolve route anyone may ask", async () => {
+    await app.close();
+    let time = Date.now();
+    const unavailable = await UnavailableStore.open({ persistence: new MemoryPersistence(), now: () => time, flushMs: 0 });
+    resolveImpl = async () => ({ status: "unsupported", reason: "nothing" });
+    app = await buildApp({ resolve: (url) => resolveImpl(url), unavailable });
+    await app.ready();
+    const { phone } = await pairedSetup();
+    for (let n = 0; n < 2; n++) {
+      phone.send({ type: "PLAY_URL", url: "https://someones.example/private/page" });
+      await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
+      await app.inject({ url: `/api/resolve?url=${encodeURIComponent(episode(2, 1))}` });
+      time += OCCASION_GAP_MS;
+    }
+    resolveImpl = async () => ({ status: "temporary_failure", reason: "try later" });
+    for (let n = 0; n < 2; n++) {
+      phone.send({ type: "PLAY_URL", url: episode(2, 2) });
+      await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
+      time += OCCASION_GAP_MS;
+    }
+    expect(unavailable.list()).toEqual([]);
   });
 });
 

@@ -6,6 +6,7 @@ import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
+import { UnavailableStore, unavailablePersistenceFor } from "./library/unavailable";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
 import { VisitCounter, visitsPersistenceFor } from "./stats/visits";
@@ -49,6 +50,13 @@ const visits = /^(0|off|false|no)$/i.test(process.env.VISITOR_COUNT ?? "")
       return undefined;
     });
 
+// What nobody could play is kept next to the accounts, for the screens to mark and the team to look for sources with (src/server/library/unavailable.ts).
+// A home that cannot be opened must not take the site down with it: then the list is kept in memory until the next start.
+const unavailable = await UnavailableStore.open({ persistence: unavailablePersistenceFor(persistence, kind), log: console }).catch((error: Error) => {
+  console.warn(`The list of what nobody could play could not be opened (${error.message}); it is kept in memory only until the server restarts.`);
+  return undefined;
+});
+
 // "Continue with Google" is on once GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS are all set (docs/google-sign-in.md); what is wrong with them is said, never the secret.
 const google = googleFromEnv(process.env, (message) => console.warn(message));
 
@@ -71,6 +79,7 @@ const app = await buildApp({
   subsync: subsyncStoreFor(persistence, kind),
   feedback,
   ...(visits ? { visits } : {}),
+  ...(unavailable ? { unavailable } : {}),
   ...(feedbackAdminToken ? { feedbackAdminToken } : {}),
   ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).

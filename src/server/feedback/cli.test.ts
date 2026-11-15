@@ -203,4 +203,38 @@ describe("the owner's stats", () => {
     expect(said).toContain("FEEDBACK_ADMIN_TOKEN is not set there");
     expect(said).toContain("deployed before the stats were added");
   });
+
+  const list = {
+    at: Date.parse("2026-11-15T15:00:00Z"),
+    total: 3,
+    marked: 2,
+    items: [
+      { title: "Pokémon", kind: "series", titleId: "filmpire-tv-60572", season: 25, episode: 6, link: "https://filmpire.sc/watch/60572?s=25&e=6", occasions: 4, first: Date.parse("2026-11-14T10:00:00Z"), last: Date.parse("2026-11-15T14:06:00Z"), marked: true },
+      { title: "A Quiet Film", kind: "movie", titleId: "filmpire-movie-77", link: "https://filmpire.sc/watch/77", occasions: 2, first: Date.parse("2026-11-10T10:00:00Z"), last: Date.parse("2026-11-12T10:00:00Z"), marked: true },
+    ],
+  };
+
+  it("lists what nobody could play, the most asked for first, with its episode, dates and link", async () => {
+    const { env, asked } = await statsSite(200, list);
+    const { code, said } = await reader(path.resolve("scripts/unavailable.mjs"), env, []);
+    expect(code).toBe(0);
+    expect(asked).toEqual([{ url: "/api/admin/unavailable", authorization: `Bearer ${TOKEN}` }]);
+    expect(said).toContain('2 marked "Not available yet" on the screens, 3 kept in all');
+    expect(said).toContain("    4  2026-11-15  2026-11-14  Pokémon S25E06");
+    expect(said).toContain("https://filmpire.sc/watch/60572?s=25&e=6");
+    expect(said).toContain("    2  2026-11-12  2026-11-10  A Quiet Film (film)");
+    expect(said).not.toContain(TOKEN);
+  });
+
+  it("asks for every one kept with --all, gives them as they are with --json, and says what a 404 means", async () => {
+    const { env, asked } = await statsSite(200, list);
+    const { code, said } = await reader(SCRIPT, env, ["unavailable", "--all", "--json"]);
+    expect(code).toBe(0);
+    expect(asked[0]?.url).toBe("/api/admin/unavailable?all=1");
+    expect(JSON.parse(said)).toEqual(list);
+    const missing = await statsSite(404, { error: "NOT_FOUND" });
+    const refused = await reader(SCRIPT, missing.env, ["unavailable"]);
+    expect(refused.code).toBe(1);
+    expect(refused.said).toContain("deployed before the list was added");
+  });
 });

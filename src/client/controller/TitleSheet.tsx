@@ -93,6 +93,12 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
               <RecommendButton entry={entry} />
             </div>
           </div>
+          {/* (Under the buttons: the answer comes after the page has opened, and must not move Play.) */}
+          {series.unavailable && (
+            <p className="title-gone" data-testid="title-unavailable">
+              {t("library.unavailableFilm")}
+            </p>
+          )}
           {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" quick />}
           {entry.description && <p className="muted title-about">{entry.description}</p>}
           {about && <AboutFacts about={about} hasRoDub={entry.hasRoDub || about.hasRoDub} />}
@@ -163,6 +169,7 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None o
                   data-episode={episode.episode}
                   data-target={episode.target}
                   data-status={card.state}
+                  data-unavailable={card.unavailable || undefined}
                   {...(onPlay ? { onClick: () => onPlay(episode) } : {})}
                 >
                   <span className="episode-no">{card.number}</span>
@@ -174,6 +181,11 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None o
                         <span className={`episode-note ${card.state}`}>
                           {card.state === "watched" && <CheckIcon />} {card.meta}
                         </span>
+                      </span>
+                    )}
+                    {card.unavailable && (
+                      <span className="episode-gone" data-testid="episode-unavailable">
+                        {t("library.unavailable")}
                       </span>
                     )}
                     {card.overview && <span className="episode-about">{card.overview}</span>}
