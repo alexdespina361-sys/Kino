@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ACCENTS, friendChoices, LINK_TTL_MS, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ACCENTS, friendChoices, LINK_TTL_MS, MAX_PROFILES, preferredLanguages, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
@@ -13,18 +13,19 @@ import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
+import { keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, pickableLanguages, toggleLanguage } from "../account/subtitleLanguages";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
-import { CheckIcon, ChevronIcon, InfoIcon, LogoutIcon, PencilIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, InfoIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { handHeld } from "../shared/backButton";
 import { BackButton, Screen } from "./Idle";
 import { TvCode } from "./TvCode";
 
-/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles, and the cat's page of the settings. */
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "cat";
+/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles, and the pages of the settings that open from a row of it (the subtitle languages, the cat). */
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat";
 
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
@@ -450,7 +451,26 @@ function SettingsSwitch({ label, on, onToggle, testId }: { label: string; on: bo
  * so that a language is chosen from a few words in a row, a colour from dots, and the rest are switches, and none of them looks like the next.
  * For a guest the first column is where signing in starts.
  */
-export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManage, onCat }: { onClose: () => void; onSignIn: () => void; onApprove: () => void; onSwitch: () => void; onManage: () => void; onCat: () => void }) {
+export function TvAccountPanel({
+  onClose,
+  onSignIn,
+  onApprove,
+  onSwitch,
+  onManage,
+  onSubtitles,
+  onCat,
+  cameFrom,
+}: {
+  onClose: () => void;
+  onSignIn: () => void;
+  onApprove: () => void;
+  onSwitch: () => void;
+  onManage: () => void;
+  onSubtitles: () => void;
+  onCat: () => void;
+  /** The page of the settings Back came from: the remote lands on its row again, not at the top. */
+  cameFrom?: "subtitles" | "cat" | undefined;
+}) {
   const t = useT();
   const language = useLanguage();
   const account = useAccount();
@@ -464,6 +484,11 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const several = Boolean(me && me.profiles.length > 1);
   const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
   const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
+  const subtitleName = useMemo(() => languageNamer(language), [language]);
+  const chosenSubtitles = settings.subtitleLanguages ?? [];
+  // (how the row stands, short: the first language chosen and how many more; nothing while the defaults apply)
+  const subtitlesValue = chosenSubtitles.length === 0 ? undefined : chosenSubtitles.length === 1 ? subtitleName(chosenSubtitles[0]!) : `${subtitleName(chosenSubtitles[0]!)} +${chosenSubtitles.length - 1}`;
+  const top = cameFrom === undefined; // (the first row of the profile lands the remote, unless it came back from a page of the settings)
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-set">
@@ -474,7 +499,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           <BackButton onClick={onClose} testId="tv-account-back" />
         </header>
 
-        <div className="tv-set-grid">
+        <div className="tv-set-grid tv-set-grid-panel">
           <div className="tv-set-col" data-nav-column>
             <SettingsGroup title={t("tv.profile")} testId="tv-group-profile">
               <div className="tv-who">
@@ -493,15 +518,15 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
               {!me && <p className="tv-who-note">{t("auth.pitchDetail")}</p>}
               {me && profile ? (
                 <>
-                  {several && <SettingsLine icon={<UsersIcon />} label={t("profiles.switch")} onPress={onSwitch} testId="tv-switch-profile" autoFocus />}
-                  <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={!several} />
+                  {several && <SettingsLine icon={<UsersIcon />} label={t("profiles.switch")} onPress={onSwitch} testId="tv-switch-profile" autoFocus={top} />}
+                  <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={top && !several} />
                   <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
                   {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => account.withGoogle("link")} testId="tv-connect-google" />}
                 </>
               ) : (
                 account.status === "ready" && (
                   <div className="tv-who-cta">
-                    <button className="tv-action tv-action-primary" onClick={onSignIn} data-nav data-autofocus data-testid="tv-sign-in">
+                    <button className="tv-action tv-action-primary" onClick={onSignIn} data-nav {...(top ? { "data-autofocus": true } : {})} data-testid="tv-sign-in">
                       {t("auth.signIn")}
                     </button>
                   </div>
@@ -553,6 +578,12 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
               </div>
             </SettingsGroup>
 
+            {/* (The subtitle languages were a line in the third column that said to choose them on the phone: they are chosen here, on a page of their own, by a guest too.
+                A group of its own, under the look, so that the three columns are about as tall as each other.) */}
+            <SettingsGroup title={t("settings.subtitles")} testId="tv-group-subtitles">
+              <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
+            </SettingsGroup>
+
             <SettingsGroup title={t("settings.ratingsFriends")} testId="tv-group-share">
               <SettingsSwitch label={t("rating.settingsSwitch")} on={ratingsOn} onToggle={() => set("ratings", !ratingsOn)} testId="tv-ratings-switch" />
               {me && profile && (
@@ -573,19 +604,82 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
             </SettingsGroup>
-            {me && (
-              <p className="tv-hint tv-set-hint">
-                <InfoIcon /> <span>{t("tv.subtitlesHint")}</span>
-              </p>
-            )}
             {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). The cat is one row, and its switches are on a page
                 of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen. */}
             <SettingsGroup title={t("settings.labs")} testId="tv-group-labs">
               <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
               <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
-              {cat.offered && <SettingsLine icon={<CatIcon />} label={t("cat.settings.title")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" />}
+              {cat.offered && <SettingsLine icon={<CatIcon />} label={t("cat.settings.title")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" autoFocus={cameFrom === "cat"} />}
             </SettingsGroup>
           </div>
+        </div>
+      </div>
+    </Screen>
+  );
+}
+
+/**
+ * The subtitle languages' page of the settings (the phone has them on its settings page): the languages a profile wants listed first in the subtitle menus, in its
+ * order, and whether the others are left out. Every language is a button that stays where it is: one press adds it at the end of the order (its number shows on
+ * it), one more takes it out, so the remote never loses its place (nothing it can be on goes away or is switched off under it). A guest's are kept on this screen.
+ * (The owner, 15 Nov 2026: "allow subtitle picking on tv/pc too not just phone as it says in the image".)
+ */
+export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
+  const t = useT();
+  const language = useLanguage();
+  const { settings, set } = useSettings();
+  const chosen = settings.subtitleLanguages ?? [];
+  const only = settings.onlySubtitleLanguages ?? false;
+  const name = useMemo(() => languageNamer(language), [language]);
+  const full = chosen.length >= MAX_SUBTITLE_LANGUAGES;
+  const order = chosen.length > 0 ? chosen.map((code, index) => `${index + 1}. ${name(code)}`).join("  ·  ") : t("settings.subtitleDefaults", { languages: preferredLanguages(undefined, language).map(name).join(", ") });
+  return (
+    <Screen testId="tv-subtitle-settings" focus onBack={onBack}>
+      <div className="tv-set tv-set-languages">
+        <header className="tv-set-head" data-nav-column>
+          <h1 className="tv-set-title" data-testid="tv-subtitles-title">
+            {t("settings.subtitleLanguages")}
+          </h1>
+          <BackButton onClick={onBack} testId="tv-subtitles-back" />
+        </header>
+        <div className="tv-set-col" data-nav-column>
+          <p className="tv-hint tv-set-hint">
+            <InfoIcon /> <span>{t("settings.subtitlePickHelp")}</span>
+          </p>
+          <SettingsGroup testId="tv-group-subtitle-languages">
+            <div className="tv-field">
+              <span className="tv-field-label" aria-hidden="true">
+                {t("settings.subtitleOrder")}
+              </span>
+              <p className="tv-lang-order" data-testid="tv-subtitle-order" aria-live="polite">
+                {order}
+              </p>
+            </div>
+            <div className="tv-lang-grid" role="group" aria-label={t("settings.subtitleLanguages")}>
+              {pickableLanguages(chosen).map((code, index) => {
+                const rank = chosen.indexOf(code);
+                const blocked = rank < 0 && full; // (twelve are chosen: one more is not taken until one is taken out; the button stays, so the remote is never left on nothing)
+                return (
+                  <button
+                    key={code}
+                    className="tv-lang"
+                    aria-pressed={rank >= 0}
+                    {...(blocked ? { "aria-disabled": true } : {})}
+                    onClick={() => {
+                      if (!blocked) set("subtitleLanguages", keptLanguages(toggleLanguage(chosen, code)));
+                    }}
+                    data-nav
+                    {...(index === 0 ? { "data-autofocus": true } : {})}
+                    data-testid={`tv-subtitle-lang-${code}`}
+                  >
+                    <span className="tv-lang-name">{name(code)}</span>
+                    {rank >= 0 && <span className="tv-lang-rank">{rank + 1}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <SettingsSwitch label={t("settings.onlySubtitleLanguages")} on={only} onToggle={() => set("onlySubtitleLanguages", only ? undefined : true)} testId="tv-only-languages" />
+          </SettingsGroup>
         </div>
       </div>
     </Screen>
@@ -698,9 +792,19 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
 /** Whichever page of the account is open. `forced`: signed in with nobody chosen yet, which can't be skipped. */
 export function TvAccount({ view, onView, forced }: { view: AccountView; onView: (view: AccountView | null) => void; forced: boolean }) {
   const [fromPanel, setFromPanel] = useState(false); // (signing in was opened from the panel: Back goes there, not out to the library)
+  const [cameFrom, setCameFrom] = useState<"subtitles" | "cat" | undefined>(undefined); // (the page of the settings Back came from, for the remote to land on its row)
+  const backFrom = (page: "subtitles" | "cat") => () => {
+    setCameFrom(page);
+    onView("panel");
+  };
+  const open = (page: AccountView) => () => {
+    setCameFrom(undefined);
+    onView(page);
+  };
   if (view === "signin") return <TvSignIn onClose={() => onView(null)} onBack={() => onView(fromPanel ? "panel" : null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
-  if (view === "cat") return <TvCatSettings onBack={() => onView("panel")} />;
+  if (view === "subtitles") return <TvSubtitleLanguages onBack={backFrom("subtitles")} />;
+  if (view === "cat") return <TvCatSettings onBack={backFrom("cat")} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
   return (
     <TvAccountPanel
@@ -709,10 +813,12 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
         setFromPanel(true);
         onView("signin");
       }}
-      onApprove={() => onView("approve")}
-      onSwitch={() => onView("profiles")}
-      onManage={() => onView("manage")}
-      onCat={() => onView("cat")}
+      onApprove={open("approve")}
+      onSwitch={open("profiles")}
+      onManage={open("manage")}
+      onSubtitles={open("subtitles")}
+      onCat={open("cat")}
+      cameFrom={cameFrom}
     />
   );
 }

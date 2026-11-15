@@ -8,7 +8,8 @@ import { GoogleMark } from "../account/GoogleButton";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
-import { ago } from "../account/time";
+import { ago } from "../account/time";
+import { COMMON_LANGUAGES, keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, moveLanguage } from "../account/subtitleLanguages";
 import { CHAT_FACTS } from "../chat/state";
 import { friendsApi } from "../friends/api";
 import { useFriends } from "../friends/FriendsProvider";
@@ -63,32 +64,17 @@ export function Rows({ children }: { children: ReactNode }) {
 
 /* ------------------------------ settings ------------------------------ */
 
-/** Subtitle languages people choose from, besides the ones the site is written in. */
-const COMMON_LANGUAGES = ["en", "ro", "it", "es", "fr", "de", "pt", "hu", "bg", "el", "tr", "pl", "nl", "ru", "uk", "ar", "he", "sv", "cs", "hr", "sr", "sq", "hi", "zh", "ja", "ko"];
-
 /** The languages of subtitles this profile cares about: listed first in the subtitle menus, in this order. */
 function SubtitleLanguages() {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
   const chosen = settings.subtitleLanguages ?? [];
-  const names = useMemo(() => {
-    try {
-      return new Intl.DisplayNames([language], { type: "language" });
-    } catch {
-      return undefined;
-    }
-  }, [language]);
-  const name = (code: string) => names?.of(code) ?? code.toUpperCase();
-  const save = (list: string[]) => set("subtitleLanguages", list.length > 0 ? list : undefined);
+  const name = useMemo(() => languageNamer(language), [language]);
+  const save = (list: string[]) => set("subtitleLanguages", keptLanguages(list));
   // (The 26 languages to add are folded until asked for: open, they were most of the page.)
   const [adding, setAdding] = useState(false);
-  const move = (index: number, by: number) => {
-    const list = [...chosen];
-    const [item] = list.splice(index, 1);
-    list.splice(index + by, 0, item!);
-    save(list);
-  };
+  const move = (index: number, by: number) => save(moveLanguage(chosen, index, by));
 
   return (
     <Group title={t("settings.subtitleLanguages")} help={t("settings.subtitleLanguagesHelp")}>
@@ -115,12 +101,12 @@ function SubtitleLanguages() {
           ))}
         </ol>
       )}
-      {chosen.length < 12 && (
+      {chosen.length < MAX_SUBTITLE_LANGUAGES && (
         <button className="btn btn-block" aria-expanded={adding} onClick={() => setAdding((open) => !open)} data-testid="add-language">
           {adding ? <CloseIcon /> : <PlusIcon />} {adding ? t("common.close") : t("settings.addLanguage")}
         </button>
       )}
-      {chosen.length < 12 && adding && (
+      {chosen.length < MAX_SUBTITLE_LANGUAGES && adding && (
         <div className="language-add" role="group" aria-label={t("settings.addLanguage")}>
           {COMMON_LANGUAGES.filter((code) => !chosen.includes(code)).map((code) => (
             <button key={code} className="chip-pill" onClick={() => save([...chosen, code])} data-testid={`add-language-${code}`}>

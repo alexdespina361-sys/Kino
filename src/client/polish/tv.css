@@ -792,6 +792,42 @@
 /* The cat's page of the settings: two columns, on a page only as wide as the two of them (what it does, what it looks like) */
 :root[data-ui="polish"] .tv-set-cat { max-width: calc(var(--em) * 62); }
 :root[data-ui="polish"] .tv-set-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* The settings' own page: its columns end on one line, whatever the language and whoever is watching (the owner: "it's not aesthetic how the cat square is slightly lower
+   than it should be"). Each column is as tall as the tallest and its cards spread down it, so the last card of each ends where the others' do; a column of one card
+   (a guest's) has that card reach down, the way to sign in at its foot. One column (a narrow screen) is only as tall as what it holds. */
+:root[data-ui="polish"] .tv-set-grid-panel { align-items: stretch; }
+:root[data-ui="polish"] .tv-set-grid-panel > .tv-set-col { justify-content: space-between; }
+:root[data-ui="polish"] .tv-set-grid-panel > .tv-set-col > .tv-group:only-child { display: flex; flex: 1 1 auto; flex-direction: column; }
+:root[data-ui="polish"] .tv-set-grid-panel > .tv-set-col > .tv-group:only-child > .tv-group-body { flex: 1 1 auto; }
+:root[data-ui="polish"] .tv-set-grid-panel .tv-group:only-child .tv-who-cta { margin-top: auto; }
+
+/* The subtitle languages' page: what is chosen, in its order, over every language as a button that stays where it is (a chosen one has the accent's ring and its number). */
+:root[data-ui="polish"] .tv-set-languages .tv-set-col { gap: calc(var(--em) * 1.4); }
+:root[data-ui="polish"] .tv-lang-order { margin: 0; color: var(--text-1); font-size: var(--fs-3); font-weight: 600; line-height: 1.35; }
+:root[data-ui="polish"] .tv-lang-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: calc(var(--em) * 0.7); padding: calc(var(--em) * 0.4) calc(var(--em) * 1) calc(var(--em) * 1.2); }
+:root[data-ui="polish"] .tv-lang {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--em) * 0.6);
+  min-width: 0;
+  padding: calc(var(--em) * 0.75) calc(var(--em) * 1);
+  border-radius: var(--r-2);
+  background: var(--fill-1);
+  color: var(--text-2);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  text-align: left;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+:root[data-ui="polish"] .tv-lang-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-ui="polish"] .tv-lang:hover { background: var(--fill-2); color: var(--text-1); }
+:root[data-ui="polish"] .tv-lang[aria-pressed="true"] { background: rgb(var(--accent-rgb) / 0.22); color: var(--text-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.14) var(--accent); }
+:root[data-ui="polish"] .tv-lang[aria-disabled="true"] { opacity: 0.4; }
+:root[data-ui="polish"] .tv-lang-rank { display: inline-grid; flex: none; place-items: center; min-width: 1.7em; height: 1.7em; padding: 0 0.4em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.85em; font-weight: 800; }
+:root[data-ui="polish"] .tv-lang:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.04); }
+:root[data-ui="polish"] .tv-lang[aria-pressed="true"]:focus-visible { box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-group-title { margin: 0 0 calc(var(--em) * 0.6) calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; }
 :root[data-ui="polish"] .tv-group-body {
   display: flex;
@@ -1001,6 +1037,10 @@
   :root[data-ui="polish"] .tv-set { padding-top: 0; }
   :root[data-ui="polish"] .tv-set-grid { grid-template-columns: minmax(0, 1fr); gap: calc(var(--em) * 1.6); }
   :root[data-ui="polish"] .tv-set-col { gap: calc(var(--em) * 1.6); }
+  :root[data-ui="polish"] .tv-lang-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 599px) {
+  :root[data-ui="polish"] .tv-lang-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Flat (a phone held sideways, a window as flat as one): the banner and the page's top give height back. */
