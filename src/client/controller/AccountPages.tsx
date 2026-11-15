@@ -19,11 +19,11 @@ import { useLinkBox } from "../shared/linkBox";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 
-/** A labelled group of settings. */
-export function Group({ title, help, children }: { title: string; help?: string | undefined; children: ReactNode }) {
+/** A labelled group of settings (one whose button says it all has no heading). */
+export function Group({ title, help, children }: { title?: string | undefined; help?: string | undefined; children: ReactNode }) {
   return (
     <section className="group">
-      <h3>{title}</h3>
+      {title && <h3>{title}</h3>}
       {help && <p className="muted small">{help}</p>}
       {children}
     </section>
@@ -81,6 +81,8 @@ function SubtitleLanguages() {
   }, [language]);
   const name = (code: string) => names?.of(code) ?? code.toUpperCase();
   const save = (list: string[]) => set("subtitleLanguages", list.length > 0 ? list : undefined);
+  // (The 26 languages to add are folded until asked for: open, they were most of the page.)
+  const [adding, setAdding] = useState(false);
   const move = (index: number, by: number) => {
     const list = [...chosen];
     const [item] = list.splice(index, 1);
@@ -114,6 +116,11 @@ function SubtitleLanguages() {
         </ol>
       )}
       {chosen.length < 12 && (
+        <button className="btn btn-block" aria-expanded={adding} onClick={() => setAdding((open) => !open)} data-testid="add-language">
+          {adding ? <CloseIcon /> : <PlusIcon />} {adding ? t("common.close") : t("settings.addLanguage")}
+        </button>
+      )}
+      {chosen.length < 12 && adding && (
         <div className="language-add" role="group" aria-label={t("settings.addLanguage")}>
           {COMMON_LANGUAGES.filter((code) => !chosen.includes(code)).map((code) => (
             <button key={code} className="chip-pill" onClick={() => save([...chosen, code])} data-testid={`add-language-${code}`}>
@@ -274,7 +281,9 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
   const [linkBox, setLinkBox] = useLinkBox();
   return (
     <div className="page-stack" data-testid="settings-page">
-      <Group title={t("settings.language")}>
+      {/* (The groups of the TV's settings, in its order: the language and the colour are one card, as there.) */}
+      <Group title={t("settings.appearance")}>
+        <p className="group-label">{t("settings.language")}</p>
         <div className="segmented" role="radiogroup" aria-label={t("settings.language")}>
           {UI_LANGUAGES.map((code) => (
             <button key={code} role="radio" aria-checked={language === code} onClick={() => chooseLanguage(code)} data-testid={`lang-${code}`}>
@@ -282,8 +291,7 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
             </button>
           ))}
         </div>
-      </Group>
-      <Group title={t("settings.accent")}>
+        <p className="group-label">{t("settings.accent")}</p>
         <div className="swatches" role="radiogroup" aria-label={t("settings.accent")}>
           {ACCENTS.map((accent) => (
             <button
@@ -306,11 +314,11 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
           <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
         </Rows>
       </Group>
+      <SubtitleLanguages />
       <Group title={t("rating.settings")}>
         <Switch label={t("rating.settingsSwitch")} hint={t("rating.settingsHelp")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
       </Group>
       <FriendsGroup onOpen={onOpenFriends} />
-      <SubtitleLanguages />
       {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
       <Group title={t("settings.labs")} help={t("settings.labsHelp")}>
         <Rows>
@@ -563,7 +571,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
         </Group>
       )}
 
-      <Group title={t("account.delete")}>
+      <Group title={deleting ? t("account.delete") : undefined}>
         {deleting && googleOnly ? (
           <div className="auth-form">
             <p className="muted">{t("account.deleteWarnGoogle")}</p>

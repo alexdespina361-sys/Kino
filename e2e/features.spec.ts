@@ -3148,6 +3148,26 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     return phone.getByTestId("link-box-setting");
   };
 
+  test("the subtitle languages to add are folded until asked for; one added is listed first, and the list to add from stays open for the next", async ({ browser, baseURL }) => {
+    const { phone } = await connect(browser, baseURL!);
+    await place(phone, "you");
+    await phone.getByTestId("menu-settings").click();
+    const page = phone.getByTestId("settings-page");
+    await expect(page.getByTestId("subtitle-defaults")).toContainText("English, Romanian, Italian");
+    await expect(page.locator('[data-testid^="add-language-"]')).toHaveCount(0);
+    const add = page.getByTestId("add-language");
+    await expect(add).toHaveAttribute("aria-expanded", "false");
+    await add.click();
+    await expect(add).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator('[data-testid^="add-language-"]')).toHaveCount(26);
+    await page.getByTestId("add-language-fr").click();
+    await page.getByTestId("add-language-ro").click();
+    await expect(page.getByTestId("subtitle-languages")).toHaveText(/1\s*French.*2\s*Romanian/s);
+    await expect(page.getByTestId("add-language-fr")).toHaveCount(0); // (a language chosen is not offered again)
+    await add.click();
+    await expect(page.locator('[data-testid^="add-language-"]')).toHaveCount(0);
+  });
+
   test("the box for pasting a link is off on a new phone, comes back from Settings and stays", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!, { device: { storageState: withoutLinkBox(baseURL!) } });
     await expect(phone.getByTestId("library")).toBeVisible();
