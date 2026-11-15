@@ -45,6 +45,20 @@ test.describe("a film whose link the source refuses", () => {
     expect(await lookups(tv)).toBe(1);
   });
 
+  test("a film file through a proxy of ours that is refused before it begins is the same: looked up again by itself, and the film that comes plays", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, async (context) => {
+      await refuse(context);
+      // (The relay passes on what the film's host says: here the "ERROR: ACCESS DENIED" some hosts answer an old link with. A video element sees only "will not open".)
+      await context.route("**/api/proxy?*", (route) => route.fulfill({ status: 403, contentType: "text/plain", body: "ERROR: ACCESS DENIED" }));
+    });
+    await pressMenuLine(tv, "rail-connect");
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "A refused file", page: `${baseURL}/fixtures/sample.mp4`, stream: { url: "/api/proxy?url=https%3A%2F%2Fcdn.test%2Fa.mp4&expires=1&sig=abc", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 25_000 });
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0);
+    expect(await lookups(tv)).toBe(1);
+  });
+
   test("says that the source did not answer when the second look does not help, and Try again asks for the title once more", async ({ browser, baseURL }) => {
     const { tv } = await refusedFilm(browser, baseURL!, `${baseURL}/fixtures/no-such-page.html`);
     const card = tv.getByTestId("tv-error");

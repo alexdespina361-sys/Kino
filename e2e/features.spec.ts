@@ -1303,6 +1303,32 @@ test.describe("sources", () => {
     await expect(tv.getByTestId("tv-quality-btn")).toHaveText("1080p");
   });
 
+  test("what the screen says when one does not play names it as the pickers do: a quality by its quality, a place by its place among the places", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    const toasts: string[] = [];
+    await tv.exposeFunction("__toast", (text: string) => void toasts.push(text));
+    await tv.evaluate(() => {
+      new MutationObserver(() => {
+        const toast = document.querySelector(".hud-toast");
+        if (toast?.textContent) (window as unknown as { __toast: (text: string) => void }).__toast(toast.textContent);
+      }).observe(document.body, { subtree: true, childList: true, characterData: true });
+    });
+    await loadOnTv(phone, {
+      title: "Three Tries",
+      stream: { url: "/fixtures/nope-1080.mp4", type: "mp4" },
+      quality: "1080",
+      alternates: [
+        { quality: "720", stream: { url: "/fixtures/nope-720.mp4", type: "mp4" } },
+        { stream: { url: "/fixtures/sample.mp4", type: "mp4" } },
+      ],
+    });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Source 2");
+    await expect.poll(() => toasts).toContain(en["notice.sourceFailed"].replace("{from}", "1080p").replace("{to}", "720p"));
+    await expect.poll(() => toasts).toContain(en["notice.sourceFailed"].replace("{from}", "720p").replace("{to}", "Source 2")); // (not "Source 3": the qualities are not places)
+  });
+
   test("a video with one source shows no source button", async ({ browser }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);

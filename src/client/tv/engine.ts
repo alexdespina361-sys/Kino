@@ -151,6 +151,20 @@ export function readableFrom(src: string, here = location.href): "same-origin" |
   }
 }
 
+/**
+ * A film through a proxy of ours (the stream relay, or this website's own) that would not open at all. A video element is told no more than "will not
+ * open" (MEDIA_ERR 4) whatever the reason, and through our proxies that is almost always the film's host saying no (a token that ran out, a busy
+ * server: the proxy passes its refusal on), not a file the TV cannot play. So it is said as that (SOURCE_UNAVAILABLE): the title is looked up afresh
+ * once by itself, and the card says the source is not answering, as for a stream whose host said no.
+ */
+function throughOurProxy(src: string): boolean {
+  try {
+    return new URL(src, location.href).pathname === "/api/proxy";
+  } catch {
+    return false;
+  }
+}
+
 function usesWebsiteProxy(src: string): boolean {
   const url = new URL(src, location.href);
   return url.origin === new URL(location.href).origin && url.pathname === "/api/proxy";
@@ -266,7 +280,9 @@ export class PlayerEngine {
         if (this.useFallbackSource() || this.withoutCors()) return;
         // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
         const { code, message } = video.error ?? {};
-        this.fail(code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable, `MEDIA_ERR ${code ?? "?"}${message ? `: ${message}` : ""}`);
+        // (MEDIA_ERR_SRC_NOT_SUPPORTED, 4, before anything of it came, from a proxy of ours: see `throughOurProxy`.)
+        const refused = code === 4 && this.loading && throughOurProxy(video.currentSrc || video.src);
+        this.fail(code === 2 ? PlayerError.ConnectionLost : refused ? PlayerError.SourceUnavailable : PlayerError.NotDirectlyPlayable, `MEDIA_ERR ${code ?? "?"}${message ? `: ${message}` : ""}`);
       }
     });
     this.ticker = setInterval(() => this.hasSource && this.emit(), 1000);
