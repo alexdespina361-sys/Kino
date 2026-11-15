@@ -355,7 +355,7 @@ export function Tv() {
     const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
     if (next === -1) return;
     const failed = sources[sourceIndexRef.current];
-    notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
+    notify(t("notice.sourceFailed", { from: failed ? nameIn(sources, sourceIndexRef.current) : t("notice.thatSource"), to: nameIn(sources, next) }));
     loadSource(next, false);
   }, [player.state]);
 
@@ -372,7 +372,7 @@ export function Tv() {
       const curr = playerRef.current.state;
       if (curr === "loading") {
         const failed = sources[sourceIndexRef.current];
-        notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
+        notify(t("notice.sourceFailed", { from: failed ? nameIn(sources, sourceIndexRef.current) : t("notice.thatSource"), to: nameIn(sources, next) }));
         loadSource(next, false);
       }
     }, 45_000);
@@ -1783,6 +1783,21 @@ const sourceName = (source: PlayableSource, index: number) => source.label ?? t(
 /** The numbers the Quality picker gives the qualities that are files of their own: past any the player has for the qualities inside one stream. */
 const FILE_QUALITY = 1000;
 const isAutoQuality = (quality: string | undefined) => /auto/i.test(quality ?? "");
+/** A quality as the Quality picker says it: "1080p" for "1080" or "1080p", anything else as it came. */
+const qualityLabel = (name: string): string => (/^\d{3,4}p?$/.test(name) ? `${parseInt(name, 10)}p` : name);
+
+/**
+ * A source as the pickers name it, for what the screen says when one does not play: a quality that is a file of its own by its quality ("1080p"), any
+ * other by its name or its place among the places to get the film from, as the Source picker numbers them (not its place in the whole list, which
+ * counts the qualities too).
+ */
+function nameIn(all: readonly PlayableSource[], index: number): string {
+  const source = all[index]!;
+  const menus = sourceMenus(all);
+  if (menus.qualities.includes(index) && source.quality && !isAutoQuality(source.quality)) return qualityLabel(source.quality);
+  const place = menus.sources.indexOf(index);
+  return sourceName(source, place >= 0 ? place : index);
+}
 
 /**
  * What the Source and Quality pickers show for a film (shared/media.ts, `sourceMenus`): its sources, when there is more than one place to get it from, and its
@@ -1797,7 +1812,7 @@ function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerStat
     .map((index) => {
       const name = all[index]!.quality!;
       const height = /^\d{3,4}p?$/.test(name) ? parseInt(name, 10) : undefined;
-      return { id: FILE_QUALITY + index, label: height ? `${height}p` : name, ...(height ? { height } : {}) };
+      return { id: FILE_QUALITY + index, label: qualityLabel(name), ...(height ? { height } : {}) };
     });
   return {
     ...(menus.sources.length > 1

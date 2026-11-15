@@ -426,6 +426,42 @@ describe("a direct address that the browser plays itself", () => {
   });
 });
 
+describe("a file that will not open", () => {
+  beforeEach(() => stubBrowser());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  const RELAYED = "https://relay.example/api/proxy?url=https%3A%2F%2Fcdn.example%2Fa.mp4&expires=1&sig=abc";
+  const willNotOpen = (video: FakeVideo) => {
+    (video as unknown as { error: { code: number } }).error = { code: 4 };
+    video.dispatchEvent(new Event("error"));
+  };
+
+  it("through a proxy of ours, before anything of it came, is a source that said no: it is looked up afresh, and the card says the source is not answering", async () => {
+    const { video, engine, states } = newEngine();
+    await engine.load(RELAYED, "mp4");
+    willNotOpen(video);
+    expect(states.at(-1)).toMatchObject({ state: "error", error: "SOURCE_UNAVAILABLE" });
+    engine.destroy();
+  });
+
+  it("from anywhere else, or once it had begun, is still a video that can't be played", async () => {
+    const elsewhere = newEngine();
+    await elsewhere.engine.load("https://cdn.example/a.mp4", "mp4");
+    willNotOpen(elsewhere.video);
+    expect(elsewhere.states.at(-1)).toMatchObject({ state: "error", error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
+    elsewhere.engine.destroy();
+
+    const begun = newEngine();
+    await begun.engine.load(RELAYED, "mp4");
+    begun.video.dispatchEvent(new Event("loadedmetadata"));
+    willNotOpen(begun.video);
+    expect(begun.states.at(-1)).toMatchObject({ state: "error", error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
+    begun.engine.destroy();
+  });
+});
+
 describe("the subtitle aligner", () => {
   const HLS = "https://cdn.example/a.m3u8";
   beforeEach(() => {
