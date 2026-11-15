@@ -49,7 +49,6 @@ export const it: Dictionary = {
   "auth.toSignIn": "Hai già un account? Accedi",
   "auth.pitch": "Riprendi da dove eri rimasto, su ogni schermo.",
   "auth.pitchDetail": "Accedi e ciò che guardi su telefono, TV o computer ti segue ovunque.",
-  "auth.notNow": "Non ora",
   "auth.closed": "Questo server non accetta nuovi account.",
   "auth.working": "Un momento…",
   "auth.google": "Continua con Google",
@@ -95,7 +94,6 @@ export const it: Dictionary = {
   "profiles.delete": "Elimina profilo",
   "profiles.deleteAsk": "Eliminare il profilo “{name}”? Vengono eliminate anche la cronologia e le liste.",
   "profiles.switch": "Cambia profilo",
-  "profiles.watchingAs": "Stai guardando come {name}",
   "profiles.count": "{count} di {max} profili",
   "avatar.fox": "Volpe",
   "avatar.cat": "Gatto",
@@ -439,7 +437,6 @@ export const it: Dictionary = {
   "tv.welcomeStart": "Inizia a guardare",
   "tv.ready": "Pronti quando vuoi",
   "tv.pressOk": "Premi OK o tocca per iniziare",
-  "tv.browse": "Sfoglia la libreria",
   "tv.finding": "Cerco il tuo video…",
   "tv.slow": "Ci sta mettendo più del solito.",
   "starting.finding": "Cerco la fonte migliore…",
@@ -499,7 +496,6 @@ export const it: Dictionary = {
   "tv.clear": "Cancella tutto",
   "tv.caretLeft": "Sposta il cursore a sinistra",
   "tv.caretRight": "Sposta il cursore a destra",
-  "tv.openCategory": "Apri",
 
   /* the player: menus, sheets and the controls over the picture */
   "player.audioSubtitles": "Audio e sottotitoli",
