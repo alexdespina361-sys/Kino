@@ -147,7 +147,7 @@ test.describe("a phone used as the screen", () => {
     await tablet.goto("/tv");
     await expect(tablet.getByTestId("tv-hero-title")).toBeVisible();
     await searchFilms(tablet);
-    expect(await columns(tablet)).toBe(4);
+    expect(await columns(tablet)).toBe(5);
     expect(await sidewaysScroll(tablet)).toBeLessThanOrEqual(0);
 
     const sideways = await openDevice(browser, { viewport: { width: 844, height: 390 }, hasTouch: true }, {}, withFilms);

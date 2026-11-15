@@ -1166,7 +1166,8 @@ const ridesTheRows = async (tv: Page, slow: number, scroller = ".tv-rows", cards
   const tall = tv.viewportSize()!.height;
   const lowest = async () => {
     const seen = await worldOf(tv);
-    return { L: seen.bodyLength, shelf: seen.surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y < tall - seen.bodyLength / 2).sort((a, b) => b.y - a.y)[0]! };
+    const shelves = seen.surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y < tall - seen.bodyLength / 2).sort((a, b) => b.y - a.y);
+    return { L: seen.bodyLength, shelf: shelves[0]!, above: shelves[1] };
   };
   const { L, shelf } = await lowest();
   // (taken by the scruff, held over the lowest shelf in sight and let go: it lands on it from wherever it was, which a call does not do from the floor of a grid)
@@ -1183,7 +1184,9 @@ const ridesTheRows = async (tv: Page, slow: number, scroller = ".tv-rows", cards
     expect
       .poll(async () => {
         const seen = await snap(tv);
-        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && seen.engine.surfaceId === (await lowest()).shelf.id;
+        // (Under a line of posters are their names, a line a cat sits on as well, and one too close above the next posters for a cat to stand under: it may take that.)
+        const { shelf: low, above } = await lowest();
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && (seen.engine.surfaceId === low.id || seen.engine.surfaceId === above?.id);
       }, { timeout: 12_000 })
       .toBe(true),
   );
