@@ -70,3 +70,53 @@ export function frameRate(mediaTimes: readonly number[]): number {
 
 /** "12.3 ms" with one decimal under 100, none above. */
 export const ms = (value: number): string => (Number.isFinite(value) ? `${value < 100 ? value.toFixed(1) : Math.round(value)} ms` : "-");
+
+/** The Anime modes (Anime4K on WebGPU), lightest first. */
+export type AnimeMode = "anime-fast" | "anime-quality" | "anime-restore" | "anime-clean" | "anime-best" | "anime-gan";
+
+export interface Size {
+  width: number;
+  height: number;
+}
+
+/** One network of Anime4K that a mode runs, by its name in anime4k-webgpu, and the size of the picture it gives. */
+export interface AnimeStep {
+  network: "CNNx2M" | "CNNx2VL" | "CNNx2UL" | "GANx3L" | "GANx4UUL" | "CNNVL" | "DenoiseCNNx2VL" | "Downscale";
+  size: Size;
+}
+
+/**
+ * What Anime4K runs for `mode` on a video of `native` size to be drawn at `out`, and the size after each step; the last is fitted to `out` with bilinear
+ * filtering. The 2x networks run twice for a picture more than 2.4 times as big (480p to 1440p or 4K); "restore" and "clean" are Anime4K's own Mode A
+ * and Mode C, whose steps are written here as anime4k-webgpu 1.0.0 builds them (ModeA, ModeC), to be shown on the page.
+ */
+export function animeSteps(mode: AnimeMode, native: Size, out: Size): AnimeStep[] {
+  const times = (size: Size, factor: number): Size => ({ width: size.width * factor, height: size.height * factor });
+  const bigger = (than: Size, by: number): boolean => out.width > by * than.width && out.height > by * than.height;
+  if (mode === "anime-gan") return [bigger(native, 3.2) ? { network: "GANx4UUL", size: times(native, 4) } : { network: "GANx3L", size: times(native, 3) }];
+  if (mode === "anime-fast" || mode === "anime-quality" || mode === "anime-best") {
+    const first: AnimeStep = { network: mode === "anime-fast" ? "CNNx2M" : mode === "anime-quality" ? "CNNx2VL" : "CNNx2UL", size: times(native, 2) };
+    return bigger(native, 2.4) ? [first, { network: "CNNx2M", size: times(native, 4) }] : [first];
+  }
+  // Mode A (restore, then upscale) and Mode C (upscale and denoise), after anime4k-webgpu's presets (their ClampHighlights step keeps the size).
+  const steps: AnimeStep[] = mode === "anime-restore" ? [{ network: "CNNVL", size: native }] : [];
+  let size = native;
+  if (bigger(size, 1.2)) {
+    size = times(size, 2);
+    steps.push({ network: mode === "anime-restore" ? "CNNx2VL" : "DenoiseCNNx2VL", size });
+  }
+  const below = (by: number): boolean => out.width < by * native.width && out.height < by * native.height;
+  if (bigger(native, 1.2) && below(2)) {
+    size = out;
+    steps.push({ network: "Downscale", size });
+  }
+  if (bigger(native, 2.4) && below(4)) {
+    size = { width: Math.ceil(out.width / 2), height: Math.ceil(out.height / 2) };
+    steps.push({ network: "Downscale", size });
+  }
+  if (bigger(size, 1.2)) {
+    size = times(size, 2);
+    steps.push({ network: "CNNx2M", size });
+  }
+  return steps;
+}

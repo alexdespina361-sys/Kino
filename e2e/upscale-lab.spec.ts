@@ -79,6 +79,43 @@ test.describe("Kino Labs: the upscaler test page", () => {
     await expect(page.getByTestId("upscale-size")).toContainText("The video is 854 × 356; it is drawn at 1280 × 534", { timeout: 15_000 });
   });
 
+  test("draws at 2K and 4K too, says when the page shows the picture smaller than it is drawn, and lets the line between the two follow the mouse", async ({ page }) => {
+    await openSample(page);
+    await page.getByTestId("upscale-target").selectOption("1440");
+    await expect(page.getByTestId("upscale-size")).toContainText("The video is 320 × 180; it is drawn at 2560 × 1440 (8 times as big).");
+    // (The page's column is about 1000 pixels wide: a 2K picture is shrunk to it, and the page says so.)
+    await expect(page.getByTestId("upscale-shown")).toContainText(/^Shown at \d+ × \d+ screen pixels now: smaller than it is drawn/);
+    const sharp = await probe(page, "sharp");
+    expect({ width: sharp.width, height: sharp.height }).toEqual({ width: 2560, height: 1440 });
+    expect(sharp.difference).toBeLessThan(15);
+    await page.getByTestId("upscale-target").selectOption("2160");
+    await expect(page.getByTestId("upscale-size")).toContainText("it is drawn at 3840 × 2160 (12 times as big).");
+
+    // The line follows the mouse: a quarter of the way across the picture puts it at 25%, and the slider with it.
+    const stage = page.locator("#stage");
+    const box = (await stage.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
+    await expect(stage).toHaveAttribute("style", /--split: 25%/);
+    await expect(page.locator("#compare")).toHaveValue("25");
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2, { steps: 4 });
+    await expect(page.locator("#compare")).toHaveValue("80");
+    // The slider still moves it by hand.
+    await page.locator("#compare").fill("40");
+    await expect(stage).toHaveAttribute("style", /--split: 40%/);
+
+    // Full screen shows the picture as big as the screen allows, and keys choose the modes.
+    await page.getByTestId("upscale-fullscreen").click();
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id)).toBe("stage-scroll");
+    await page.keyboard.press("1");
+    await expect(page.getByTestId("upscale-mode-off")).toBeChecked();
+    await expect(page.locator("#split-mode")).toHaveText("Off");
+    await page.keyboard.press("2");
+    await expect(page.getByTestId("upscale-mode-sharp")).toBeChecked();
+    await expect(page.locator("#split-mode")).toHaveText("Sharp (FSR 1)");
+    await page.keyboard.press("f");
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
+  });
+
   test("times the chosen mode, plays it through, and says whether this computer keeps up", async ({ page }) => {
     await openSample(page, "/labs/upscale/?seconds=1");
     await expect(page.getByTestId("upscale-mode-sharp")).toBeChecked();
@@ -104,6 +141,7 @@ test.describe("Kino Labs: the upscaler test page", () => {
     await expect(page.getByTestId("upscale-result-off")).toBeVisible();
     await expect(page.getByTestId("upscale-result-sharp")).toBeVisible();
     await expect(page.getByTestId("upscale-result-anime-fast")).toHaveCount(0);
-    await expect(page.getByTestId("upscale-summary")).toHaveText(/^On this computer, /);
+    await expect(page.getByTestId("upscale-summary")).toHaveText(/^On this computer at 720p: for any video, /);
+    await expect(page.getByTestId("upscale-summary")).not.toContainText("anime");
   });
 });

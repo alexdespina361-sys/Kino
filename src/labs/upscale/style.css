@@ -164,10 +164,32 @@ h2 {
 
 .stage {
   --split: 50%;
+  --aspect: 1.7778;
   position: relative;
   width: 100%;
   margin: 0 auto;
   background: #000;
+  cursor: col-resize;
+  /* (A finger drags the line sideways; up and down still scroll the page.) */
+  touch-action: pan-y;
+}
+
+/* Full screen, the picture fits the screen ("To fit the page"), or keeps its pixel size in the middle of it (the other two views, scrolled if bigger). */
+.stage-scroll:fullscreen {
+  display: grid;
+  place-items: safe center;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+}
+
+.stage-scroll:fullscreen .stage.fit {
+  width: min(100vw, calc(100vh * var(--aspect)));
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 13px;
 }
 
 .stage video,

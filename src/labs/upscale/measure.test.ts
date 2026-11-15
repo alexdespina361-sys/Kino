@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { easuScale, frameRate, ms, rcasAmount, summarize, targetSize, verdict } from "./measure";
+import { animeSteps, easuScale, frameRate, ms, rcasAmount, summarize, targetSize, verdict } from "./measure";
 
 describe("the upscaler test page's arithmetic", () => {
   it("sums up a speed test as its middle and its 90th percentile, leaving out what is not a time", () => {
@@ -29,7 +29,28 @@ describe("the upscaler test page's arithmetic", () => {
     expect(targetSize(720, 576, 1080)).toEqual({ width: 1350, height: 1080 });
     expect(targetSize(1920, 1080, 720)).toEqual({ width: 1920, height: 1080 }); // (already bigger: left as it is)
     expect(targetSize(1920, 818, 720)).toEqual({ width: 1920, height: 818 });
+    expect(targetSize(854, 480, 1440)).toEqual({ width: 2560, height: 1438 }); // (2K; a hair wider than 16:9, as at 720p)
+    expect(targetSize(854, 356, 1440)).toEqual({ width: 2560, height: 1068 });
+    expect(targetSize(854, 480, 2160)).toEqual({ width: 3840, height: 2158 }); // (4K)
     expect(targetSize(0, 480, 720)).toEqual({ width: 0, height: 0 });
+  });
+
+  it("runs Anime4K's 2x networks twice for a picture more than 2.4 times as big, a GAN of 3x or 4x, and Mode A and Mode C as anime4k-webgpu builds them", () => {
+    const sd = { width: 854, height: 480 };
+    const sizes = (steps: ReturnType<typeof animeSteps>) => steps.map(({ network, size }) => `${network} ${size.width}x${size.height}`);
+    expect(sizes(animeSteps("anime-fast", sd, { width: 1280, height: 720 }))).toEqual(["CNNx2M 1708x960"]);
+    expect(sizes(animeSteps("anime-quality", sd, { width: 1920, height: 1080 }))).toEqual(["CNNx2VL 1708x960"]); // (2.25 times: fitted from 2x)
+    expect(sizes(animeSteps("anime-best", sd, { width: 2560, height: 1440 }))).toEqual(["CNNx2UL 1708x960", "CNNx2M 3416x1920"]);
+    expect(sizes(animeSteps("anime-gan", sd, { width: 2560, height: 1440 }))).toEqual(["GANx3L 2562x1440"]);
+    expect(sizes(animeSteps("anime-gan", sd, { width: 3840, height: 2160 }))).toEqual(["GANx4UUL 3416x1920"]);
+    // Mode A: restore, 2x, then (under 2x) down to the target; (2.4 to 4x) down to half the target and 2x again; (2x to 2.4x) left at 2x.
+    expect(sizes(animeSteps("anime-restore", sd, { width: 1280, height: 720 }))).toEqual(["CNNVL 854x480", "CNNx2VL 1708x960", "Downscale 1280x720"]);
+    expect(sizes(animeSteps("anime-restore", sd, { width: 1920, height: 1080 }))).toEqual(["CNNVL 854x480", "CNNx2VL 1708x960"]);
+    expect(sizes(animeSteps("anime-restore", sd, { width: 2560, height: 1440 }))).toEqual(["CNNVL 854x480", "CNNx2VL 1708x960", "Downscale 1280x720", "CNNx2M 2560x1440"]);
+    expect(sizes(animeSteps("anime-restore", sd, { width: 3840, height: 2160 }))).toEqual(["CNNVL 854x480", "CNNx2VL 1708x960", "CNNx2M 3416x1920"]);
+    expect(sizes(animeSteps("anime-clean", sd, { width: 2560, height: 1440 }))).toEqual(["DenoiseCNNx2VL 1708x960", "Downscale 1280x720", "CNNx2M 2560x1440"]);
+    // (A video as big as the target already is only restored.)
+    expect(sizes(animeSteps("anime-restore", { width: 1280, height: 720 }, { width: 1280, height: 720 }))).toEqual(["CNNVL 1280x720"]);
   });
 
   it("gives AMD's EASU constant and RCAS amount as ffx_fsr1.h computes them", () => {

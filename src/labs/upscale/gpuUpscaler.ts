@@ -1,11 +1,12 @@
+import { animeSteps, type AnimeMode, type AnimeStep, type Size } from "./measure";
+
 /**
  * The "Anime" modes: Anime4K's neural upscalers (anime4k-webgpu 1.0.0, MIT, https://github.com/Anime4KWebBoost/Anime4K-WebGPU) on WebGPU. The package's
- * own `render()` runs a loop of its own; this drives its pipelines one frame at a time instead, so that a speed test can wait for each frame. Its 2x
- * output is then drawn at the chosen size with plain bilinear filtering.
+ * own `render()` runs a loop of its own; this drives its pipelines one frame at a time instead, so that a speed test can wait for each frame. What the
+ * networks give (see `animeSteps`) is then drawn at the chosen size with plain bilinear filtering.
  */
 
-/** "fast": CNNx2M, the smallest of its 2x networks; "quality": CNNx2VL, a bigger one. */
-export type AnimeMode = "anime-fast" | "anime-quality";
+export type { AnimeMode } from "./measure";
 
 interface Pipeline {
   pass(encoder: GPUCommandEncoder): void;
@@ -41,6 +42,14 @@ export async function webgpuAdapter(): Promise<{ adapter?: GPUAdapter; name: str
   }
 }
 
+/** Several pipelines one after another, as one. */
+const chained = (pipelines: readonly Pipeline[]): Pipeline => ({
+  pass: (encoder) => {
+    for (const pipeline of pipelines) pipeline.pass(encoder);
+  },
+  getOutputTexture: () => pipelines[pipelines.length - 1]!.getOutputTexture(),
+});
+
 export class GpuUpscaler {
   private readonly context: GPUCanvasContext;
   private readonly format: GPUTextureFormat;
@@ -50,6 +59,8 @@ export class GpuUpscaler {
   private pipeline: Pipeline | undefined;
   private bindGroup: GPUBindGroup | undefined;
   private built = "";
+  /** What the networks of the mode built last made (their textures and buffers), freed when another is built: a few modes at 4K would fill a small card. */
+  private made: (GPUTexture | GPUBuffer)[] = [];
   lost = false;
 
   private constructor(
@@ -77,7 +88,7 @@ export class GpuUpscaler {
   }
 
   /** Draws the frame the video shows now with `mode`, at `out`. */
-  draw(video: HTMLVideoElement, mode: AnimeMode, out: { width: number; height: number }): void {
+  draw(video: HTMLVideoElement, mode: AnimeMode, out: Size): void {
     if (this.lost) throw new Error("The graphics chip was lost (its driver restarted): reload the page");
     const width = video.videoWidth;
     const height = video.videoHeight;
@@ -85,7 +96,7 @@ export class GpuUpscaler {
       this.canvas.width = out.width;
       this.canvas.height = out.height;
     }
-    this.build(mode, width, height);
+    this.build(mode, { width, height }, out);
     this.device.queue.copyExternalImageToTexture({ source: video }, { texture: this.input! }, [width, height]);
     const encoder = this.device.createCommandEncoder();
     this.pipeline!.pass(encoder);
@@ -95,6 +106,12 @@ export class GpuUpscaler {
     pass.draw(3);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  /** The size of the picture the networks of the mode built last give, before it is fitted to the target (for the page's check by hand). */
+  networkSize(): Size | undefined {
+    const texture = this.pipeline?.getOutputTexture();
+    return texture ? { width: texture.width, height: texture.height } : undefined;
   }
 
   /** Waits until the graphics chip has done all it was given, so that a time measured around it is the real one. */
@@ -121,19 +138,39 @@ export class GpuUpscaler {
     });
   }
 
-  /** (Re)makes the network for this mode and this size of video: once, not every frame. */
-  private build(mode: AnimeMode, width: number, height: number): void {
-    const key = `${mode} ${width}x${height}`;
+  /** (Re)makes the networks for this mode, this size of video and this target (Mode A and C change with the target): once, not every frame. */
+  private build(mode: AnimeMode, native: Size, out: Size): void {
+    const key = `${mode} ${native.width}x${native.height} ${out.width}x${out.height}`;
     if (key === this.built) return;
-    this.input?.destroy();
-    this.input = this.device.createTexture({
-      size: [width, height, 1],
-      format: "rgba16float",
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-    const options = { device: this.device, inputTexture: this.input };
-    this.pipeline = mode === "anime-fast" ? new this.library.CNNx2M(options) : new this.library.CNNx2VL(options);
-    this.bindGroup = this.device.createBindGroup({
+    for (const thing of this.made) thing.destroy();
+    this.made = [];
+    this.built = "";
+    // (Everything the package makes while the networks are built is noted, to be freed with them: it keeps no list of its own.)
+    const device = this.device;
+    const createTexture = device.createTexture.bind(device);
+    const createBuffer = device.createBuffer.bind(device);
+    device.createTexture = (descriptor) => {
+      const texture = createTexture(descriptor);
+      this.made.push(texture);
+      return texture;
+    };
+    device.createBuffer = (descriptor) => {
+      const buffer = createBuffer(descriptor);
+      this.made.push(buffer);
+      return buffer;
+    };
+    try {
+      this.input = device.createTexture({
+        size: [native.width, native.height, 1],
+        format: "rgba16float",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.pipeline = this.networks(mode, this.input, native, out);
+    } finally {
+      device.createTexture = createTexture;
+      device.createBuffer = createBuffer;
+    }
+    this.bindGroup = device.createBindGroup({
       layout: this.blit.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: this.sampler },
@@ -141,5 +178,32 @@ export class GpuUpscaler {
       ],
     });
     this.built = key;
+  }
+
+  private networks(mode: AnimeMode, input: GPUTexture, native: Size, out: Size): Pipeline {
+    const device = this.device;
+    const library = this.library;
+    if (mode === "anime-restore") return new library.ModeA({ device, inputTexture: input, nativeDimensions: native, targetDimensions: out });
+    if (mode === "anime-clean") return new library.ModeC({ device, inputTexture: input, nativeDimensions: native, targetDimensions: out });
+    const make = (step: AnimeStep, inputTexture: GPUTexture): Pipeline => {
+      const options = { device, inputTexture };
+      switch (step.network) {
+        case "CNNx2M":
+          return new library.CNNx2M(options);
+        case "CNNx2VL":
+          return new library.CNNx2VL(options);
+        case "CNNx2UL":
+          return new library.CNNx2UL(options);
+        case "GANx3L":
+          return new library.GANx3L(options);
+        case "GANx4UUL":
+          return new library.GANx4UUL(options);
+        default:
+          throw new Error(`${step.network} is not a step of ${mode}`);
+      }
+    };
+    const pipelines: Pipeline[] = [];
+    for (const step of animeSteps(mode, native, out)) pipelines.push(make(step, pipelines.length ? pipelines[pipelines.length - 1]!.getOutputTexture() : input));
+    return chained(pipelines);
   }
 }

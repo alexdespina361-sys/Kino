@@ -32,6 +32,8 @@
           <dd id="device-gl" data-testid="upscale-gl">Checking...</dd>
           <dt>WebGPU (for Anime)</dt>
           <dd id="device-gpu" data-testid="upscale-gpu">Checking...</dd>
+          <dt>This screen</dt>
+          <dd id="device-screen" data-testid="upscale-screen">Checking...</dd>
         </dl>
       </section>
 
@@ -57,12 +59,12 @@
       <section class="card" id="viewer" hidden aria-labelledby="viewer-title">
         <h2 id="viewer-title">The video</h2>
         <p class="muted" id="file-name"></p>
-        <div class="stage-scroll">
+        <div class="stage-scroll" id="stage-scroll">
           <div class="stage" id="stage">
             <video id="video" muted playsinline preload="auto"></video>
             <canvas id="gl-canvas" data-testid="upscale-gl-canvas"></canvas>
             <canvas id="gpu-canvas" data-testid="upscale-gpu-canvas" hidden></canvas>
-            <div class="split" aria-hidden="true"><span>as it is</span><span>upscaled</span></div>
+            <div class="split" aria-hidden="true"><span>as it is</span><span id="split-mode">upscaled</span></div>
           </div>
         </div>
 
@@ -70,7 +72,12 @@
           <button type="button" id="play" class="button">Play</button>
           <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Where in the video" />
           <span id="time" class="time">0:00 / 0:00</span>
+          <button type="button" id="fullscreen" class="button ghost" data-testid="upscale-fullscreen">Full screen</button>
         </div>
+        <p class="muted hint">
+          The line between the two follows the mouse over the picture (double-click it for full screen). Keys: F full screen, 1 to 8 the modes, in the order
+          below, Space play or pause.
+        </p>
 
         <div class="choices">
           <fieldset>
@@ -82,6 +89,8 @@
               <select id="target" data-testid="upscale-target">
                 <option value="720" selected>720p</option>
                 <option value="1080">1080p</option>
+                <option value="1440">1440p (2K)</option>
+                <option value="2160">2160p (4K)</option>
               </select>
             </label>
             <label>Shown
@@ -97,13 +106,14 @@
           </div>
         </div>
         <p class="muted" id="size-info" data-testid="upscale-size"></p>
+        <p class="muted" id="shown-info" data-testid="upscale-shown"></p>
         <p class="status" id="status" role="status" data-testid="upscale-status"></p>
       </section>
 
       <section class="card" id="tests" hidden aria-labelledby="tests-title">
         <h2 id="tests-title">Speed test</h2>
         <p class="muted">
-          Each test draws one frame 45 times and waits for the graphics chip every time, then plays the video for a few seconds and counts the frames it kept
+          Each test draws one frame 45 times (the first five only get the mode ready) and waits for the graphics chip every time, then plays the video for a few seconds and counts the frames it kept
           up with. "Smooth" leaves room to spare; "tight" keeps up, barely; "too slow" misses frames.
         </p>
         <div class="transport">

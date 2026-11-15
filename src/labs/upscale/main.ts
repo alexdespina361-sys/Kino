@@ -1,23 +1,45 @@
 import "./style.css";
 import { GlUpscaler, type GlMode } from "./glUpscaler";
 import { GpuUpscaler, webgpuAdapter, type AnimeMode } from "./gpuUpscaler";
-import { frameRate, ms, summarize, targetSize, verdict, type Timing, type Verdict } from "./measure";
+import { animeSteps, frameRate, ms, summarize, targetSize, verdict, type Timing, type Verdict } from "./measure";
 
 /**
- * The upscaler test page (labs/upscale/index.html): plays a video file picked on this computer, draws it bigger with one of four modes, and times each.
- * Nothing leaves the computer: the file is played from a blob: address, and the page asks the server for nothing but its own code.
+ * The upscaler test page (labs/upscale/index.html): plays a video file picked on this computer, draws it bigger with one of several modes, and times
+ * each. Nothing leaves the computer: the file is played from a blob: address, and the page asks the server for nothing but its own code.
  */
 
 type Mode = GlMode | AnimeMode;
 
-const MODES: readonly { mode: Mode; name: string; about: string }[] = [
-  { mode: "off", name: "Off", about: "Plain scaling, the way the browser draws a video now." },
-  { mode: "sharp", name: "Sharp (FSR 1)", about: "AMD FSR 1: finds the edges and keeps them crisp, then sharpens. Any video, most graphics chips." },
-  { mode: "anime-fast", name: "Anime (fast)", about: "Anime4K CNNx2M: a small neural network made for drawn pictures (cartoons, anime). Needs WebGPU." },
-  { mode: "anime-quality", name: "Anime (quality)", about: "Anime4K CNNx2VL: a bigger network, cleaner lines, a lot more work. Needs WebGPU." },
+/** What a mode is for: any video (films, shows), or drawn pictures (cartoons, anime). In each group, the lightest first. */
+type Group = "off" | "any" | "drawn";
+
+const MODES: readonly { mode: Mode; name: string; about: string; group: Group }[] = [
+  { mode: "off", name: "Off", about: "Plain scaling, the way the browser draws a video now.", group: "off" },
+  { mode: "sharp", name: "Sharp (FSR 1)", about: "AMD FSR 1: finds the edges and keeps them crisp, then sharpens. Any video, most graphics chips.", group: "any" },
+  { mode: "anime-fast", name: "Anime (fast)", about: "Anime4K CNNx2M: a small neural network made for drawn pictures (cartoons, anime). Needs WebGPU, as all the Anime modes.", group: "drawn" },
+  { mode: "anime-quality", name: "Anime (quality)", about: "Anime4K CNNx2VL: a bigger network, cleaner lines.", group: "drawn" },
+  {
+    mode: "anime-restore",
+    name: "Anime (restore)",
+    about: "Anime4K's Mode A: a network first takes the blur away, then the picture is upscaled. Lines come out much crisper: for soft, blurry videos.",
+    group: "drawn",
+  },
+  {
+    mode: "anime-clean",
+    name: "Anime (clean up)",
+    about: "Anime4K's Mode C: upscales and takes the noise and the blocks of compression away at once. For noisy 480p (old DVDs, small streams).",
+    group: "drawn",
+  },
+  { mode: "anime-best", name: "Anime (best 2x)", about: "Anime4K CNNx2UL: the biggest of its 2x networks, the cleanest lines, a lot more work.", group: "drawn" },
+  {
+    mode: "anime-gan",
+    name: "Anime (GAN)",
+    about: "Anime4K GANx3L (GANx4UUL for 4K): a GAN network that draws in fine detail of its own. The strongest look, and the most work.",
+    group: "drawn",
+  },
 ];
 const nameOf = (mode: Mode): string => MODES.find((entry) => entry.mode === mode)?.name ?? mode;
-const isAnime = (mode: Mode): mode is AnimeMode => mode === "anime-fast" || mode === "anime-quality";
+const isAnime = (mode: Mode): mode is AnimeMode => mode.startsWith("anime-");
 
 /** Frames drawn and waited for in a speed test (the first ones only warm up). */
 const WARM_UP = 5;
@@ -34,6 +56,8 @@ const video = element<HTMLVideoElement>("video");
 const glCanvas = element<HTMLCanvasElement>("gl-canvas");
 const gpuCanvas = element<HTMLCanvasElement>("gpu-canvas");
 const stage = element<HTMLDivElement>("stage");
+const stageScroll = element<HTMLDivElement>("stage-scroll");
+const compare = element<HTMLInputElement>("compare");
 const status = element<HTMLParagraphElement>("status");
 const playButton = element<HTMLButtonElement>("play");
 const seek = element<HTMLInputElement>("seek");
@@ -195,6 +219,9 @@ async function choose(wanted: Mode): Promise<void> {
   render();
 }
 
+/** The mode of the key pressed: 1 for the first of MODES, 0 for the tenth. */
+const modeOfKey = (key: string): Mode | undefined => (/^[0-9]$/.test(key) ? MODES[(Number(key) + 9) % 10]?.mode : undefined);
+
 /** The frames counted while a speed test plays the video (by the loop below). */
 const counted = { on: false, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] as number[] };
 
@@ -244,19 +271,64 @@ function describeSize(): void {
   const factor = out.width / video.videoWidth;
   const parts = [`The video is ${video.videoWidth} × ${video.videoHeight}; it is drawn at ${out.width} × ${out.height}`];
   parts[0] += factor > 1.001 ? ` (${factor.toFixed(2).replace(/\.?0+$/, "")} times as big).` : ": it is that big already, so the modes only sharpen it.";
-  if (isAnime(mode)) parts.push(`Anime makes it ${video.videoWidth * 2} × ${video.videoHeight * 2} first, then fits that to ${out.width} × ${out.height}.`);
+  if (isAnime(mode)) {
+    const steps = animeSteps(mode, { width: video.videoWidth, height: video.videoHeight }, out).map(
+      ({ network, size }) => `${network === "Downscale" ? "shrinks it" : network} to ${size.width} × ${size.height}`,
+    );
+    const last = animeSteps(mode, { width: video.videoWidth, height: video.videoHeight }, out).at(-1)?.size;
+    const fitted = last && (last.width !== out.width || last.height !== out.height) ? `; that is fitted to ${out.width} × ${out.height}` : "";
+    parts.push(`Anime4K ${steps.join(", then ")}${fitted}.`);
+  }
   element("size-info").textContent = parts.join(" ");
+  element("split-mode").textContent = mode === "off" ? "Off" : nameOf(mode);
   fitStage();
 }
+
+const isFullScreen = (): boolean => document.fullscreenElement === stageScroll;
 
 function fitStage(): void {
   const out = outSize();
   if (!(out.width > 0)) return;
   stage.style.aspectRatio = `${out.width} / ${out.height}`;
+  stage.style.setProperty("--aspect", String(out.width / out.height));
   const view = viewSelect.value;
   const pixels = out.width / (window.devicePixelRatio || 1);
-  stage.style.width = view === "actual" ? `${pixels}px` : view === "zoom" ? `${pixels * 2}px` : "100%";
+  // (Full screen, "to fit" is the screen: see .stage-scroll:fullscreen in style.css.)
+  stage.style.width = view === "actual" ? `${pixels}px` : view === "zoom" ? `${pixels * 2}px` : isFullScreen() ? "" : "100%";
   stage.classList.toggle("pixelated", view === "zoom");
+  stage.classList.toggle("fit", view === "fit");
+  requestAnimationFrame(describeShown);
+}
+
+/**
+ * How big the picture is on the screen now, in the screen's own pixels: a 1440p picture shown in the page's column is shrunk back to about 1000 pixels
+ * wide, and what the modes added is mostly lost with it.
+ */
+function describeShown(): void {
+  const out = outSize();
+  const shown = Math.round(stage.getBoundingClientRect().width * (window.devicePixelRatio || 1));
+  if (!(out.width > 0 && shown > 0)) return;
+  const height = Math.round((shown * out.height) / out.width);
+  element("shown-info").textContent =
+    shown < out.width * 0.95
+      ? `Shown at ${shown} × ${height} screen pixels now: smaller than it is drawn, so the difference is shrunk away too. Press Full screen, or choose Pixel for pixel, to see all of it.`
+      : `Shown at ${shown} × ${height} screen pixels: every pixel drawn is on the screen.`;
+}
+
+/** Moves the line between "as it is" (left) and the mode (right) to `percent` of the picture's width. */
+function setSplit(percent: number): void {
+  const at = Math.min(100, Math.max(0, percent));
+  stage.style.setProperty("--split", `${at}%`);
+  compare.value = String(Math.round(at));
+}
+
+async function toggleFullScreen(): Promise<void> {
+  try {
+    if (isFullScreen()) await document.exitFullscreen();
+    else await stageScroll.requestFullscreen();
+  } catch (error) {
+    say(`Full screen did not start: ${problemText(error)}`);
+  }
 }
 
 /** Plays `video` (a file from this computer, or a free clip of the page brought whole first: a test must not wait on the network). */
@@ -321,8 +393,40 @@ targetSelect.addEventListener("change", () => {
   render();
 });
 viewSelect.addEventListener("change", fitStage);
-element<HTMLInputElement>("compare").addEventListener("input", (event) => {
-  stage.style.setProperty("--split", `${(event.target as HTMLInputElement).value}%`);
+compare.addEventListener("input", () => setSplit(Number(compare.value)));
+// The line follows the mouse over the picture (a finger moves it by dragging), for a quick look at any part of it.
+stage.addEventListener("pointermove", (event) => {
+  if (event.pointerType !== "mouse" && event.buttons === 0) return;
+  const box = stage.getBoundingClientRect();
+  if (box.width > 0) setSplit(((event.clientX - box.left) / box.width) * 100);
+});
+stage.addEventListener("pointerdown", (event) => {
+  const box = stage.getBoundingClientRect();
+  if (box.width > 0) setSplit(((event.clientX - box.left) / box.width) * 100);
+});
+stage.addEventListener("dblclick", () => void toggleFullScreen());
+element<HTMLButtonElement>("fullscreen").addEventListener("click", () => void toggleFullScreen());
+document.addEventListener("fullscreenchange", fitStage);
+// Keys: F full screen, 1 to 8 the modes, Space play or pause (but not while a field or a button of the page has the keyboard: it is theirs then).
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey || event.altKey || event.metaKey || element("viewer").hidden) return;
+  const focused = document.activeElement;
+  const typing = focused instanceof HTMLInputElement || focused instanceof HTMLSelectElement || focused instanceof HTMLTextAreaElement;
+  if (event.key === "f" || event.key === "F") {
+    event.preventDefault();
+    void toggleFullScreen();
+    return;
+  }
+  const wanted = typing ? undefined : modeOfKey(event.key);
+  if (wanted && !testing) {
+    event.preventDefault();
+    void choose(wanted);
+    return;
+  }
+  if (event.key === " " && !typing && !(focused instanceof HTMLButtonElement)) {
+    event.preventDefault();
+    playButton.click();
+  }
 });
 element<HTMLInputElement>("file").addEventListener("change", (event) => open((event.target as HTMLInputElement).files?.[0]));
 const drop = element("drop");
@@ -349,6 +453,8 @@ interface Played {
 interface Result {
   mode: Mode;
   timing?: Timing;
+  /** The longest of the first frames, drawn before the timed ones: building and compiling the mode's networks, once. */
+  gettingReady?: number;
   played?: Played;
   verdict?: Verdict;
   problem?: string;
@@ -397,6 +503,7 @@ async function speedTest(tested: Mode): Promise<Result> {
   video.pause();
   showCanvasFor(tested);
   const samples: number[] = [];
+  let gettingReady = 0;
   timing = true;
   try {
     for (let index = 0; index < WARM_UP + TIMED && !stopAsked; index++) {
@@ -405,8 +512,11 @@ async function speedTest(tested: Mode): Promise<Result> {
       await finishNow(tested);
       const took = performance.now() - start;
       if (index >= WARM_UP) samples.push(took);
-      say(`${nameOf(tested)}: frame ${index + 1} of ${WARM_UP + TIMED} took ${ms(took)}`);
-      if (took > 2000) break; // (it would take minutes: this is enough to tell)
+      else gettingReady = Math.max(gettingReady, took);
+      say(index < WARM_UP ? `${nameOf(tested)}: getting ready (${ms(took)})...` : `${nameOf(tested)}: frame ${index + 1 - WARM_UP} of ${TIMED} took ${ms(took)}`);
+      // (The first frames of a network take long once, while the browser compiles it: about 2 s for the biggest here, more on a slower computer. Only
+      // a timed frame that long says the mode is too slow; it would take minutes to time them all.)
+      if (index >= WARM_UP ? took > 2000 : took > 30_000) break;
       await nextFrame();
     }
   } catch (error) {
@@ -416,6 +526,7 @@ async function speedTest(tested: Mode): Promise<Result> {
   }
   const measured = summarize(samples);
   if (stopAsked) return { mode: tested, problem: "Stopped" };
+  if (measured.samples === 0) return { mode: tested, problem: `It took ${ms(gettingReady)} to get ready, and no frame was timed: far too slow here.` };
   let played: Played | undefined;
   if (measured.samples > 0 && measured.median < 1000) {
     const was = mode;
@@ -430,7 +541,7 @@ async function speedTest(tested: Mode): Promise<Result> {
   }
   if (wentAway) return { mode: tested, problem: AWAY };
   const fps = played?.fps ?? 30;
-  return { mode: tested, timing: measured, played, verdict: verdict(measured, fps, played ? played.drawn / played.expected : undefined) };
+  return { mode: tested, timing: measured, gettingReady, played, verdict: verdict(measured, fps, played ? played.drawn / played.expected : undefined) };
 }
 
 const VERDICT_WORDS: Record<Verdict, string> = { smooth: "Smooth", tight: "Tight", slow: "Too slow" };
@@ -459,7 +570,8 @@ function showResults(): void {
       }
       const time = result.timing!;
       const played = result.played;
-      cell(`${ms(time.median)} (9 in 10 under ${ms(time.p90)})`);
+      const ready = result.gettingReady ?? 0;
+      cell(`${ms(time.median)} (9 in 10 under ${ms(time.p90)})${ready >= 250 ? `; ${(ready / 1000).toFixed(1)} s to get ready, once` : ""}`);
       cell(
         played
           ? `${Math.min(played.drawn, played.expected)} of ${played.expected} frames drawn${played.dropped ? `, ${played.dropped} dropped` : ""}, at ${played.fps.toFixed(played.fps % 1 ? 2 : 0)} fps (${ms(1000 / played.fps)} a frame)`
@@ -473,20 +585,22 @@ function showResults(): void {
     }),
   );
   element("results").hidden = results.size === 0;
-  // The best mode that keeps up: the order of MODES is the order of quality.
   const tested = MODES.map(({ mode: each }) => results.get(each)).filter((result): result is Result => Boolean(result?.verdict));
-  const best = (wanted: Verdict): Result | undefined => [...tested].reverse().find((result) => result.verdict === wanted && result.mode !== "off");
-  const smooth = best("smooth");
-  const tight = best("tight");
   const height = `${Number(targetSelect.value)}p`;
-  element("summary").textContent =
-    tested.length < 2
-      ? ""
-      : smooth
-        ? `On this computer, ${nameOf(smooth.mode)} draws this video at ${height} with room to spare.${tight && MODES.findIndex((entry) => entry.mode === tight.mode) > MODES.findIndex((entry) => entry.mode === smooth.mode) ? ` ${nameOf(tight.mode)} keeps up too, barely.` : ""}`
-        : tight
-          ? `On this computer, ${nameOf(tight.mode)} keeps up at ${height}, barely: a busier scene or a 60 fps video could stutter.`
-          : `On this computer, none of the modes keeps up at ${height}: it is best left Off here${height === "1080p" ? " (720p may do)" : ""}.`;
+  // For each group, the heaviest mode that keeps up with room to spare (each group's modes are listed lightest first), and a heavier one that keeps
+  // up barely.
+  const line = (group: Group, label: string): string => {
+    const ran = tested.filter((result) => MODES.find((entry) => entry.mode === result.mode)?.group === group);
+    if (ran.length === 0) return "";
+    const order = (result: Result): number => MODES.findIndex((entry) => entry.mode === result.mode);
+    const smooth = ran.filter((result) => result.verdict === "smooth").at(-1);
+    const tight = ran.filter((result) => result.verdict === "tight" && (!smooth || order(result) > order(smooth))).at(-1);
+    if (smooth) return `${label}, ${nameOf(smooth.mode)} runs with room to spare${tight ? ` (${nameOf(tight.mode)} keeps up, barely)` : ""}`;
+    if (tight) return `${label}, ${nameOf(tight.mode)} keeps up, barely: a busier scene or a 60 fps video could stutter`;
+    return `${label}, none of the modes keeps up`;
+  };
+  const lines = [line("any", "for any video"), line("drawn", "for cartoons and anime")].filter(Boolean);
+  element("summary").textContent = tested.length < 2 || lines.length === 0 ? "" : `On this computer at ${height}: ${lines.join("; ")}.`;
 }
 
 async function runTests(modes: readonly Mode[]): Promise<void> {
@@ -531,6 +645,10 @@ testStop.addEventListener("click", () => {
 startWebGl();
 drawModes();
 void findWebGpu();
+{
+  const ratio = window.devicePixelRatio || 1;
+  element("device-screen").textContent = `${Math.round(screen.width * ratio)} × ${Math.round(screen.height * ratio)} pixels (a picture drawn bigger than this is shrunk to fit it)`;
+}
 if (frameCallbacks) video.requestVideoFrameCallback(onVideoFrame);
 else requestAnimationFrame(onAnimationFrame);
 
@@ -541,7 +659,9 @@ else requestAnimationFrame(onAnimationFrame);
  */
 async function probe(
   probed: Mode = mode,
-): Promise<{ mode: Mode; width: number; height: number; difference: number; brightness: number; detail: number; checksum: number } | { problem: string }> {
+): Promise<
+  { mode: Mode; network?: { width: number; height: number }; width: number; height: number; difference: number; brightness: number; detail: number; checksum: number } | { problem: string }
+> {
   const why = await ready(probed);
   if (why) return { problem: why };
   if (!hasFrame()) return { problem: "No frame to draw yet" };
@@ -578,10 +698,12 @@ async function probe(
     }
     count += 3;
   }
+  const network = isAnime(probed) ? gpu?.networkSize() : undefined;
   showCanvasFor(mode);
   render();
   return {
     mode: probed,
+    ...(network ? { network } : {}),
     width: out.width,
     height: out.height,
     difference: difference / count,
@@ -591,4 +713,25 @@ async function probe(
   };
 }
 
-(window as Window & { kinoUpscaleLab?: unknown }).kinoUpscaleLab = { probe, results };
+/** For a look by hand: a part of the frame shown now as `shot` draws it, as a PNG (data: address), pixel for pixel. */
+async function snapshot(shot: Mode = mode, region?: { x: number; y: number; width: number; height: number }): Promise<string> {
+  const why = await ready(shot);
+  if (why) return why;
+  const out = outSize();
+  const part = region ?? { x: 0, y: 0, ...out };
+  const canvas = document.createElement("canvas");
+  canvas.width = part.width;
+  canvas.height = part.height;
+  timing = true;
+  try {
+    drawNow(shot);
+    canvas.getContext("2d")!.drawImage(isAnime(shot) ? gpuCanvas : glCanvas, part.x, part.y, part.width, part.height, 0, 0, part.width, part.height);
+  } finally {
+    timing = false;
+  }
+  showCanvasFor(mode);
+  render();
+  return canvas.toDataURL("image/png");
+}
+
+(window as Window & { kinoUpscaleLab?: unknown }).kinoUpscaleLab = { probe, snapshot, results };
