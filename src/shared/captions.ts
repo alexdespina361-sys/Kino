@@ -65,6 +65,34 @@ export const CAPTION_LABELS: { [K in CaptionSetting]: Record<CaptionStyle[K], st
   spacing: { tight: "Tight", normal: "Normal", wide: "Wide", wider: "Wider" },
 };
 
+/** A look: every setting but the height, which is about the screen and the film (a viewer who raised the text keeps it raised). */
+export type CaptionLook = Omit<CaptionStyle, "position">;
+
+/** The looks that are picked in one go; the eight settings stay a page further ("More options"). */
+export const CAPTION_PRESET_NAMES = ["standard", "large", "clear"] as const;
+export type CaptionPreset = (typeof CAPTION_PRESET_NAMES)[number];
+
+const { position: _height, ...STANDARD_LOOK } = DEFAULT_CAPTION_STYLE;
+
+export const CAPTION_PRESETS: Record<CaptionPreset, CaptionLook> = {
+  /** The default, exactly: nobody's subtitles move because this list exists. */
+  standard: STANDARD_LOOK,
+  /** Bigger, on a darker box: read from further away. */
+  large: { ...STANDARD_LOOK, size: "large", background: "75" },
+  /** No box over the picture, an outline instead. */
+  clear: { ...STANDARD_LOOK, background: "0", edge: "outline" },
+};
+
+/** The look a style is, or null when the viewer made one of their own. The height does not count. */
+export function captionPresetOf(style: CaptionStyle): CaptionPreset | null {
+  return (
+    CAPTION_PRESET_NAMES.find((name) => {
+      const look = CAPTION_PRESETS[name];
+      return (Object.keys(look) as Array<keyof CaptionLook>).every((setting) => style[setting] === look[setting]);
+    }) ?? null
+  );
+}
+
 /** The defaults, with whatever the viewer changed on top. Values that aren't a real choice are ignored. */
 export function resolveCaptionStyle(changes?: Partial<CaptionStyle>): CaptionStyle {
   const style: CaptionStyle = { ...DEFAULT_CAPTION_STYLE };

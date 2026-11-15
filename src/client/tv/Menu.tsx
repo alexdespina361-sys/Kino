@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
+  CAPTION_PRESET_NAMES,
+  CAPTION_PRESETS,
   CAPTION_SETTINGS,
   CAPTION_VALUES,
+  captionPresetOf,
   defaultTrack,
   describeStatus,
   episodeName,
@@ -26,10 +29,14 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { useEpisodeDetails, type SeasonDetails } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
 import { CheckIcon, CloseIcon } from "../shared/icons";
-import { captionLabel, captionTitle, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
+import { captionLabel, captionPresetName, captionTitle, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 
-export type MenuKind = "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes";
+/** `captions` is the subtitle look (three looks to pick), `captionsMore` its page of eight settings. */
+export type MenuKind = "tracks" | "captions" | "captionsMore" | "speed" | "quality" | "sources" | "episodes";
+
+/** Where Back goes from a page of a menu: the looks are a page of the audio and subtitles menu, the eight settings a page of the looks. */
+export const pageBefore = (kind: MenuKind): MenuKind | null => (kind === "captionsMore" ? "captions" : kind === "captions" ? "tracks" : null);
 
 interface Option {
   key: string | number;
@@ -86,6 +93,7 @@ const titleOf = (kind: MenuKind, player: PlayerState): string => {
     case "tracks":
       return tracksTitle(player);
     case "captions":
+    case "captionsMore":
       return t("player.captionStyle");
     case "speed":
       return t("player.speed");
@@ -120,6 +128,25 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
   const { player, kind } = p;
 
   if (kind === "captions") {
+    const preset = captionPresetOf(p.captionStyle);
+    return [
+      {
+        title: t("player.capLook"),
+        options: [
+          ...CAPTION_PRESET_NAMES.map((name) => ({
+            key: `look-${name}`,
+            label: captionPresetName(name),
+            active: preset === name,
+            pick: () => p.onCaption(CAPTION_PRESETS[name]),
+          })),
+          // (Marked, and where the remote starts, when the look is the viewer's own.)
+          { key: "more", label: t("player.captionMore"), detail: preset === null ? t("player.capCustom") : undefined, active: preset === null, pick: () => p.onKind("captionsMore") },
+        ],
+      },
+    ];
+  }
+
+  if (kind === "captionsMore") {
     return [
       {
         title: t("player.styleColumn"),
@@ -356,13 +383,17 @@ export function TvMenu(props: MenuProps) {
     const root = document.querySelector<HTMLElement>("[data-tv-menu]");
     const actives = root?.querySelectorAll<HTMLElement>("[data-active='true']");
     const start = props.kind === "episodes" ? actives?.[actives.length - 1] : actives?.[0];
-    const style = props.kind === "tracks" && cameFrom.current === "captions" ? root?.querySelector<HTMLElement>("[data-key='style']") : null;
+    const opener = props.kind === "tracks" && cameFrom.current === "captions" ? "style" : props.kind === "captions" && cameFrom.current === "captionsMore" ? "more" : null;
+    const style = opener ? root?.querySelector<HTMLElement>(`[data-key='${opener}']`) : null;
     cameFrom.current = props.kind;
     (style ?? start ?? root?.querySelector<HTMLElement>("[data-opt]"))?.focus();
   }, [props.kind]);
 
+  // (The eight settings are drawn as the looks are: one panel at the top, the sample over the picture.)
+  const look = props.kind === "captions" || props.kind === "captionsMore";
+  const drawnAs = look ? "captions" : props.kind;
   return (
-    <div className="tv-menu-backdrop" data-kind={props.kind} onClick={props.onClose}>
+    <div className="tv-menu-backdrop" data-kind={drawnAs} onClick={props.onClose}>
       <div
         className="tv-menu"
         ref={props.rootRef}
@@ -371,7 +402,8 @@ export function TvMenu(props: MenuProps) {
         aria-modal="true"
         aria-label={title}
         data-testid="audio-subtitles-modal"
-        data-kind={props.kind}
+        data-kind={drawnAs}
+        data-page={props.kind === "captionsMore" ? "more" : undefined}
         data-cols={columns.length}
         data-rich={props.kind === "episodes" && details !== null}
         onClick={(event) => event.stopPropagation()}
@@ -438,7 +470,7 @@ export function TvMenu(props: MenuProps) {
           </div>
         )}
       </div>
-      {props.kind === "captions" && (
+      {look && (
         // Over the picture at the real size and height (the panel sits at the top), so Height can be seen moving the text.
         <div className="tv-caption-stage" data-testid="subtitle-preview" aria-hidden="true" style={{ bottom: captionBottom(props.captionStyle) }}>
           <span className="tv-caption" style={captionTextStyle(props.captionStyle)}>

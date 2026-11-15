@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
+  CAPTION_PRESET_NAMES,
+  CAPTION_PRESETS,
   CAPTION_SETTINGS,
   CAPTION_VALUES,
+  captionPresetOf,
   DEFAULT_CAPTION_STYLE,
   defaultTrack,
   describeStatus,
@@ -41,7 +44,7 @@ import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
-import { captionLabel, captionTitle, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
+import { captionLabel, captionPresetName, captionTitle, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { Rows, Switch } from "./AccountPages";
 import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
@@ -282,7 +285,10 @@ export function TracksSheet({
   );
 }
 
-/** How subtitles look: a small picture of the TV with a sample line that follows every change, then one row of choices per setting. */
+/**
+ * How subtitles look: a small picture of the TV with a sample line that follows every change, three looks to pick in one tap, and the
+ * eight settings folded under "More options" (open from the start when the look is the viewer's own).
+ */
 export function CaptionStyleSheet({
   style,
   onChange,
@@ -290,6 +296,8 @@ export function CaptionStyleSheet({
 }: Close & { style: CaptionStyle | undefined; onChange: (changes: Partial<CaptionStyle>) => void }) {
   useT();
   const current = resolveCaptionStyle(style);
+  const preset = captionPresetOf(current);
+  const [more, setMore] = useState(preset === null);
   return (
     <Sheet title={t("player.captionStyle")} onClose={onClose} testId="captions-sheet">
       {/* (held sideways, the picture stays on one side while the choices scroll on the other: see the style sheets) */}
@@ -300,7 +308,29 @@ export function CaptionStyleSheet({
           </span>
         </div>
         <div className="cap-controls">
-          {CAPTION_SETTINGS.map((setting) => (
+          <section className="cap-setting">
+            <h3 className="sheet-section">{t("player.capLook")}</h3>
+            <div className="cap-choices cap-looks" role="radiogroup" aria-label={t("player.capLook")}>
+              {CAPTION_PRESET_NAMES.map((name) => (
+                <button
+                  key={name}
+                  role="radio"
+                  aria-checked={preset === name}
+                  className={`cap-choice ${preset === name ? "active" : ""}`}
+                  data-testid={`caption-look-${name}`}
+                  onClick={() => onChange(CAPTION_PRESETS[name])}
+                >
+                  {captionPresetName(name)}
+                </button>
+              ))}
+            </div>
+          </section>
+          {!more && (
+            <button className="btn btn-block" data-testid="caption-more" aria-expanded={false} onClick={() => setMore(true)}>
+              {t("player.captionMore")}
+            </button>
+          )}
+          {more && CAPTION_SETTINGS.map((setting) => (
             <section key={setting} className="cap-setting">
               <h3 className="sheet-section">{captionTitle(setting)}</h3>
               <div className="cap-choices" role="radiogroup" aria-label={captionTitle(setting)}>
@@ -319,9 +349,11 @@ export function CaptionStyleSheet({
               </div>
             </section>
           ))}
-          <button className="btn btn-block" data-testid="caption-reset" onClick={() => onChange(DEFAULT_CAPTION_STYLE)}>
-            {t("player.styleDefault")}
-          </button>
+          {more && (
+            <button className="btn btn-block" data-testid="caption-reset" onClick={() => onChange(DEFAULT_CAPTION_STYLE)}>
+              {t("player.styleDefault")}
+            </button>
+          )}
         </div>
       </div>
     </Sheet>
