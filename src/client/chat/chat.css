@@ -148,8 +148,71 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 /* Writing: the box and its keys are the editor of a list's name (tv.css), a little tighter so that four rows of keys and the buttons fit at 720p. */
 .tv .chat-editor-tv .auth-field input { text-align: left; }
 
+/*
+ * The chat itself: one window, like the chat of any messenger. The friend at the top (picture, name, online) with the ⋯ for what is done less
+ * often, the messages in the middle taking what room there is, and the box to write in at the bottom. On a TV the box is a button that opens the
+ * page that writes; on a computer it is the box. (The `.tv-chat-actions` above are the report's buttons.)
+ */
+.tv-chat-window {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  width: min(100%, 64em);
+  height: min(100%, 36em);
+  min-height: 0;
+  border-radius: 1.2em;
+  background: #141417;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 1.2em 3em rgba(0, 0, 0, 0.45);
+  text-align: left;
+}
+.tv-chat-head { position: relative; z-index: 2; display: flex; flex: none; align-items: center; gap: 1em; padding: 1em 1.4em; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+.tv-chat-pic { font-size: 3.6em; }
+.tv-chat-pic[data-online="true"]::after { right: 0; bottom: 0; width: 0.24em; height: 0.24em; }
+.tv-chat-who { flex: 1 1 auto; min-width: 0; }
+.tv-chat-name { margin: 0; overflow: hidden; color: #fff; font-size: 2em; font-weight: 700; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.tv-chat-status { margin: 0.15em 0 0; color: rgba(255, 255, 255, 0.6); font-size: 1.25em; }
+.tv-chat-more-wrap { position: relative; flex: none; }
+.tv-chat-more { display: grid; place-items: center; width: 3.4em; height: 3.4em; border-radius: 50%; background: transparent; color: rgba(255, 255, 255, 0.75); font-size: 1em; }
+.tv-chat-more svg { width: 1.8em; height: 1.8em; }
+.tv-chat-more:hover, .tv-chat-more[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.tv-chat-more:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+.tv-chat-menu { position: absolute; top: calc(100% + 0.5em); right: 0; display: flex; flex-direction: column; min-width: 20em; padding: 0.5em; border-radius: 0.9em; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1em 2.4em rgba(0, 0, 0, 0.6); }
+.tv-chat-menu[hidden] { display: none; }
+.tv-chat-menu button { display: flex; align-items: center; gap: 0.6em; padding: 0.6em 0.8em; border-radius: 0.6em; background: transparent; color: #fff; font-size: 1.35em; font-weight: 600; text-align: left; white-space: nowrap; }
+.tv-chat-menu button svg { flex: none; opacity: 0.8; }
+.tv-chat-menu button:hover { background: rgba(255, 255, 255, 0.08); }
+.tv-chat-menu button:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+.tv-chat-menu [data-testid="tv-chat-report"] { color: #ffb4b4; }
+.tv-chat-menu [data-testid="tv-chat-report"]:focus-visible { color: #b3261e; }
+.tv-chat-window > .chat-lines { flex: 1 1 auto; width: 100%; max-height: none; min-height: 0; padding: 1em 1.4em; font-size: 1.6em; }
+.tv-chat-window .chat-bubble { max-width: 74%; }
+.tv-chat-window .chat-theirs .chat-bubble { background: #2a2a31; }
+.tv-chat-middle { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; align-self: center; padding: 1em 2em; text-align: center; }
+.tv-chat-foot { display: flex; flex: none; flex-direction: column; gap: 0.7em; padding: 1em 1.4em 1.2em; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.tv-chat-foot .chat-note, .tv-chat-foot .chat-problem, .tv-chat-foot .chat-closed { max-width: none; font-size: 1.25em; }
+.tv-chat-composer { display: flex; align-items: center; gap: 0.8em; width: 100%; }
+.tv-chat-box, .tv-chat-fakebox { min-width: 0; border-radius: 999px; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font: inherit; }
+.tv-chat-box { flex: 1 1 auto; padding: 0.7em 1.1em; border: none; font-size: 1.5em; }
+.tv-chat-box::placeholder { color: rgba(255, 255, 255, 0.45); }
+.tv-chat-box:focus { outline: none; box-shadow: inset 0 0 0 0.1em var(--accent); }
+.tv-chat-fakebox { justify-content: space-between; padding: 0.4em 0.45em 0.4em 1.6em; font-size: 1em; text-align: left; }
+.tv-chat-fakebox-text { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: 1.5em; text-overflow: ellipsis; white-space: nowrap; }
+.tv-chat-fakebox-text.is-empty { color: rgba(255, 255, 255, 0.5); }
+.tv-chat-fakebox:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.tv-chat-fakebox:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff, 0 0 0 0.25em rgb(var(--accent-rgb) / 0.35); }
+.tv-chat-send-round { display: grid; flex: none; place-items: center; width: 3.2em; height: 3.2em; border-radius: 50%; background: var(--accent); color: #fff; font-size: 1em; }
+.tv-chat-send-round svg { width: 1.45em; height: 1.45em; }
+button.tv-chat-send-round:disabled { opacity: 0.35; }
+button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
+/* (The way back, which the stylesheet puts in the top corner on every page that fills the screen, as before.) */
+
 /* A hand-held screen: the list takes the width, and stacks above the buttons. */
 @media (max-width: 899px) {
+  .tv-chat-window { width: 100%; height: auto; max-height: none; }
+  .tv-chat-window > .chat-lines { max-height: 50vh; font-size: 1.4em; }
+  .tv-chat-name { font-size: 1.7em; }
+  .tv-chat-menu { min-width: 0; }
+  .tv-chat-menu button { font-size: 1.25em; }
   .tv .chat-lines { width: 100%; max-height: 38vh; font-size: 1.5em; }
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }

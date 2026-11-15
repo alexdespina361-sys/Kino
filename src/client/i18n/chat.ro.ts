@@ -19,6 +19,8 @@ export const chatRo: ChatDictionary = {
   "chat.takeBackLast": "Retrage ultimul mesaj",
   "chat.mute": "Dă pe mut",
   "chat.unmute": "Scoate de pe mut",
+  "chat.more": "Mai multe",
+  "chat.mutedShort": "Fără notificări",
   "chat.muted": "Pe mut: nu primești notificări despre mesajele noi de la {name}, iar {name} nu află asta.",
   "chat.closed": "{name} nu primește mesaje.",
   "chat.mineOff": "Mesajele de la prieteni sunt dezactivate pentru tine, așa că {name} nu îți poate răspunde. Activează-le din setările pentru prieteni.",

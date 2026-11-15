@@ -19,6 +19,8 @@ export const chatIt: ChatDictionary = {
   "chat.takeBackLast": "Ritira l'ultimo messaggio",
   "chat.mute": "Silenzia",
   "chat.unmute": "Riattiva",
+  "chat.more": "Altro",
+  "chat.mutedShort": "Silenziato",
   "chat.muted": "Silenziata: non ricevi avvisi per i nuovi messaggi di {name}, e {name} non ne sa niente.",
   "chat.closed": "{name} non riceve messaggi.",
   "chat.mineOff": "I messaggi degli amici sono disattivati per te, quindi {name} non può risponderti. Attivali nelle impostazioni degli amici.",

@@ -4,7 +4,7 @@ import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { CHAT_REPORT_LINES, CHAT_TEXT_MAX } from "../src/shared";
 import { FEEDBACK_TOKEN } from "./feedbackToken";
-import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, seeded, test } from "./helpers";
 
 /**
  * The chat between two friends, on the phone and on the TV: writing and reading it, how what waits is told (a line, a number, a row in the bell, never a
@@ -553,9 +553,17 @@ interface Screen {
 const HD = { width: 1280, height: 720 };
 
 /** A new screen, signed up with the email form, with the switch for friends turned on in the settings of the account. */
-async function screenWithFriends(browser: Browser, name: string, options: { viewport?: { width: number; height: number }; language?: Language } = {}): Promise<Screen> {
+async function screenWithFriends(browser: Browser, name: string, options: { viewport?: { width: number; height: number }; language?: Language; desk?: boolean } = {}): Promise<Screen> {
   const account = fresh(name);
-  const page = await openLibrary(browser, undefined, options.viewport ?? HD, options.language ? { "kino.lang": options.language } : {});
+  const words: Record<string, string> = options.language ? { "kino.lang": options.language } : {};
+  // (`desk`: a computer, told so as somebody who chose it would be; the other screens are told they are watched from the couch, see playwright.config.ts)
+  const page = options.desk
+    ? await openDevice(browser, { viewport: options.viewport ?? HD, storageState: seeded([{ name: "kino.fit", value: "desk" }], ["kino.fit"]) }, words)
+    : await openLibrary(browser, undefined, options.viewport ?? HD, words);
+  if (options.desk) {
+    await page.goto("/tv");
+    await expect(page.getByTestId("tv-browse")).toBeVisible();
+  }
   await openTvSignIn(page);
   await page.getByTestId("tv-signin-email").click();
   await page.getByTestId("auth-switch").click();
@@ -661,6 +669,12 @@ const outsideTheScreen = (page: Page, root: string, whole = true) =>
 
 /** The chat's lines on a screen. */
 const tvLines = (page: Page) => page.getByTestId("tv-chat-lines").getByTestId("chat-line");
+
+/** The ⋯ at the top of the chat is opened, and Report in it pressed. */
+async function tvReport(page: Page) {
+  await page.getByTestId("tv-chat-more").click();
+  await page.getByTestId("tv-chat-report").click();
+}
 
 /** Write is pressed, the message typed and sent: the screen is back on the chat. */
 async function tvWrite(page: Page, text: string) {
@@ -845,6 +859,60 @@ test.describe("the chat on the TV", () => {
     await expect(ann.page.getByTestId("tv-chat-closed")).toHaveCount(0);
   });
 
+  test("on a computer the chat has a box to type in: Enter sends and the box is ready for the next; taking back, muting and reporting are behind the ⋯, which Back shuts", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    expect(await ann.page.evaluate(() => document.documentElement.dataset.fit)).toBe("desk");
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat-name")).toHaveText(bob.name);
+
+    // the box, with the keyboard in it: Enter sends, and it is empty and ready again; the round button sends too
+    const box = ann.page.getByTestId("tv-chat-box");
+    await expect(box).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-write")).toHaveCount(0);
+    await ann.page.keyboard.type("Hello from the laptop");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(tvLines(ann.page).first().getByTestId("chat-text")).toHaveText("Hello from the laptop");
+    await expect(box).toHaveValue("");
+    await expect(box).toBeFocused();
+    await ann.page.keyboard.type("And a second");
+    await ann.page.getByTestId("tv-chat-box-send").click();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    await expect(box).toBeFocused();
+
+    // Bob's screen (a TV) has both
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page)).toHaveCount(2);
+
+    // the ⋯ is shut: what it holds is not there to press; opened, the first thing in it has the focus; Back shuts it, and only it
+    await expect(ann.page.getByTestId("tv-chat-mute")).toBeHidden();
+    await ann.page.getByTestId("tv-chat-more").click();
+    await expect(ann.page.getByTestId("tv-chat-takeback")).toBeFocused();
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat-menu")).toBeHidden();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-more")).toBeFocused();
+
+    // Take back the last, from it: gone for both
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-takeback").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(ann.page.getByTestId("tv-chat-menu")).toBeHidden();
+    await expect(tvLines(bob.page)).toHaveCount(1, SOON);
+
+    // Mute, from it: the top of the chat says so
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-mute").click();
+    await expect(ann.page.getByTestId("tv-chat-status")).toContainText(en["chat.mutedShort"]);
+    await expect(ann.page.getByTestId("tv-chat-muted")).toBeVisible();
+  });
+
   test("a chat can be reported from the screen: the page shows what would be sent, the remote lands on Cancel and not on Send, and nothing is sent before Send", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");
@@ -856,7 +924,7 @@ test.describe("the chat on the TV", () => {
     await tile(ann.page, bob.name).click();
     await ann.page.getByTestId("friend-chat").click();
     await expect(tvLines(ann.page)).toHaveCount(2);
-    await ann.page.getByTestId("tv-chat-report").click();
+    await tvReport(ann.page);
     await expect(ann.page.getByTestId("tv-chat-reporting")).toBeVisible();
     await expect(ann.page.getByTestId("tv-chat-report-lines").getByTestId("chat-line")).toHaveCount(2);
     await expect(ann.page.getByTestId("tv-chat-report-cancel")).toBeFocused();
@@ -867,7 +935,7 @@ test.describe("the chat on the TV", () => {
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     expect(await reportsAbout(ann.page, ann.name)).toHaveLength(0);
 
-    await ann.page.getByTestId("tv-chat-report").click();
+    await tvReport(ann.page);
     await ann.page.getByTestId("tv-chat-report-send").click();
     await expect(ann.page.getByTestId("tv-chat-report-sent")).toHaveText(en["chat.reportSent"]);
     expect(await reportsAbout(ann.page, ann.name)).toHaveLength(1);
@@ -922,6 +990,13 @@ test.describe("the chat on the TV", () => {
       await expect(page.getByTestId("tv-chat")).toBeVisible();
       await expect(tvLines(page)).toHaveCount(4);
       await fits("tv-chat", "the chat");
+      // (and with the ⋯ open: what it holds, inside the screen too; Back shuts it and the chat stays)
+      await page.getByTestId("tv-chat-more").click();
+      await expect(page.getByTestId("tv-chat-report")).toBeVisible();
+      await fits("tv-chat", "the chat with the ⋯ open");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("tv-chat-menu")).toBeHidden();
+      await expect(page.getByTestId("tv-chat")).toBeVisible();
       const cut = await page.getByTestId("tv-chat-lines").evaluate((box) => [...box.querySelectorAll<HTMLElement>(".chat-text, .chat-bubble")].filter((part) => part.scrollWidth > part.clientWidth + 1).map((part) => part.className));
       expect(cut, "text that runs out of its bubble").toEqual([]);
 
@@ -933,7 +1008,7 @@ test.describe("the chat on the TV", () => {
       await page.keyboard.press("Escape");
 
       // the report
-      await page.getByTestId("tv-chat-report").click();
+      await tvReport(page);
       await expect(page.getByTestId("tv-chat-report-lines")).toBeVisible();
       await fits("tv-chat-reporting", "the report");
       await page.keyboard.press("Escape");

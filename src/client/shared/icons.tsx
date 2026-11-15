@@ -489,6 +489,22 @@ export const RedoIcon = (props: Props) => (
   </Icon>
 );
 
+/** The bell with a line through it: not told of what comes (a muted chat). */
+export const BellOffIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M18 8a6 6 0 0 0-9.3-5M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14M13.7 21a2 2 0 0 1-3.4 0M18 13.5V8M3 3l18 18" />
+  </Icon>
+);
+
+/** Three dots in a row: "more", a few things that are there when they are asked for. */
+export const MoreIcon = (props: Props) => (
+  <Icon {...props}>
+    <circle cx="5" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="19" cy="12" r="1.3" fill="currentColor" />
+  </Icon>
+);
+
 export const SendIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M21 3 10.4 13.6M21 3l-6.6 18-4-7.4L3 9.6z" />
