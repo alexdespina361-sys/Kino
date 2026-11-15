@@ -28,7 +28,8 @@ const acrossRow = (page: Page) => page.locator(".tv-row .tv-tile").evaluateAll((
 /** How many titles sit side by side in a grid, and whether the last of them is wholly on screen. */
 const grid = (page: Page, selector: string) =>
   page.locator(`${selector} .tv-tile`).evaluateAll((tiles) => {
-    const lefts = [...new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().left)))];
+    // (where each one is laid out, not where it is drawn: a poster under the pointer grows a little, and its edge moves with it)
+    const lefts = [...new Set(tiles.map((tile) => (tile as HTMLElement).offsetLeft))];
     return { columns: lefts.length, inside: tiles.every((tile) => tile.getBoundingClientRect().right <= innerWidth) };
   });
 /** The grid of a category's titles (the library's one row). */
@@ -46,7 +47,7 @@ test("a computer up to 1920 by 1080 is drawn as it was: the same size and the sa
   expect(await fit(full)).toBe("desk");
   expect(await unit(full)).toBeCloseTo(19.2, 1);
   await openCategory(full);
-  expect(await grid(full, ".tv-grid")).toEqual({ columns: 8, inside: true });
+  await expect.poll(() => grid(full, ".tv-grid")).toEqual({ columns: 8, inside: true });
 });
 
 test("a wide monitor shows more titles, not bigger ones: in a row, in a grid and in what a search found", async ({ browser, baseURL }) => {
@@ -58,12 +59,12 @@ test("a wide monitor shows more titles, not bigger ones: in a row, in a grid and
   expect(await acrossRow(monitor)).toBeGreaterThanOrEqual(onFull + 2); // (a row's poster is a little larger than a grid's: two more whole ones, and a third in part)
 
   await openCategory(monitor);
-  expect(await grid(monitor, ".tv-grid")).toEqual({ columns: 11, inside: true });
+  await expect.poll(() => grid(monitor, ".tv-grid")).toEqual({ columns: 11, inside: true });
 
   await monitor.getByTestId("rail-search").click();
   await monitor.keyboard.type("film");
   await expect(monitor.locator(".tv-results .tv-tile")).toHaveCount(films.length);
-  expect(await grid(monitor, ".tv-results")).toEqual({ columns: 8, inside: true });
+  await expect.poll(() => grid(monitor, ".tv-results")).toEqual({ columns: 8, inside: true });
 
   // A window made narrower again goes back to what a 16 by 9 screen shows.
   await monitor.setViewportSize({ width: 1600, height: 900 });
@@ -72,7 +73,7 @@ test("a wide monitor shows more titles, not bigger ones: in a row, in a grid and
   // An ultra-wide one: more again, and all of it on the screen.
   const ultra = await open(browser, baseURL!, { width: 3440, height: 1440 });
   await openCategory(ultra);
-  expect(await grid(ultra, ".tv-grid")).toEqual({ columns: 15, inside: true });
+  await expect.poll(() => grid(ultra, ".tv-grid")).toEqual({ columns: 15, inside: true });
 });
 
 test("a TV keeps its own size whatever its width, and so does a computer that was told it is watched from the couch", async ({ browser, baseURL }) => {
@@ -80,7 +81,7 @@ test("a TV keeps its own size whatever its width, and so does a computer that wa
   expect(await fit(tv)).toBe("");
   expect(await unit(tv)).toBeCloseTo(25.6, 1);
   await openCategory(tv);
-  expect(await grid(tv, ".tv-grid")).toEqual({ columns: 8, inside: true });
+  await expect.poll(() => grid(tv, ".tv-grid")).toEqual({ columns: 8, inside: true });
 
   const couch = await open(browser, baseURL!, { width: 2560, height: 1440 }, { fit: "couch" });
   expect(await fit(couch)).toBe("");
