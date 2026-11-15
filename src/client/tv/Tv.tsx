@@ -28,7 +28,7 @@ import { friendsApi } from "../friends/api";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { t, useT } from "../i18n";
-import { handHeld, pressAgain, useBackWhile } from "../shared/backButton";
+import { browserBack, pressAgain, useBackWhile } from "../shared/backButton";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
@@ -1441,10 +1441,11 @@ export function Tv() {
   const filmIsOn = showVideo && !finished && !failed;
 
   // A phone or a tablet that is the screen has no Back key: its own Back goes out of a film a step at a time, the way a remote's does (the menu over
-  // it, the countdown to the next episode), and then to where the film was chosen. It does not ask first: the place it was left at is kept, and the
+  // it, the countdown to the next episode), and then to where the film was chosen. A computer's browser Back does the same (it went back through the
+  // library's pages already, and would otherwise leave the site from a film). It does not ask first: the place it was left at is kept, and the
   // next press of Play picks it up. A film that others are watching is the exception, a Back is too easy to make by mistake for that.
   const hosting = party?.role === "host" && party.guests.length > 0;
-  useBackWhile(handHeld() && unlocked && showVideo, () => {
+  useBackWhile(browserBack() && unlocked && showVideo, () => {
     if (menu) setMenu(menu === "captions" ? "tracks" : menu === "partyInvite" ? "party" : null);
     else if (upNextCountdown !== null) dismissUpNext();
     else if (following) pressAgain("exit.leaveParty") && leaveParty();
