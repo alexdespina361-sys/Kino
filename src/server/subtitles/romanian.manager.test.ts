@@ -1,3 +1,4 @@
+import { lookup } from "node:dns/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import zlib from "node:zlib";
@@ -267,6 +268,35 @@ describe("siteFetch", () => {
       first.close();
       second.close();
     }
+  });
+
+  it("looks at a name's address again when it connects: a name that was public when it was looked at and leads here when it is connected to is not asked", async () => {
+    // (DNS rebinding: a name whose answer changes between the look and the connection. Here every address is allowed for as long as the look takes,
+    // then none is; the connection would reach this machine's own server.)
+    const seen: string[] = [];
+    const server = http.createServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { "content-type": "text/plain" }).end("this machine");
+    });
+    await new Promise<void>((done) => server.listen(0, done)); // (every address of this machine, so whichever "localhost" leads to)
+    try {
+      const looked = (await lookup("localhost", { all: true })).length;
+      let asked = 0;
+      const rebinding = () => asked++ < looked;
+      await expect(siteFetch(undefined, rebinding)(`http://localhost:${(server.address() as AddressInfo).port}/inside`, { signal: AbortSignal.timeout(5_000) })).rejects.toThrow();
+      expect(asked).toBeGreaterThan(looked); // (it was looked at again)
+      expect(seen).toEqual([]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("gives up on a look at a name when the request is called off", async () => {
+    const never = () => new Promise<string[]>(() => {});
+    const called = new AbortController();
+    const asking = siteFetch(undefined, () => true, never)("https://slow.example/a", { signal: called.signal });
+    called.abort(new Error("called off"));
+    await expect(asking).rejects.toThrow("called off");
   });
 
   it("does not ask an address that is not public in the first place, and gives up on redirects that go round", async () => {

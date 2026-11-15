@@ -3,8 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
+import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from "undici";
 import type { SubtitleTrack } from "../../shared";
 import { isPublicAddress } from "../resolvers/ip";
+import { guardedLookup } from "../resolvers/safe-fetch";
 
 export interface RomanianSubtitle {
   id: string;
@@ -86,23 +88,58 @@ export function isListedFile(link: string): boolean {
 }
 
 /**
- * `fetch` for the subtitle sites. A site may answer with a redirect, and `fetch` on its own follows one wherever it leads: here every address on the way,
- * the first included, has to be a public one (by its name's addresses when it is a name), so a site's answer cannot have this server read from itself or
- * from the network it stands in. A cookie is not carried to another origin. (`send` and `isAllowed` are for tests.)
+ * One pool of connections for each rule about addresses, which looks at the address a name leads to when it connects (see `guardedLookup`). A name can
+ * answer one address when it is looked at and another when it is connected to ("DNS rebinding"): only this look is the one that counts.
  */
-export function siteFetch(send: typeof fetch = (...args) => fetch(...args), isAllowed: (address: string) => boolean = isPublicAddress): typeof fetch {
-  const check = async (url: URL): Promise<void> => {
+const sitePools = new WeakMap<(address: string) => boolean, Agent>();
+function sitePool(isAllowed: (address: string) => boolean): Agent {
+  let pool = sitePools.get(isAllowed);
+  if (!pool) {
+    pool = new Agent({ connect: { lookup: guardedLookup(isAllowed) } });
+    sitePools.set(isAllowed, pool);
+  }
+  return pool;
+}
+
+/** `fetch` through the pool of `isAllowed` (the `undici` package's own, as the pool is; what it answers is used as any `Response` is). */
+const guardedSend = (isAllowed: (address: string) => boolean): typeof fetch =>
+  ((input: string | URL, init?: RequestInit) =>
+    undiciFetch(input, { ...(init as UndiciRequestInit), headers: Object.fromEntries(new Headers(init?.headers)), dispatcher: sitePool(isAllowed) })) as unknown as typeof fetch;
+
+const addressesOf = async (host: string): Promise<string[]> => (await lookup(host, { all: true })).map((found) => found.address);
+
+/** `promise`, or the reason `signal` was called off for when that comes first. */
+function within<T>(promise: Promise<T>, signal: AbortSignal | null | undefined): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+/**
+ * `fetch` for the subtitle sites. A site may answer with a redirect, and `fetch` on its own follows one wherever it leads: here every address on the way,
+ * the first included, has to be a public one (by its name's addresses when it is a name, looked at before the request and again when it connects), so a
+ * site's answer cannot have this server read from itself or from the network it stands in. A cookie is not carried to another origin. The look at a name
+ * is given up on with the request. (`send`, `isAllowed` and `resolve` are for tests; a `send` of its own connects as it likes.)
+ */
+export function siteFetch(send?: typeof fetch, isAllowed: (address: string) => boolean = isPublicAddress, resolve: (host: string) => Promise<string[]> = addressesOf): typeof fetch {
+  const sending = send ?? guardedSend(isAllowed);
+  const check = async (url: URL, signal: AbortSignal | null | undefined): Promise<void> => {
     if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("not a web address");
     const host = url.hostname.replace(/^\[|\]$/g, "");
-    const addresses = isIP(host) ? [host] : (await lookup(host, { all: true })).map((found) => found.address);
+    // (An address written out is not looked up when it is connected to: it is looked at here, at every step.)
+    const addresses = isIP(host) ? [host] : await within(resolve(host), signal);
     if (addresses.length === 0 || addresses.some((address) => !isAllowed(address))) throw new Error("address not allowed");
   };
   return async (input, init) => {
     let url = new URL(input instanceof Request ? input.url : String(input));
     let ask: RequestInit = { ...init, redirect: "manual" };
     for (let hop = 0; hop <= 5; hop++) {
-      await check(url);
-      const res = await send(url, ask);
+      await check(url, ask.signal);
+      const res = await sending(url, ask);
       const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
       if (!location) return res;
       await res.body?.cancel().catch(() => {});
