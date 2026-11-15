@@ -450,7 +450,7 @@ def old_film(speech: np.ndarray, bg: np.ndarray, ref: list[Cue], starts: list[fl
     return (x + hum + hiss).astype(np.float32)
 
 
-def level(x: np.ndarray, target: float = 0.05, window_s: float = 3.0, up_db: float = 40.0, down_db: float = 20.0) -> np.ndarray:
+def level(x: np.ndarray, target: float = 0.05, window_s: float = 3.0, up_db: float = 40.0, down_db: float = 20.0, gain_only: bool = False) -> np.ndarray:
     """
     The pipeline's first step: the sound brought to a steady loudness (RMS `target` over a sliding 3 s window, at most +40 dB, at most
     -20 dB), with no delay. Why: what the screen captures is at whatever level the film and the player volume give, and the voice detector
@@ -463,8 +463,8 @@ def level(x: np.ndarray, target: float = 0.05, window_s: float = 3.0, up_db: flo
     win = max(1, int(window_s * 100))
     smooth = np.sqrt(np.convolve(power, np.ones(win) / win, mode="same"))
     gain = np.clip(target / np.maximum(smooth, 1e-9), 10 ** (-down_db / 20), 10 ** (up_db / 20))
-    g = np.interp(np.arange(len(x)), np.arange(frames) * 160 + 80, gain)
-    return np.clip(x * g, -1, 1).astype(np.float32)
+    g = np.interp(np.arange(len(x)), np.arange(frames) * 160 + 80, gain).astype(np.float32)
+    return g if gain_only else np.clip(x * g, -1, 1).astype(np.float32)
 
 
 def line_si_sdr(est: np.ndarray, ref: np.ndarray, cues: list[Cue]) -> float:
@@ -538,6 +538,9 @@ def prepare() -> None:
         # (Every sound goes through the level step first, as the pipeline would do with what the screen captures; what is saved and
         # isolated is the levelled sound. SI-SDR is a median over lines, so quiet lines count as much as loud ones.)
         sounds = {name: level(x) for name, x in raw.items()}
+        # (The speech inside each levelled sound is the clean speech times that sound's gain: the reference for SI-SDR. Against the
+        # clean recording itself, the level step's gain changes alone would cap it near 10.6 dB.)
+        speech_in = {name: clean * level(x, gain_only=True) for name, x in raw.items()}
         for name, x in sounds.items():
             np.save(os.path.join(GEN, f"{lang}-{name}.npy"), x)
         log(f"{lang}: {len(clean) / SR:.0f} s, {len(ref)} lines; per-line SI-SDR film {line_si_sdr(raw['film'], clean, ref)} dB, old {line_si_sdr(raw['old'], clean, ref)} dB")
@@ -559,8 +562,8 @@ def prepare() -> None:
                     y = isolate(iso, sounds[name])
                     took = time.time() - t
                     np.save(os.path.join(GEN, f"{lang}-{name}+{iso}.npy"), y)
-                    line = (f"{lang}-{name}+{iso}: {len(y) / SR / took:.0f}x real time, per-line SI-SDR vs clean speech {line_si_sdr(y, clean, ref)} dB "
-                            f"(input {line_si_sdr(sounds[name], clean, ref)} dB), lag {lag_ms(y, sounds['clean']):+.0f} ms")
+                    line = (f"{lang}-{name}+{iso}: {len(y) / SR / took:.0f}x real time, per-line SI-SDR vs the speech in it {line_si_sdr(y, speech_in[name], ref)} dB "
+                            f"(input {line_si_sdr(sounds[name], speech_in[name], ref)} dB), lag {lag_ms(y, speech_in[name]):+.0f} ms")
                 except Exception as error:  # noqa: BLE001 (an isolator that will not install or run is reported, the rest go on)
                     line = f"{lang}-{name}+{iso}: FAILED {error!r}"[:300]
                 log(line)
