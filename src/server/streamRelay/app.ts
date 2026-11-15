@@ -23,7 +23,27 @@ const toJournal: RelayLog = (failure) => console.log(JSON.stringify({ time: new 
 /** The name of the file an address ends in, without its query. */
 const fileOf = (url: URL): string => url.pathname.split("/").filter(Boolean).pop() ?? "";
 
-export function buildStreamRelay(options: { key: string; isAllowedAddress?: (address: string) => boolean; log?: RelayLog }) {
+/**
+ * What a host said, as it is written down: on one line, without an address (a host may say back the link it was asked, with its token) and without any
+ * long run of letters and digits (a token or a signature on its own), each said as what it was. A host's own words ("Wrong IP-bound token") stay.
+ */
+export function wordsOf(said: string): string {
+  return said
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "<link>")
+    .replace(/[A-Za-z0-9_~+/=%.-]{24,}/g, "<long>")
+    .slice(0, 160);
+}
+
+/**
+ * How many requests the relay carries at once. A screen asks for a piece or two of a film at a time, and a party of ten some tens; the relay cannot tell
+ * one viewer from another (they all come through the one proxy in front of it), so this is for everyone together, well above what is seen. One more is
+ * told to ask again in a moment (503, Retry-After 1), which a player does.
+ */
+export const RELAY_AT_ONCE = 400;
+
+export function buildStreamRelay(options: { key: string; isAllowedAddress?: (address: string) => boolean; log?: RelayLog; atOnce?: number }) {
   if (options.key.length < 32) throw new Error("STREAM_RELAY_KEY must contain at least 32 characters");
   const allowed = options.isAllowedAddress ?? isPublicAddress;
   const log = options.log ?? toJournal;
@@ -31,6 +51,8 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
   const app = Fastify({ logger: false });
   const tokens = new HostTokens(allowed);
   const stats: ProxyStats = { bytes: 0, requests: 0, refused: 0 };
+  const atOnce = options.atOnce ?? RELAY_AT_ONCE;
+  let carrying = 0;
   /** What each request is for, once its link has been read: for the line about a failure. */
   const targets = new WeakMap<FastifyRequest, URL>();
   app.addHook("onRequest", async (_request, reply) => {
@@ -49,7 +71,7 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
     log({
       status: reply.statusCode,
       ...(target && { host: target.hostname, file: fileOf(target) }),
-      ...(said && { error: said.replace(/\s+/g, " ").trim().slice(0, 160) }),
+      ...(said && { error: wordsOf(said) }),
     });
     return payload;
   });
@@ -70,6 +92,17 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
       return reply.code(403).send({ error: "URL_NOT_ALLOWED" });
     }
     targets.set(request, target);
+    // (Counted from here, when a host is about to be asked, until the answer has gone or the screen went: a film carried for an hour is one for that hour.)
+    if (carrying >= atOnce) return reply.code(503).header("Retry-After", "1").send({ error: "RELAY_BUSY" });
+    carrying += 1;
+    let done = false;
+    const over = () => {
+      if (done) return;
+      done = true;
+      carrying -= 1;
+    };
+    reply.raw.once("close", over);
+    reply.raw.once("finish", over);
     try {
       if (link.hostToken) target = await tokens.authorize(target, link.referer);
     } catch (error) {
