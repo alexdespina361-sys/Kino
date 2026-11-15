@@ -129,6 +129,8 @@ export class Hub {
   private readonly resolveSeq = new Map<string, number>();
   /** The link each TV last had looked up (the address of the page, which is what a result is kept by), to know which one a failure on that TV is about. */
   private readonly lastLookup = new Map<string, string>(); // deviceId -> link
+  /** The stream each TV last said had started (see `noteStarted`), so that a film is written down once. */
+  private readonly startedFilm = new Map<string, string>(); // deviceId -> stream link
   /** Links that were handed out and did not play: the next look-up of each is made afresh, not read from what was kept (see `ResolveFn`). The oldest go when there are many. */
   private readonly failedLinks = new Set<string>();
   private readonly log: HubOptions["log"];
@@ -325,6 +327,25 @@ export class Hub {
     this.registry.forgetFree(id);
     this.resolveSeq.delete(id); // (a lookup that was still running for it ends there: see `playUrlForDevice`)
     this.lastLookup.delete(id);
+    this.startedFilm.delete(id);
+  }
+
+  /**
+   * A TV says how long the film it asked for took to start: the look-up after the press, and the picture after the look-up. One line per film (a TV that
+   * says it twice for the same stream is not written down twice), with the title's site and the kind of stream, never a link.
+   */
+  private noteStarted(device: Device, lookupMs: number | undefined, loadMs: number): void {
+    const link = this.lastLookup.get(device.id);
+    const stream = device.media?.stream;
+    if (!link || !stream || this.startedFilm.get(device.id) === stream.url) return;
+    this.startedFilm.set(device.id, stream.url);
+    let domain = "";
+    try {
+      domain = new URL(link).hostname;
+    } catch {
+      /* (the look-up said no to it already) */
+    }
+    this.log?.info({ domain, type: stream.type, ...(stream.directUrl && { direct: true }), ...(lookupMs !== undefined && { lookupMs }), loadMs }, "playback-started");
   }
 
   /**
@@ -479,6 +500,8 @@ export class Hub {
     } else if (message.type === "TV_CANCEL") {
       if (device.leaderId) return; // a TV that watches along has no say in what plays; it can leave the party
       this.cancelLoad(device);
+    } else if (message.type === "TV_STARTED") {
+      this.noteStarted(device, message.lookupMs, message.loadMs);
     } else if (message.type === "TV_UNPAIR") {
       const leader = this.registry.leaderOf(device);
       if (leader) {
@@ -1004,7 +1027,7 @@ export class Hub {
 
     const seq = this.bumpResolveSeq(device.id);
     status({ phase: "resolving" });
-    this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: true });
+    this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: true, ...(hint && { hint }) });
     this.toFollowers(device, { type: "TV_RESOLVING", active: true });
 
     // (A link that was handed to this server's screens and did not play is not read from what was kept: see `noteFailed`.)

@@ -48,6 +48,7 @@ import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, zoneOf, type Poi
 import { holdLine, resumeLine, sameHold, type Hold } from "./hold";
 import { EndCard, ErrorCard, FollowStatus, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
+import { STARTING_FADE_MS, StartingFilm, startingFrom, UNHEARD_MS, type Starting } from "./Starting";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
@@ -160,6 +161,17 @@ export function Tv() {
   const putOnAtOnceRef = useRef<NormalizedMedia | null>(null);
   /** Waiting for a picture (a lookup, loading, filling up) for too long: a way out is offered. */
   const stuck = useSlow(isBusy(player, resolving));
+  /**
+   * A film on its way from the library (or a phone) to its first moving picture: the TV shows the film's own screen for the whole wait (see Starting.tsx).
+   * Not for a film that takes the place of one that is on (the next episode, one picked from the player), nor on a screen that watches along.
+   */
+  const [starting, setStartingNow] = useState<Starting | null>(null);
+  const startingRef = useRef<Starting | null>(null);
+  const setStarting = (next: Starting | null | ((before: Starting | null) => Starting | null)) => {
+    const value = typeof next === "function" ? next(startingRef.current) : next;
+    startingRef.current = value;
+    setStartingNow(value);
+  };
   /** The server has not answered for a while: say why that can be, instead of "Reconnecting…" alone. */
   const waking = useWaking(connection);
 
@@ -714,6 +726,7 @@ export function Tv() {
             setPartyError(null);
             wasResolvingRef.current = false;
             setResolving(false);
+            setStarting(null);
             setMenu(null);
             if (currentMediaRef.current) {
               putMedia(null); // (in the ref at once: the host's LOAD follows within the same moment, and a screen that had this very video on must load it again)
@@ -725,6 +738,7 @@ export function Tv() {
             setPartyEnds(message.party?.code ? Date.now() + message.party.code.expiresInMs : null);
             break;
           case "ERROR": {
+            if (startingRef.current && !startingRef.current.heard) setStarting(null); // (a press of Play that was refused: too many asked for, say. Said over the library.)
             // Mostly a party code that would not do (wrong, out of date, a full party): said on the party page, or over the library.
             // (One that an invitation or a link brought was good when the friend made it: that it is refused now means the party is over. That is said over the friends' page,
             // which is looked at again: the invitation is a question there now, whether to ask for another.)
@@ -786,6 +800,7 @@ export function Tv() {
             setPairing(toPairing(message.pairing));
             wasResolvingRef.current = false; // a lookup cut short by this is not a failed one
             setResolving(false);
+            setStarting(null);
             setMenu(null);
             break;
           case "TV_RESOLVING":
@@ -795,6 +810,15 @@ export function Tv() {
               if (!wasResolvingRef.current) mediaBeforeLookupRef.current = currentMediaRef.current;
               wasResolvingRef.current = true;
               setResolving(true);
+              // Nothing on: the film's own screen, from the press here (which knew the title) or from what the phone that asked knew.
+              if (!followingRef.current && (playerRef.current.state === "idle" || startingRef.current)) {
+                const hint = message.hint;
+                setStarting((before) =>
+                  before && before.loadedAt === null
+                    ? { ...before, heard: true, title: before.title ?? hint?.title, art: before.art ?? hint?.backdrop ?? hint?.poster }
+                    : startingFrom(hint, { heard: true }),
+                );
+              }
             } else lookupEndTimerRef.current = window.setTimeout(() => setResolving(false), LOOKUP_END_GRACE_MS);
             break;
           case "TV_CMD": {
@@ -813,6 +837,18 @@ export function Tv() {
                 return;
               }
 
+              // From here it is the picture that is waited for, on the same screen (whose picture stays: the source's own would be a jump).
+              if (!followingRef.current && (startingRef.current || playerRef.current.state === "idle")) {
+                const before = startingRef.current;
+                setStarting({
+                  since: before?.since ?? null,
+                  loadedAt: performance.now(),
+                  heard: true,
+                  title: before?.title ?? command.media.title,
+                  art: before?.art ?? command.media.backdrop ?? command.media.poster,
+                  from: command.startAt ?? before?.from,
+                });
+              }
               putMedia(command.media);
               follower.reset(); // (where the host was in the film before says nothing about this one)
               if (!followingRef.current) profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once (not for a screen that watches along)
@@ -842,6 +878,7 @@ export function Tv() {
               putMedia(null);
               setUpNextCountdown(null);
               setResolving(false);
+              setStarting(null);
               setMenu(null);
               engine.stop();
             } else if (command.type === "SET_QUALITY") chooseQuality(command.level);
@@ -908,6 +945,7 @@ export function Tv() {
     wasResolvingRef.current = false;
     const before = mediaBeforeLookupRef.current;
     const timer = setTimeout(() => {
+      if (startingRef.current?.loadedAt === null) setStarting(null); // (the film's screen stayed up till now: it gives way to the line that says why nothing came)
       if (currentMediaRef.current !== before || (before && before === putOnAtOnceRef.current)) return; // a video followed (or was on already)
       if (!before) return setNotice(t("notice.wouldntPlay"));
       // Something was on when the pick was made (an episode chosen from the player, the next one): it carries on, or if it had ended its end card comes back, and a line says why nothing changed.
@@ -923,6 +961,37 @@ export function Tv() {
     const timer = setTimeout(() => setNotice(null), 8000);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  // The film's screen gives way once the picture moves (or is there, held where it was left, for a film put back): it fades, and the TV says how long
+  // the wait was. A film that was stopped, would not play, or wants a press first has its own card (or the page it was chosen on) at once.
+  useEffect(() => {
+    const now = startingRef.current;
+    if (!now || now.leaving || now.loadedAt === null) return;
+    if (player.state === "loading" || player.buffering) return;
+    if (player.state === "playing" || player.state === "paused") {
+      if (player.state === "playing" && !followingRef.current) {
+        const ms = (from: number) => Math.min(600_000, Math.round(Math.max(0, from)));
+        socketRef.current?.send({ type: "TV_STARTED", ...(now.since !== null ? { lookupMs: ms(now.loadedAt - now.since) } : {}), loadMs: ms(performance.now() - now.loadedAt) });
+      }
+      setStarting({ ...now, leaving: true });
+    } else setStarting(null);
+  }, [player.state, player.buffering]);
+  const startingLeaves = starting?.leaving === true;
+  useEffect(() => {
+    if (!startingLeaves) return;
+    const timer = setTimeout(() => setStarting((now) => (now?.leaving ? null : now)), STARTING_FADE_MS);
+    return () => clearTimeout(timer);
+  }, [startingLeaves]);
+  // A press the server says nothing about (it never got it, or the socket went) is not waited for. One it refused is let go of as the refusal comes (ERROR).
+  const unheard = starting !== null && !starting.heard;
+  useEffect(() => {
+    if (!unheard) return;
+    const timer = setTimeout(() => setStarting((now) => (now && !now.heard ? null : now)), UNHEARD_MS);
+    return () => clearTimeout(timer);
+  }, [unheard]);
+  useEffect(() => {
+    if (connection !== "open") setStarting((now) => (now && !now.heard ? null : now));
+  }, [connection]);
 
   const toggleMute = () => {
     const video = videoRef.current;
@@ -1128,6 +1197,8 @@ export function Tv() {
     setMenu(null);
     setUpNextCountdown(null);
     setUpNextDismissed(false);
+    // Nothing on: the film's screen comes up with the press, not when the server answers it.
+    if (playerRef.current.state === "idle" && !followingRef.current && connection === "open") setStarting(startingFrom(options.hint, { from: options.startAt }));
     socketRef.current?.send({ type: "TV_PLAY_URL", url, ...(options.startAt ? { startAt: options.startAt } : {}), ...(options.hint ? { hint: options.hint } : {}) });
   };
   /** A TV that watches along stops, and goes back to being on its own. */
@@ -1179,6 +1250,7 @@ export function Tv() {
   const cancelLoad = () => {
     wasResolvingRef.current = false; // giving up is not a lookup that failed: no "wouldn't play" notice
     setResolving(false);
+    setStarting(null);
     putMedia(null);
     setUpNextCountdown(null);
     setMenu(null);
@@ -1437,6 +1509,9 @@ export function Tv() {
   /* ------------------------------ the picture under a hand ------------------------------ */
 
   const showVideo = player.state !== "idle";
+  /** The film's own screen is up, from the press to the moving picture (see Starting.tsx); the pages are not, nor the player's controls until the picture moves. */
+  const startingShown = unlocked && starting !== null && !following && !accountPage;
+  const startingWaits = startingShown && !starting.leaving;
   /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
   const filmIsOn = showVideo && !finished && !failed;
 
@@ -1552,10 +1627,12 @@ export function Tv() {
 
       {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
+      {startingShown && <StartingFilm starting={starting} stuck={stuck} onCancel={cancelLoad} />}
+
       {/* Only a party's link starts here. Pressing OK is also the first press, which takes the page full screen. */}
       {!unlocked && <TvLocked onUnlock={() => setUnlocked(true)} />}
 
-      {unlocked && !showVideo && !accountPage && (resolving || (screen === "connect" && !following)) && (
+      {unlocked && !showVideo && !accountPage && !startingShown && (resolving || (screen === "connect" && !following)) && (
         <TvIdle
           paired={paired}
           pairing={pairing}
@@ -1568,7 +1645,7 @@ export function Tv() {
         />
       )}
 
-      {unlocked && !showVideo && !accountPage && !resolving && (following || screen === "party") && (
+      {unlocked && !showVideo && !accountPage && !resolving && !startingShown && (following || screen === "party") && (
         <PartyPage
           party={party}
           following={following}
@@ -1590,7 +1667,7 @@ export function Tv() {
         />
       )}
 
-      {unlocked && !showVideo && !accountPage && !resolving && !following && screen === "library" && (
+      {unlocked && !showVideo && !accountPage && !resolving && !startingShown && !following && screen === "library" && (
         <TvBrowse
           onPlay={playEpisode}
           onSignIn={() => setAccountView("signin")}
@@ -1672,7 +1749,8 @@ export function Tv() {
 
       {unlocked && showVideo && !finished && !failed && (
         <Hud
-          visible={controlsVisible && menu !== "captions"}
+          visible={controlsVisible && menu !== "captions" && !startingWaits}
+          hideWait={startingWaits}
           player={player}
           title={mainTitle}
           subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}

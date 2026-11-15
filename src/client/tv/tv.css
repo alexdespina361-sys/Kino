@@ -397,6 +397,74 @@
   pointer-events: auto;
 }
 .hud-stuck p { margin: 0; font-size: 1.7em; color: #d8d8d8; }
+
+/*
+ * A film on its way (Starting.tsx): the film's own screen from the press of Play, with its picture, its title where the player puts it, and a line
+ * at the bottom that moves on with the wait. It lies under the player's controls and lines, and lets the picture's taps through (its Cancel aside).
+ * The line fills quickly at first and then ever more slowly, a little further once the video is on its way, and to the end as the picture comes:
+ * a wait that is seen to move is a shorter one.
+ */
+.tv-starting {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  background: #050505; /* (a browser from before color-mix: an old TV) */
+  background: radial-gradient(ellipse at 30% 20%, color-mix(in srgb, var(--accent, #e50914) 22%, #000) 0%, #050505 70%);
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+}
+.tv-starting[data-art] { background: #000; }
+.tv-starting[data-phase="done"] { opacity: 0; }
+.tv-starting-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.5) saturate(1.05);
+  transform: scale(1.03);
+  animation: tv-starting-drift 24s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+/* Shade for the words, top and bottom, as the player's bars have. */
+.tv-starting::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent 35%, transparent 55%, rgba(0, 0, 0, 0.8));
+}
+.tv-starting > :not(.tv-starting-art) { position: relative; z-index: 1; }
+.tv-starting .hud-top { background: none; }
+.tv-starting-from { margin: 0; font-size: 1.5em; color: #ddd; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8); }
+.tv-starting-foot { display: flex; flex-direction: column; gap: 1em; }
+.tv-starting .hud-bottom { padding-top: 0; background: none; } /* (the player's bar's place, edges and all, on every screen) */
+.tv-starting-line { margin: 0; font-size: 1.6em; color: #e4e4e4; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
+.tv-starting-track { position: relative; height: 0.55em; overflow: hidden; border-radius: 0.3em; background: rgba(255, 255, 255, 0.22); }
+.tv-starting-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent, #e50914);
+  background: linear-gradient(90deg, var(--accent, #e50914) 0%, color-mix(in srgb, var(--accent, #e50914) 55%, #fff) 50%, var(--accent, #e50914) 100%);
+  background-size: 200% 100%;
+  animation: tv-starting-find 5s cubic-bezier(0.12, 0.75, 0.25, 1) forwards, tv-starting-shine 1.6s linear infinite;
+}
+.tv-starting[data-phase="loading"] .tv-starting-fill { animation: tv-starting-load 9s cubic-bezier(0.12, 0.75, 0.25, 1) forwards, tv-starting-shine 1.6s linear infinite; }
+.tv-starting[data-phase="done"] .tv-starting-fill { width: 100%; animation: none; transition: width 0.25s ease-out; }
+.tv-starting .tv-actions { pointer-events: auto; }
+@keyframes tv-starting-find { from { width: 0; } to { width: 45%; } }
+@keyframes tv-starting-load { from { width: 45%; } to { width: 90%; } }
+@keyframes tv-starting-shine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes tv-starting-drift { from { transform: scale(1.03); } to { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) {
+  .tv-starting-art { animation: none; }
+  .tv-starting-fill { animation: none; width: 45%; }
+  .tv-starting[data-phase="loading"] .tv-starting-fill { animation: none; width: 90%; }
+}
 /* OK presses it, so it looks pressed-to-be from the start. */
 .hud-stuck .tv-btn { outline: 0.2em solid #fff; outline-offset: 0.12em; }
 /* While the picture is held, what you are watching is said once, big, on the left (the corner title steps aside), over a soft shade. */

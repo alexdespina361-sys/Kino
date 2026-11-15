@@ -446,6 +446,9 @@ const PUBLIC: Record<string, string> = {
   "GET /api/resolve": "finds the video of a public page: no account is involved",
   "GET /api/proxy": "carries a public page or file: no account is involved",
   "GET /api/subtitles/ro/:file": "serves converted Romanian subtitles: no account is involved",
+  "GET /api/subtitles/official/:file": "serves the Kino Official subtitles: the same for everybody, no account is involved",
+  "POST /api/official/offer":
+    "open to every screen and slowed per address: only times are taken, for a subtitle site's file the server listed for a title of the library lately, and the text is the file's own, fetched by the server",
   "POST /api/auth/register": "makes a new account: there is nobody to be someone else yet",
   "POST /api/auth/login": "proves a name and a password, slowed per name and per address",
   "GET /api/auth/google/start": "sends the browser to Google with a flow of its own; connecting or confirming needs the browser's own session, and the answer is only a redirect (google.test.ts)",
@@ -471,6 +474,10 @@ const TEAM: Array<{ route: string; body?: object; query?: string; ok: number }> 
   { route: "PATCH /api/admin/feedback/:id", body: { note: "seen" }, ok: 200 },
   { route: "GET /api/admin/stats", ok: 200 },
   { route: "GET /api/admin/unavailable", ok: 200 },
+  { route: "GET /api/admin/official", ok: 200 },
+  { route: "GET /api/admin/official/:id", ok: 404 },
+  { route: "PUT /api/admin/official/:id", body: { lines: [[0, 100, "Hello"]] }, ok: 404 },
+  { route: "DELETE /api/admin/official/:id", ok: 404 },
   { route: "DELETE /api/admin/feedback/:id", ok: 204 },
 ];
 

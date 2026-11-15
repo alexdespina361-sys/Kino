@@ -34,6 +34,8 @@ const fresh = () => ({
   /** Where the timing that other screens left for the track on screen stands (empty when there is no server to ask), and how many lines this screen has left for them. */
   shared: "",
   sent: 0,
+  /** Times the track on screen was offered for a Kino Official subtitle (see `official.ts`). */
+  offered: 0,
   /** Why the aligner gave up on this film, if it did. */
   gaveUp: "",
 });
@@ -64,6 +66,7 @@ export function describeAligner(stats: AlignerStats): string | null {
     `solves ${stats.solves}${ways ? ` (${ways})` : ""}, ${stats.placed}/${stats.lines} lines placed${stats.bridged ? " (from the English track)" : ""}`,
     `tests ${stats.tests}${stats.verdict ? `: ${stats.verdict} ${stats.share.toFixed(2)}` : ""}, switches ${stats.switches}`,
     ...(stats.shared ? [`shared timing: ${stats.shared}${stats.sent > 0 ? `, left ${stats.sent} lines` : ""}`] : []),
+    ...(stats.offered > 0 ? [`offered for Kino Official ${stats.offered}`] : []),
   ];
   return parts.join("  ");
 }

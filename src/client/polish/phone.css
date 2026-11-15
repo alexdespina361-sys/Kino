@@ -327,6 +327,8 @@
 
 :root[data-ui="polish"] .phone-ui .page-head { padding-bottom: 8px; }
 :root[data-ui="polish"] .phone-ui .group { gap: 8px; }
+/* A label inside a group's card, as the TV's settings have them (Language, Colour under Appearance). */
+:root[data-ui="polish"] .phone-ui .group-label { margin: 4px 0 0; font-size: var(--p-fs-1); font-weight: 600; color: var(--muted); }
 :root[data-ui="polish"] .phone-ui .profile-tile:focus-visible .profile-picture,
 :root[data-ui="polish"] .phone-ui .avatar-choice[aria-checked="true"] { box-shadow: 0 0 0 3px #fff; }
 :root[data-ui="polish"] .phone-ui .avatar-button { width: 44px; height: 44px; display: grid; place-items: center; font-size: 36px; }

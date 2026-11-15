@@ -505,15 +505,19 @@ function animeWorld(options: {
   titles: (words: string) => Array<{ slug: string; name: string }>;
   episodes: Record<string, number[]>;
   buzz?: boolean;
-  vidlink?: boolean;
+  /** "hang": VidLink answers nothing until it is given up on (as it does for a title it does not have). */
+  vidlink?: boolean | "hang";
 }): typeof fetch {
   const card = ({ slug, name }: { slug: string; name: string }) =>
     `<div class='similarimg'><div class='p1'><a href='anime.php?${slug}'><img class='coverimg' src='image.php?${slug}' alt='${name}'></a><div class='similarname c'><a href='anime.php?${slug}' class='c'>${name}</a></div></div></div>`;
   const id = (slug: string, episode: number) => `${slug}${episode}`.replace(/[^0-9a-f]/g, "a").padEnd(32, "0").slice(0, 32);
-  return (async (url: string | URL, init?: { headers?: Record<string, string> }) => {
+  return (async (url: string | URL, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => {
     const u = new URL(String(url));
     const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
     if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith(`/tv/${options.tmdbId}`)) return { ok: true, status: 200, json: async () => options.tmdb };
+    if (u.hostname === "vidlink.pro" && options.vidlink === "hang") {
+      return new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted", "AbortError"))));
+    }
     if (u.hostname === "vidlink.pro" && options.vidlink) {
       return text(JSON.stringify({ stream: { playlist: "https://cdn.vidlink.test/master.m3u8" } }));
     }
@@ -713,6 +717,17 @@ describe("the anime site: a season is never another season's title", () => {
     const res = await resolveVidLinkStream(hangingFetch, "60572", true, "25", "6", 50);
     expect(res).toBeNull();
     expect(aborted).toBe(true);
+  });
+
+  it("an anime episode VidLink does not answer for is played from Buzz after 2.5 s, not after VidLink's usual 6", { timeout: 20_000 }, async () => {
+    const get = animeWorld({ tmdbId: "60572", tmdb: pokemon, titles: () => [], episodes: {}, buzz: true, vidlink: "hang" });
+    const started = Date.now();
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    const took = Date.now() - started;
+    expect(res.status).toBe("success");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+    expect(took).toBeGreaterThanOrEqual(2_400);
+    expect(took).toBeLessThan(5_000);
   });
 
   it("an anime request with no sources returns unsupported without querying fallback streams twice", async () => {

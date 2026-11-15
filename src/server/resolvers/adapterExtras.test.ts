@@ -210,4 +210,18 @@ describe("subtitle quality scoring and ranking", () => {
     expect(subs[1]?.label).toContain("Show.S01E01.DVDRip.XviD");
     expect(subs[2]?.lang).toBe("ro");
   });
+
+  it("keeps the order the screens turn a track on by: WEB, BluRay, DVD, the rest, and a file of only forced lines last, whatever else its name says", async () => {
+    const names = ["Film.2024.1080p.BluRay.x264.srt", "Film.2024.1080p.WEB-DL.Forced.srt", "Film.2024.DVDRip.srt", "Film.2024.720p.WEBRip.srt", "Film.2024.HDTV.srt"];
+    const fakeFetch = (async () =>
+      Response.json({ subtitles: names.map((name, i) => ({ id: String(i), lang: "eng", subtitleFileName: name, url: `https://subs.example/${i}.srt` })) })) as typeof fetch;
+    const subs = await listedSubtitles(fakeFetch, "tt0002");
+    expect(subs.map((sub) => sub.label.replace(/^English(?: \(\d+\))? · /, ""))).toEqual([
+      "Film.2024.720p.WEBRip",
+      "Film.2024.1080p.BluRay.x264",
+      "Film.2024.DVDRip",
+      "Film.2024.HDTV",
+      "Film.2024.1080p.WEB-DL.Forced",
+    ]);
+  });
 });

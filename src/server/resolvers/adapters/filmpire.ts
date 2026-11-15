@@ -1,4 +1,4 @@
-import { isHttpUrl, normalizeLang, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import { providerFetch } from "../providerFetch";
@@ -414,6 +414,8 @@ export const EXTRAS_GRACE_MS = 4_000;
 /**
  * Ranks a subtitle file by release quality keywords.
  * Official/Retail/WEB-DL/BluRay/SDH releases score higher than low-quality cam/dvdrip/xvid rips.
+ * Second to `releaseRank` (shared/tracks.ts), the order the screens turn a track on by: WEB, then BluRay, then DVD, then the rest, and a file of
+ * only songs or forced lines last, as measured against the site's streams. This only tells apart files that order puts level.
  */
 export function subtitleQualityScore(fileName?: string): number {
   if (!fileName) return 0;
@@ -442,6 +444,9 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
     const prioA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
     const prioB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
     if (prioA !== prioB) return prioA - prioB;
+    // (The twelve of a language that are kept are the ones the screens would turn on first: the same order as theirs, then the score.)
+    const rank = releaseRank(a.subtitleFileName ?? "") - releaseRank(b.subtitleFileName ?? "");
+    if (rank !== 0) return rank;
     return subtitleQualityScore(b.subtitleFileName) - subtitleQualityScore(a.subtitleFileName);
   });
 

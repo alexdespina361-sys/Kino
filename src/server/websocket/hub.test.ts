@@ -10,6 +10,7 @@ import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import { OCCASION_GAP_MS, UnavailableStore } from "../library/unavailable";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
+import { toVtt } from "../subtitles/vtt";
 import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
 import { CLOSE_REPLACED, FRAME_BURST, Hub, KEEP_UNPAIRED_MS, MAX_BUFFERED_BYTES, MAX_UNPAIRED, STEER_ATTRIBUTION_MS, type HubOptions } from "./hub";
 
@@ -1409,6 +1410,50 @@ describe("TV feedback while a link is being looked up", () => {
     expect((await tv.next("TV_RESOLVING")).active).toBe(true);
     expect((await tv.next("TV_RESOLVING")).active).toBe(false);
     await tv.expectNone((m) => m.type === "TV_CMD");
+  });
+});
+
+describe("a film on its way to the TV", () => {
+  const played = (m: ServerMessage) => m.type === "TV_CMD" && m.command.type === "PLAY";
+
+  it("the TV is told what the phone knew about the title as the look-up starts, so it can show it while it waits", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/a", hint: { title: "Dune", backdrop: "https://img.example/dune.jpg" } });
+    expect(await tv.next("TV_RESOLVING")).toMatchObject({ active: true, hint: { title: "Dune", backdrop: "https://img.example/dune.jpg" } });
+    // (What the source calls the film is what is kept: the name in the hint is only shown.)
+    expect((await tv.nextWhere("TV_CMD", (m) => m.type === "TV_CMD" && m.command.type === "LOAD")).command).toMatchObject({ media: { title: "Sample" } });
+  });
+
+  it("how long it took to start is written down once per film, with the title's site and the kind of stream, never the link", async () => {
+    const written: Array<[Record<string, unknown>, string]> = [];
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { log: { info: (object, message) => void written.push([object, message]) } } });
+    await app.ready();
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/watch/1?token=secret" });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1430 });
+    tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1431 }); // (said twice: written once)
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 30 } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing"); // (the TV's messages before it have been read)
+    expect(written.filter(([, message]) => message === "playback-started")).toEqual([[{ domain: "s.example", type: "mp4", lookupMs: 812, loadMs: 1430 }, "playback-started"]]);
+    expect(JSON.stringify(written)).not.toContain("secret");
+  });
+
+  it("a film a phone handed to the TV itself (no look-up) is not written down: there is no site to say", async () => {
+    const written: Array<[Record<string, unknown>, string]> = [];
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { log: { info: (object, message) => void written.push([object, message]) } } });
+    await app.ready();
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "CMD", command: { type: "LOAD", media } });
+    await tv.nextWhere("TV_CMD", (m) => m.type === "TV_CMD" && m.command.type === "LOAD");
+    tv.send({ type: "TV_STARTED", loadMs: 900 });
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 30 } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing");
+    expect(written.filter(([, message]) => message === "playback-started")).toEqual([]);
   });
 });
 
@@ -3590,5 +3635,48 @@ describe("connections that would hold the hub's room", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("Kino Official subtitles: a screen's timing of a listed file is what the next Play is sent", () => {
+  // (Made-up lines only: the repo is public.)
+  const link = "https://filmpire.sc/watch/60572?s=2&e=3";
+  const track = `/api/proxy?url=${encodeURIComponent("https://subs5.strem.io/en/download/file/1")}&format=vtt`;
+  const cues = Array.from({ length: 60 }, (_, i) => ({ start: 60 + i * 10, end: 62 + i * 10, text: `Line number ${i}.` }));
+  const withTrack = { ...media, subtitles: [{ id: 0, lang: "en", url: track, label: "English · Some.Show.S02E03.WEB" }] };
+
+  it("lists the file the screen timed first of its language, under the site's name, and serves it", async () => {
+    await app.close();
+    const fetched: string[] = [];
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: withTrack });
+    app = await buildApp({
+      resolve: (url) => resolveImpl(url),
+      officialFetch: async (asked) => (fetched.push(asked), asked === track ? toVtt(cues) : undefined),
+    });
+    await app.ready();
+    const { tv, phone } = await pairedSetup();
+    const play = async () => {
+      phone.send({ type: "PLAY_URL", url: link });
+      await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "found");
+      const load = await tv.nextWhere("TV_CMD", (message) => message.command.type === "LOAD");
+      if (load.command.type !== "LOAD") throw new Error("not a LOAD");
+      return load.command.media.subtitles ?? [];
+    };
+    expect((await play()).map((each) => each.label)).toEqual(["English · Some.Show.S02E03.WEB"]);
+
+    const lines = cues.map((cue) => [Math.round(cue.start * 100), Math.round(cue.start * 100) + 150, Math.round(cue.end * 100) + 150, 1]);
+    const offer = await app.inject({ method: "POST", url: "/api/official/offer", payload: { v: 1, track, duration: 2700, lines } });
+    expect(offer.statusCode).toBe(201);
+    expect(fetched).toEqual([track]);
+
+    const listed = await play();
+    expect(listed.map((each) => [each.id, each.label])).toEqual([
+      [0, "English · Kino Official"],
+      [1, "English · Some.Show.S02E03.WEB"],
+    ]);
+    const served = await app.inject({ url: listed[0]!.url });
+    expect(served.statusCode).toBe(200);
+    expect(served.body).toContain("00:01:01.500 --> 00:01:03.500");
+    expect((await app.inject({ url: "/api/health" })).json()).toMatchObject({ official: { kept: 1, offers: { taken: 1 } } });
   });
 });

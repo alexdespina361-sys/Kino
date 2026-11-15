@@ -6,6 +6,7 @@ export * from "./friends";
 export * from "./lang";
 export * from "./library";
 export * from "./media";
+export * from "./official";
 export * from "./progress";
 export * from "./protocol";
 export * from "./rating";
