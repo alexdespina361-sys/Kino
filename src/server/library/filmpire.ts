@@ -84,6 +84,8 @@ export interface FilmpireSourceOptions {
   probeFetch?: typeof fetch;
   timeoutMs?: number;
   probeTimeoutMs?: number;
+  /** How many video checks run at once (see PROBES_AT_ONCE). */
+  probesAtOnce?: number;
   /** Whether to probe data.vidsrc.sh during search and drop 404/unplayable items. Default: true when no custom fetch is passed or when probeFetch is given. */
   verifyPlayback?: boolean;
   filterTrash?: boolean;
@@ -105,6 +107,49 @@ const preloadedSeasonCounts = new Map<number, Record<number, number>>();
 export const knownTvIds = new Set<number>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 
+/** How many video checks run at once, for all the searches of a source together (a search checks its first page, twenty titles, at once). */
+export const PROBES_AT_ONCE = 16;
+/** How long a video check waits for its turn: one that is not had by then is not made, and its title is kept, as when the check cannot be made. */
+export const PROBE_WAIT_MS = 2_000;
+
+/** At most `size` at once. A turn that is not had within the wait is not had at all. */
+export class Slots {
+  private busy = 0;
+  private readonly waiting: Array<() => void> = [];
+  constructor(private readonly size: number) {}
+
+  /** A turn (call what it gives back when it is over), or nothing when none came in `waitMs`. */
+  take(waitMs: number): Promise<(() => void) | undefined> {
+    if (this.busy < this.size) {
+      this.busy += 1;
+      return Promise.resolve(this.over());
+    }
+    return new Promise((resolve) => {
+      const turn = () => {
+        clearTimeout(timer);
+        this.busy += 1;
+        resolve(this.over());
+      };
+      const timer = setTimeout(() => {
+        const at = this.waiting.indexOf(turn);
+        if (at >= 0) this.waiting.splice(at, 1);
+        resolve(undefined);
+      }, waitMs);
+      this.waiting.push(turn);
+    });
+  }
+
+  private over(): () => void {
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      this.busy -= 1;
+      this.waiting.shift()?.();
+    };
+  }
+}
+
 export async function probePlayback(
   id: number,
   type: "movie" | "tv",
@@ -112,13 +157,33 @@ export async function probePlayback(
   cache: Map<string, ProbeRecord>,
   now: () => number = Date.now,
   timeoutMs = 1500,
+  slots?: Slots,
+  slotWaitMs = PROBE_WAIT_MS,
 ): Promise<{ ok: boolean; seasons?: number[]; seasonCounts?: Record<number, number> }> {
   const key = `${type}:${id}`;
   const cached = cache.get(key);
   if (cached && now() - cached.checkedAt < PROBE_TTL_MS) {
     return { ok: cached.status === 200, seasons: cached.seasons, seasonCounts: cached.seasonCounts };
   }
+  // (The time of the check starts with its turn. One that had none is no answer: nothing is written down, and the title stays.)
+  const over = slots ? await slots.take(slotWaitMs) : () => {};
+  if (!over) return { ok: true };
+  try {
+    return await checkPlayback(id, type, fetcher, cache, now, timeoutMs, key);
+  } finally {
+    over();
+  }
+}
 
+async function checkPlayback(
+  id: number,
+  type: "movie" | "tv",
+  fetcher: typeof fetch,
+  cache: Map<string, ProbeRecord>,
+  now: () => number,
+  timeoutMs: number,
+  key: string,
+): Promise<{ ok: boolean; seasons?: number[]; seasonCounts?: Record<number, number> }> {
   try {
     const res = await fetcher(`https://data.vidsrc.sh/api.php?type=${type}&tmdb=${id}`, {
       signal: AbortSignal.timeout(timeoutMs),
@@ -190,8 +255,11 @@ function animationOf(doc: z.infer<typeof TmdbItemSchema>): Extract<LibrarySectio
   return doc.original_language === "ja" || doc.origin_country?.includes("JP") ? "anime" : "cartoon";
 }
 
+/** How many titles of a page of TMDB's answers are taken: a page has twenty, and whatever more one says it has is not looked at (each title of a search's first page is checked for video). */
+export const PAGE_TITLES = 20;
+
 const TmdbResponseSchema = z.object({
-  results: z.array(z.unknown()),
+  results: z.array(z.unknown()).transform((results) => results.slice(0, PAGE_TITLES)),
 });
 
 const TmdbSearchSchema = TmdbResponseSchema.extend({ total_pages: z.number().int().optional() });
@@ -370,6 +438,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const shouldFilterTrash = options.filterTrash ?? (process.env.FILTER_TRASH !== "0" && (!options.fetch || options.probeFetch !== undefined));
   const probeFetcher = options.probeFetch ?? get;
   const probeTimeout = options.probeTimeoutMs ?? 1500;
+  const probeSlots = new Slots(options.probesAtOnce ?? PROBES_AT_ONCE);
 
   const shelfGroups = options.shelves ?? SHELF_GROUPS;
   const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => {
@@ -458,7 +527,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           items.map(async (item) => {
             const parsed = parseWatchLink(item.url);
             if (!parsed) return item;
-            const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
+            const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout, probeSlots);
             if (!probe.ok) return null;
             if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
               remember(preloadedSeasons, parsed.id, probe.seasons, MAX_PRELOADED_SEASONS);
@@ -498,7 +567,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         items.map(async (item) => {
           const parsed = parseWatchLink(item.url);
           if (!parsed) return item;
-          const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
+          const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout, probeSlots);
           if (!probe.ok) return null;
           if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
             remember(preloadedSeasons, parsed.id, probe.seasons, MAX_PRELOADED_SEASONS);
@@ -592,7 +661,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       let counts = preloadedSeasonCounts.get(title.id);
       if (!counts && shouldVerify) {
         try {
-          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000);
+          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
           if (probe.seasonCounts) {
             counts = probe.seasonCounts;
             remember(preloadedSeasonCounts, title.id, counts, MAX_PRELOADED_SEASONS);

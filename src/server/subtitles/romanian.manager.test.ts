@@ -1,8 +1,12 @@
+import { lookup } from "node:dns/promises";
+import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import zlib from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isListedFile, siteFetch } from "./romanian";
+import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isListedFile, siteFetch, trimKept } from "./romanian";
 
 /*
  * The manager asks the Romanian subtitle sites, which send whole archives. These tests are about how it asks: the archives of a site at once rather than one
@@ -269,6 +273,35 @@ describe("siteFetch", () => {
     }
   });
 
+  it("looks at a name's address again when it connects: a name that was public when it was looked at and leads here when it is connected to is not asked", async () => {
+    // (DNS rebinding: a name whose answer changes between the look and the connection. Here every address is allowed for as long as the look takes,
+    // then none is; the connection would reach this machine's own server.)
+    const seen: string[] = [];
+    const server = http.createServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { "content-type": "text/plain" }).end("this machine");
+    });
+    await new Promise<void>((done) => server.listen(0, done)); // (every address of this machine, so whichever "localhost" leads to)
+    try {
+      const looked = (await lookup("localhost", { all: true })).length;
+      let asked = 0;
+      const rebinding = () => asked++ < looked;
+      await expect(siteFetch(undefined, rebinding)(`http://localhost:${(server.address() as AddressInfo).port}/inside`, { signal: AbortSignal.timeout(5_000) })).rejects.toThrow();
+      expect(asked).toBeGreaterThan(looked); // (it was looked at again)
+      expect(seen).toEqual([]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("gives up on a look at a name when the request is called off", async () => {
+    const never = () => new Promise<string[]>(() => {});
+    const called = new AbortController();
+    const asking = siteFetch(undefined, () => true, never)("https://slow.example/a", { signal: called.signal });
+    called.abort(new Error("called off"));
+    await expect(asking).rejects.toThrow("called off");
+  });
+
   it("does not ask an address that is not public in the first place, and gives up on redirects that go round", async () => {
     const { asked, send } = sites({ "https://203.0.113.7/a": to("https://203.0.113.7/a") });
     await expect(siteFetch(send)("http://10.0.0.5/a")).rejects.toThrow("address not allowed");
@@ -276,5 +309,32 @@ describe("siteFetch", () => {
     expect(asked).toEqual([]);
     await expect(siteFetch(send, publicOnly)("https://203.0.113.7/a")).rejects.toThrow("too many redirects");
     expect(asked).toHaveLength(6);
+  });
+});
+
+describe("trimKept", () => {
+  it("lets go of the files written or read longest ago, past so many titles or so many bytes together, and of nothing else in the folder", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "kino-ro-"));
+    try {
+      const at = (name: string, minutesAgo: number, size = 10) => {
+        const file = path.join(dir, name);
+        writeFileSync(file, "x".repeat(size));
+        const when = new Date(Date.now() - minutesAgo * 60_000);
+        utimesSync(file, when, when);
+      };
+      at("a.json", 50);
+      at("b.json", 40);
+      at("c.json", 30);
+      at("d.json", 20);
+      at("e.json", 10);
+      at("notes.txt", 60); // (not a title's file)
+      await trimKept(dir, 3, 1_000);
+      expect(readdirSync(dir).sort()).toEqual(["c.json", "d.json", "e.json", "notes.txt"]);
+      at("big.json", 5, 25);
+      await trimKept(dir, 3, 40); // (the newest, 25 bytes, and the one before it, 10: a third would be 45)
+      expect(readdirSync(dir).sort()).toEqual(["big.json", "e.json", "notes.txt"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -99,7 +99,25 @@ export interface HubOptions {
   maxFailedLinks?: number;
   /** Where a video that would not play is written down (`playback-failed`: the title's site, the player's error and what it hit; never a link). */
   log?: { info(object: Record<string, unknown>, message: string): void };
+  /** A connection that has not said hello (TV_HELLO or CTL_HELLO) this long after it opened is closed (1008), however much else it says: a page says hello first. Default 30 s. */
+  helloWithinMs?: number;
+  /** Connections one address may have open at once (see MAX_SOCKETS_PER_ADDRESS). */
+  maxSocketsPerAddress?: number;
+  /** Connections open at once in all (see MAX_SOCKETS). */
+  maxSockets?: number;
+  /** Phones paired with a TV (by its code or its control code) from one address in an hour (see MAX_NEW_PAIRS). */
+  maxNewPairs?: number;
 }
+
+/**
+ * How many connections one address may have open at once: every page of a TV or a phone is one, and a household, or many behind one address of a mobile
+ * network, has some tens at the very most. One more is closed at once (1013) and its page tries again in a moment. A connection without an address (a test) is not counted.
+ */
+export const MAX_SOCKETS_PER_ADDRESS = 100;
+/** How many connections may be open at once in all (each holds some memory and a file of the system's). */
+export const MAX_SOCKETS = 20_000;
+/** How many phones may be paired with a TV from one address in an hour: a pair is kept for months (see KEEP_PAIRINGS_DAYS), where a TV or phone that nobody paired goes in minutes. */
+export const MAX_NEW_PAIRS = 30;
 
 /** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
 export class Hub {
@@ -144,6 +162,15 @@ export class Hub {
   private readonly keepUnpairedMs: number;
   private readonly maxUnpaired: number;
   private readonly maxFailedLinks: number;
+  /** The connections that have not said hello yet, and when each opened (see `helloWithinMs`). */
+  private readonly unnamed = new Map<WebSocket, number>();
+  /** How many connections are open now, for each address and in all. */
+  private readonly openByAddress = new Map<string, number>();
+  private openInAll = 0;
+  private readonly maxSocketsPerAddress: number;
+  private readonly maxSockets: number;
+  /** Phones paired lately, counted for each address (see MAX_NEW_PAIRS). */
+  private readonly newPairs: RateLimiter;
 
   constructor(
     private readonly registry: Registry,
@@ -163,9 +190,15 @@ export class Hub {
     const resolveWindowMs = options.resolveWindowMs ?? 60_000;
     this.resolvesByDevice = new RateLimiter(options.maxResolves ?? 30, resolveWindowMs);
     this.resolvesByAddress = new RateLimiter(options.maxResolvesByAddress ?? 60, resolveWindowMs);
+    this.maxSocketsPerAddress = options.maxSocketsPerAddress ?? MAX_SOCKETS_PER_ADDRESS;
+    this.maxSockets = options.maxSockets ?? MAX_SOCKETS;
+    this.newPairs = new RateLimiter(options.maxNewPairs ?? MAX_NEW_PAIRS, 3_600_000);
+    const helloWithinMs = options.helloWithinMs ?? 30_000;
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
+      // (A ping keeps a connection from going stale: one that never said who it is would be kept for ever by pinging.)
+      for (const [socket, opened] of this.unnamed) if (now - opened > helloWithinMs) socket.close(1008, "say hello first");
       this.forgetAbandoned(now);
     }, options.sweepEveryMs ?? 20_000);
     this.sweeper.unref();
@@ -177,9 +210,17 @@ export class Hub {
 
   /** `address` is where the connection comes from (the request's `ip`); wrong codes are counted against it. */
   handleConnection(socket: WebSocket, address?: string): void {
+    // (No room: closed before anything is kept of it, and its page tries again in a moment.)
+    if (this.openInAll >= this.maxSockets || (address !== undefined && (this.openByAddress.get(address) ?? 0) >= this.maxSocketsPerAddress)) {
+      socket.close(1013, "busy");
+      return;
+    }
+    this.openInAll += 1;
+    if (address !== undefined) this.openByAddress.set(address, (this.openByAddress.get(address) ?? 0) + 1);
     let conn: Conn = { role: "none", socket };
     const now = Date.now();
     this.lastSeen.set(socket, now);
+    this.unnamed.set(socket, now);
     if (address) this.addresses.set(socket, address);
     let load = 0; // messages lately, draining at FRAME_RATE_PER_S
     let loadAt = now;
@@ -197,10 +238,18 @@ export class Hub {
       const message = isBinary ? null : parseClientMessage(data.toString());
       if (!message) return this.send(socket, { type: "ERROR", code: "BAD_MESSAGE", message: "Invalid message." });
       conn = this.dispatch(conn, message);
+      if (conn.role !== "none") this.unnamed.delete(socket);
     });
 
     socket.on("close", () => {
       this.lastSeen.delete(socket);
+      this.unnamed.delete(socket);
+      this.openInAll -= 1;
+      if (address !== undefined) {
+        const left = (this.openByAddress.get(address) ?? 1) - 1;
+        if (left > 0) this.openByAddress.set(address, left);
+        else this.openByAddress.delete(address);
+      }
       if (conn.role === "tv" && this.tvs.get(conn.deviceId) === socket) {
         this.tvs.delete(conn.deviceId);
         this.opened.delete(conn.deviceId);
@@ -580,6 +629,9 @@ export class Hub {
     // While blocked the code is not even checked, so a right guess gets no answer different from a wrong one.
     const socket = this.controllers.get(controller.id);
     if (this.pairingPaused(socket)) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
+    // (Nor is it checked when this address has paired too many phones lately: a pair is kept for months, so it is not to be made by the thousand. See MAX_NEW_PAIRS.)
+    const address = socket && this.addresses.get(socket);
+    if (address && this.newPairs.wait(address) > 0) return this.error(controller.id, "RATE_LIMITED", "Too many phones were connected from here lately. Try again later.");
 
     const before = this.registry.deviceForController(controller);
     let device = this.registry.pair(controller, code);
@@ -588,6 +640,7 @@ export class Hub {
       device = this.registry.joinController(controller, code, (id) => this.controllers.has(id)); // (a TV with all its places taken lets go of a phone that is not connected)
       isNewPair = false;
     }
+    if (device && address) this.newPairs.hit(address);
     if (!device) {
       // The code of a watch party, typed where a TV's code goes: it is no wrong guess, and the phone is told what it is for (see Controller.tsx).
       if (this.registry.isPartyCode(code)) {

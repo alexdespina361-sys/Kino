@@ -160,6 +160,10 @@ const UPSTREAM_MS = 30_000;
 class UpstreamTooSlow extends Error {}
 /** A server that carries no film still passes a subtitle on, which is some tens of kilobytes: a text beyond this is not one. */
 const SUBTITLE_MAX_BYTES = 2 * 1024 * 1024;
+/** The times of a subtitle's line (`00:01.000 -->`, `00:00:01,000 -->`), which any subtitle has and a page or another text does not. */
+const CUE_TIMES = /\d{1,2}:\d{2}[.,]\d{1,3}[ \t]*-->/;
+/** What a server that carries no film says of another site's error, at most: past it, only the status is said. */
+const QUIET_ERROR_MAX_BYTES = 512;
 /** The longest text (a playlist, a subtitle) a server that does carry film reads: a playlist of a long film is some hundreds of kilobytes. */
 const TEXT_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -499,7 +503,8 @@ async function proxyRequest(
   if (!upstreamResponse.ok) {
     // (What the other end said is passed on as text, whatever it called it: it is for whoever reads the failure, not a page for a browser.)
     reply.code(statusFrom(upstreamResponse.status)).header("Cache-Control", "no-store").header("Content-Type", TEXT_TYPE);
-    const text = await textUpTo(upstreamResponse, 64 * 1024, upstreamMs, abortController);
+    // (A server that carries no film says a few words of it at most: any address can be asked for as a subtitle, and its error page is not to be read through here.)
+    const text = await textUpTo(upstreamResponse, video ? 64 * 1024 : QUIET_ERROR_MAX_BYTES, upstreamMs, abortController);
     const message = text ?? `Upstream returned HTTP ${upstreamResponse.status}`;
     if (stats) stats.bytes += Buffer.byteLength(message);
     return reply.send(message);
@@ -533,6 +538,8 @@ async function proxyRequest(
     const rawText = await textUpTo(upstreamResponse, video ? TEXT_MAX_BYTES : SUBTITLE_MAX_BYTES, upstreamMs, abortController);
     if (rawText === null) return video ? reply.code(502).header("Content-Type", TEXT_TYPE).send("The subtitle is too long") : turnAway();
     const vtt = srtToVtt(rawText);
+    // (Nor is a page, or any text, that is asked for as a subtitle and is none: one has the times of its lines in it.)
+    if (!video && !isUpstreamMedia && !CUE_TIMES.test(vtt)) return turnAway();
     if (stats) stats.bytes += Buffer.byteLength(vtt);
     reply.header("Content-Type", "text/vtt; charset=utf-8");
     reply.header("Cache-Control", "public, max-age=86400");

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { LibraryRowSchema } from "../../shared";
-import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, MAX_PRELOADED_SEASONS, type FilmpireCategory } from "./filmpire";
+import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, MAX_PRELOADED_SEASONS, PAGE_TITLES, Slots, probePlayback, type FilmpireCategory, type ProbeRecord } from "./filmpire";
 import type { LibrarySource } from "./library";
 import { sectionOfCategory } from "./shelves";
 
@@ -486,21 +486,29 @@ describe("filmpireSource search", () => {
   });
 
   it.each([
-    ["a search", (source: LibrarySource) => source.search!("many")],
-    ["the titles like another", (source: LibrarySource) => source.similar!("https://filmpire.sc/watch/1?s=1&e=1")],
+    ["a search", (source: LibrarySource, page: number) => source.search!(`many ${page}`)],
+    ["the titles like another", (source: LibrarySource, page: number) => source.similar!(`https://filmpire.sc/watch/${page + 1}?s=1&e=1`)],
   ])("keeps the seasons the video check told of for no more than a set number of shows - %s: for the others TMDB is asked again", async (_name, ask) => {
     expect(MAX_PRELOADED_SEASONS).toBeGreaterThanOrEqual(100);
     expect(MAX_PRELOADED_SEASONS).toBeLessThanOrEqual(5000);
     const shows = Array.from({ length: MAX_PRELOADED_SEASONS + 3 }, (_, at) => ({ id: 5000 + at, media_type: "tv", name: `Show ${at}`, first_air_date: "2022-01-01", poster_path: "/p.jpg" }));
+    // (A page of TMDB's has twenty titles, and no more is taken of one: so many shows come from many searches, or from the titles like many others.)
+    const pages = Array.from({ length: Math.ceil(shows.length / PAGE_TITLES) }, (_, at) => shows.slice(at * PAGE_TITLES, (at + 1) * PAGE_TITLES));
     const asked: string[] = [];
     const getTmdb = vi.fn(async (url: string | URL) => {
       asked.push(String(url));
-      return /\/(search\/multi|tv\/1\/recommendations)\?/.test(String(url)) ? json({ results: shows }) : json({ seasons: [{ season_number: 9, episode_count: 3 }] });
+      const address = new URL(String(url));
+      const searched = address.pathname.endsWith("/search/multi") ? /^many (\d+)$/.exec(address.searchParams.get("query") ?? "") : null;
+      const liked = /\/tv\/(\d+)\/recommendations$/.exec(address.pathname);
+      const page = searched ? Number(searched[1]) : liked ? Number(liked[1]) - 1 : undefined;
+      return page !== undefined ? json({ results: pages[page] ?? [] }) : json({ seasons: [{ season_number: 9, episode_count: 3 }] });
     });
     const probe = vi.fn(async () => json({ status_code: "200", data: { title: "Show", eps: { "1": ["1"] } } }));
     const source = filmpireSource({ fetch: getTmdb as never, probeFetch: probe as never, verifyPlayback: true, filterTrash: false });
 
-    expect(await ask(source)).toHaveLength(shows.length);
+    let found = 0;
+    for (let page = 0; page < pages.length; page++) found += (await ask(source, page)).length;
+    expect(found).toBe(shows.length);
 
     let toldOf = 0;
     for (const show of shows) {
@@ -921,5 +929,46 @@ describe("filmpireSource seasons", () => {
       expect.stringContaining("/tv/1396?"),
       expect.anything(),
     );
+  });
+});
+
+describe("the video checks of a search", () => {
+  it("checks no more than so many titles at once, and takes no more than a page's twenty titles of what TMDB says is a page", async () => {
+    const results = Array.from({ length: 25 }, (_, i) => ({ id: 1000 + i, media_type: "movie", title: `Film ${i}`, release_date: "2020-01-01", poster_path: `/p${i}.jpg` }));
+    const getTmdb = vi.fn(async () => json({ results }));
+    let running = 0;
+    let most = 0;
+    const probe = vi.fn(async () => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise((done) => setTimeout(done, 20));
+      running -= 1;
+      return json({ status_code: "200", data: {} });
+    });
+    const source = filmpireSource({ fetch: getTmdb as never, probeFetch: probe as never, verifyPlayback: true, filterTrash: false, probesAtOnce: 4 });
+    const found = await source.search!("film");
+    expect(found).toHaveLength(PAGE_TITLES);
+    expect(probe).toHaveBeenCalledTimes(PAGE_TITLES);
+    expect(most).toBe(4);
+  });
+
+  it("keeps a title whose check had no turn in time, and writes nothing down for it", async () => {
+    const slots = new Slots(1);
+    const cache = new Map<string, ProbeRecord>();
+    let release: () => void = () => {};
+    const held = new Promise<void>((done) => (release = done));
+    const probe = vi.fn(async (url: string | URL) => {
+      if (String(url).endsWith("tmdb=1")) await held;
+      return json({ status_code: 404 });
+    });
+    const first = probePlayback(1, "movie", probe as never, cache, Date.now, 5_000, slots, 50);
+    const second = await probePlayback(2, "movie", probe as never, cache, Date.now, 5_000, slots, 50);
+    expect(second).toEqual({ ok: true });
+    expect(probe).toHaveBeenCalledTimes(1); // (the second was not made)
+    expect(cache.has("movie:2")).toBe(false);
+    release();
+    expect(await first).toEqual({ ok: false });
+    expect(await probePlayback(2, "movie", probe as never, cache, Date.now, 5_000, slots, 50)).toEqual({ ok: false }); // (a turn again: made, and its answer kept)
+    expect(cache.get("movie:2")?.status).toBe(404);
   });
 });

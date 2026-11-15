@@ -43,6 +43,16 @@ beforeAll(async () => {
       response.writeHead(403, { "content-type": "text/html" });
       return void response.end("Blocked by provider");
     }
+    if (url.pathname === "/echoes.vtt") {
+      // (A host that says back what it was given: its own link, and a token.)
+      response.writeHead(403, { "content-type": "text/plain" });
+      return void response.end("Denied: eyJhbGciOiJIUzI1NiJ9.c2VjcmV0LXRva2Vu.c2lnbmF0dXJl for https://cdn.example/f.m3u8?token=abc");
+    }
+    if (url.pathname === "/slow.mp4") {
+      response.writeHead(200, { "content-type": "video/mp4" });
+      response.write(bytes.subarray(0, 4));
+      return void setTimeout(() => response.end(bytes.subarray(4)), 300);
+    }
     if (request.headers.range) {
       response.writeHead(206, { "content-type": "video/mp4", "content-range": "bytes 0-3/8", "content-length": "4", "accept-ranges": "bytes" });
       return void response.end(bytes.subarray(0, 4));
@@ -165,6 +175,27 @@ describe("a separate streaming relay", () => {
     expect(written[1]).not.toHaveProperty("host");
     expect(written[2]).toMatchObject({ status: 502, host: "127.0.0.1", file: "master.m3u8", error: expect.stringContaining("UPSTREAM_TOKEN_FAILED") });
     expect(JSON.stringify(written)).not.toMatch(/website-ip-token|sig=|expires=|\/api\/proxy/);
+  });
+
+  it("writes down what a host said with no link or token of it: the words, and in their place what they were", async () => {
+    const written: RelayFailure[] = [];
+    relay = buildStreamRelay({ key, isAllowedAddress: () => true, log: (failure) => void written.push(failure) });
+    expect((await relay.inject(signed("/echoes.vtt"))).statusCode).toBe(403);
+    expect(written).toEqual([{ status: 403, host: "127.0.0.1", file: "echoes.vtt", error: "Denied: <long> for <link>" }]);
+  });
+
+  it("carries only so many requests at once, and tells one more to ask again in a moment (a 503, written down), not what the film's host would say", async () => {
+    const written: RelayFailure[] = [];
+    relay = buildStreamRelay({ key, isAllowedAddress: () => true, log: (failure) => void written.push(failure), atOnce: 1 });
+    const film = relay.inject(signed("/slow.mp4"));
+    await new Promise((done) => setTimeout(done, 100));
+    const busy = await relay.inject(signed("/film.mp4"));
+    expect([busy.statusCode, busy.headers["retry-after"], busy.json()]).toEqual([503, "1", { error: "RELAY_BUSY" }]);
+    expect(asked.filter((r) => r.path === "/film.mp4")).toEqual([]); // (its host was not asked)
+    expect((await relay.inject(`/api/proxy?url=${encodeURIComponent(origin)}`)).statusCode).toBe(403); // (a link that is no good is told so, busy or not)
+    expect((await film).rawPayload).toEqual(bytes);
+    expect((await relay.inject(signed("/film.mp4"))).statusCode).toBe(200); // (the film was carried to its end: room again)
+    expect(written[0]).toMatchObject({ status: 503, error: expect.stringContaining("RELAY_BUSY") });
   });
 
   it("reports a blocked token endpoint without making an unauthorized media request", async () => {
