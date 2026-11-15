@@ -42,6 +42,18 @@ export function titleIdOf(address: string | null | undefined): string | null {
 /** The title the address of this page names, if any. */
 export const linkedTitle = (search: string = typeof location === "undefined" ? "" : location.search): string | null => titleIdOf(new URLSearchParams(search).get(TITLE_PARAM));
 
+let linkTaken = false;
+/**
+ * The title a link opened the site with: once, for the first library drawn after the page loads, and nothing after that. The library is drawn again after every
+ * film, and by then the address may still name a title whose page a film was started from: that is not a link anybody opened, and its page must not open again
+ * (it did, over and over, after other titles had played: the owner's report of 15 Nov).
+ */
+export function takeLinkedTitle(search?: string): string | null {
+  if (linkTaken) return null;
+  linkTaken = true;
+  return linkedTitle(search);
+}
+
 /** The address with this title in it (none: without one), everything else in it as it was. */
 export function withTitle(href: string, address: string | null): string {
   const url = new URL(href);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressOf, linkedTitle, titleIdOf, withTitle } from "./titleAddress";
+import { addressOf, linkedTitle, takeLinkedTitle, titleIdOf, withTitle } from "./titleAddress";
 
 describe("a title's own address", () => {
   it("names a tile of the library by its id, short", () => {
@@ -26,6 +26,12 @@ describe("a title's own address", () => {
     for (const wrong of ["", "movie-", "film-603", "movie-603x", "movie-603&x", "tv-12345678901", null, undefined]) expect(titleIdOf(wrong), String(wrong)).toBeNull();
     expect(linkedTitle("?title=movie-603")).toBe("filmpire-movie-603");
     expect(linkedTitle("?party=123456")).toBeNull();
+  });
+
+  it("is taken from the address once a page load: the library drawn again after a film does not open it again", () => {
+    expect(takeLinkedTitle("?title=movie-603")).toBe("filmpire-movie-603");
+    expect(takeLinkedTitle("?title=movie-603")).toBeNull();
+    expect(takeLinkedTitle("?title=tv-1399")).toBeNull();
   });
 
   it("is put in the address and taken out again, with everything else in it left as it was", () => {

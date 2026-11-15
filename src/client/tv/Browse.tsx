@@ -32,7 +32,7 @@ import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
-import { addressOf, fetchTitle, linkedTitle, showTitle } from "../shared/titleAddress";
+import { addressOf, fetchTitle, showTitle, takeLinkedTitle } from "../shared/titleAddress";
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact, useFlatHand } from "./compact";
@@ -101,6 +101,8 @@ const remembered = {
 export function keepPageFor(link: string | undefined) {
   const kept = remembered.detail;
   if (kept && (!link || titleLink(link) !== titleLink(kept.page.entry.url))) remembered.detail = null;
+  // (Nor does the address go on naming a title whose page will not be there: a reload, during the film or after it, comes back to the library, not to that page.)
+  if (!remembered.detail) showTitle(null);
 }
 
 /** Wait this long on a title before the banner changes to it, so scrolling past many does not flicker through them. */
@@ -478,6 +480,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // Choosing a page shuts the menu at once. On a page with nothing to stand on (an empty list) the remote stays on the menu's line
   // for it, but the menu itself is closed; an arrow key opens it again.
   const choose = (next: View) => {
+    linkPendingRef.current = false; // (a link still being looked up is not opened over the page chosen meanwhile)
     remembered.view = next;
     remembered.detail = null;
     setViewState(next);
@@ -518,17 +521,20 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const leaveEdit = () => (overlay?.kind === "edit" && overlay.from ? setOverlay(overlay.from) : closeOverlay());
   /** A title's own page opens over the library, on Play; closing it puts the remote back on the title it came from. */
   const openDetail = (title: Focused) => {
+    linkPendingRef.current = false;
     setDetail(title);
     setPending(DETAIL);
   };
   const closeDetail = () => {
+    linkPendingRef.current = false;
     remembered.detail = null;
     setDetail(null);
     setPending(CONTENT);
   };
   // A link to a title's page (`?title=movie-603`, see titleAddress.ts) opens that page over Home once the server has said what the title is; a title nobody
-  // knows leaves Home as it is, and the address without it. Until then the address is left alone.
-  const [linked] = useState(linkedTitle);
+  // knows leaves Home as it is, and the address without it. Until then the address is left alone. Only the link the site was opened with: the library is
+  // drawn again after every film, and what the address says then is not a link (`takeLinkedTitle`). Nor is it opened over a page the viewer went to meanwhile.
+  const [linked] = useState(takeLinkedTitle);
   const linkPendingRef = useRef(linked !== null);
   const detailRef = useRef(detail);
   detailRef.current = detail;
@@ -537,9 +543,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     let live = true;
     void fetchTitle(linked).then((item) => {
       if (!live) return;
+      const wanted = linkPendingRef.current;
       linkPendingRef.current = false;
-      if (item && !detailRef.current) openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
-      else if (!detailRef.current) showTitle(null);
+      if (detailRef.current) return; // (a page is open: the address is its own)
+      if (wanted && item) openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
+      else showTitle(null);
     });
     return () => {
       live = false;
