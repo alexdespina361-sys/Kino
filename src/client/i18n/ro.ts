@@ -983,6 +983,7 @@ export const ro: Dictionary = {
   "friends.removeHelp": "Sigur? Nu vă veți mai vedea listele, notele și ce urmăriți. Vă puteți împrieteni din nou cu un cod nou.",
   "friends.removeYes": "Da, șterge",
   "friends.online": "Online",
+  "friends.onlineCount": "{count} online acum",
   "friends.switchPresence": "Prietenii pot vedea când sunt online",
   "friends.popups": "Arată pe ecran noutățile de la prieteni",
   "friends.popupsHelp": "Oprit: invitațiile și noutățile așteaptă în clopoțel și nu apar niciodată peste ce te uiți. Pornit: cât timp rulează ceva, apare doar o invitație, ca o notă mică în colț.",

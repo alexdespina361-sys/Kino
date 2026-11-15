@@ -147,6 +147,15 @@ function watchedRows(friends: readonly Friend[], activity: readonly ActivityItem
   return watchedLately(friends, activity).map(({ friend, items }): HomeRow => ({ id: `friend-watched:${friend.id}`, layout: "wide", title: t("friends.watchedBy", { name: friend.name }), entries: items.map((item) => entryOfActivity(item, "", now)) }));
 }
 
+/** What the friends page says under its name: how many friends, and how many of them are online now (or how to make the first). */
+export function friendsSummary(state: FriendsState | null): string {
+  const friends = state?.friends ?? [];
+  if (friends.length === 0) return t("friends.none");
+  const online = friends.filter((friend) => friend.on && friend.online).length;
+  const count = t("friends.count", { count: friends.length });
+  return online > 0 ? `${count}  ·  ${t("friends.onlineCount", { count: online })}` : count;
+}
+
 export function friendRows(state: FriendsState | null, now: number, iGet = true): HomeRow[] {
   const friends = state?.friends ?? [];
   const inbox = state?.inbox ?? [];
