@@ -62,7 +62,8 @@ export interface SessionDeps {
   backend(): Promise<Backend>;
   recogniser(): Promise<Recogniser>;
   decode(bytes: Uint8Array): Promise<Float32Array>;
-  report(status: SyncStatus): void;
+  /** `moved`: while timed, how far the lines were moved (seconds, later is more), once the aligner is sure of it. */
+  report(status: SyncStatus, moved?: number): void;
   /** The viewer's own subtitle delay: a line is on screen when the picture is that far past its time. */
   delay?(): number;
   /** The timings that screens leave each other (see `share.ts`). Without it nothing is borrowed or left. */
@@ -201,6 +202,7 @@ export class SyncSession {
   private unavailable = false;
   private errors = 0;
   private lastStatus: SyncStatus | undefined;
+  private lastMoved: number | undefined;
   /** Which sound track is playing, and how many times the sound has been started over (work that began before a start over is not taken after it). */
   private audioId: string | undefined;
   private epoch = 0;
@@ -1329,12 +1331,24 @@ export class SyncSession {
     return quiet ? "synced" : "syncing";
   }
 
+  /**
+   * How far the track on screen was moved, to a tenth of a second (video time minus the file's: later is more), once the aligner is sure of
+   * it: what the viewer is told ("moved 2.4 s", or that it was right). Undefined before that.
+   */
+  moved(): number | undefined {
+    const current = this.current;
+    if (!current?.trusted || current.offset === null) return undefined;
+    return Math.round(current.offset * 10) / 10 || 0;
+  }
+
   private report(): void {
     const status = this.status();
-    if (status === this.lastStatus) return;
+    const moved = status === "synced" ? this.moved() : undefined;
+    if (status === this.lastStatus && moved === this.lastMoved) return;
     this.lastStatus = status;
+    this.lastMoved = moved;
     stats.status = status;
-    this.deps.report(status);
+    this.deps.report(status, moved);
   }
 
   private giveUp(reason: string): void {
