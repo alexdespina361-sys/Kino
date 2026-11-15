@@ -242,7 +242,7 @@ test.describe("the chat on the phone", () => {
     const row = bob.page.getByTestId("bell-chat-item");
     await expect(row).toHaveCount(1);
     await expect(row).toHaveText(say(en["chat.unread_one"], { count: "1", name: ann.name }));
-    await row.getByRole("button").click();
+    await row.getByTestId("bell-chat-open").click();
     await expect(bob.page.getByTestId("bell-sheet")).toHaveCount(0);
     await expect(bob.page.getByTestId("chat")).toBeVisible();
     await expect(lines(bob.page)).toHaveCount(1);
@@ -263,6 +263,28 @@ test.describe("the chat on the phone", () => {
     await ann.page.keyboard.press("Escape");
     await backHome(ann.page);
     await expect(badge(ann.page)).toHaveCount(0);
+  });
+
+  test("the bell's cross on a friend who wrote marks the chat read without opening it: the number goes, and the message is in the chat", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await writes(ann.page, bob.page, "Are you there?");
+    await backHome(bob.page);
+    await look(bob.page);
+    await expect(badge(bob.page)).toHaveText("1");
+    await bell(bob.page).click();
+    await expect(bob.page.getByTestId("bell-chat-item")).toHaveCount(1);
+    await bob.page.getByTestId("bell-chat-clear").click();
+    await expect(bob.page.getByTestId("bell-chat-item")).toHaveCount(0);
+    await expect(bob.page.getByTestId("bell-sheet")).toBeVisible(); // (the list stays open: only the line went)
+    await backHome(bob.page);
+    await look(bob.page);
+    await expect(badge(bob.page)).toHaveCount(0);
+    await openFriendPage(bob.page);
+    await expect(bob.page.getByTestId("friend-chat-unread")).toHaveCount(0);
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(lines(bob.page)).toHaveCount(1);
+    await expect(texts(bob.page).first()).toHaveText("Are you there?");
   });
 
   test("what is typed while a message is on its way stays in the box when the message has been sent", async ({ browser }) => {
@@ -488,7 +510,7 @@ test.describe("the chat on the phone", () => {
     await bell(bob.page).click();
     await expect(bob.page.getByTestId("bell-chat-item")).toHaveText(say(ro["chat.unread_one"], { count: "1", name: ann.name }));
     await fit(["bell-sheet", "bell-waiting", "bell-chat-item"], "the bell");
-    await bob.page.getByTestId("bell-chat-item").getByRole("button").click();
+    await bob.page.getByTestId("bell-chat-item").getByTestId("bell-chat-open").click();
     await expect(lines(bob.page)).toHaveCount(1);
     await fit(["chat-sheet", "chat", "chat-mute", "chat-report", "chat-compose", "chat-input", "chat-send"], "the chat");
     await expect(lines(bob.page).first().getByTestId("chat-text")).toHaveText(LONG);
@@ -649,6 +671,30 @@ async function tvWrite(page: Page, text: string) {
 }
 
 test.describe("the chat on the TV", () => {
+  test("the bell's line of a friend who wrote has a cross: it marks the chat read, and the remote goes on to what is left", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await writes(ann.page, bob.page, "Film tonight?");
+    await look(bob.page);
+    await expect(bob.page.getByTestId("tv-bell-badge")).toHaveText("1");
+    await bob.page.getByTestId("tv-bell").click();
+    const line = bob.page.getByTestId("tv-bell-item").filter({ hasText: ann.name });
+    await expect(line).toHaveCount(1);
+    await bob.page.getByTestId("tv-bell-clear").first().focus();
+    await bob.page.keyboard.press("Enter");
+    await expect(line).toHaveCount(0);
+    await expect(bob.page.getByTestId("tv-bell-friends")).toBeFocused(); // (nothing else was waiting)
+    await bob.page.keyboard.press("Escape");
+    await look(bob.page);
+    await expect(bob.page.getByTestId("tv-bell-badge")).toHaveCount(0);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page)).toHaveCount(1);
+    await expect(tvLines(bob.page).first().getByTestId("chat-text")).toHaveText("Film tonight?");
+  });
+
   test("the remote walks to the Chat chip and into the chat; Write opens the page with the keys, Send puts the message in the chat, Back goes back a page at a time, and a message from the other screen comes to an open chat within seconds", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");

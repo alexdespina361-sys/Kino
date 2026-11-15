@@ -4,6 +4,7 @@ import { Avatar } from "../account/Avatar";
 import { ago } from "../account/time";
 import { bellView } from "../friends/bell";
 import { entryOfActivity } from "../friends/entries";
+import { useClearChat } from "../chat/useClearChat";
 import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
 import { useCleared } from "../friends/useCleared";
@@ -55,16 +56,23 @@ function LatelyRow({ item, friend, onOpen, onClear }: { item: ActivityItem; frie
   );
 }
 
-/** A friend who wrote, as a row that opens the chat with them (their messages are not read here: the bell only says how many wait). */
-function ChatRow({ notice, friend, onOpen }: { notice: ChatNotice; friend: Friend; onOpen: () => void }) {
+/**
+ * A friend who wrote, as a row that opens the chat with them (their messages are not read here: the bell only says how many wait). The cross, or a
+ * swipe to the side, marks the chat read without opening it: the messages stay in the chat.
+ */
+function ChatRow({ notice, friend, onOpen, onClear }: { notice: ChatNotice; friend: Friend; onOpen: () => void; onClear: () => void }) {
   const t = useT();
+  const swipe = useSwipeAway(onClear);
   return (
-    <li className="inbox-item" data-testid="bell-chat-item" data-friend={friend.id}>
-      <button className="bell-lately" onClick={onOpen}>
+    <li className="inbox-item" data-testid="bell-chat-item" data-friend={friend.id} {...swipe}>
+      <button className="bell-lately" onClick={onOpen} data-testid="bell-chat-open">
         <Avatar id={friend.avatar} className="friend-avatar" />
         <span className="inbox-text">
           <b>{t("chat.unread", { count: notice.count, name: friend.name })}</b>
         </span>
+      </button>
+      <button className="mini" onClick={onClear} aria-label={t("friends.dismiss")} data-testid="bell-chat-clear">
+        <CloseIcon />
       </button>
     </li>
   );
@@ -94,6 +102,7 @@ export function NotificationsSheet({
   const friends = useFriends();
   const { markSeen } = useBell();
   const { cleared, clear } = useCleared();
+  const clearChat = useClearChat();
   const { state } = friends;
 
   // Opening it is seeing what is in the inbox, and how things stand now.
@@ -162,6 +171,7 @@ export function NotificationsSheet({
                       onClose();
                       onOpenChat(notice.friend);
                     }}
+                    onClear={() => clearChat(notice.friend)}
                   />
                 ))}
               </ul>
