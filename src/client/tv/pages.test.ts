@@ -130,6 +130,11 @@ describe("rowsOfPage: home", () => {
     expect(rows[3]!.entries.at(-1)).toMatchObject({ title: t("tv.allCategories"), opens: { kind: "categories" } });
     expect(rows[3]!.entries[0]).toMatchObject({ title: "Row r0", opens: { kind: "category", rowId: "r0" }, image: "wide-r0-0" });
     expect(rows[3]!.entries[0]!.note).toBeUndefined(); // (no count of titles: a category goes on as it is scrolled, so the number was only what had come so far)
+    // What is in a category is shown, not counted: the posters of its first three titles (a category of five still shows three), and the "All categories" tile says no number either.
+    expect(rows[3]!.entries[0]!.posters).toEqual(["poster-r0-0", "poster-r0-1", "poster-r0-2"]);
+    const five = rowsOfPage("home", data({ rows: Array.from({ length: 20 }, (_, i) => row(`r${i}`, "movie", 5)) }))[3]!;
+    expect(five.entries[0]!.posters).toHaveLength(3);
+    expect(five.entries.at(-1)!.note).toBeUndefined();
   });
 
   it("has no row of categories when the library is only a few rows", () => {

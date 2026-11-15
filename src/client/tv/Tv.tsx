@@ -68,6 +68,7 @@ import {
 import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
 import "../polish/tv.css"; // (the refined layer sits on top of the older ones, and is all under :root[data-ui="polish"])
+import "../polish/tv-posters.css"; // (a title is its poster; before the phone's sheet, which has its own sizes for it)
 import "../polish/tv-phone.css"; // (last of this chunk's sheets: the same page on a phone held upright, which says more than the one before it for a screen that narrow)
 
 const DEVICE_KEY = "tv.deviceId";

@@ -39,7 +39,7 @@ import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, Notific
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
-import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
+import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
@@ -109,30 +109,37 @@ const SEARCH_RETRY_MS = 5000;
 /** The remote, which moves a title at a time, asks the library for what comes next when it is this many rows (or, along a row, this many titles) from the end. (A page that is scrolled asks by `nearBottom`.) */
 const ROWS_AHEAD = 3;
 const TITLES_AHEAD = 6;
-const GRID_COLUMNS = 5;
-const RESULT_COLUMNS = 3;
+/** A grid of titles is posters, eight across; a grid of categories is four wide tiles (each has its name and a fan of posters). Beside the keyboard of the search there is room for five posters. */
+const GRID_COLUMNS = 8;
+const CATEGORY_COLUMNS = 4;
+/** A grid of wide tiles that are not titles. */
+const WIDE_COLUMNS = 5;
+const RESULT_COLUMNS = 5;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
 const NARROW = "(max-width: 899px)";
 /** About how wide a title is on a hand-held screen, with the room around it. */
 const NARROW_TILE_PX = 190;
+/** ...and how wide an upright poster is there. */
+const NARROW_POSTER_PX = 132;
 /** A phone held upright shows posters (compact.ts): three across, and two on the narrowest screens, where three would be thumbnails. */
 const POSTERS_THREE_FROM_PX = 360;
 /** The title such a phone opens a page of rows with is the first of the library's first row that has a picture, looked for among this many. */
 const FEATURE_FROM = 6;
 
 /** How many titles wide a grid is on a hand-held screen, or 0 when the screen is wide enough for the TV's own layout. */
-function useNarrowColumns(): number {
+function useNarrowColumns(posters: boolean): number {
   const read = () => {
     if (!matchMedia(NARROW).matches) return 0;
     if (isCompact()) return innerWidth >= POSTERS_THREE_FROM_PX ? 3 : 2;
-    return Math.max(2, Math.floor(innerWidth / NARROW_TILE_PX));
+    return Math.max(2, Math.floor(innerWidth / (posters ? NARROW_POSTER_PX : NARROW_TILE_PX)));
   };
   const [columns, setColumns] = useState(read);
   useEffect(() => {
     const update = () => setColumns(read());
+    update();
     addEventListener("resize", update);
     return () => removeEventListener("resize", update);
-  }, []);
+  }, [posters]);
   return columns;
 }
 /** What the banner and the picture behind the screen show: the title the remote is on. */
@@ -284,7 +291,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const iGet = friendChoices(settings).friendsGet;
   /** A phone held upright (compact.ts): a bar of four places at the bottom, the sections as buttons over the titles, posters, and no banner. */
   const compact = useCompact();
-  const narrowColumns = useNarrowColumns();
+  const narrowColumns = useNarrowColumns(true);
+  const narrowCategoryColumns = useNarrowColumns(false);
   const narrow = narrowColumns > 0;
   const resultColumns = narrowColumns || RESULT_COLUMNS;
   const [library, setLibrary] = useState<Library | null>(remembered.library);
@@ -386,7 +394,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */
   // (A phone's categories are tiles of words, not pictures: two across, where the posters of the other pages are three.)
-  const gridColumns = compact && grid?.layout === "categories" ? 2 : narrowColumns || GRID_COLUMNS;
+  const posterGrid = !!grid && grid.layout !== "categories" && grid.entries.every(isTitle);
+  const gridColumns = grid?.layout === "categories" ? (compact ? 2 : narrowCategoryColumns || CATEGORY_COLUMNS) : posterGrid ? narrowColumns || GRID_COLUMNS : narrowCategoryColumns || WIDE_COLUMNS;
   // (A grid in sections, a friend's lists, has each section start a row of its own, under its heading.)
   const sectionPlace = grid?.sections ? sectionPlaces(grid.sections, gridColumns) : undefined;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
@@ -1082,6 +1091,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
 
   const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
+  // The banner shows the poster of the title the remote is on, beside what it says of it (a category, a person or an invitation has none).
+  const heroPoster = !compact && shown && isTitle(shown.entry) ? sharper(shown.entry.image) : undefined;
 
   return (
     <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} data-deep={deep} aria-label={t("tv.library")}>
@@ -1145,7 +1156,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               ))}
             </div>
           )}
-          <div className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : ""}`} data-testid="tv-hero">
+          <div className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : ""}`} data-testid="tv-hero" data-poster={heroPoster && view.kind !== "profile" ? "true" : undefined}>
             {view.kind === "profile" ? (
               <ProfileHead
                 name={signedIn && profile ? profile.name : t("profile.guest")}
@@ -1160,6 +1171,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 onConnectGoogle={connectGoogle}
               />
             ) : shown && !compact ? (
+              <>
+                {heroPoster && <Poster key={`poster-${shown.entry.id}`} className="tv-hero-poster" title={shown.entry.title} image={heroPoster} seed={shown.entry.id} />}
               <div className="tv-hero-text" key={shown.entry.id}>
                 <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.byCategory") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
@@ -1184,6 +1197,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   ))}
                 </div>
               </div>
+              </>
             ) : shown ? null /* (a phone has no room for the banner's words: a title is read on its own page, which a tap opens) */ : status === "loading" ? (
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
             ) : sectionWaiting ? (
@@ -1216,7 +1230,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
             {homeRows.length > 0
               ? drawnRows.map((row, r) => (
-                  <section className="tv-row" key={row.id} data-layout={row.layout} data-grouped={row.group ? "true" : undefined} aria-label={row.title}>
+                  <section className="tv-row" key={row.id} data-layout={row.layout} data-posters={row.layout === "wide" && row.entries[0] && isTitle(row.entries[0]) ? "true" : undefined} data-grouped={row.group ? "true" : undefined} aria-label={row.title}>
                     {row.group && homeRows[r - 1]?.group !== row.group && (
                       // (Inside the first row of its group, so that the page, which brings a row to its top, brings the heading too.)
                       <h2 className="tv-row-group" data-testid="tv-row-group">
@@ -1401,7 +1415,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </div>
           )}
           {grid.entries.length > 0 ? (
-            <div className="tv-grid" ref={gridRef} onScroll={askTitles} style={{ "--cols": gridColumns } as CSSProperties}>
+            <div className={`tv-grid${grid.layout === "categories" ? " tv-grid-categories" : posterGrid ? " tv-grid-posters" : ""}`} ref={gridRef} onScroll={askTitles} style={{ "--cols": gridColumns } as CSSProperties}>
               {grid.entries.map((entry, i) => {
                 const at: { row: number; col: number; heading?: string } = sectionPlace?.[i] ?? { row: Math.floor(i / gridColumns), col: i % gridColumns };
                 return (
@@ -1541,7 +1555,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       ? t("tv.looking")
                       : t("tv.nothingMatches", { query: query.trim() })}
             </p>
-            <div className="tv-grid tv-results" style={{ "--cols": resultColumns } as CSSProperties}>
+            <div className="tv-grid tv-grid-posters tv-results" style={{ "--cols": resultColumns } as CSSProperties}>
               {shownResults.map((item, i) => {
                 // The titles with every word typed come first; under a heading of their own, the closest others (see `resultRowsOf`).
                 const close = i >= shownAnswers.exact;
@@ -1831,8 +1845,9 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
   const [broken, setBroken] = useState(false);
   const hue = hueOf(entry.id);
   const layout: Layout = compact && asked === "ranked" ? "wide" : asked;
-  // A ranking shows the upright poster; everything else is wide, and falls back to the poster when there is no wide picture.
-  const picture = layout === "ranked" || (compact && layout === "wide") ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
+  // A title is shown by its poster, the picture it is known by; only the card of what is part way through is wide (a still of where it was left).
+  const poster = layout === "wide" && isTitle(entry);
+  const picture = layout === "ranked" || poster ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
   const showPicture = picture && !broken;
   const common = {
     "data-zone": pos.zone,
@@ -1856,9 +1871,18 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
 
   if (layout === "categories") {
     const place = PLACE_ICON[entry.id];
+    // (The posters of what is in a category, beside its name: where there is room for them, which a phone held upright has not.)
+    const fan = !compact && entry.posters !== undefined && entry.posters.length > 0;
     return (
-      <button className={`tv-tile tv-tile-category${entry.avatar ? " tv-tile-person" : ""}${place ? " tv-tile-place" : ""}`} data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
+      <button className={`tv-tile tv-tile-category${entry.avatar ? " tv-tile-person" : ""}${place ? " tv-tile-place" : ""}${fan ? " tv-tile-fan" : ""}`} data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
         {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
+        {fan && (
+          <span className="tv-category-fan" aria-hidden="true">
+            {entry.posters!.map((poster, at) => (
+              <img key={poster} src={poster} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
+            ))}
+          </span>
+        )}
         {place && (
           <span className="tv-place-icon" aria-hidden="true">
             {place}
@@ -1886,7 +1910,7 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
 
   const under = entry.note ?? entry.year;
   return (
-    <button className={`tv-tile tv-tile-${layout}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? entry.title : undefined} {...common}>
+    <button className={`tv-tile tv-tile-${layout}${poster ? " tv-tile-poster" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? entry.title : undefined} {...common}>
       {layout === "ranked" && (
         <span className={`tv-rank${rank > 9 ? " tv-rank-wide" : ""}`} aria-hidden="true">
           <b>{rank}</b>

@@ -142,6 +142,8 @@ export interface Entry {
   online?: boolean;
   /** Whether a Romanian dub is available. */
   hasRoDub?: boolean;
+  /** A category's tile: the posters of its first few titles, which say what is in it better than a number would. */
+  posters?: string[];
 }
 
 export interface HomeRow {
@@ -311,10 +313,21 @@ export const entryOfRating = (rating: LiveRating): Entry => ({
 /** Where a row's titles come from, said only when the library has more than one source (with one, every title would carry the same word). */
 const sourceOf = (rows: readonly LibraryRow[], row: LibraryRow): { source?: string } => (row.source && new Set(rows.map((each) => each.source)).size > 1 ? { source: row.source } : {});
 
+/**
+ * Whether a tile is a title (a film, a show): something that plays, and so is shown by its poster. A plan, an invitation, a request, a
+ * page that opens: those are tiles of words, and stay wide.
+ */
+export const isTitle = (entry: Entry): boolean =>
+  entry.url !== "" && !entry.opens && !entry.action && !entry.request && !entry.plan && !entry.party && !entry.ask && !entry.wants && !entry.chat;
+
+/** A category's tile shows the posters of this many of its titles. */
+const CATEGORY_POSTERS = 3;
+
 /** `withSection` says which section the category is in too (the list of every category, where they sit together). */
 const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withSection = false): Entry => {
   const first = row.items[0];
   const picture = first?.backdrop ?? first?.image;
+  const posters = row.items.flatMap((item) => (item.image ? [item.image] : [])).slice(0, CATEGORY_POSTERS);
   const section = sectionOf(row);
   const place = withSection && section ? sectionName(section) : "";
   return {
@@ -326,6 +339,7 @@ const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withSection
     // (No count of titles: a category goes on as it is scrolled, so the number was only what had come so far.)
     ...(place ? { note: place } : {}),
     ...(picture ? { image: picture } : {}),
+    ...(posters.length > 0 ? { posters } : {}),
   };
 };
 
@@ -349,7 +363,7 @@ const CATEGORY_TILES = 12;
 
 function categoriesRow(rows: readonly LibraryRow[], of: LibrarySection | undefined): HomeRow {
   const entries = rows.slice(0, CATEGORY_TILES).map((row) => categoryEntry(row, rows));
-  if (rows.length > CATEGORY_TILES) entries.push({ id: "all-categories", title: t("tv.allCategories"), url: "", opens: { kind: "categories", ...(of ? { of } : {}) }, note: t("tv.titles", { count: rows.length }) });
+  if (rows.length > CATEGORY_TILES) entries.push({ id: "all-categories", title: t("tv.allCategories"), url: "", opens: { kind: "categories", ...(of ? { of } : {}) } });
   return { id: "categories", layout: "categories", title: t("tv.byCategory"), entries };
 }
 

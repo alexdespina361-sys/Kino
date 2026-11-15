@@ -587,14 +587,20 @@ test.describe("the library on the TV", () => {
     await expect(tiles(tv).nth(1)).toBeFocused(); // back where it was
   });
 
-  test("the banner leaves room for the rows: the first two rows are on screen at once", async ({ browser }) => {
+  test("the banner leaves room for the rows: the first row is whole on screen, and the posters of the second are nearly so", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), { width: 1920, height: 1080 });
     await expect(tiles(tv).first()).toBeFocused();
     // (The rows rise into place for 0.4 s, starting 0.9 em low, and the banner settles as the first picture is focused: measure the page at rest, not its first frame.)
     await tv.evaluate(() => Promise.all(document.getAnimations().filter((one) => one.effect?.getComputedTiming().endTime !== Infinity).map((one) => one.finished.catch(() => undefined))));
-    const [hero, second] = await tv.evaluate(() => [document.querySelector(".tv-hero")!.getBoundingClientRect().bottom, document.querySelectorAll(".tv-row")[1]!.getBoundingClientRect()] as const).then(([bottom, rect]) => [bottom, rect.bottom] as const);
+    const [hero, first, second] = await tv.evaluate(() => {
+      const rows = document.querySelectorAll(".tv-row");
+      const art = rows[1]!.querySelector(".tv-tile-art")!.getBoundingClientRect();
+      return [document.querySelector(".tv-hero")!.getBoundingClientRect().bottom, rows[0]!.getBoundingClientRect().bottom, { top: art.top, height: art.height }] as const;
+    });
     expect(hero).toBeLessThan(1080 * 0.45); // a banner, not most of the page
-    expect(second).toBeLessThanOrEqual(1080); // and the next row is not pushed below the fold
+    expect(first).toBeLessThanOrEqual(1080);
+    // (A row of posters is taller than the row of wide pictures it was: the names under the second row are below the fold, its posters are not.)
+    expect(second.top + second.height * 0.8).toBeLessThanOrEqual(1080);
   });
 
   test("with reduced motion asked for, the rows and the banner's words arrive where they are, and nothing else is left moving", async ({ browser }) => {
@@ -1902,11 +1908,11 @@ test.describe("categories and search on the TV", () => {
     await expect(tiles(tv).first()).toBeFocused();
     await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "false");
 
-    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowRight"); // five to a row
+    await tv.keyboard.press("ArrowRight"); // posters, eight to a row
     await tv.keyboard.press("ArrowDown");
     await expect(tiles(tv).nth(9)).toBeFocused();
     await tv.keyboard.press("ArrowUp");
-    await expect(tiles(tv).nth(4)).toBeFocused();
+    await expect(tiles(tv).nth(1)).toBeFocused();
 
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("All categories"); // one step out: the list it was chosen from
@@ -2161,15 +2167,14 @@ test.describe("categories and search on the TV", () => {
     await tv.keyboard.press("ArrowDown");
     await tv.keyboard.press("ArrowDown");
     await tv.keyboard.press("ArrowRight");
-    await expect(tiles(tv).nth(4)).toBeFocused(); // three to a row
+    await expect(tiles(tv).nth(6)).toBeFocused(); // posters, five to a row beside the keys
     await tv.keyboard.press("ArrowLeft");
     await tv.keyboard.press("ArrowLeft");
     await expect(tv.getByTestId("key-l")).toBeFocused(); // left from the first column goes back to the end of the keys' row
     await tv.keyboard.press("ArrowUp");
     await tv.keyboard.press("ArrowRight");
     await tv.keyboard.press("ArrowDown");
-    await tv.keyboard.press("ArrowDown");
-    await tv.keyboard.press("ArrowRight");
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowRight"); // along the first row of what was found
     await expect(tiles(tv).nth(4)).toBeFocused();
     await tv.keyboard.press("Enter"); // its own page, over the search
     await expect(tv.getByTestId("tv-detail-title")).toHaveText("Film number 5");
