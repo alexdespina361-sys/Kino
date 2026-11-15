@@ -427,13 +427,28 @@ export class SyncSession {
     this.noteSound();
   }
 
-  /** Without the recogniser, new sound is the reason to solve again. */
+  /**
+   * Without the recogniser, new sound is the reason to solve again. So it is with the recogniser, where its words do not keep the lines
+   * placed around the picture: a slow device (a phone) hears a window in a minute, finds none ahead that it could finish before the picture
+   * gets there, and would leave the rest of the film unsolved ("Syncing…" for good). The voice detector times those stretches; it does not
+   * move the lines the words placed (`absorb`).
+   */
   private noteSound(): void {
-    if (this.listening()) return;
+    if (this.listening() && this.wordsKeepUp()) return;
     const end = this.coveredEnd();
     for (const follow of this.solving()) {
       if (end - (this.queued.get(follow) ?? -Infinity) >= SOLVE_STEP) this.queue(follow, end);
     }
+  }
+
+  /**
+   * The solves after the recogniser's windows have placed the lines from the picture to a window past it (sound that comes as the film plays is
+   * heard after it is played, so there it is enough that they reach to a window behind the picture).
+   */
+  private wordsKeepUp(): boolean {
+    const at = this.deps.video.currentTime;
+    const reach = this.deps.live ? at - WINDOW : at + WINDOW;
+    return this.solving().every((follow) => follow.coverage.some((range) => range.from - 5 <= at && range.to >= reach));
   }
 
   private coveredEnd(): number {
@@ -868,6 +883,8 @@ export class SyncSession {
       const line = follow.cues[update.index];
       if (!line) continue;
       if (kept?.at(update.index)) continue;
+      // (Nor are the lines the words placed: the voice detector alone times what the recogniser does not reach, see `noteSound`.)
+      if (outcome.method === "silero" && follow.worded.has(update.index)) continue;
       follow.placed[update.index] = { start: update.start, end: update.end, text: line.text };
       follow.solved.add(update.index);
       if (words) follow.worded.add(update.index);
