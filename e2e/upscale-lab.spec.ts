@@ -61,6 +61,24 @@ test.describe("Kino Labs: the upscaler test page", () => {
     expect(elsewhere).toEqual([]);
   });
 
+  test("plays one of its own free clips for whoever has no video file at hand, and draws it at 720p", async ({ page, baseURL }) => {
+    const asked: string[] = [];
+    page.on("request", (request) => asked.push(request.url()));
+    await page.goto("/labs/upscale/");
+    await expect(page.getByText("Sintel, © Blender Foundation")).toBeVisible(); // (CC BY: the credit is on the page)
+    await page.getByTestId("upscale-sample-sintel").click();
+    await expect(page.getByTestId("upscale-size")).toContainText("The video is 854 × 480; it is drawn at 1280 × 720 (1.5 times as big).", { timeout: 15_000 });
+    await expect(page.locator("#file-name")).toHaveText("sintel-480p-45s.mp4 (3.7 MB, a free clip of this page)");
+    await page.waitForFunction(() => (document.querySelector("video")?.readyState ?? 0) >= 2);
+    const sharp = await probe(page, "sharp");
+    expect({ width: sharp.width, height: sharp.height }).toEqual({ width: 1280, height: 720 });
+    expect(sharp.difference).toBeLessThan(15);
+    expect(asked.filter((url) => url.includes("/labs/upscale/clips/"))).toEqual([`${baseURL}/labs/upscale/clips/sintel-480p-45s.mp4`]);
+
+    await page.getByTestId("upscale-sample-tears").click();
+    await expect(page.getByTestId("upscale-size")).toContainText("The video is 854 × 356; it is drawn at 1280 × 534", { timeout: 15_000 });
+  });
+
   test("times the chosen mode, plays it through, and says whether this computer keeps up", async ({ page }) => {
     await openSample(page, "/labs/upscale/?seconds=1");
     await expect(page.getByTestId("upscale-mode-sharp")).toBeChecked();
