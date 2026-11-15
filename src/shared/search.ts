@@ -126,6 +126,11 @@ export class TitleIndex {
     }
   }
 
+  /** The title with this id, if it is in. */
+  get(id: string): LibraryItem | undefined {
+    return this.titles.get(id);
+  }
+
   /** Takes an item out of the index. */
   remove(id: string): void {
     if (!this.titles.has(id)) return;

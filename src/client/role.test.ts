@@ -51,6 +51,12 @@ describe("chooseRole", () => {
     expect(chooseRole(page({ search: "?role=banana" }))).toBe("tv"); // not a role: the guess decides
   });
 
+  it("plays a title's link, wherever it is opened: it opens that title's page on a screen that plays", () => {
+    expect(chooseRole(page({ search: "?title=movie-603", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
+    expect(chooseRole(page({ search: "?title=movie-603", storedRole: "remote" }))).toBe("tv");
+    expect(chooseRole(page({ search: "?title=movie-603&role=remote" }))).toBe("remote"); // an explicit role still wins
+  });
+
   it("plays a watch party's link, wherever it is opened", () => {
     expect(chooseRole(page({ search: "?party=123456", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
     expect(chooseRole(page({ search: "?party=123456", storedRole: "remote" }))).toBe("tv");

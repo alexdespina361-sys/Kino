@@ -20,7 +20,7 @@ import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { handHeld, useHandHeldBack } from "../shared/backButton";
+import { handHeld, useBackWhile } from "../shared/backButton";
 import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
@@ -31,6 +31,7 @@ import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
+import { addressOf, fetchTitle, linkedTitle, showTitle } from "../shared/titleAddress";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact } from "./compact";
@@ -518,6 +519,26 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     setDetail(null);
     setPending(CONTENT);
   };
+  // A link to a title's page (`?title=movie-603`, see titleAddress.ts) opens that page over Home once the server has said what the title is; a title nobody
+  // knows leaves Home as it is, and the address without it. Until then the address is left alone.
+  const [linked] = useState(linkedTitle);
+  const linkPendingRef = useRef(linked !== null);
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
+  useEffect(() => {
+    if (!linked) return;
+    let live = true;
+    void fetchTitle(linked).then((item) => {
+      if (!live) return;
+      linkPendingRef.current = false;
+      if (item && !detailRef.current) openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
+      else if (!detailRef.current) showTitle(null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [linked]);
+
   /**
    * A click on the empty part of a title's page closes it, as Back does: with a mouse the Close button can be far away, and a click beside the page is the short way off it.
    * A finger is on the page to read it and to scroll it, and it rests on the picture, or between two lines, on the way: what it touches there is not a way off (the page has its
@@ -528,8 +549,18 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
   // A phone or a tablet has no Back key: its own Back does what the remote's does, out of a title's page first, then from a page of the library to the
   // one it is a step in from (Home at the end). Home is as far back as the library goes: the site asks there before it is left (see shared/backButton.ts).
-  useHandHeldBack(view.kind !== "home" ? () => choose(backOf(view) ?? { kind: "home" }) : undefined);
-  useHandHeldBack(detail ? closeDetail : undefined);
+  // A computer's browser Back does the same, without the question at Home: a computer's Back is not pressed by mistake, and from Home it leaves the site as
+  // any site's does. (A TV's Back is the remote's key, which the page hears itself.)
+  const [desk] = useState(() => document.documentElement.dataset.fit === "desk");
+  const browserBack = handHeld() || desk;
+  useBackWhile(browserBack && view.kind !== "home", () => choose(backOf(view) ?? { kind: "home" }));
+  useBackWhile(browserBack && detail !== null, closeDetail);
+  // While a title's page is open, the address says which title it is, so that it can be copied and sent; closed, it says nothing of one. (After the Back
+  // above: the entry a title's page puts on the history is the one that carries its address, and Back goes to one that has none.)
+  const openAddress = detail && !detail.entry.opens ? addressOf(detail.entry) : null;
+  useEffect(() => {
+    if (!linkPendingRef.current || openAddress) showTitle(openAddress);
+  }, [openAddress]);
 
   // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here (the party, a phone). A few lines, so that
   // none has to be scrolled to. Who is watching is not in it: the button in the corner is, and opens the profile, which holds what the profile rated,

@@ -221,6 +221,7 @@ describe("where a request to the api comes from", () => {
     "/api/library/more",
     "/api/library/similar",
     "/api/library/about",
+    "/api/library/title?id=filmpire-movie-603",
     "/api/library/episodes",
     "/api/library/seasons",
   ])("turns away a page of another site that would have %s fetch for it, but not a visitor who follows a link there", async (url) => {
@@ -500,6 +501,7 @@ describe("how often an address may ask for what makes the server fetch from anot
   it.each([
     ["/api/resolve?url=https://example.com/film", 60, {}],
     ["/api/library/about?url=https://example.com/film", 120, {}],
+    ["/api/library/title?id=filmpire-movie-603", 120, {}],
     ["/api/library/search?q=casablanca", 60, {}],
     ["/api/library/rows?cursor=0", 300, {}],
     ["/api/library/more?row=a&page=2", 300, {}],

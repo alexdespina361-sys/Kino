@@ -11,6 +11,8 @@ export interface LibrarySource {
   similar?(link: string): Promise<LibraryItem[]>;
   /** What is known about the title a link plays besides its tile (genres, people, age rating, the other parts of its collection, titles like it), when the link is one of this place's own (anything else: none). Throws when the place cannot be reached. */
   about?(link: string): Promise<TitleAbout | null>;
+  /** One title as its tile, by its id (the link to a title's page carries it), when the id is one of this place's own (anything else, and a title the place does not know: none). Throws when the place cannot be reached. */
+  title?(id: string): Promise<LibraryItem | null>;
   /** What is known about each episode of one season of the show a link plays, when the link is one of this place's own (anything else: none). */
   episodes?(link: string, season: number): Promise<EpisodeDetail[]>;
   /** The seasons that can be watched of the show a link plays, in order (none for a film or a link that is not this place's own). Throws when the place cannot be reached. */
@@ -40,6 +42,8 @@ export interface LibraryService {
   similar(link: string): Promise<LibraryItem[]>;
   /** What the places know of one title besides its tile (see `LibrarySource.about`): asked once for each title that is opened, and none for one nobody knows. */
   about(link: string): Promise<TitleAbout | null>;
+  /** One title as its tile, by its id, for the link to a title's page: one the library has listed is answered from memory, any other is asked of the places (see `LibrarySource.title`). None for a title nobody knows, or one that would not play. */
+  title(id: string): Promise<LibraryItem | null>;
   episodes(link: string, season: number): Promise<EpisodeDetail[]>;
   seasons(link: string): Promise<number[]>;
   /**
@@ -221,6 +225,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
   };
   const similarTo = answers<LibraryItem>();
   const aboutTitle = answers<TitleAbout>(); // (an answer is one thing: it is kept as a list of one, and a title nobody knows as a list of none)
+  const titleById = answers<LibraryItem>();
   const episodesOf = answers<EpisodeDetail>();
   const seasonsOf = answers<number>();
 
@@ -363,6 +368,16 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       learn([...found.parts, ...found.similar]);
       // (A title that would not play is left out of these as it is of the rows, however long ago the answer was kept.)
       return { ...found, parts: found.parts.filter((item) => listed(item)), similar: found.similar.filter((item) => listed(item)) };
+    },
+    title: async (id: string) => {
+      const known = pool.get(id);
+      const [found] = known ? [known] : await titleById(id, async (source) => {
+        const item = await source.title?.(id);
+        return item ? [item] : [];
+      });
+      if (!found) return null;
+      learn([found]);
+      return listed(found) ? found : null;
     },
     episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),
     seasons: (link: string) => seasonsOf(link, (source) => source.seasons?.(link)),
