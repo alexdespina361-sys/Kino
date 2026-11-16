@@ -69,9 +69,11 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return direction === "up" ? BUTTONS : (firstEpisode ?? firstRelated);
   }
   if (at.zone === "episodes") {
+    // (One across, or two on a wide screen, in reading order: sideways walks a line of them, up and down land on the same place of the next line, or the last of a shorter one.)
+    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
+    if (direction === "right") return at.col < (lengths[at.row] ?? 1) - 1 ? { ...at, col: at.col + 1 } : null;
     if (direction === "up") return at.row > 0 ? { ...at, row: at.row - 1 } : shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : BUTTONS;
-    if (direction !== "down") return null;
-    return at.row < lengths.length - 1 ? { ...at, row: at.row + 1 } : firstRelated;
+    return at.row < lengths.length - 1 ? { ...at, row: at.row + 1, col: Math.min(at.col, (lengths[at.row + 1] ?? 1) - 1) } : firstRelated;
   }
   if (at.zone === "related") {
     // (A row of titles slides along; a step up or down lands on the same place of the next row, or the last title of a shorter one.)

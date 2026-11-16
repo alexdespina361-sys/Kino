@@ -1411,17 +1411,21 @@ test.describe("a show's own page on the TV", () => {
 
     await tv.keyboard.press("ArrowDown");
     await expect(episodes(tv).first()).toBeFocused(); // no episode of this season is the one Play starts: the first
-    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowRight"); // a TV has them two across (the judge, 16 Nov: one a line left a third of the screen empty)
     await expect(episodes(tv).nth(1)).toBeFocused();
-    await tv.keyboard.press("ArrowDown");
+    expect((await episodes(tv).nth(1).boundingBox())!.y).toBeCloseTo((await episodes(tv).first().boundingBox())!.y, 0);
+    await tv.keyboard.press("ArrowRight"); // the end of the line
+    await expect(episodes(tv).nth(1)).toBeFocused();
+    await tv.keyboard.press("ArrowDown"); // the third is alone on the next line
+    await expect(episodes(tv).nth(2)).toBeFocused();
     await tv.keyboard.press("ArrowDown"); // the last stays
     await expect(episodes(tv).nth(2)).toBeFocused();
     await tv.keyboard.press("ArrowRight");
-    await tv.keyboard.press("ArrowLeft"); // sideways leads nowhere from an episode
+    await tv.keyboard.press("ArrowLeft"); // nothing beside it
     await expect(episodes(tv).nth(2)).toBeFocused();
 
     await tv.keyboard.press("ArrowUp");
-    await tv.keyboard.press("ArrowUp");
+    await expect(episodes(tv).first()).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("tv-season-2")).toBeFocused(); // up to the season that is shown, not the first one
     await tv.keyboard.press("ArrowUp");
@@ -1450,7 +1454,7 @@ test.describe("a show's own page on the TV", () => {
     await expect(episodes(tv).first()).toContainText("Pilot again");
     await tv.keyboard.press("ArrowDown");
     await expect(episodes(tv).first()).toBeFocused();
-    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowRight"); // (two across on a TV)
     await expect(episodes(tv).nth(1)).toBeFocused();
     await tv.keyboard.press("Enter"); // the second episode's page has no video
     await expect(tv.getByTestId("tv-notice")).toBeVisible({ timeout: 15_000 });

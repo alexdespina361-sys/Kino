@@ -1132,6 +1132,9 @@
 .tv-detail-eps > .tv-filters-box { max-width: none; } /* the seasons run as far as there is room */
 .tv-detail-eps-title { margin: 0 0 0.5em; font-size: 1.9em; font-weight: 800; letter-spacing: -0.01em; }
 .tv-detail-list { display: flex; flex-direction: column; gap: 0.5em; padding: 0.5em; margin: 0 -0.5em; } /* room for the ring around the one the remote is on */
+/* On a TV or a computer two across, in reading order (Episodes.tsx), as far as the page's right margin; a card's picture is a little smaller there, to leave its words room. */
+.tv-detail-eps > .tv-detail-list:not([data-cols="1"]) { display: grid; grid-template-columns: repeat(var(--ep-cols, 2), minmax(0, 1fr)); gap: 0.5em 1em; max-width: none; }
+.tv-detail-list:not([data-cols="1"]) > .tv-opt.tv-ep { grid-template-columns: 2.2em 10.5em minmax(0, 1fr); gap: 0.9em; }
 .tv-detail-eps-note { margin: 0.2em 0 0; font-size: 1.5em; color: var(--muted); }
 
 /* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */

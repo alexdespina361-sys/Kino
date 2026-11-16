@@ -201,6 +201,21 @@ describe("stepFrom on a show's own page (buttons, seasons, episodes, one under t
     expect(stepFrom(shape, at("episodes", 1, 0), "right")).toBeNull();
   });
 
+  it("walks episodes two across (a wide screen) in reading order: along a line, and down to the same place of the next or the last of a shorter one", () => {
+    const wide: Shape = { ...shape, episodes: gridRows(5, 2), related: [4] }; // 1 2 / 3 4 / 5
+    expect(stepFrom(wide, at("seasons", 0, 2), "down")).toEqual(at("episodes", 0, 0));
+    expect(stepFrom(wide, at("episodes", 0, 0), "right")).toEqual(at("episodes", 0, 1));
+    expect(stepFrom(wide, at("episodes", 0, 1), "right")).toBeNull();
+    expect(stepFrom(wide, at("episodes", 0, 1), "left")).toEqual(at("episodes", 0, 0));
+    expect(stepFrom(wide, at("episodes", 0, 0), "left")).toBeNull(); // (not into the menu: nothing leads out of the page)
+    expect(stepFrom(wide, at("episodes", 0, 1), "down")).toEqual(at("episodes", 1, 1));
+    expect(stepFrom(wide, at("episodes", 1, 1), "down")).toEqual(at("episodes", 2, 0)); // (the fifth is alone on its line)
+    expect(stepFrom(wide, at("episodes", 1, 1), "up")).toEqual(at("episodes", 0, 1));
+    expect(stepFrom(wide, at("episodes", 0, 1), "up")).toEqual(at("seasons", 0, 0));
+    expect(stepFrom(wide, at("episodes", 2, 0), "down")).toEqual(at("related", 0, 0)); // three presses from the first episode to the rows, not five
+    expect(stepFrom(wide, at("related", 0, 3), "up")).toEqual(at("episodes", 2, 0));
+  });
+
   it("skips the seasons of a show that has one, and the episodes that are not there yet", () => {
     const oneSeason: Shape = { ...shape, seasons: [] };
     expect(stepFrom(oneSeason, at("detail", 0, 0), "down")).toEqual(at("episodes", 0, 0));

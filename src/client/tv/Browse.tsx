@@ -122,6 +122,8 @@ const CATEGORY_COLUMNS = 4;
 /** A grid of wide tiles that are not titles. */
 const WIDE_COLUMNS = 5;
 const RESULT_COLUMNS = 5;
+/** A show's episodes on its page (see `SeriesSection`). */
+const EPISODE_COLUMNS = 2;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
 const NARROW = "(max-width: 899px)";
 /** About how wide a title is on a hand-held screen, with the room around it. */
@@ -253,8 +255,10 @@ function landOnPage(next: Target, from: Pos, root: ParentNode): Target {
     return shown ? { ...next, col: Number(shown.dataset.col) } : next;
   }
   if (next.zone === "episodes") {
+    // (From the rows of titles under them, Up comes back to the last line of the episodes instead.)
+    if (from.zone === "related") return next;
     const target = pick('[data-zone="episodes"][data-target="true"]');
-    return target ? { ...next, row: Number(target.dataset.row) } : next;
+    return target ? { ...next, row: Number(target.dataset.row), col: Number(target.dataset.col) } : next;
   }
   return next;
 }
@@ -441,6 +445,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       : posterGrid
         ? narrowColumns || columnsFor(wide, GRID_COLUMNS, PITCH_EM.poster)
         : narrowCategoryColumns || columnsFor(wide, WIDE_COLUMNS, PITCH_EM.wide);
+  // A show's episodes on its page: two across on a TV or a computer (more in a window much wider than 16 by 9), one on a phone or in a narrow window.
+  const episodeColumns = narrow || few ? 1 : columnsFor(wide, EPISODE_COLUMNS, PITCH_EM.episode);
   // (A grid in sections, a friend's lists, has each section start a row of its own, under its heading.)
   const sectionPlace = grid?.sections ? sectionPlaces(grid.sections, gridColumns) : undefined;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
@@ -673,7 +679,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           close: [1],
           detail: [overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
-          ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
+          ...(series.episodes?.length ? { episodes: gridRows(series.episodes.length, episodeColumns) } : {}),
           ...(aboutList.length > 0 ? { related: aboutList.map((row) => row.items.length) } : {}),
         }
       : {}),
@@ -1893,7 +1899,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 </div>
               </div>
             </div>
-            {series.isShow && <SeriesSection page={series} onPlay={playEpisode} onSlide={slideIntoView} />}
+            {series.isShow && <SeriesSection page={series} columns={episodeColumns} onPlay={playEpisode} onSlide={slideIntoView} />}
             {aboutList.map((row, r) => (
               <section className="tv-detail-more" key={`${detail.entry.id}-${row.id}`} aria-label={t(`about.${row.id}`)} data-testid={`tv-about-${row.id}`}>
                 <h2 className="tv-row-title">{t(`about.${row.id}`)}</h2>
