@@ -54,8 +54,8 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
 
     const onStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) return void (touch = null);
-      // A finger on a field is the field's (moving the caret, selecting what was typed), not a pull on the sheet.
-      if (event.target instanceof Element && event.target.closest("input, textarea, select")) return void (touch = null);
+      // A finger on a field is the field's (moving the caret, selecting what was typed), not a pull on the sheet. (The chat's box is an editable area, see chat/MessageBox.tsx.)
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return void (touch = null);
       // A sheet that comes in from the side (a phone held sideways, see polish/shell.css) is not pulled down: its cross, Back and a tap beside it close it.
       if (getComputedStyle(panel).getPropertyValue("--sheet-side").trim() === "1") return void (touch = null);
       const finger = event.touches[0]!;
