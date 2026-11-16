@@ -60,8 +60,8 @@ test("Up and Down between a row of wide cards and a row of posters land on the t
   await tv.keyboard.press("ArrowUp"); // the sixth poster stands over the third wide card, not the sixth (two screens along)
   await expect.poll(() => focused(tv)).toEqual({ row: "Row 2", col: 2 });
   await tv.keyboard.press("ArrowDown"); // and back down, to a poster under that card
+  await expect.poll(async () => (await focused(tv)).row).toBe("Row 3");
   const back = await focused(tv);
-  expect(back.row).toBe("Row 3");
   expect(back.col).toBeGreaterThanOrEqual(4);
   expect(back.col).toBeLessThanOrEqual(6);
 });
