@@ -19,8 +19,11 @@ const fresh = () => ({
   words: 0,
   heardSeconds: 0,
   speed: 0,
-  /** Solves done, and of the track on screen: the lines placed by them and the lines it has. */
+  /** How long the recogniser was at work, in all (ms). */
+  hearMs: 0,
+  /** Solves done (and how long they took in all, in ms), and of the track on screen: the lines placed by them and the lines it has. */
   solves: 0,
+  solveMs: 0,
   placed: 0,
   lines: 0,
   /** The solves by how they placed the lines: with the heard words, as a dub (the file's timing put where people speak), or by the voice detector alone. */
@@ -38,7 +41,18 @@ const fresh = () => ({
   offered: 0,
   /** Why the aligner gave up on this film, if it did. */
   gaveUp: "",
+  /** Where, in the film's seconds: the sound that has come in, the stretches the recogniser heard, and the stretches of the track on screen that solves have timed ("0-118 240-300"). */
+  sound: "",
+  heard: "",
+  covered: "",
+  /** Pieces of sound that were let go (or could not be read), when any were: "60 in, let go 30 before the subtitles + 2 after + 0 decoded, 0 unreadable". */
+  lost: "",
 });
+
+/** Stretches of a film in a few characters: "0-118 240-300" (whole seconds). */
+export function spans(ranges: ReadonlyArray<{ from: number; to: number }>): string {
+  return ranges.map((range) => `${Math.floor(range.from)}-${Math.ceil(range.to)}`).join(" ");
+}
 
 export const alignerStats = fresh();
 export type AlignerStats = typeof alignerStats;
@@ -62,11 +76,13 @@ export function describeAligner(stats: AlignerStats): string | null {
   const parts = [
     `aligner: ${stats.status || "starting"}${stats.gaveUp ? ` (${stats.gaveUp})` : ""}`,
     `sound ${stats.pieces} pieces, ${Math.round(stats.decodedSeconds)}s decoded in ${seconds(stats.decodeMs)}, ${Math.round(stats.vadSeconds)}s through the voice detector in ${seconds(stats.vadMs)}`,
-    `recogniser ${stats.recogniser}: ${stats.words} words, ${stats.windows} windows (${Math.round(stats.heardSeconds)}s)${stats.speed > 0 ? ` at ${stats.speed.toFixed(1)}x` : ""}`,
-    `solves ${stats.solves}${ways ? ` (${ways})` : ""}, ${stats.placed}/${stats.lines} lines placed${stats.bridged ? " (from the English track)" : ""}`,
+    `recogniser ${stats.recogniser}: ${stats.words} words, ${stats.windows} windows (${Math.round(stats.heardSeconds)}s)${stats.speed > 0 ? ` at ${stats.speed.toFixed(1)}x` : ""}${stats.hearMs > 0 ? ` in ${seconds(stats.hearMs)}` : ""}`,
+    `solves ${stats.solves}${ways ? ` (${ways})` : ""}${stats.solveMs > 0 ? ` in ${seconds(stats.solveMs)}` : ""}, ${stats.placed}/${stats.lines} lines placed${stats.bridged ? " (from the English track)" : ""}`,
     `tests ${stats.tests}${stats.verdict ? `: ${stats.verdict} ${stats.share.toFixed(2)}` : ""}, switches ${stats.switches}`,
     ...(stats.shared ? [`shared timing: ${stats.shared}${stats.sent > 0 ? `, left ${stats.sent} lines` : ""}`] : []),
     ...(stats.offered > 0 ? [`offered for Kino Official ${stats.offered}`] : []),
+    ...(stats.sound || stats.covered ? [`sound ${stats.sound || "-"}, heard ${stats.heard || "-"}, timed ${stats.covered || "-"}`] : []),
+    ...(stats.lost ? [`pieces ${stats.lost}`] : []),
   ];
   return parts.join("  ");
 }

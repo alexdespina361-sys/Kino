@@ -66,6 +66,58 @@ describe("the film's sound arriving in pieces", () => {
     expect(sunk.map((s) => s.time)).toEqual([15, 10, 20, 25, 5, 0]);
   });
 
+  it("loses nothing when the pieces come faster than the voice detector goes (a screen that downloads minutes of film in a few seconds)", async () => {
+    // (Each piece is 1 MB as it came - a muxed film's - against a queue of 4 MB, and the voice detector takes 5 ms a piece while all 60 come at once.)
+    const big = (id: number): Piece => ({ ...piece(id), data: Object.assign(new Uint8Array(1024 * 1024), { 0: id }) });
+    const { feed: f, sunk } = feed({ maxQueueBytes: 4 * 1024 * 1024, ahead: () => 1000, sink: (time, pcm) => new Promise<void>((resolve) => setTimeout(() => (sunk.push({ time, level: pcm[0] as number }), resolve()), 5)) });
+    for (let id = 0; id < 60; id++) {
+      f.push(big(id));
+      await new Promise((resolve) => setTimeout(resolve, 0)); // (hls.js hands each piece on in a task of its own)
+    }
+    await f.idle();
+    expect(sunk).toHaveLength(60);
+    expect(f.ranges()).toEqual([{ from: 0, to: 300.1 }]);
+    expect(f.counts).toMatchObject({ pushed: 60, dropped: 0, droppedPaused: 0, droppedDecoded: 0 });
+  });
+
+  it("hands on only the sound up to a while ahead of the picture, and the rest as the picture comes nearer", async () => {
+    let playhead = 0;
+    const { feed: f, sunk } = feed({ playhead: () => playhead, ahead: () => 30 });
+    for (let id = 0; id < 20; id++) f.push(piece(id)); // (0 to 100 s)
+    await f.idle();
+    expect(sunk.map((s) => s.time)).toEqual([0, 5, 10, 15, 20, 25]);
+    expect(f.ranges()).toEqual([{ from: 0, to: 30.1 }]);
+    expect(f.pcm(40, 45)).toBeUndefined(); // (decoded and waiting, but not the recogniser's yet)
+    playhead = 20;
+    f.advance();
+    await f.idle();
+    expect(sunk.map((s) => s.time).slice(6)).toEqual([30, 35, 40, 45]);
+    expect(f.ranges()).toEqual([{ from: 0, to: 50.1 }]);
+    f.push(piece(3)); // (known: waiting or handed on, it is not taken again)
+    f.push(piece(15));
+    await f.idle();
+    expect(f.counts.pushed).toBe(20);
+  });
+
+  it("decodes what would not fit while paused rather than letting it go", async () => {
+    let decoded = 0;
+    const big = (id: number): Piece => ({ ...piece(id), data: Object.assign(new Uint8Array(1024 * 1024), { 0: id }) });
+    const { feed: f, sunk } = feed({ maxQueueBytes: 4 * 1024 * 1024, decode: async (bytes) => (decoded++, decodeFlat(bytes)) });
+    f.pause(true);
+    for (let id = 0; id < 12; id++) {
+      f.push(big(id));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await settle();
+    expect(sunk).toEqual([]);
+    expect(decoded).toBeGreaterThan(0);
+    expect(decoded).toBeLessThan(12); // (what fits is kept as it came, and decoded once the subtitles are on)
+    f.pause(false);
+    await f.idle();
+    expect(sunk.map((s) => s.time).sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, id) => id * SECONDS));
+    expect(f.counts.droppedPaused).toBe(0);
+  });
+
   it("gives a window across pieces back as it was heard", async () => {
     const { feed: f } = feed();
     f.push(piece(1));

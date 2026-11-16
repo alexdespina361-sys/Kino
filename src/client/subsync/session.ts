@@ -1,6 +1,6 @@
 import { byRelease, normalizeLang, OFFICIAL_MIN_PLACED, type OfficialOfferLine } from "../../shared";
 import { CueEditor, type EditableCue } from "./apply";
-import { AudioFeed } from "./audio";
+import { AHEAD_S, AudioFeed } from "./audio";
 import type { Backend } from "./backend";
 import { pairCaptions, timeFromEnglish } from "./bridge";
 import type { Cue } from "./cues";
@@ -11,7 +11,7 @@ import { nextWindow, rest, WINDOW } from "./schedule";
 import { Borrowed, Lent, timingKeys, type Sent, type Shared } from "./share";
 import { mergeRanges, SAMPLE_RATE, type Range } from "./signals";
 import type { Outcome } from "./solve";
-import { alignerStats as stats, resetAlignerStats } from "./stats";
+import { spans, alignerStats as stats, resetAlignerStats } from "./stats";
 import type { HlsEvents, SoundTap } from "./tap";
 import type { Recogniser } from "./whistle";
 
@@ -92,6 +92,8 @@ const LOAD_WAIT_MS = 15_000;
 /** A track is changed in a gap between lines; if there is none for this long, in the middle of one. */
 const SWITCH_WAIT_MS = 30_000;
 const IDLE_MS = 500;
+/** The furthest ahead of the picture the sound goes on to the voice detector for a slow recogniser (see the feed's `ahead`). */
+const MAX_AHEAD_S = 600;
 const TICK_MS = 500;
 /** Seconds either side of the picture with no line in them: a stretch with nothing to time (the status says so, see `status`). */
 const QUIET_AROUND = 10;
@@ -262,9 +264,11 @@ export class SyncSession {
       },
       sink: (time, pcm) => this.sound(time, pcm),
       playhead: () => deps.video.currentTime,
+      // (A recogniser that is slow needs its windows further ahead of the picture, to finish them before the picture gets there: see `nextWindow`.)
+      ahead: () => Math.min(MAX_AHEAD_S, Math.max(AHEAD_S, (3 * WINDOW) / Math.max(0.05, this.speed))),
       unreadable: () => this.giveUp("The sound of this film cannot be read here"),
     });
-    // (Nothing is decoded, and the worker and the voice detector's weights are not fetched, until a subtitle track is on screen: see `awake`. What the player downloads before that is kept, a little, for then.)
+    // (Nothing goes to the voice detector, and its worker and weights are not fetched, until a subtitle track is on screen: see `awake`. What the player downloads before that is kept for then, decoded only where it would not fit as it came.)
     this.feed.pause(true);
     deps.tap.wanted?.(false);
     this.audioId = audioKey(deps.hls.audioTracks?.[deps.hls.audioTrack ?? 0]);
@@ -360,6 +364,7 @@ export class SyncSession {
     }
     this.current?.editor.flush(this.shownAt());
     this.maybeSwitch();
+    this.feed.advance();
     this.report();
   }
 
@@ -547,6 +552,7 @@ export class SyncSession {
     try {
       const words = await recogniser.hear(pcm);
       const busy = this.clock() - started;
+      stats.hearMs += busy;
       // (Closed meanwhile, or the sound was started over: these words are of the one before.)
       if (this.closed || epoch !== this.epoch) return true;
       this.recogniserErrors = 0;
@@ -862,7 +868,9 @@ export class SyncSession {
     if (end === undefined) return true;
     const epoch = this.epoch;
     await this.register(job.follow);
+    const started = this.clock();
     const outcome = await backend.solve(job.follow.key, end);
+    stats.solveMs += this.clock() - started;
     // (Not one that was begun on the sound before the last start over.)
     if (outcome && !this.closed && epoch === this.epoch && this.followed.get(job.follow.track) === job.follow) this.absorb(job.follow, outcome);
     return true;
@@ -1342,6 +1350,11 @@ export class SyncSession {
   }
 
   private report(): void {
+    stats.sound = spans(this.feed.ranges());
+    const lost = this.feed.counts;
+    stats.lost = lost.droppedPaused + lost.dropped + lost.droppedDecoded + lost.failed > 0 ? `${lost.pushed} in, let go ${lost.droppedPaused} before the subtitles + ${lost.dropped} after + ${lost.droppedDecoded} decoded, ${lost.failed} unreadable` : "";
+    stats.heard = spans(this.heard);
+    stats.covered = spans(this.current?.coverage ?? []);
     const status = this.status();
     const moved = status === "synced" ? this.moved() : undefined;
     if (status === this.lastStatus && moved === this.lastMoved) return;

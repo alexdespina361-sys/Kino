@@ -1,10 +1,21 @@
 import { mergeRanges, SAMPLE_RATE, type Range } from "./signals";
 import type { Piece } from "./tap";
 
-/** Sound is kept for the recogniser as 16-bit samples (32 KB a second): about 12 minutes of it by default. */
+/** Sound is kept as 16-bit samples (32 KB a second): about 12 minutes of it by default, what waits for the voice detector included. */
 const MAX_PCM_BYTES = 24 * 1024 * 1024;
-/** Pieces waiting to be decoded, as the bytes hls.js gave (a muxed film's pieces are megabytes each). */
+/**
+ * Pieces waiting to be decoded, as the bytes hls.js gave (a muxed film's pieces are megabytes each, and its sound a tenth of that or less).
+ * Decoding takes a few milliseconds a piece, so while the aligner works the queue stays short however fast the pieces come; while it is
+ * paused, what is over this is decoded rather than let go. Only past twice this does the farthest from the picture go.
+ */
 const MAX_QUEUE_BYTES = 16 * 1024 * 1024;
+/**
+ * How far ahead of the picture the sound goes on to the voice detector (and so to the recogniser), in seconds, unless `FeedOptions.ahead` says
+ * further. A screen alone downloads up to ten minutes ahead in a few seconds (see `bufferPolicy`); working through all of that at once is a
+ * minute or two of the processor at full stretch for sound that may never be played (the viewer stops, or jumps), so what is further waits,
+ * decoded, and goes on as the picture comes nearer (`advance`). About what a screen downloaded ahead through the website's proxy (90 s).
+ */
+export const AHEAD_S = 120;
 /** Pieces of a film are this close to each other when they follow on (hls.js times them to the audio's own clock). */
 const GAP = 0.1;
 
@@ -23,49 +34,72 @@ export interface FeedOptions {
   playhead(): number;
   /** The sound cannot be read on this device. */
   unreadable(): void;
+  /** How far ahead of the picture the sound goes on to the voice detector, in seconds (`AHEAD_S` when not given). */
+  ahead?(): number;
   maxQueueBytes?: number;
   maxPcmBytes?: number;
 }
 
 /**
- * The film's sound as it arrives: decoded one piece at a time, handed to the voice detector, and kept (small) for the recogniser, which
- * wants windows of it later. When the device cannot keep up, or the film is far ahead, what is farthest from the picture is let go.
+ * The film's sound as it arrives: decoded a piece at a time as soon as it comes, handed to the voice detector from the piece nearest the
+ * picture on (up to `AHEAD_S` ahead of it), and kept (small) for the recogniser, which wants windows of it later. Decoding does not wait for
+ * the voice detector: when it did, a screen that downloaded minutes of film in a few seconds let most of their sound go before it was read,
+ * and the aligner had nothing to time from there on ("Syncing…" for good). When the device cannot keep up, or the film is far ahead, what is
+ * farthest from the picture is let go.
  */
 export class AudioFeed {
   private queue: Piece[] = [];
   private queueBytes = 0;
+  /** Decoded, waiting for the voice detector (too far ahead of the picture yet, or behind the pieces before it). */
+  private waiting: Stored[] = [];
+  /** Through the voice detector (or on the way): what `ranges` and `pcm` give. */
   private store: Stored[] = [];
-  private storeBytes = 0;
-  private working = false;
+  private pcmBytes = 0;
+  private decoding = false;
+  private sinking = false;
   private failures = 0;
   private decodedAny = false;
   private generation = 0;
   private paused = false;
+  /** For the debug panel: pieces taken, and the ones let go before they were decoded (while paused, and not), or after, or that would not decode. */
+  readonly counts = { pushed: 0, droppedPaused: 0, dropped: 0, droppedDecoded: 0, failed: 0 };
 
   constructor(private readonly options: FeedOptions) {}
 
   /** A piece from the tap. One that is known already (hls.js appends a piece again after a seek back) is ignored. */
   push(piece: Piece): void {
     if (this.known(piece.start)) return;
+    this.counts.pushed++;
     this.queue.push(piece);
     this.queueBytes += piece.data.length + piece.init.length;
-    this.trim();
-    void this.pump();
+    this.trimQueue();
+    void this.decodeAll();
   }
 
-  /** While paused the pieces are kept as they come (the farthest from the picture let go, as ever) and none is decoded: there is nothing to time yet. */
+  /**
+   * While paused the pieces are kept as they come and none goes to the voice detector: there is nothing to time yet. They are kept as the
+   * bytes they came as, and only what would not fit is decoded (smaller), so that a viewer who turns the subtitles on later has the sound ahead.
+   */
   pause(on: boolean): void {
     if (this.paused === on) return;
     this.paused = on;
-    if (!on) void this.pump();
+    if (!on) {
+      void this.decodeAll();
+      void this.sinkAll();
+    }
   }
 
-  /** Resolves once every piece given so far has been decoded and handed on (or let go); pieces held back by a pause do not count. */
+  /** The picture has moved: sound that has come within reach of it goes on to the voice detector. */
+  advance(): void {
+    if (!this.paused) void this.sinkAll();
+  }
+
+  /** Resolves once every piece given so far has been decoded and the ones within reach of the picture handed on (or let go); pieces held back by a pause do not count. */
   async idle(): Promise<void> {
-    while (this.working || (this.queue.length > 0 && !this.paused)) await new Promise<void>((resolve) => setTimeout(resolve, 1));
+    while (this.decoding || this.sinking || (!this.paused && (this.queue.length > 0 || this.nextToSink() >= 0))) await new Promise<void>((resolve) => setTimeout(resolve, 1));
   }
 
-  /** The sound that is kept and can be asked for with `pcm`. */
+  /** The sound that has gone to the voice detector, which can be asked for with `pcm`. */
   ranges(): Range[] {
     return mergeRanges(this.store.map((s) => ({ from: s.start, to: s.end + GAP })));
   }
@@ -94,13 +128,14 @@ export class AudioFeed {
     this.generation++;
     this.queue = [];
     this.queueBytes = 0;
+    this.waiting = [];
     this.store = [];
-    this.storeBytes = 0;
+    this.pcmBytes = 0;
   }
 
   private known(start: number): boolean {
     const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
-    return this.store.some((s) => near(s.start, start)) || this.queue.some((p) => near(p.start, start));
+    return this.store.some((s) => near(s.start, start)) || this.waiting.some((s) => near(s.start, start)) || this.queue.some((p) => near(p.start, start));
   }
 
   /** How far a piece starting at `start` is from the picture: what is behind it counts as farther, since the aligner is working forwards. */
@@ -108,27 +143,39 @@ export class AudioFeed {
     return start < playhead ? (playhead - start) * 4 : start - playhead;
   }
 
-  /** Over the limits: the pieces farthest from the picture go. */
-  private trim(): void {
+  private maxQueue(): number {
+    return this.options.maxQueueBytes ?? MAX_QUEUE_BYTES;
+  }
+
+  /** Far over the limit (a device that cannot decode as fast as the pieces come): the pieces farthest from the picture go. */
+  private trimQueue(): void {
     const playhead = this.options.playhead();
-    const distance = (start: number) => this.distance(start, playhead);
-    const maxQueue = this.options.maxQueueBytes ?? MAX_QUEUE_BYTES;
-    while (this.queueBytes > maxQueue && this.queue.length > 1) {
+    while (this.queueBytes > 2 * this.maxQueue() && this.queue.length > 1) {
       let worst = 0;
       this.queue.forEach((piece, i) => {
-        if (distance(piece.start) > distance((this.queue[worst] as Piece).start)) worst = i;
+        if (this.distance(piece.start, playhead) > this.distance((this.queue[worst] as Piece).start, playhead)) worst = i;
       });
       const [gone] = this.queue.splice(worst, 1) as [Piece];
       this.queueBytes -= gone.data.length + gone.init.length;
+      if (this.paused) this.counts.droppedPaused++;
+      else this.counts.dropped++;
     }
-    const maxStore = this.options.maxPcmBytes ?? MAX_PCM_BYTES;
-    while (this.storeBytes > maxStore && this.store.length > 1) {
-      let worst = 0;
-      this.store.forEach((piece, i) => {
-        if (distance(piece.start) > distance((this.store[worst] as Stored).start)) worst = i;
-      });
-      const [gone] = this.store.splice(worst, 1) as [Stored];
-      this.storeBytes -= gone.samples.byteLength;
+  }
+
+  /** Over the limit of decoded sound: what is farthest from the picture goes, waiting or not. */
+  private trimPcm(): void {
+    const playhead = this.options.playhead();
+    const max = this.options.maxPcmBytes ?? MAX_PCM_BYTES;
+    while (this.pcmBytes > max && this.store.length + this.waiting.length > 1) {
+      let worst: { list: Stored[]; index: number } | undefined;
+      for (const list of [this.store, this.waiting]) {
+        list.forEach((piece, index) => {
+          if (!worst || this.distance(piece.start, playhead) > this.distance((worst.list[worst.index] as Stored).start, playhead)) worst = { list, index };
+        });
+      }
+      const [gone] = worst!.list.splice(worst!.index, 1) as [Stored];
+      this.pcmBytes -= gone.samples.byteLength;
+      this.counts.droppedDecoded++;
     }
   }
 
@@ -143,12 +190,17 @@ export class AudioFeed {
     return piece;
   }
 
-  private async pump(): Promise<void> {
-    if (this.working) return;
-    this.working = true;
+  /** Whether the queue is to be decoded now: while the aligner works, all of it; while paused, what is over the limit. */
+  private decodeWanted(): boolean {
+    return this.queue.length > 0 && (!this.paused || this.queueBytes > this.maxQueue());
+  }
+
+  private async decodeAll(): Promise<void> {
+    if (this.decoding) return;
+    this.decoding = true;
     const generation = this.generation;
     try {
-      while (this.queue.length > 0 && !this.paused && generation === this.generation) {
+      while (this.decodeWanted() && generation === this.generation) {
         const piece = this.takeNearest();
         this.queueBytes -= piece.data.length + piece.init.length;
         let pcm: Float32Array;
@@ -158,6 +210,7 @@ export class AudioFeed {
           bytes.set(piece.data, piece.init.length);
           pcm = await this.options.decode(bytes);
         } catch {
+          this.counts.failed++;
           if (generation === this.generation && !this.decodedAny && ++this.failures >= 3) {
             this.options.unreadable();
             this.queue = [];
@@ -169,17 +222,47 @@ export class AudioFeed {
         this.decodedAny = true;
         const samples = new Int16Array(pcm.length);
         for (let i = 0; i < pcm.length; i++) samples[i] = Math.max(-32768, Math.min(32767, Math.round((pcm[i] as number) * 32767)));
-        const end = piece.start + pcm.length / SAMPLE_RATE;
-        this.store.push({ start: piece.start, end, samples });
+        this.waiting.push({ start: piece.start, end: piece.start + pcm.length / SAMPLE_RATE, samples });
+        this.pcmBytes += samples.byteLength;
+        this.trimPcm();
+        if (!this.paused) void this.sinkAll();
+      }
+    } finally {
+      this.decoding = false;
+    }
+    // (A piece that came in after the loop looked, or after a reset.)
+    if (this.decodeWanted()) void this.decodeAll();
+  }
+
+  /** The decoded piece to hand on next: the nearest to the picture, of those not too far ahead of it; -1 when there is none. */
+  private nextToSink(): number {
+    const playhead = this.options.playhead();
+    const reach = playhead + Math.max(0, this.options.ahead?.() ?? AHEAD_S);
+    let best = -1;
+    this.waiting.forEach((piece, index) => {
+      if (piece.start >= reach) return;
+      if (best < 0 || this.distance(piece.start, playhead) < this.distance((this.waiting[best] as Stored).start, playhead)) best = index;
+    });
+    return best;
+  }
+
+  private async sinkAll(): Promise<void> {
+    if (this.sinking) return;
+    this.sinking = true;
+    const generation = this.generation;
+    try {
+      for (let index = this.nextToSink(); index >= 0 && !this.paused && generation === this.generation; index = this.nextToSink()) {
+        const [piece] = this.waiting.splice(index, 1) as [Stored];
+        this.store.push(piece);
         this.store.sort((a, b) => a.start - b.start);
-        this.storeBytes += samples.byteLength;
-        this.trim();
+        const pcm = new Float32Array(piece.samples.length);
+        for (let i = 0; i < pcm.length; i++) pcm[i] = (piece.samples[i] as number) / 32768;
         await this.options.sink(piece.start, pcm);
       }
     } finally {
-      this.working = false;
+      this.sinking = false;
     }
-    // (A piece that came in while the last one was being handed on, or after a reset.)
-    if (this.queue.length > 0 && !this.paused) void this.pump();
+    // (Sound of a new start that was decoded while the last piece of the old one was being handed on.)
+    if (!this.paused && this.nextToSink() >= 0) void this.sinkAll();
   }
 }
