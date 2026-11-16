@@ -828,6 +828,12 @@ test.describe("what a friend can see", () => {
     await row.click();
     await expect(bob.page.getByTestId("friend-now")).toHaveText("Last online 5 minutes ago");
     await expect(bob.page.getByTestId("friend-status")).toContainText("Friends since");
+    // (and the chat with her says it under its title)
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(bob.page.getByTestId("chat-presence")).toHaveText("Last online 5 minutes ago");
+    await expect(bob.page.getByTestId("chat-presence")).toHaveAttribute("data-online", "false");
+    await bob.page.keyboard.press("Escape"); // (the chat)
+    await expect(bob.page.getByTestId("chat-sheet")).toHaveCount(0);
     await bob.page.keyboard.press("Escape");
     away = false;
 

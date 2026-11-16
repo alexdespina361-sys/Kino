@@ -480,6 +480,9 @@ test.describe("the chat on the phone", () => {
   test("every part of the chat is on the screen of the narrowest phone in Romanian: the Chat button with its number, the line of the friends page, the bell's row, the chat with a message as long as can be, the report, the setting", async ({ browser }) => {
     test.setTimeout(240_000);
     const { ann, bob } = await twoFriends(browser, "ro-RO");
+    // (Ann as Bob's phone hears her once she has been away ten days: "Ultima dată online pe <day>", the longest of what says when she was last online)
+    await away(bob.page, 10 * 86_400_000);
+    const lastOnline = ro["friends.lastOnlineDay"].replace("{day}", "").trim();
     const widths = [320, 360, 390];
     const fit = async (ids: string[], what: string) => {
       for (const width of widths) {
@@ -491,7 +494,8 @@ test.describe("the chat on the phone", () => {
     // the chat with nothing in it says what a chat is kept as, and its two buttons keep clear of each other
     await openChat(bob.page);
     await expect(bob.page.getByTestId("chat-privacy")).toBeVisible();
-    await fit(["chat-sheet", "chat", "chat-empty", "chat-privacy", "chat-mute", "chat-report", "chat-compose", "chat-input", "chat-send"], "the empty chat");
+    await expect(bob.page.getByTestId("chat-presence")).toContainText(lastOnline); // (under the sheet's title: when she was last online)
+    await fit(["chat-sheet", "chat", "chat-presence", "chat-empty", "chat-privacy", "chat-mute", "chat-report", "chat-compose", "chat-input", "chat-send"], "the empty chat");
     for (const width of widths) {
       await bob.page.setViewportSize({ width, height: 700 });
       await expect.poll(async () => apart(await where(bob.page.getByTestId("chat-mute")), await where(bob.page.getByTestId("chat-report"))), { message: `Mute and Report, ${width} wide` }).toBe(true);
@@ -526,9 +530,11 @@ test.describe("the chat on the phone", () => {
     await look(bob.page);
     await openFriendPage(bob.page);
     await expect(bob.page.getByTestId("friend-chat-unread")).toHaveText(say(ro["chat.unreadShort_one"], { count: "1" }));
-    await fit(["friend-page", "friend-chat", "friend-chat-unread"], "the page of a friend");
+    await expect(bob.page.getByTestId("friend-now")).toContainText(lastOnline);
+    await fit(["friend-page", "friend-now", "friend-status", "friend-chat", "friend-chat-unread"], "the page of a friend");
     await bob.page.keyboard.press("Escape");
     await expect(bob.page.getByTestId("friend-unread")).toHaveText(say(ro["chat.unreadShort_one"], { count: "1" }));
+    await expect(bob.page.getByTestId("friend-row")).toContainText(lastOnline);
     await fit(["friends-list", "friend-row", "friend-unread"], "the friends");
 
     // ... and the settings, with the line that says what a chat is kept as
@@ -955,8 +961,8 @@ test.describe("the chat on the TV", () => {
       const page = ann.page;
       const wide = screen.width >= 900;
       const fits = async (root: string, what: string) => expect(await outsideTheScreen(page, root, wide), what).toEqual([]);
-      // (Bob as Ann's screen hears him once he has been away five minutes: the longest words the top of his page and of the chat have)
-      await awayFiveMinutes(page);
+      // (Bob as Ann's screen hears him once he has been away ten days: the longest words the top of his page and of the chat have, "Last online on <day>")
+      await away(page, 10 * 86_400_000);
       // (Ann writes first: what a profile writes counts as having read everything before it. Then Bob writes three, which she has not read.)
       await writes(ann.page, bob.page, LONG);
       for (let at = 0; at < 3; at++) await writes(bob.page, ann.page, at === 0 ? LONG : `${words["chat.compose"]} ${at}`);
@@ -966,7 +972,7 @@ test.describe("the chat on the TV", () => {
       await tile(page, bob.name).click();
       await expect(page.getByTestId("friend-chat-unread")).toContainText("3");
       // the top of his page: when he was last online and since when they are friends, inside the screen and not cut (it wraps)
-      const lastOnline = words["friends.lastOnline"].replace("{when}", "").trim();
+      const lastOnline = words["friends.lastOnlineDay"].replace("{day}", "").trim();
       const meta = page.locator(".tv-friend-head .tv-view-meta");
       await expect(meta).toContainText(lastOnline);
       const head = await meta.evaluate((line) => ({ left: line.getBoundingClientRect().left, right: line.getBoundingClientRect().right, cut: line.scrollWidth > line.clientWidth + 1 }));
@@ -1044,10 +1050,10 @@ test.describe("the chat on the TV", () => {
 });
 
 /**
- * The friends as a screen hears them once they have been away for five minutes: not online, and when they last were. (The server's clock is not one a
- * test can move, so its answer is changed on the way.)
+ * The friends as a screen hears them once they have been away for a while (`gone` ms, five minutes unless said): not online, and when they last were.
+ * (The server's clock is not one a test can move, so its answer is changed on the way.)
  */
-async function awayFiveMinutes(page: Page) {
+async function away(page: Page, gone = 5 * 60_000) {
   await page.route(/\/api\/profiles\/[^/]+\/friends$/, async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     try {
@@ -1055,7 +1061,7 @@ async function awayFiveMinutes(page: Page) {
       const state = await answer.json();
       for (const friend of state.friends ?? []) {
         delete friend.online;
-        friend.lastOnline = Date.now() - 5 * 60_000;
+        friend.lastOnline = Date.now() - gone;
       }
       await route.fulfill({ response: answer, json: state });
     } catch {

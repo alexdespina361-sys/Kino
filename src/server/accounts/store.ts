@@ -455,6 +455,7 @@ export class AccountStore {
       this.drop(`pdata:${profile.id}`);
       this.book.forget(profile.id);
       this.talk.forget(profile.id);
+      this.seen.delete(profile.id);
     }
     this.emails.delete(account.email);
     if (account.google && this.googles.get(account.google.sub) === accountId) this.googles.delete(account.google.sub);
