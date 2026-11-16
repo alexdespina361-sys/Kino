@@ -2803,7 +2803,7 @@ test.describe("a film that has ended", () => {
     await expect(upNext).toBeVisible();
     phone.cmd({ type: "PAUSE" });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
-    await expect(tv.getByTestId("tv-pause-card")).toHaveCount(0); // one card says what is happening, not two
+    await expect(tv.getByTestId("tv-pause-card")).toBeVisible(); // (the Next episode button is a small one in the corner, and the pause card says what is held)
     const held = await count();
     await tv.waitForTimeout(2500);
     expect(await count()).toBe(held); // it counts to the end of the episode, and the picture is not going there

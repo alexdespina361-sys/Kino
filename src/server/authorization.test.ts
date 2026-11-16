@@ -447,6 +447,7 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/seasons": "the catalogue",
   "GET /api/library/unavailable": "the catalogue: what no source had, the same for everybody",
   "GET /api/resolve": "finds the video of a public page: no account is involved",
+  "GET /api/anime/skip": "where an anime episode's opening and credits are (AniSkip), for the player: no account is involved",
   "GET /api/proxy": "carries a public page or file: no account is involved",
   "GET /api/subtitles/ro/:file": "serves converted Romanian subtitles: no account is involved",
   "GET /api/subtitles/fallback/:file": "serves converted fallback subtitles (TVSubtitles/SubDL): no account is involved",

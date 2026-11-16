@@ -36,9 +36,65 @@ import { HOLD_SPEED } from "./gestures";
 import type { MenuKind } from "./Menu";
 import { SKIP_SECONDS } from "./keys";
 import { freshSimilar } from "./pages";
+import type { SkipKind, SkipView } from "./skip";
 
-/** How long the Up Next card counts down for, in seconds (the bar under it shows how much of it is left). */
+/** How long the Next episode button counts down for at the end of an episode, in seconds (it fills up as it does). */
 export const UP_NEXT_SECONDS = 15;
+
+const SKIP_WORDS: Record<SkipKind, "hud.skipIntro" | "hud.skipRecap" | "hud.skipCredits"> = { intro: "hud.skipIntro", recap: "hud.skipRecap", credits: "hud.skipCredits" };
+
+/**
+ * The Skip button (skip.ts) and the Next episode button (Tv.tsx's Up Next), one look: a pill over the bottom right of the picture (the owner, 17 Nov: "semi
+ * transparent, with full visible when hovered ... fit the theme without being annoying"). Bright while it is new or filling, when the remote's OK presses it
+ * and Back turns it down (Tv.tsx); then see-through, whole again under the pointer, with the remote on it or with the controls up. Counting, it fills up from
+ * the left (`seconds` of `total` left; a second ahead, so that it is full as it acts), and the count is said beside the words. The cross beside it turns it down.
+ */
+function SkipPill({
+  kind,
+  label,
+  sub,
+  seconds,
+  total,
+  fresh,
+  onPress,
+  onDismiss,
+}: {
+  kind: SkipKind | "next";
+  label: string;
+  sub?: string;
+  seconds: number | null;
+  total: number;
+  fresh: boolean;
+  onPress: () => void;
+  onDismiss: () => void;
+}) {
+  const t = useT();
+  const counting = seconds !== null;
+  const next = kind === "next";
+  const target = counting && total > 0 ? Math.max(0, Math.min(1, (total - seconds + 1) / total)) : 0;
+  // (The fill grows to where it will be at the next second, in a second: it starts from where it was, also the first time, so it is never a jump.)
+  const [fill, setFill] = useState(() => (counting && total > 0 ? Math.max(0, Math.min(1, (total - seconds) / total)) : 0));
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setFill(target));
+    return () => cancelAnimationFrame(frame);
+  }, [target]);
+  return (
+    <div className="hud-skip" data-kind={kind} data-testid={next ? "netflix-upnext" : "tv-skip"} data-counting={counting} data-fresh={fresh || undefined} role="group" aria-label={label}>
+      <button type="button" className="hud-skip-btn" onClick={onPress} aria-label={sub ? `${label}: ${sub}` : label} data-testid={next ? "upnext-play-btn" : "tv-skip-btn"}>
+        <span className="hud-skip-fill" style={{ transform: `scaleX(${counting ? fill : 0})` }} aria-hidden="true" />
+        {next ? <NextIcon /> : <FastForwardIcon />}
+        <span className="hud-skip-words">
+          <span className="hud-skip-label">{label}</span>
+          {sub && <span className="hud-skip-sub">{sub}</span>}
+        </span>
+        {counting && <b className="hud-skip-count">{seconds}s</b>}
+      </button>
+      <button type="button" className="hud-skip-close" onClick={onDismiss} aria-label={t("common.cancel")} title={t("common.cancel")} data-testid={next ? "upnext-dismiss" : "tv-skip-dismiss"}>
+        <CloseIcon />
+      </button>
+    </div>
+  );
+}
 
 /** What a screen that watches along with another is told on top of what any screen shows: whose film it is, how it keeps up with it, and its way out. */
 export interface FollowProps {
@@ -81,8 +137,15 @@ export interface HudProps {
    * of news ("Speed 1.5×"). `id` changes every time so the animation replays.
    */
   toast: { id: number; text: string; notice?: boolean; side?: "back" | "forward" } | null;
-  /** The next episode is coming: `seconds` counts down to it, or is null when this profile plays the next one only on request. */
-  upNext: { seconds: number | null; label: string } | null;
+  /**
+   * The next episode is coming (the Next episode button, see `SkipPill`): `seconds` counts down to it out of `total`, or is null while it waits to be asked
+   * for (a profile that plays the next one only on request, or credits that have a while to go). `fresh`: it just came, and is bright.
+   */
+  upNext: { seconds: number | null; total: number; label: string; fresh: boolean } | null;
+  /** The Skip button of an opening, a "previously on" or credits (see skip.ts), or null. */
+  skip: SkipView | null;
+  onSkipPart: () => void;
+  onDismissSkip: () => void;
   /** The controls row, so the remote's arrows can move focus along it (and the row can be kept on one line). */
   controlsRef: RefObject<HTMLDivElement | null>;
   onToggle: () => void;
@@ -474,8 +537,10 @@ export function Hud(p: HudProps) {
   const follow = p.follow;
   /** Whether the playback is this screen's to move: any screen's own picture, or an admin's, but not that of a guest who only watches. */
   const steers = !follow || follow.admin;
-  /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the Up Next card, or the wait for the picture, take its place). */
-  const centre = steers && !p.upNext && !busy && (paused || (p.touch && playing));
+  /** The end of the episode, with the Next episode button on it: that button is what is offered, not the last frame's pause card and Play. */
+  const nextAtTheEnd = Boolean(p.upNext && player.ended);
+  /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the wait for the picture takes its place). */
+  const centre = steers && !busy && !nextAtTheEnd && (paused || (p.touch && playing));
   const qualityLabel = pictureName(player);
   const endsAt = formatEndsAt(player.currentTime, duration, player.playbackRate ?? 1, new Date());
   const partyLabel = p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail");
@@ -550,28 +615,21 @@ export function Hud(p: HudProps) {
         </div>
       )}
 
-      {/* Outside the overlay on purpose: it must stay up for the whole countdown, after the controls have faded away. */}
+      {/* Outside the overlay on purpose: they stay up after the controls have faded away. (A screen that watches along has neither: the host's screen skips for all.) */}
       {p.upNext && (
-        <div className="hud-upnext" data-testid="netflix-upnext" data-counting={p.upNext.seconds !== null}>
-          <div className="hud-upnext-head">
-            <span>{t("hud.upNext")}</span>
-            {p.upNext.seconds !== null && <b>{p.upNext.seconds}s</b>}
-          </div>
-          <p>{p.upNext.label}</p>
-          {p.upNext.seconds !== null && (
-            <div className="hud-upnext-bar">
-              <div style={{ width: `${Math.max(0, Math.min(100, (p.upNext.seconds / UP_NEXT_SECONDS) * 100))}%` }} />
-            </div>
-          )}
-          <div className="hud-upnext-actions">
-            <button className="tv-btn tv-btn-red" data-testid="upnext-play-btn" onClick={p.onNext}>
-              <NextIcon /> {t("hud.watchNow")}
-            </button>
-            <button className="tv-btn tv-btn-ghost" onClick={p.onDismissUpNext}>
-              {t("common.cancel")}
-            </button>
-          </div>
-        </div>
+        <SkipPill
+          kind="next"
+          label={t("hud.nextEpisode")}
+          sub={p.upNext.label}
+          seconds={p.upNext.seconds}
+          total={p.upNext.total}
+          fresh={p.upNext.fresh}
+          onPress={p.onNext}
+          onDismiss={p.onDismissUpNext}
+        />
+      )}
+      {!p.upNext && p.skip && (
+        <SkipPill kind={p.skip.kind} label={t(SKIP_WORDS[p.skip.kind])} seconds={p.skip.seconds} total={p.skip.total} fresh={p.skip.fresh} onPress={p.onSkipPart} onDismiss={p.onDismissSkip} />
       )}
 
       {/* Outside the overlay too: waiting is shown, and given up on, whether or not the controls are up. OK or Back does it from the remote (Tv.tsx). (A screen that watches along shows its wait as FollowStatus does.) */}
@@ -593,7 +651,7 @@ export function Hud(p: HudProps) {
       {isBlocked(player) && !follow && <TapToPlay onPlay={p.onToggle} />}
 
       {/* The overlay sits on top of the video, so its empty part is the picture as far as a hand can tell (data-picture: see gestures.ts); the bars' own is the picture to a finger only. */}
-      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !p.upNext) || undefined} data-boosting={p.boosting || undefined}>
+      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !nextAtTheEnd) || undefined} data-boosting={p.boosting || undefined}>
         <header className="hud-top" data-picture="bar">
           <div className="hud-titles">
             <h1 className="hud-title" data-testid="tv-title">
@@ -625,8 +683,8 @@ export function Hud(p: HudProps) {
         </header>
 
         <div className="hud-center">
-          {paused && !p.upNext && (
-            /* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. */
+          {paused && !nextAtTheEnd && (
+            /* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. (The Next episode button is a small one in the corner now, and stays beside it; at the very end it is what is offered.) */
             <div className="hud-pause-card" data-testid="tv-pause-card">
               <small>{follow ? t("tv.following", { name: follow.host }) : t("hud.watching")}</small>
               <b>{p.title}</b>

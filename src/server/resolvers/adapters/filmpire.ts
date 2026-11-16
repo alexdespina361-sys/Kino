@@ -1,4 +1,5 @@
 import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { withAnimeHint, sourceSkipTimes, type AnimeFacts } from "../../anime/hint";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import { noteExtrasWait } from "../lookup";
@@ -543,6 +544,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
     id: "filmpire",
     domains: ["filmpire.sc", "filmpire.cc", "www.filmpire.cc", "filmpire.net", "filmpire.to", "filmpire.vip", "vidsrc.me", "screenfetch4.cyou"],
     async resolve(url: URL): Promise<ResolveResult> {
+      // (What the look-up learnt from TMDB of an anime rides on the film it found, whichever way it found it, for the player's Skip button: see `withAnimeHint`.)
+      const facts: AnimeFacts = {};
+      return withAnimeHint(await resolveTitle(url, facts), facts.anime);
+    },
+  };
+
+  async function resolveTitle(url: URL, facts: AnimeFacts): Promise<ResolveResult> {
       // 1. Parse movie / series info
       const pathMatch = url.pathname.match(/\/(?:watch|movie|tv|series|embed)\/([a-zA-Z0-9_-]+)/i);
       const queryId = url.searchParams.get("tmdb") || url.searchParams.get("id");
@@ -638,6 +646,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         if (Array.isArray(tmdbData.seasons)) tmdbSeasons = tmdbData.seasons;
       } catch {
         // Non-fatal if TMDB is unreachable
+      }
+      // An animation from Japan, China or Korea (TMDB says so: nothing is asked for it) is an anime the player may ask AniSkip about once it plays.
+      if (rawShowTitle && animated === true && (originalLang === "ja" || originalLang === "zh" || originalLang === "ko")) {
+        facts.anime = { title: rawShowTitle, season: isTv ? Number(s || "1") : 1, episode: isTv ? Number(e || "1") : 1 };
       }
 
       const sectionHint = url.searchParams.get("section") || url.searchParams.get("type");
@@ -995,6 +1007,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                   },
                   ...(subList ? { subtitles: subList } : {}),
                   ...(alternates.length > 0 ? { alternates } : {}),
+                  // (HiAnime's own times for its own stream, the main one: the player takes them over AniSkip's, and only while it plays this stream.)
+                  ...sourceSkipTimes(resolved.stream.skip),
                   page: url.href,
                   series: {
                     season: targetSeason,
@@ -1688,6 +1702,5 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           page: url.href,
         },
       };
-    },
-  };
+  }
 }

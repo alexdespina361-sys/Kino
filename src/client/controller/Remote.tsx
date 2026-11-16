@@ -136,6 +136,12 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
               {t("common.cancel")}
             </button>
           )}
+          {/* The TV shows its Skip button (an opening, a "previously on", credits): it is pressed from here too. */}
+          {player.skip && !(player.upNext && player.upNext.seconds !== null) && (
+            <button className="state-action" data-testid="remote-skip" onClick={() => send({ type: "SKIP_SEGMENT" })} disabled={!online}>
+              {t(player.skip.kind === "intro" ? "hud.skipIntro" : player.skip.kind === "recap" ? "hud.skipRecap" : "hud.skipCredits")}
+            </button>
+          )}
         </div>
       </section>
 

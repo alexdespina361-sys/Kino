@@ -269,6 +269,11 @@ export const SETTING_SCHEMAS = {
   accent: AccentSchema,
   autoplayNext: z.boolean(),
   /**
+   * The player's Skip button (client/tv/skip.ts) fills up for a few seconds and skips by itself: an opening, a "previously on", credits (and with credits
+   * that run to the end, on to the next episode, when `autoplayNext` is on too). Off until turned on: the button is there either way, and waits to be pressed.
+   */
+  autoSkip: z.boolean(),
+  /**
    * A tap or click on the picture pauses and plays it. Off (until turned on) it only shows or hides the controls: the big button in the
    * middle, the bar's own and the remote's OK key pause either way. (A remote that points and clicks like a mouse is the one that notices.)
    */

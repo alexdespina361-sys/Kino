@@ -383,11 +383,12 @@
   /* What the remote says over a button that is only a picture is not drawn here: a finger has no remote, and a keyboard has the names it is read out. */
   :root[data-ui="polish"] .tv .hud-controls .tv-btn:focus-visible::after { display: none; }
 
-  /* The next episode is coming: its card is at the top (under the title), where the picture is not. */
-  :root[data-ui="polish"] .tv .hud-upnext,
-  :root[data-ui="polish"] .tv[data-hud="hidden"] .hud-upnext { top: calc(var(--top) + env(safe-area-inset-top) + 104px); right: var(--gutter); bottom: auto; left: var(--gutter); width: auto; }
-  :root[data-ui="polish"] .tv .hud-upnext-head { font-size: var(--fs-2); }
-  :root[data-ui="polish"] .tv .hud-upnext-actions .tv-btn,
+  /* The Skip and Next episode button is at the top (under the title, on the right), where the picture is not. */
+  :root[data-ui="polish"] .tv .hud-skip,
+  :root[data-ui="polish"] .tv[data-hud="hidden"] .hud-skip { top: calc(var(--top) + env(safe-area-inset-top) + 104px); right: var(--gutter); bottom: auto; left: auto; max-width: calc(100% - 2 * var(--gutter)); }
+  :root[data-ui="polish"] .tv .hud-skip-btn { min-height: var(--tap); font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .hud-skip-close { width: var(--tap); height: var(--tap); font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .hud-skip-close > svg { width: 20px; height: 20px; }
   :root[data-ui="polish"] .tv .hud-stuck .tv-btn { min-height: var(--tap); font-size: var(--fs-3); }
   :root[data-ui="polish"] .tv .hud-stuck p { font-size: var(--fs-3); }
   :root[data-ui="polish"] .tv .tv-fail .hud-error h2 { max-width: none; font-size: var(--fs-6); }

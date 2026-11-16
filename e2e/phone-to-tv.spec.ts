@@ -115,6 +115,34 @@ test.describe("phone UI -> server -> TV player", () => {
     raw.close();
   });
 
+  test("the remote has the TV's Skip button while it is up, and its press skips on the TV", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser);
+    const raw = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    await expect(tv.getByTestId("tv-join-code")).toBeVisible();
+    const control = (await tv.getByTestId("tv-join-code").textContent())!.replace(/\s/g, "");
+    // (fixtures/episode.mp4 is two and a half minutes: times for anything under two are not believed.)
+    raw.cmd({ type: "LOAD", media: { title: "Parts · S1 E1", stream: { url: "/fixtures/episode.mp4", type: "mp4" }, skip: { intro: { start: 6, end: 40 } } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+
+    const phone = await (await browser.newContext(PHONE)).newPage();
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(control);
+    await expect(phone.getByTestId("player-state")).toHaveText("Paused");
+    await expect(phone.getByTestId("remote-skip")).toHaveCount(0);
+
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 4));
+    raw.cmd({ type: "PLAY" });
+    const skip = phone.getByTestId("remote-skip");
+    await expect(skip).toHaveText("Skip intro", { timeout: 8_000 });
+    await expect(tv.getByTestId("tv-skip")).toBeVisible();
+    await skip.click();
+    await expect(tv.getByTestId("tv-skip")).toHaveCount(0);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39);
+    await expect(skip).toHaveCount(0);
+    raw.close();
+  });
+
   test("HLS: load and play through hls.js, then seek and stop", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);

@@ -65,6 +65,24 @@ export const AlternateSourceSchema = z.object({
 export type AlternateSource = z.infer<typeof AlternateSourceSchema>;
 export const MAX_ALTERNATES = 8;
 
+/** A stretch of an episode the player offers to skip, in seconds from its start (see shared/skip.ts). */
+export const SkipIntervalSchema = z
+  .object({ start: z.number().finite().min(0).max(86_400), end: z.number().finite().min(0).max(86_400) })
+  .refine((interval) => interval.end > interval.start, "Must end after it starts");
+export type SkipInterval = z.infer<typeof SkipIntervalSchema>;
+
+/** Where an episode's opening (`intro`), "previously on" (`recap`) and closing credits (`outro`) are, those that are known. */
+export const SkipTimesSchema = z.object({ intro: SkipIntervalSchema.optional(), recap: SkipIntervalSchema.optional(), outro: SkipIntervalSchema.optional() });
+export type SkipTimes = z.infer<typeof SkipTimesSchema>;
+
+/**
+ * What a look-up knew of an anime without asking anyone (TMDB had already said it is a Japanese, Chinese or Korean animation, and under which name): the
+ * title, season and episode it was asked for. The player asks `/api/anime/skip` with it once it knows how long the episode is (AniSkip's times are kept for
+ * each cut of an episode by its length), so that nothing is asked while the film is being found.
+ */
+export const AnimeHintSchema = z.object({ title: z.string().min(1).max(200), season: z.number().int().min(1).max(100), episode: z.number().int().min(1).max(5000) });
+export type AnimeHint = z.infer<typeof AnimeHintSchema>;
+
 /** The only thing the TV player ever consumes. Resolvers all produce this. */
 export const NormalizedMediaSchema = z.object({
   title: z.string().max(300).optional(),
@@ -81,6 +99,10 @@ export const NormalizedMediaSchema = z.object({
   poster: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
   backdrop: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
   year: z.number().int().min(1800).max(2200).optional(),
+  /** Where the source itself says this video's opening and credits are (HiAnime does): exact for this stream, and taken over AniSkip's. */
+  skip: SkipTimesSchema.optional(),
+  /** An anime the player may ask AniSkip's times for (see `AnimeHintSchema`). */
+  anime: AnimeHintSchema.optional(),
 });
 export type NormalizedMedia = z.infer<typeof NormalizedMediaSchema>;
 
@@ -171,6 +193,14 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
   const poster = picture(media.poster);
   const backdrop = picture(media.backdrop);
   const year = typeof media.year === "number" && Number.isInteger(media.year) && media.year >= 1800 && media.year <= 2200 ? media.year : undefined;
+  // (Where to skip is an extra like a picture: what of it does not fit is left out, and the film plays without a Skip button.)
+  const skips: SkipTimes = {};
+  for (const part of ["intro", "recap", "outro"] as const) {
+    const fitted = SkipIntervalSchema.safeParse(media.skip?.[part]);
+    if (fitted.success) skips[part] = fitted.data;
+  }
+  const skip = skips.intro || skips.recap || skips.outro ? skips : undefined;
+  const anime = AnimeHintSchema.safeParse(media.anime);
 
   const fitted = NormalizedMediaSchema.safeParse({
     stream: main,
@@ -183,6 +213,8 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
     ...(poster ? { poster } : {}),
     ...(backdrop ? { backdrop } : {}),
     ...(year ? { year } : {}),
+    ...(skip ? { skip } : {}),
+    ...(anime.success ? { anime: anime.data } : {}),
   });
   return { media: fitted.success ? fitted.data : null, unfit };
 }

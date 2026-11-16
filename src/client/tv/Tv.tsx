@@ -60,6 +60,7 @@ import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
 import { nearTheEnd } from "./preloadNext";
+import { AUTO_SKIP_SECONDS, FRESH_MS, nextButtonFrom, useSkipSegment, useSkipTimes, type SkipControl } from "./skip";
 import { Follower } from "./sync";
 import {
   defaultSyncMode,
@@ -188,6 +189,25 @@ export function Tv() {
   // Netflix Up Next Countdown & Preload State
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [upNextDismissed, setUpNextDismissed] = useState(false);
+  /**
+   * The Next episode button came as the credits started (see `nextButtonFrom`), and waits there without a count (its fill, with the profile's "Skip intros and
+   * credits", is a count of `AUTO_SKIP_SECONDS`): it counts down as always once the last `UP_NEXT_SECONDS` come. Never set for the last seconds' button.
+   */
+  const [upNextHeld, setUpNextHeld] = useState(false);
+  /** How long the count is (it fills up over it): `UP_NEXT_SECONDS` at the end, `AUTO_SKIP_SECONDS` for the credits' fill. */
+  const [upNextTotal, setUpNextTotal] = useState(UP_NEXT_SECONDS);
+  /** The early button just came (played into, not jumped to): it is bright, and the remote's OK and Back are its, for `FRESH_MS`. */
+  const [upNextFresh, setUpNextFresh] = useState(false);
+  useEffect(() => {
+    if (!upNextFresh) return;
+    const timer = setTimeout(() => setUpNextFresh(false), FRESH_MS);
+    return () => clearTimeout(timer);
+  }, [upNextFresh]);
+  const clearUpNext = () => {
+    setUpNextCountdown(null);
+    setUpNextHeld(false);
+    setUpNextFresh(false);
+  };
   const preloadedNextMediaRef = useRef<NormalizedMedia | null>(null);
   /** The video played to its end (anything that moves the picture on clears it). With nothing following by itself, the end card is shown. */
   const [ended, setEnded] = useState(false);
@@ -286,56 +306,6 @@ export function Tv() {
     return () => clearInterval(timer);
   }, []);
 
-  // Preload the next episode (looked up, its first pieces fetched) once this one is nearly over: at its start that was a lookup and a few
-  // megabytes of film for every episode that is not watched to its end.
-  const nextEpisodeUrl = currentMedia?.series?.next?.url;
-  const nearEnd = nearTheEnd(player.currentTime, player.duration);
-  useEffect(() => {
-    const nextUrl = nextEpisodeUrl;
-    if (!nextUrl || following || !nearEnd) {
-      preloadedNextMediaRef.current = null;
-      return;
-    }
-
-    let active = true;
-    preloadedNextMediaRef.current = null;
-
-    // 1. Resolve next episode via /api/resolve
-    fetch(`/api/resolve?url=${encodeURIComponent(nextUrl)}`)
-      .then((res) => res.json())
-      .then(async (data: { status: string; media?: NormalizedMedia }) => {
-        if (!active || data.status !== "success" || !data.media) return;
-        preloadedNextMediaRef.current = data.media;
-        // (Only a playlist is read as one: a plain file would be taken in whole, as text.)
-        if (data.media.stream.type !== "hls") return;
-
-        // 2. Prefetch the master playlist and initial media chunks into browser HTTP cache
-        try {
-          const playlistRes = await fetch(data.media.stream.url);
-          const playlistText = await playlistRes.text();
-          const lines = playlistText.split(/\r?\n/);
-          const firstProxyUrl = lines.find((l) => l.startsWith("/api/proxy"));
-          if (firstProxyUrl) {
-            const subRes = await fetch(firstProxyUrl);
-            const subText = await subRes.text();
-            const subLines = subText.split(/\r?\n/);
-            const firstSegmentUrl = subLines.find((l) => l.startsWith("/api/proxy"));
-            if (firstSegmentUrl) {
-              // Prefetch first segment so playback begins instantaneously
-              fetch(firstSegmentUrl).catch(() => {});
-            }
-          }
-        } catch {
-          // Preloading is best-effort
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      active = false;
-    };
-  }, [nextEpisodeUrl, following, nearEnd]);
-
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
   /**
@@ -350,8 +320,7 @@ export function Tv() {
   const upNextDismissedRef = useRef(false);
   upNextDismissedRef.current = upNextDismissed;
   /** What the phone is told about the end of the picture: that it came, and whether the next episode starts by itself (and in how long). */
-  const endingRef = useRef<Ending>({ ended: false });
-  endingRef.current = { ended, upNext: following || upNextCountdown === null ? undefined : { seconds: autoplay ? upNextCountdown : null } };
+  const endingRef = useRef<Ending>({ ended: false }); // (filled in under "skipping", below)
 
   /* ------------------------------ sources ------------------------------ */
 
@@ -416,9 +385,95 @@ export function Tv() {
     return () => window.clearTimeout(timer);
   }, [player.state]);
 
+  /* ------------------------------ skipping an opening, a "previously on", credits ------------------------------ */
+
+  // (See skip.ts. Here: what the profile chose, where the parts are, and when the Next episode button comes.)
+  /** Whether the Skip button fills up and skips by itself (the profile's "Skip intros and credits"; off until it is turned on). */
+  const autoSkip = settings.autoSkip ?? false;
+  const skips = useSkipTimes(currentMedia, player.duration, sourceIndex, !following);
+  const hasNext = Boolean(currentMedia?.series?.next);
+  /** When the Next episode button comes (seconds into the episode): as the credits start, when they run to the end, else in the last `UP_NEXT_SECONDS`. */
+  const nextFrom = nextButtonFrom(skips, player.duration, UP_NEXT_SECONDS);
+  const nextFromRef = useRef(nextFrom);
+  nextFromRef.current = nextFrom;
+
+  // Preload the next episode (looked up, its first pieces fetched) once this one is nearly over: at its start that was a lookup and a few
+  // megabytes of film for every episode that is not watched to its end. (And a little before its button comes, if the credits are long.)
+  const nextEpisodeUrl = currentMedia?.series?.next?.url;
+  const nearEnd = nearTheEnd(player.currentTime, player.duration) || (player.duration > 30 && player.currentTime >= nextFrom - 30);
+  useEffect(() => {
+    const nextUrl = nextEpisodeUrl;
+    if (!nextUrl || following || !nearEnd) {
+      preloadedNextMediaRef.current = null;
+      return;
+    }
+
+    let active = true;
+    preloadedNextMediaRef.current = null;
+
+    // 1. Resolve next episode via /api/resolve
+    fetch(`/api/resolve?url=${encodeURIComponent(nextUrl)}`)
+      .then((res) => res.json())
+      .then(async (data: { status: string; media?: NormalizedMedia }) => {
+        if (!active || data.status !== "success" || !data.media) return;
+        preloadedNextMediaRef.current = data.media;
+        // (Only a playlist is read as one: a plain file would be taken in whole, as text.)
+        if (data.media.stream.type !== "hls") return;
+
+        // 2. Prefetch the master playlist and initial media chunks into browser HTTP cache
+        try {
+          const playlistRes = await fetch(data.media.stream.url);
+          const playlistText = await playlistRes.text();
+          const lines = playlistText.split(/\r?\n/);
+          const firstProxyUrl = lines.find((l) => l.startsWith("/api/proxy"));
+          if (firstProxyUrl) {
+            const subRes = await fetch(firstProxyUrl);
+            const subText = await subRes.text();
+            const subLines = subText.split(/\r?\n/);
+            const firstSegmentUrl = subLines.find((l) => l.startsWith("/api/proxy"));
+            if (firstSegmentUrl) {
+              // Prefetch first segment so playback begins instantaneously
+              fetch(firstSegmentUrl).catch(() => {});
+            }
+          }
+        } catch {
+          // Preloading is best-effort
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [nextEpisodeUrl, following, nearEnd]);
+
+  /** The Skip button of the part being played (none while the Next episode button is up, nor on a screen that watches along). */
+  const skipper = useSkipSegment({
+    video: currentMedia ? `${currentMedia.stream.url}#${sourceIndex}` : undefined,
+    skips,
+    time: player.currentTime,
+    duration: player.duration,
+    playing: player.state === "playing" && !player.buffering,
+    hasNext,
+    enabled: !following && currentMedia !== null && (player.state === "playing" || player.state === "paused") && stateIsFor(currentMedia, player) && upNextCountdown === null,
+    autoSkip,
+    onSkipTo: (time) => engineRef.current?.seek(time),
+  });
+  const skipRef = useRef<SkipControl>(skipper);
+  skipRef.current = skipper;
+  /** Whether the remote's OK and Back are the Next episode button's: in the last seconds, or while the early one is new. */
+  const upNextOwnsKeys = upNextCountdown !== null && (!upNextHeld || upNextFresh);
+  /** The count the Next episode button shows and the phone is told (none while it waits to be asked for, or for the credits to end). */
+  const upNextSeconds = upNextCountdown !== null && autoplay && !upNextHeld ? upNextCountdown : null;
+  endingRef.current = {
+    ended,
+    upNext: following || upNextCountdown === null ? undefined : { seconds: upNextSeconds },
+    skip: following || !skipper.view ? undefined : { kind: skipper.view.kind },
+  };
+
   const triggerNextEpisode = () => {
     if (followingRef.current) return; // the TV being followed picks what comes next
-    setUpNextCountdown(null);
+    clearUpNext();
     setUpNextDismissed(false);
     setEnded(false);
     const preloaded = preloadedNextMediaRef.current;
@@ -616,7 +671,7 @@ export function Tv() {
   const enhanceKey = JSON.stringify(enhance.state ?? null);
   useEffect(() => republishRef.current(), [enhanceKey]); // (the phone's list shows the ✦ choices this screen has, and the one that is on)
   useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
-  useEffect(() => republishRef.current(), [ended, upNextCountdown, autoplay, following]); // the phone follows the end of the picture and the countdown to the next episode
+  useEffect(() => republishRef.current(), [ended, upNextCountdown, upNextHeld, autoplay, following, skipper.view?.kind]); // the phone follows the end of the picture, the countdown to the next episode and the Skip button
 
   useEffect(() => {
     if (player.state === "idle") resetApplied();
@@ -712,6 +767,7 @@ export function Tv() {
         if (followingRef.current) return; // a screen that watches along waits for what the host does
         if (currentMediaRef.current?.series?.next && !upNextDismissedRef.current) {
           setUpNextCountdown((prev) => (prev !== null && prev <= 5 ? prev : 5));
+          setUpNextHeld(false); // (an early button that waited counts now: the credits are over)
         }
         setMenu(null);
         setEnded(true);
@@ -905,7 +961,7 @@ export function Tv() {
               putMedia(command.media);
               follower.reset(); // (where the host was in the film before says nothing about this one)
               if (!followingRef.current) profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once (not for a screen that watches along)
-              setUpNextCountdown(null);
+              clearUpNext();
               setUpNextDismissed(false);
               resetApplied();
               resetSources();
@@ -929,7 +985,7 @@ export function Tv() {
             else if (command.type === "SKIP") skip(command.seconds);
             else if (command.type === "STOP") {
               putMedia(null);
-              setUpNextCountdown(null);
+              clearUpNext();
               setResolving(false);
               setStarting(null);
               setMenu(null);
@@ -950,6 +1006,7 @@ export function Tv() {
             else if (command.type === "TOGGLE_FULLSCREEN") fullscreenFromPhone();
             else if (command.type === "NEXT_EPISODE") triggerNextEpisode();
             else if (command.type === "DISMISS_UP_NEXT") dismissUpNext();
+            else if (command.type === "SKIP_SEGMENT") skipRef.current.skip();
             else if (command.type === "REFRESH_ACCOUNT") syncNowRef.current();
             // Anything the phone does should be visible on the TV for a moment.
             if (command.type !== "LOAD" && command.type !== "STOP" && command.type !== "REFRESH_ACCOUNT") wake();
@@ -1087,11 +1144,12 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [fsPrompt]);
 
-  // Up Next Countdown interval. A profile that plays the next episode only on request gets the card without a countdown.
-  // The count waits while the picture is paused or filling: it is the end of the episode that it counts down to.
+  // The Next episode button's count. A profile that plays the next episode only on request gets the button without one, and so does a button that came early
+  // (as the credits started) until the last seconds come, unless the profile skips credits: then it fills up over `AUTO_SKIP_SECONDS`, and plays the next
+  // one. The count waits while the picture is paused or filling: it is the end of the episode (or of the credits) that it counts down to.
   const countingDown = player.state === "playing" || ended;
   useEffect(() => {
-    if (upNextCountdown === null || !autoplay) return;
+    if (upNextCountdown === null || !autoplay || upNextHeld) return;
     if (upNextCountdown <= 0) {
       triggerNextEpisode();
       return;
@@ -1101,30 +1159,47 @@ export function Tv() {
       setUpNextCountdown((prev) => (prev !== null ? prev - 1 : null));
     }, 1000);
     return () => clearTimeout(timer);
-  }, [upNextCountdown, autoplay, countingDown]);
+  }, [upNextCountdown, autoplay, countingDown, upNextHeld]);
 
-  // Check near end of video (last 15s) to trigger Netflix up next card
+  // The Next episode button comes: as the credits start when they run to the end (see `nextFrom`), else in the last seconds. One that came early and
+  // waits counts down as always once the last seconds come.
+  const upNextLastTimeRef = useRef(0);
   useEffect(() => {
-    if (
-      player.state === "playing" &&
-      player.duration > 30 &&
-      player.currentTime >= player.duration - 15 &&
-      currentMedia?.series?.next &&
-      !following &&
-      !upNextDismissed &&
-      upNextCountdown === null
-    ) {
-      setUpNextCountdown(Math.min(UP_NEXT_SECONDS, Math.max(1, Math.ceil(player.duration - player.currentTime)))); // never more than is left
+    const last = upNextLastTimeRef.current;
+    upNextLastTimeRef.current = player.currentTime;
+    if (player.state !== "playing" || !(player.duration > 30) || !currentMedia?.series?.next || following || upNextDismissed) return;
+    const left = player.duration - player.currentTime;
+    const lastSeconds = Math.min(UP_NEXT_SECONDS, Math.max(1, Math.ceil(left))); // never more than is left
+    if (upNextCountdown === null) {
+      if (player.currentTime < nextFrom) return;
+      if (left <= UP_NEXT_SECONDS) {
+        setUpNextTotal(UP_NEXT_SECONDS);
+        setUpNextHeld(false);
+        setUpNextCountdown(lastSeconds);
+        return;
+      }
+      // The credits started. Played into (not jumped to), the button is new; and with the profile's "Skip intros and credits" (and the next episode
+      // following by itself) it fills up.
+      const playedInto = player.currentTime >= last && player.currentTime - last < 3 && player.currentTime - nextFrom < 4;
+      const fills = playedInto && autoSkip && autoplay;
+      setUpNextFresh(playedInto);
+      setUpNextTotal(AUTO_SKIP_SECONDS);
+      setUpNextHeld(!fills);
+      setUpNextCountdown(AUTO_SKIP_SECONDS);
+    } else if (upNextHeld && left <= UP_NEXT_SECONDS) {
+      setUpNextTotal(UP_NEXT_SECONDS);
+      setUpNextHeld(false);
+      setUpNextCountdown(lastSeconds);
     }
-  }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, following, upNextDismissed, upNextCountdown]);
+  }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, following, upNextDismissed, upNextCountdown, upNextHeld, nextFrom, autoSkip, autoplay]);
 
-  // Winding back to before its time takes the card away (it comes again on the way to the end), and turning it down is for this pass
+  // Winding back to before its time takes the button away (it comes again on the way to the end), and turning it down is for this pass
   // only: wind back to well before its time (or watch again) and it comes again.
   useEffect(() => {
     if (player.duration <= 0 || ended) return;
-    if (upNextCountdown !== null && player.currentTime < player.duration - UP_NEXT_SECONDS - 1) setUpNextCountdown(null);
-    if (upNextDismissed && player.currentTime < player.duration - UP_NEXT_SECONDS - 5) setUpNextDismissed(false);
-  }, [player.currentTime, player.duration, upNextDismissed, upNextCountdown, ended]);
+    if (upNextCountdown !== null && player.currentTime < nextFrom - 1) clearUpNext();
+    if (upNextDismissed && player.currentTime < nextFrom - 5) setUpNextDismissed(false);
+  }, [player.currentTime, player.duration, upNextDismissed, upNextCountdown, ended, nextFrom]);
 
   // Ask for a fresh code when the displayed one expires
   useEffect(() => {
@@ -1259,7 +1334,7 @@ export function Tv() {
 
   const togglePlay = () => (player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play());
   const dismissUpNext = () => {
-    setUpNextCountdown(null);
+    clearUpNext();
     setUpNextDismissed(true);
   };
   /**
@@ -1268,7 +1343,7 @@ export function Tv() {
    */
   const playEpisode = (url: string, options: PlayOptions = {}) => {
     setMenu(null);
-    setUpNextCountdown(null);
+    clearUpNext();
     setUpNextDismissed(false);
     // Nothing on: the film's screen comes up with the press, not when the server answers it.
     if (playerRef.current.state === "idle" && !followingRef.current && connection === "open") setStarting(startingFrom(options.hint, { from: options.startAt }));
@@ -1294,7 +1369,7 @@ export function Tv() {
   /** Stop what plays and go back to the library. A host that does takes the video from its guests too (the server tells them). */
   const stopPlayback = () => {
     putMedia(null);
-    setUpNextCountdown(null);
+    clearUpNext();
     engineRef.current?.stop();
   };
   /** ...and the library shows, on the page the film was chosen from (see `keepPageFor`). */
@@ -1334,7 +1409,7 @@ export function Tv() {
     setResolving(false);
     setStarting(null);
     putMedia(null);
-    setUpNextCountdown(null);
+    clearUpNext();
     setMenu(null);
     engineRef.current?.stop();
     resetSources();
@@ -1466,8 +1541,13 @@ export function Tv() {
         return;
       }
 
-      if (action === "back" && upNextCountdown !== null) {
+      // Back turns down the Next episode button, or a Skip button, while it is the one the remote is on (see `upNextOwnsKeys`, skip.ts).
+      if (action === "back" && upNextOwnsKeys) {
         dismissUpNext();
+        event.preventDefault();
+        return;
+      }
+      if (action === "back" && !following && skipRef.current.back()) {
         event.preventDefault();
         return;
       }
@@ -1484,6 +1564,20 @@ export function Tv() {
 
       const row = controlsRef.current;
       const focused = document.activeElement as HTMLElement | null;
+      // The Skip or Next episode button, when the remote is on it (Up from the picture or from the controls): OK presses what it is on, Left and
+      // Right go between it and its cross, Down to the controls, Back or Up off it.
+      const pill = document.querySelector<HTMLElement>(".tv .hud-skip");
+      if (pill && focused && pill.contains(focused)) {
+        if (action === "select") return; // press the focused button
+        const buttons = [...pill.querySelectorAll<HTMLElement>("button")];
+        if (action === "left" || action === "right") buttons[buttons.indexOf(focused) + (action === "right" ? 1 : -1)]?.focus();
+        else if (action === "down") focusControls();
+        else if (action === "back" || action === "up") focused.blur();
+        if (action === "left" || action === "right" || action === "down" || action === "back" || action === "up") {
+          event.preventDefault();
+          return;
+        }
+      }
       if (row && focused && row.contains(focused)) {
         if (action === "left" || action === "right" || action === "up" || action === "down") {
           // The arrows walk the controls the way they are laid out: along a row, and between rows. Past the edge nothing moves,
@@ -1496,7 +1590,12 @@ export function Tv() {
           if (next && vertical && left && left.to === focused && left.action !== action && buttons.includes(left.from)) next = left.from;
           lastStepRef.current = next && vertical ? { from: focused, to: next, action } : null;
           if (next) next.focus();
-          else if (action === "up") focused.blur();
+          else if (action === "up") {
+            // (Up out of the controls: to the Skip or Next episode button, if one is up.)
+            const pillButton = pill?.querySelector<HTMLElement>("button");
+            if (pillButton) pillButton.focus();
+            else focused.blur();
+          }
           event.preventDefault();
           return;
         }
@@ -1530,7 +1629,8 @@ export function Tv() {
       switch (action) {
         case "select":
         case "playpause":
-          if (upNextCountdown !== null) triggerNextEpisode();
+          if (upNextOwnsKeys) triggerNextEpisode();
+          else if (action === "select" && skipRef.current.press()) break; // (OK presses a Skip button that is new or filling; the play key stays play)
           else togglePlay();
           break;
         case "play":
@@ -1572,7 +1672,11 @@ export function Tv() {
           // Back leaves the video for the library: the first press shows the controls, a second one leaves.
           if (overlayWasVisible) stopPlayback();
           break;
-        default: // "up": nothing to do beyond showing the overlay
+        case "up":
+          // Up from the picture: onto the Skip or Next episode button, if one is up (so a quiet one is pressed with OK too); else it only shows the controls.
+          pill?.querySelector<HTMLElement>("button")?.focus();
+          break;
+        default:
           break;
       }
       event.preventDefault();
@@ -1580,7 +1684,7 @@ export function Tv() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, admin, accountPage, stuck, finished, failed]);
+  }, [unlocked, player, upNextCountdown, upNextOwnsKeys, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, admin, accountPage, stuck, finished, failed]);
 
   // The welcome belongs to the library: whatever takes the screen over (a phone sent something to play, a party, a page) ends it.
   const libraryShows = player.state === "idle" && !accountPage && !resolving && !following && screen === "library";
@@ -1604,7 +1708,8 @@ export function Tv() {
   const hosting = party?.role === "host" && party.guests.length > 0;
   useBackWhile(browserBack() && unlocked && showVideo, () => {
     if (menu) setMenu(menuBack(menu));
-    else if (upNextCountdown !== null) dismissUpNext();
+    else if (upNextOwnsKeys) dismissUpNext();
+    else if (!following && skipRef.current.back()) return;
     else if (following) pressAgain("exit.leaveParty") && leaveParty();
     else if (stuck) cancelLoad();
     else if (hosting) pressAgain("exit.stopParty") && leaveFilm();
@@ -1851,11 +1956,16 @@ export function Tv() {
           upNext={
             upNextCountdown !== null && next
               ? {
-                  seconds: autoplay ? upNextCountdown : null,
+                  seconds: upNextSeconds,
+                  total: upNextTotal,
+                  fresh: !upNextHeld || upNextFresh,
                   label: next.title || t("player.seasonEpisode", { season: next.season, episode: next.episode }),
                 }
               : null
           }
+          skip={following ? null : skipper.view}
+          onSkipPart={() => skipRef.current.skip()}
+          onDismissSkip={() => skipRef.current.dismiss()}
           controlsRef={controlsRef}
           onToggle={playOrPause}
           onSkip={skipHere}
@@ -1993,10 +2103,14 @@ function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerStat
 }
 
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
-/** The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for). */
+/**
+ * The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for); and the Skip
+ * button that is up, if one is.
+ */
 interface Ending {
   ended: boolean;
   upNext?: { seconds: number | null } | undefined;
+  skip?: { kind: "intro" | "recap" | "credits" } | undefined;
 }
 
 const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending, enhance: PlayerState["enhance"]): PlayerState => ({
@@ -2009,6 +2123,7 @@ const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: Norm
   subtitleDelay,
   ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
   ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
+  ...(ending.skip && state.state !== "idle" ? { skip: ending.skip } : {}),
 });
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {

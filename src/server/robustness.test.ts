@@ -319,6 +319,8 @@ beforeAll(async () => {
       librarySources: [library],
       allowPrivateNetwork: true,
       cat: true,
+      // (AniSkip's times: a fake that knows one episode, so that the sweep asks no site of the internet.)
+      animeSkip: { find: async (hint) => (hint.title === "Frieren" ? { intro: { start: 116.75, end: 206.75 } } : null) },
       // (Google sign-in on, at the address the sweep's requests come to; its token endpoint is the sweep's own server, which has none: a code is never taken.)
       google: { clientId: "sweep-client", clientSecret: "sweep-secret", redirectUris: ["http://localhost/api/auth/google/callback"], tokenUrl: `${origin}/token`, timeoutMs: 500 },
       clientDir: client,
@@ -414,6 +416,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/library/seasons": { query: () => ({ url: TITLE }) },
   "GET /api/library/unavailable": { query: () => ({ url: TITLE }) },
   "GET /api/resolve": { query: () => ({ url: `${origin}/page.html` }) },
+  "GET /api/anime/skip": { query: () => ({ title: "Frieren", season: "1", episode: "1", length: "1510" }) },
   "GET /api/proxy": { query: () => ({ url: `${origin}/video.mp4`, referer: `${origin}/` }) },
   "GET /api/subtitles/ro/:file": { ok: [404] },
   "GET /api/subtitles/fallback/:file": { ok: [404] },
@@ -1007,6 +1010,7 @@ const STATE = () => ({
   fullscreen: false,
   ended: false,
   upNext: { seconds: 5 },
+  skip: { kind: "intro" },
   captionStyle: DEFAULT_CAPTION_STYLE,
   subtitleDelay: 0,
   subtitleSync: "ready",
@@ -1031,6 +1035,7 @@ const COMMANDS = (): Array<Record<string, unknown>> => [
   { type: "TOGGLE_FULLSCREEN" },
   { type: "NEXT_EPISODE" },
   { type: "DISMISS_UP_NEXT" },
+  { type: "SKIP_SEGMENT" },
   { type: "REFRESH_ACCOUNT" },
   { type: "SET_SUBTITLE_DELAY", delay: 0.5 },
   { type: "SET_SUBTITLE_SYNC", on: true },
