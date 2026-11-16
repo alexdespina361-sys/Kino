@@ -1330,18 +1330,35 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     entry.opens ? undefined : entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined;
 
   const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
-  // The banner shows the poster of the title the remote is on, beside what it says of it (a category, a person or an invitation has none).
-  const heroPoster = !compact && shown && isTitle(shown.entry) ? sharper(shown.entry.image) : undefined;
+  // The library's pages of rows on a TV or a computer have the banner's picture large, on the right, fading into the page; while the remote is on the first
+  // row and the title has a wide picture of its own, it is shown bright, as a phone's Home opens on one (the owner, 15 Nov: "a large feature at the top").
+  // Further down it is dimmed as before. (No `deep` jump: the picture keeps its place, only the shade over it changes.)
+  const stage = isRowsPage(view) && !compact;
+  const billboard = stage && !deep && !detail && Boolean(shown && isTitle(shown.entry) && shown.entry.backdrop);
+  // The banner shows the poster of the title the remote is on, beside what it says of it (a category, a person or an invitation has none), unless its wide
+  // picture is shown large: three times the same title would be too many.
+  const heroPoster = !compact && !billboard && shown && isTitle(shown.entry) ? sharper(shown.entry.image) : undefined;
   // The friends page, while the remote is on the friends themselves (or on nothing yet): the banner says what the page is and how many of them there are, not
   // again the name that is on the card under the remote. Further down (a title they watched, a request, an invitation) it says what that is, as it did.
   const peopleRow = view.kind === "friends" ? homeRows.find((row) => row.id === "friend-people") : undefined;
   const friendsHead = view.kind === "friends" && !compact && (!shown || (peopleRow?.entries.some((entry) => entry.id === shown.entry.id) ?? false));
 
   return (
-    <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} data-deep={deep} aria-label={t("tv.library")}>
+    <section
+      className="tv-browse"
+      ref={rootRef}
+      data-testid="tv-browse"
+      data-view={viewKey(view)}
+      data-deep={deep}
+      data-stage={stage ? "rows" : undefined}
+      data-billboard={billboard ? "true" : undefined}
+      aria-label={t("tv.library")}
+    >
       {/* (A phone has no banner for a picture to be behind: it does not ask for the big one.) */}
       <Backdrop image={compact ? undefined : (shown?.entry.backdrop ?? shown?.entry.image)} />
       <div className="tv-browse-shade" />
+      {/* (The shade of the bright picture: the two fade into each other as the remote leaves the first row and comes back.) */}
+      {stage && <div className="tv-browse-shade tv-browse-bill" />}
 
       <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} flat={flatHand && !compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 

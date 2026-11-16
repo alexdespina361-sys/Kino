@@ -172,6 +172,32 @@
 :root[data-ui="polish"] .tv-hero { height: var(--hero-h); padding: 0 var(--page-r) calc(var(--em) * 0.6) var(--gutter); }
 :root[data-ui="polish"] .tv-browse[data-deep="true"] .tv-hero { height: var(--hero-h-deep); }
 :root[data-ui="polish"] .tv-hero-text { gap: calc(var(--em) * 0.3); }
+/*
+ * The library's pages of rows (TV, computer): the banner's picture is a large one on the right that fades into the page, bright while the remote is on the
+ * first row (`data-billboard`), dimmed further down as before. Only the shades fade into each other: the picture never moves. Gradients only (old TVs).
+ */
+:root[data-ui="polish"] .tv-browse[data-stage="rows"] > .tv-hero-bg { inset: 0 0 auto 24%; height: 80%; background-position: center 22%; }
+:root[data-ui="polish"] .tv-browse[data-stage="rows"] > .tv-hero-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--bg) 0, rgba(11, 11, 12, 0) 32%), linear-gradient(0deg, var(--bg) 0, rgba(11, 11, 12, 0) 42%);
+}
+:root[data-ui="polish"] .tv-browse[data-stage="rows"] > .tv-browse-shade { transition: opacity 0.45s ease; }
+:root[data-ui="polish"] .tv-browse[data-stage="rows"] > .tv-browse-bill {
+  opacity: 0;
+  background:
+    linear-gradient(90deg, var(--bg) 22%, rgba(11, 11, 12, 0.88) 38%, rgba(11, 11, 12, 0.4) 54%, rgba(11, 11, 12, 0) 70%),
+    linear-gradient(180deg, rgba(11, 11, 12, 0.72) 0, rgba(11, 11, 12, 0.35) 10%, rgba(11, 11, 12, 0) 22%),
+    linear-gradient(0deg, var(--bg) 34%, rgba(11, 11, 12, 0.72) 50%, rgba(11, 11, 12, 0) 68%);
+}
+:root[data-ui="polish"] .tv-browse[data-billboard="true"] > .tv-browse-shade { opacity: 0; }
+:root[data-ui="polish"] .tv-browse[data-billboard="true"] > .tv-browse-bill { opacity: 1; }
+/* (The buttons in the corner are over the picture: a dark ground of their own, so a bright one does not take their words away.) */
+:root[data-ui="polish"] .tv-browse[data-billboard="true"] .tv-browse-corner .tv-account-chip:not(:hover):not(:focus-visible),
+:root[data-ui="polish"] .tv-browse[data-billboard="true"] .tv-corner-button:not(:hover):not(:focus-visible) { background: rgba(11, 11, 12, 0.62); color: var(--text-1); }
+/* (What is written stays on the dark side of the picture.) */
+:root[data-ui="polish"] .tv-browse[data-billboard="true"] .tv-hero { max-width: calc(var(--em) * 50); }
 /* What the banner is showing, said quietly: no capitals and no accent (the accent is for what can be pressed and where you are). */
 :root[data-ui="polish"] .tv-hero-eyebrow {
   font-size: var(--fs-2);
