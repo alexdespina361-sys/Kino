@@ -251,6 +251,18 @@ describe("the PIN of a child's profile", () => {
     expect((await client.post("/api/me/child-pin", { next: "1357", password: credentials.password })).statusCode).toBe(200);
   });
 
+  it("lets in five tries at most when many are sent at once (the 10,000 PINs are few)", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    const answers = await Promise.all(Array.from({ length: 30 }, (_, i) => client.post("/api/me/child-pin/check", { pin: String(1000 + i) })));
+    const codes = answers.map((answer) => answer.statusCode);
+    expect(codes.filter((code) => code === 401)).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(25);
+    // (So is changing it by guesses: those count with the same tries.)
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(429);
+  });
+
   it("is changed or taken off only with the PIN or the password", async () => {
     const { app } = await start();
     const { client } = await signedUp(app);

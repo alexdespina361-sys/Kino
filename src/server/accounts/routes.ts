@@ -144,15 +144,18 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   // "Continue with Google" (google.ts): its sign-ups count with the others of the address.
   const google = googleRoutes(app, { store, authenticate, signIn, readCookie, registrationNow, signUpByIp, passwordCost: options.passwordCost }, options.google);
 
+  // (A try is counted against the account BEFORE the check, which takes a while (scrypt), and forgotten when it was right: counted after it, a thousand tries sent at
+  // once would all be let in before the first was counted. The 10,000 PINs are few.)
+
   /** Check somebody's password, counting a wrong one against the account and the visitor. */
   async function passwordIsRight(email: string, ip: string, password: string): Promise<{ right: boolean; wait: number }> {
     const wait = Math.max(failedByEmail.wait(email), failedByIp.wait(ip));
     if (wait > 0) return { right: false, wait };
+    failedByEmail.hit(email);
     const account = store.findByEmail(email);
     // An address nobody has is checked against a stand-in, so it takes as long as a wrong password and tells nothing.
     const right = await verifyPassword(password, account?.hash ?? (await decoyHash()));
     if (!account || !right) {
-      failedByEmail.hit(email);
       failedByIp.hit(ip);
       return { right: false, wait: 0 };
     }
@@ -166,11 +169,11 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     if (!hash) return { right: true, wait: 0, none: true };
     const wait = Math.max(wrongPinByAccount.wait(accountId), failedByIp.wait(ip));
     if (wait > 0) return { right: false, wait };
+    wrongPinByAccount.hit(accountId);
     if (await verifyPassword(pin, hash)) {
       wrongPinByAccount.reset(accountId);
       return { right: true, wait: 0 };
     }
-    wrongPinByAccount.hit(accountId);
     failedByIp.hit(ip);
     return { right: false, wait: 0 };
   }

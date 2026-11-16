@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { COLLECTIONS, MeSchema, type AvatarId, type ChildPinChange, type DeviceKind, type GoogleOutcome, type Me, type Profile, type Registration } from "../../shared";
-import { useForAWhile } from "../shared/forAWhile";
 import { readStorage, writeStorage } from "../shared/format";
 import { screenLanguage, setLanguage, t, type Key } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
@@ -293,9 +292,11 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
 
   /* ------------------------------ the PIN of a child's profile ------------------------------ */
 
-  // (See `ChildLock`.) A profile whose settings are not known yet (new to this screen, or the server not asked yet) is held as a child's, for HOLD_MS at most.
+  // (See `ChildLock`.) A profile whose settings are not known yet (new to this screen, or the server not asked yet) is held as a child's until they are: on an account with
+  // a PIN, a screen kept from the server (no network, its exchange blocked) does not let a child's profile go once a few seconds have passed. (The screens' rows hold
+  // only for HOLD_MS: see `useProfileHold`.)
   const child = settings.child === true;
-  const unsure = useForAWhile(me !== null && profile !== null && (status === "loading" || openScope !== profile.id || waiting));
+  const unsure = me !== null && profile !== null && (status === "loading" || openScope !== profile.id || waiting);
   const childRef = useRef(child);
   childRef.current = child;
   const unsureRef = useRef(unsure);
@@ -341,7 +342,8 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
   const grownUp = useCallback(
     (action: () => void) => {
       if (lockedNow()) return askPin(action);
-      // A screen that has been on for a while may not know that a PIN was set on another one since: a child's profile asks the server once before it is left.
+      // A screen that has been on for a while may not know that a PIN was set on another one since: a child's profile asks the server once before it is left, and is not
+      // left when the server cannot be asked (it may have a PIN this screen has not heard of).
       if (profileRef.current && childRef.current && !meRef.current?.account.childPin) {
         void api.session().then(
           (state) => {
@@ -349,13 +351,13 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
             if (lockedNow(state.me)) askPin(action);
             else action();
           },
-          () => action(), // (not reachable: nothing says there is a PIN)
+          () => say(t("pin.offline")),
         );
         return;
       }
       action();
     },
-    [lockedNow, askPin],
+    [lockedNow, askPin, say],
   );
 
   const unlock = useCallback(

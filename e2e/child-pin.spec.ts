@@ -98,6 +98,27 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("rail-movies")).toBeVisible(); // (a grown-up's profile: the sections are back)
   });
 
+  test("a TV that has not heard of a PIN set since asks the server before a child's profile is left, and keeps it when the server cannot be asked", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const tv = await openDevice(browser, { viewport });
+    const { first } = await family(tv.context(), "tv", { pin: false });
+    await tv.goto("/tv");
+    await tv.getByTestId(`profile-${first}`).click();
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    // A PIN is set on another screen; this one still has the account without one, and cannot reach the server.
+    expect((await tv.context().request.post("/api/me/child-pin", { data: { next: PIN } })).ok()).toBe(true);
+    await tv.route("**/api/me", (route) => route.abort("internetdisconnected"));
+    await openTvSettings(tv);
+    await tv.getByTestId("tv-switch-profile").click();
+    await expect(tv.getByTestId("tv-account-toast")).toHaveText(en["pin.offline"]);
+    await expect(tv.getByTestId("tv-account")).toBeVisible();
+    await expect(tv.getByTestId("tv-profiles")).toHaveCount(0);
+    // The server answers again: it says there is a PIN, and the PIN is asked.
+    await tv.unroute("**/api/me");
+    await tv.getByTestId("tv-switch-profile").click();
+    await expect(tv.getByTestId("tv-pin-page")).toBeVisible();
+  });
+
   test("on the TV, the settings set the PIN (twice the same), change it with the one there is, and take it off", async ({ browser }) => {
     const tv = await openDevice(browser, { viewport });
     await family(tv.context(), "tv", { child: false, pin: false });
