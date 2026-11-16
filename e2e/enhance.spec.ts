@@ -1,7 +1,7 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
 import type { NormalizedMedia } from "../src/shared";
-import { loadOnTv, openLibrary, openPairedPhone, pressMenuLine, test, tvRoot } from "./helpers";
+import { loadOnTv, openLibrary, openPairedPhone, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, twoSizes } from "./helpers";
 
 /**
  * ✦ 2K in the player (client/enhance): the Quality list has, under a line of its own, what this screen adds to the picture. Picked, the picture the video
@@ -147,5 +147,49 @@ test.describe("✦ 2K: the picture redrawn by the screen", () => {
     await expect(phone.getByTestId("chip-quality")).toContainText("1080p · ✦ 2K");
     expect(await tv.evaluate(() => document.querySelector("video")!.currentSrc)).toContain("q=1080"); // (the same file)
     await expect(phone.getByTestId("quality-1000")).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("a file the page may not read (from another site that does not allow it) is not offered it: its Quality button is not there", async ({ browser, baseURL }) => {
+    const tv = await openTvWithoutWebGpu(browser);
+    const phone = await openPairedPhone(browser, tv);
+    // (The same server under another name is another site to the page: the file plays in the <video>, but its frames may not be read.)
+    const elsewhere = `${baseURL!.replace("127.0.0.1", "localhost")}/fixtures/sample.mp4?elsewhere=1`;
+    await loadOnTv(phone, { title: "Elsewhere", stream: { url: elsewhere, type: "mp4" } });
+    await pausedAt(tv, 5);
+    expect(await tv.evaluate(() => document.querySelector("video")!.currentSrc)).toBe(elsewhere);
+    await expect(tv.getByTestId("tv-source-btn")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveCount(0);
+    await expect(phone.getByTestId("chip-quality")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-enhance")).toHaveCount(0);
+  });
+
+  test("a stream played by hls.js gets it too, asked for by a phone, and it stays drawn at 2K when the stream's quality changes as it plays", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, async (context) => {
+      await twoSizes(context);
+      await context.addInitScript(noWebGpu);
+    });
+    await pressMenuLine(tv, "rail-connect");
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Two sizes", stream: { url: "/fixtures/hls/multi.m3u8", type: "hls" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect.poll(() => phone.states.at(-1)?.enhance?.offers).toEqual(["2k"]); // (its biggest size is 720p)
+
+    phone.cmd({ type: "SET_ENHANCE", mode: "2k" }); // (the command a phone sends: the server lets it through)
+    const canvas = tv.getByTestId("tv-enhance");
+    await expect(canvas).toHaveAttribute("data-drawn", "true");
+    await expect.poll(() => phone.states.at(-1)?.enhance).toEqual({ offers: ["2k"], current: "2k", tier: "sharp" });
+
+    // Played, and moved from one size to the other while it plays (hls.js: the same <video>, its picture from another stream).
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    const before = await tv.evaluate(() => document.querySelector("video")!.currentTime);
+    phone.cmd({ type: "SET_QUALITY", level: 1 });
+    await expect.poll(() => phone.states.at(-1)?.quality?.current).toBe(1);
+    // (Under four seconds of it: a screen without a graphics chip, as here, would be too slow for 2K over a longer stretch, which is another test.)
+    await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.currentTime), { timeout: 10_000 }).toBeGreaterThan(before + 1.5);
+    await expect(canvas).toHaveAttribute("data-drawn", "true");
+    expect(await canvas.evaluate((drawn: HTMLCanvasElement) => [drawn.width, drawn.height])).toEqual([2560, 1440]);
+    expect(phone.states.at(-1)?.enhance).toEqual({ offers: ["2k"], current: "2k", tier: "sharp" }); // (no problem said)
+    phone.close();
   });
 });

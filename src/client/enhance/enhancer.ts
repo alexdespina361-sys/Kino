@@ -74,21 +74,22 @@ export class Enhancer {
   ) {}
 
   /**
-   * `picked`: someone chose it just now (not a choice kept from an earlier film). A size of picture this device was too slow for is then tried
-   * again with FSR 1 (it may keep up now, and the watch says so in a few seconds); a kept choice is left off for it, without a word.
+   * `picked`: someone chose it just now (not a choice kept from an earlier film). It then starts from the top again (Anime4K where there is WebGPU),
+   * whatever this device fell back to before: one slow moment once (a film starting while the computer was busy) does not keep a strong device on
+   * FSR 1 for good, and the watch says within seconds if it still cannot keep up. A kept choice starts with what kept up before for this size of
+   * picture, and is left off, without a word, for a size this device was too slow for.
    */
   async start(picked: boolean): Promise<void> {
     const webgpu = typeof navigator !== "undefined" && "gpu" in navigator && Boolean(navigator.gpu);
     // (What kept up is remembered by the size of the picture: a film just starting says its size first.)
     if (this.video.readyState < 1) await new Promise((resolve) => this.video.addEventListener("loadedmetadata", resolve, { once: true }));
     if (this.stopped) return;
-    const first = firstTier(remembered(), this.video.videoHeight || 720, webgpu);
-    if (first === "slow" && !picked) {
+    const first = picked ? firstTier({}, 0, webgpu) : firstTier(remembered(), this.video.videoHeight || 720, webgpu);
+    if (first === "slow") {
       this.stop();
       return this.report({ drawing: false, problem: "slow", quiet: true });
     }
-    const tier = first === "slow" ? "sharp" : first;
-    await this.use(tier);
+    await this.use(first);
     if (this.stopped || !this.drawer) return;
     const step = () => {
       if (this.stopped) return;
@@ -129,13 +130,17 @@ export class Enhancer {
     canvas.setAttribute("aria-hidden", "true");
     let drawer: Drawer;
     if (tier === "anime") {
-      const { adapter } = await webgpuAdapter();
+      const { adapter, problem } = await webgpuAdapter();
       if (this.stopped) return;
-      if (!adapter) return this.use("sharp");
+      if (!adapter) {
+        console.warn(`✦ 2K: Anime4K cannot start here, FSR 1 draws instead (${problem ?? "no graphics chip"})`);
+        return this.use("sharp");
+      }
       let gpu: GpuUpscaler;
       try {
         gpu = await GpuUpscaler.create(adapter, canvas);
-      } catch {
+      } catch (error) {
+        console.warn("✦ 2K: Anime4K did not start, FSR 1 draws instead:", error);
         return this.use("sharp");
       }
       if (this.stopped) return void gpu.dispose();
