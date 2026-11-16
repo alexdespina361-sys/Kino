@@ -1,5 +1,5 @@
 import { activityVerb, isLive, listOf, ratingKey, resolveLists, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type ListInfo, type LiveListItem, type LiveRating, type Message } from "../../shared";
-import { ago } from "../account/time";
+import { ago, formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 
@@ -15,12 +15,35 @@ export type TogetherRequest = Extract<InboxItem, { kind: "together" }>;
 /** The name to show for a friend id: the friend's, else nothing. */
 export const nameOf = (friends: readonly Friend[], id: string): string => friends.find((friend) => friend.id === id)?.name ?? "";
 
-/** The small line under a friend's name: that they have turned friends off, else what they are watching or last watched, else that they are online. */
+/** Past a week, when somebody was last online is told as the day it was ("Last online on 3 Nov 2026") and not as "12 days ago". */
+const LAST_ONLINE_AGO_MS = 7 * 24 * 3600 * 1000;
+
+/**
+ * Whether a friend is online now, else when they last were ("Online", "Last online 5 minutes ago"); nothing when the server does not say (they hide it, or
+ * this profile does, or they have not been since). A clock here that is behind the server's does not make it a time to come.
+ */
+export function presenceLine(friend: Friend, now: number): string {
+  if (!friend.on) return "";
+  if (friend.online) return t("friends.online");
+  if (friend.lastOnline === undefined) return "";
+  const then = Math.min(friend.lastOnline, now);
+  if (now - then < 60_000) return t("friends.lastOnlineNow"); // (not "Last online now": they are not, and it was a moment ago)
+  return now - then < LAST_ONLINE_AGO_MS ? t("friends.lastOnline", { when: ago(then, now, getLanguage()) }) : t("friends.lastOnlineDay", { day: formatDay(then, getLanguage()) });
+}
+
+/** The small line under a friend's name: that they have turned friends off, else what they are watching or last watched, else whether they are online or when they last were. */
 export function friendLine(friend: Friend, activity: readonly ActivityItem[], now: number): string {
   if (!friend.on) return t("friends.paused");
   const item = activity.find((each) => each.friend === friend.id);
   if (item) return t(`friends.line.${activityVerb(item, now)}`, { title: item.title });
-  return friend.online ? t("friends.online") : "";
+  return presenceLine(friend, now);
+}
+
+/** What a friend's own page says under their name (before since when they are friends): what they are watching or last watched, and whether they are online or when they last were, both. */
+export function friendHeadline(friend: Friend, activity: readonly ActivityItem[], now: number): string {
+  if (!friend.on) return t("friends.paused");
+  const item = activity.find((each) => each.friend === friend.id);
+  return [item ? t(`friends.line.${activityVerb(item, now)}`, { title: item.title }) : "", presenceLine(friend, now)].filter(Boolean).join("  ·  ");
 }
 
 /**

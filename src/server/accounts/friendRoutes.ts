@@ -154,8 +154,10 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const mine = friendChoices(store.settingsOf(profileId));
     const theirSettings = store.settingsOf(friend.id);
     const theirs = friendChoices(theirSettings);
-    // (Seen as online only by a profile that lets itself be seen: nobody sees what they do not show.)
-    const online = mine.friends && mine.friendsPresence && theirs.friends && theirs.friendsPresence && presence.online(friend.id);
+    // (Seen as online, and when last online, only by a profile that lets itself be seen: nobody sees what they do not show.)
+    const shown = mine.friends && mine.friendsPresence && theirs.friends && theirs.friendsPresence;
+    const online = shown && presence.online(friend.id);
+    const lastOnline = shown ? store.seenAt(friend.id) : undefined;
     return {
       ...card,
       since: friend.since,
@@ -165,6 +167,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       activity: tellsWhatTheyWatch(profileId, friend.id),
       inbox: theirs.friends && theirs.friendsInbox,
       ...(online ? { online: true } : {}),
+      ...(lastOnline !== undefined ? { lastOnline } : {}),
     };
   }
 
@@ -313,8 +316,14 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const me = asker(request, reply);
     if (!me) return reply;
     // A screen that looks is a screen that is open: that is how friends know a profile is online (unless it chose not to be seen).
-    if (friendChoices(store.settingsOf(me.profileId)).friendsPresence) presence.heartbeat(me.profileId);
-    else presence.forget(me.profileId);
+    // (And when it last looked is what they are told as "Last online"; a profile that turned that off is forgotten as having looked at all.)
+    if (friendChoices(store.settingsOf(me.profileId)).friendsPresence) {
+      presence.heartbeat(me.profileId);
+      store.markSeen(me.profileId);
+    } else {
+      presence.forget(me.profileId);
+      store.forgetSeen(me.profileId);
+    }
     return reply.send(stateFor(me.profileId, request.headers.host));
   });
 

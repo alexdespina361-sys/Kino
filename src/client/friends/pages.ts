@@ -9,7 +9,7 @@ import { entryOfRating, entryOfSaved, type Entry, type GridPage, type HomeRow, t
 import { BELL_WAITING, bellView } from "./bell";
 import type { Cleared } from "./cleared";
 import { inboxToShow, planLines, planStatus, type PlanStatus } from "./plans";
-import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, myScoreFor, nameOf, ratedBy, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
+import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendHeadline, friendLine, listsOf, myScoreFor, nameOf, ratedBy, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
 /**
  * What the TV's friends pages are made of, worked out from what the server says of the friends: pure, like tv/pages.ts, so what
@@ -69,7 +69,7 @@ const entryOfFriendRequest = (item: FriendRequest): Entry => ({
 
 /**
  * A friend, as a tile that opens their page, with the picture they chose; the line under the name is how many messages wait from them (quietly: a line, not a
- * popup), else what they are watching, else that they are online, else since when they are friends.
+ * popup), else what they are watching, else that they are online or when they last were, else since when they are friends.
  */
 const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: number, unread = 0): Entry => ({
   id: `friend:${friend.id}`,
@@ -244,7 +244,8 @@ const NOTHING_MINE: Mine = { list: [], ratings: [] };
 /**
  * A friend's page: the titles in the lists they keep (each list a section of its own, under its name, one under the other) or the ones they rated, the newest first.
  * Null for a friend who is gone. When there is nothing to show, `empty` says why: not shared, turned off, still asked, or nothing yet.
- * Under the name: what they are doing (watching, else online) and since when they are friends; and, when what they watch is not shown, the line that says why.
+ * Under the name: what they are watching, whether they are online or when they last were, and since when they are friends; and, when what they watch is not
+ * shown, the line that says why.
  * What the two have in common comes first: the titles both keep in a list are a section of their own above the friend's lists, and a title both rated says
  * this profile's score after the friend's.
  */
@@ -254,7 +255,7 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
   if (!friend) return null;
   const since = t("friends.since", { day: formatDay(friend.since, getLanguage()) });
   const hint = activityHint(friend, iGet);
-  const doing = friend.on ? friendLine(friend, state?.activity ?? [], now) : "";
+  const doing = friend.on ? friendHeadline(friend, state?.activity ?? [], now) : "";
   const page = { title: friend.name, meta: friend.on ? [doing, since].filter(Boolean).join("  ·  ") : t("friends.paused"), layout: "wide" as const, ...(hint ? { hint } : {}) };
   const none = (empty: string): GridPage => ({ ...page, entries: [], empty });
   if (!friend.on) return none(t("friends.theirsOff", { name: friend.name }));

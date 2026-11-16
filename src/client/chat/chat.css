@@ -88,6 +88,9 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 
 .chat { display: flex; flex-direction: column; gap: 10px; height: min(66vh, 540px); min-height: 0; }
 .chat-tools { display: flex; flex: none; flex-wrap: wrap; gap: 8px; }
+/* (Under the sheet's title: whether the friend is online, green as their dot is, else when they last were.) */
+.chat-presence { flex: none; margin: -4px 0 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.chat-presence[data-online="true"] { color: #3ddc84; }
 .chat-tool {
   display: inline-flex;
   align-items: center;

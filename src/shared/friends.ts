@@ -288,6 +288,11 @@ export const FriendSchema = z.object({
   inbox: z.boolean(),
   /** A screen of theirs is open right now, and both of you let friends see that (see `ONLINE_MS`). Absent: not online, or not told. */
   online: z.boolean().optional(),
+  /**
+   * When a screen of theirs last looked after its friends (the server's clock, in ms; also while they are online, so that a screen whose news has gone old
+   * can say when they last were), told on the same terms as `online`. Absent: not told, or never since they last chose not to be seen.
+   */
+  lastOnline: z.number().int().nonnegative().optional(),
 });
 export type Friend = z.infer<typeof FriendSchema>;
 

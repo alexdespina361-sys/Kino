@@ -14,6 +14,9 @@ import "./chat.css";
 export interface ChatPhoneProps {
   /** The friend, as friends see them. */
   name: string;
+  /** Whether they are online, else when they last were ("Last online 5 minutes ago", see `presenceLine`): a line at the top of the chat. Empty: none. */
+  presence?: string | undefined;
+  online?: boolean;
   session: ChatSession;
   report: ChatReport;
   /** Whether this profile takes messages from friends (the setting "Friends can message me"). When it does not, the friend can't answer, and the page says so. */
@@ -29,7 +32,7 @@ export interface ChatPhoneProps {
  * The chat with one friend, on the phone: a sheet over the friend's page. The messages, with a line for who they are from and when; a box to write
  * in; Mute and Report on top. A message of one's own can be pressed, and taken back. The sheet closes with the phone's Back, like the others.
  */
-export function ChatPhone({ name, session, report, receiving = true, onClose, onOpenTitle, now = Date.now() }: ChatPhoneProps) {
+export function ChatPhone({ name, presence, online = false, session, report, receiving = true, onClose, onOpenTitle, now = Date.now() }: ChatPhoneProps) {
   const t = useT();
   const { state } = session;
   const [picked, setPicked] = useState<number | null>(null);
@@ -41,6 +44,11 @@ export function ChatPhone({ name, session, report, receiving = true, onClose, on
     <>
       <Sheet title={t("chat.title", { name })} onClose={onClose} testId="chat-sheet">
         <div className="chat" data-testid="chat">
+          {presence && (
+            <p className="chat-presence" data-online={online} data-testid="chat-presence">
+              {presence}
+            </p>
+          )}
           <div className="chat-tools">
             <button type="button" className="chat-tool" aria-pressed={state.muted} onClick={() => void session.setMuted(!state.muted)} data-testid="chat-mute">
               {t(state.muted ? "chat.unmute" : "chat.mute")}

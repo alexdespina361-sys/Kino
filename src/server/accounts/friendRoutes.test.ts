@@ -16,7 +16,7 @@ import {
 import { buildApp } from "../app";
 import { Registry } from "../sessions/registry";
 import { MemoryPersistence } from "./persistence";
-import { AccountStore } from "./store";
+import { AccountStore, SEEN_WRITE_MS } from "./store";
 
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -1344,6 +1344,83 @@ describe("who is online", () => {
     await alex.choose({ friendsOff: true });
     expect((await sam.state()).friends[0]).toMatchObject({ on: false });
     expect((await sam.state()).friends[0]).not.toHaveProperty("online");
+    expect((await sam.state()).friends[0]).not.toHaveProperty("lastOnline");
+  });
+});
+
+describe("when a friend was last online", () => {
+  const lastIn = async (who: Person) => (await who.state()).friends.map((friend) => friend.lastOnline);
+
+  it("is the moment their screen last looked, told while they are online too, and nothing before it ever has", async () => {
+    const { alex, sam } = await friends();
+    expect(await lastIn(sam)).toEqual([undefined]); // (sam's own look is no sign of alex)
+    await alex.state();
+    const looked = clock.now;
+    expect((await sam.state()).friends[0]).toMatchObject({ online: true, lastOnline: looked });
+
+    clock.now += ONLINE_MS + 5 * 60_000;
+    const later = (await sam.state()).friends[0]!;
+    expect(later.lastOnline).toBe(looked);
+    expect(later).not.toHaveProperty("online");
+
+    clock.now += 30_000;
+    await alex.state();
+    expect(await lastIn(sam)).toEqual([clock.now]); // (every look counts, not only the ones that are written down)
+  });
+
+  it("is told on the same terms as online: not of a profile that hides it, not to one that does, and a look made before it was hidden is forgotten", async () => {
+    const { alex, sam } = await friends();
+    await alex.state();
+    await alex.choose({ friendsPresence: false });
+    expect(await lastIn(sam)).toEqual([undefined]); // (the switch alone hides it)
+    await alex.state(); // (the first look after it is off forgets what was known)
+    await alex.choose({ friendsPresence: true });
+    expect(await lastIn(sam)).toEqual([undefined]); // (not a screen of alex's has looked since)
+    await alex.state();
+    expect(await lastIn(sam)).toEqual([clock.now]);
+
+    await sam.choose({ friendsPresence: false });
+    expect(await lastIn(sam)).toEqual([undefined]); // (sam hides it, and is shown nobody's)
+    await sam.choose({ friendsPresence: true });
+    expect(await lastIn(sam)).toEqual([expect.any(Number)]);
+    await alex.choose({ friendsOff: true });
+    expect(await lastIn(sam)).toEqual([undefined]);
+  });
+
+  it("is still known after the server restarts: to the moment when it stopped as a server does, else as last written down, at most ten minutes early", async () => {
+    const persistence = new MemoryPersistence();
+    const first = await start(persistence);
+    const alex = await person(first.app, "alex");
+    const sam = await person(first.app, "sam");
+    await alex.choose({ friendsOff: false });
+    await sam.choose({ friendsOff: false });
+    const { data: made } = await alex.client.post(mine(alex, "/invites"));
+    await sam.client.post(mine(sam, "/accept"), { code: made.code });
+    const seenBy = async (world: { app: FastifyInstance }) => {
+      const back = new Client(world.app);
+      back.cookie = sam.client.cookie;
+      return ((await back.get(mine(sam))).data as FriendsState).friends[0]?.lastOnline;
+    };
+
+    await alex.state();
+    const written = clock.now;
+    clock.now += 3 * 60_000;
+    await alex.state(); // (only in memory: it is not ten minutes newer than what was written)
+    const last = clock.now;
+    await first.store.flush();
+    expect(await seenBy(await start(persistence))).toBe(written); // (a server that died)
+
+    clock.now += SEEN_WRITE_MS;
+    await alex.state();
+    await first.store.flush();
+    expect(await seenBy(await start(persistence))).toBe(clock.now); // (ten minutes on, a look is written down)
+
+    clock.now += 60_000;
+    await alex.state();
+    const stopped = clock.now;
+    await first.store.close();
+    expect(await seenBy(await start(persistence))).toBe(stopped); // (a server that stopped as servers do)
+    expect(stopped).toBeGreaterThan(last);
   });
 });
 

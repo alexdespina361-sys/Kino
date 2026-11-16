@@ -37,6 +37,11 @@ import type { Persistence } from "./persistence";
 
 interface ProfileMeta extends Profile {
   createdAt: number;
+  /**
+   * When a screen of this profile last looked after its friends (what friends are told as "Last online", see `markSeen`), as last written down: up to
+   * `SEEN_WRITE_MS` older than the last look while the server runs, to the moment once it has stopped. Absent: never, or not since it chose not to be seen.
+   */
+  seenAt?: number;
 }
 interface AccountDoc {
   v: 1;
@@ -80,6 +85,8 @@ interface ProfileData {
 /** A sign-in lasts this long after the device was last used (a browser will not keep a cookie longer than about 400 days). Signing out, or clearing the browser's cookies, is what ends it sooner. */
 export const SESSION_TTL_MS = 400 * 24 * 3600 * 1000;
 const SESSION_TOUCH_MS = 3600 * 1000;
+/** A profile's last look is written down at most this often (a screen looks every half minute): "Last online" after a restart is at most this much early. */
+export const SEEN_WRITE_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = 20;
 /** A clock that runs ahead must not make its items win for ever. */
 const FUTURE_SLACK_MS = 60_000;
@@ -155,6 +162,9 @@ export class AccountStore {
     on: (profileId) => friendChoices(this.settingsOf(profileId)).friends,
     takes: (profileId) => takesMessages(this.settingsOf(profileId)),
   });
+
+  /** When a screen of each profile last looked, to the moment (see `markSeen`): what is written down of it is a little older. */
+  private readonly seen = new Map<string, number>();
 
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -313,6 +323,13 @@ export class AccountStore {
   }
 
   async close() {
+    // (The last looks as they were to the moment: after a restart a friend is told when the profile was last online, and not up to ten minutes before.)
+    for (const [profileId, at] of this.seen) {
+      const found = this.metaOf(profileId);
+      if (!found || found.profile.seenAt === at) continue;
+      found.profile.seenAt = at;
+      this.touch(`account:${found.account.id}`);
+    }
     await this.flush();
     await this.options.persistence.close?.();
   }
@@ -500,7 +517,43 @@ export class AccountStore {
     this.drop(`pdata:${profileId}`);
     this.book.forget(profileId);
     this.talk.forget(profileId);
+    this.seen.delete(profileId);
     return ok(null);
+  }
+
+  /** The profile with this id and the account it is on; nothing for a profile that is gone. */
+  private metaOf(profileId: string): { account: AccountDoc; profile: ProfileMeta } | undefined {
+    const account = this.accounts.get(this.profileOwner.get(profileId) ?? "");
+    const profile = account?.profiles.find((candidate) => candidate.id === profileId);
+    return account && profile ? { account, profile } : undefined;
+  }
+
+  /**
+   * A screen of this profile looked after its friends just now: what its friends are told as "Last online" (only a profile that lets itself be seen is
+   * marked, see friendRoutes.ts). The moment is kept in memory; it is written down when it is `SEEN_WRITE_MS` newer than what was, and as the server stops.
+   */
+  markSeen(profileId: string): void {
+    const found = this.metaOf(profileId);
+    if (!found) return;
+    const at = this.now();
+    this.seen.set(profileId, at);
+    if (found.profile.seenAt !== undefined && at - found.profile.seenAt < SEEN_WRITE_MS && at >= found.profile.seenAt) return;
+    found.profile.seenAt = at;
+    this.touch(`account:${found.account.id}`);
+  }
+
+  /** When a screen of this profile last looked (see `markSeen`); nothing when it never has, or not since it last chose not to be seen. */
+  seenAt(profileId: string): number | undefined {
+    return this.seen.get(profileId) ?? this.metaOf(profileId)?.profile.seenAt;
+  }
+
+  /** A profile that chose not to be seen as online is not remembered as having looked at all: what was kept of it goes. */
+  forgetSeen(profileId: string): void {
+    this.seen.delete(profileId);
+    const found = this.metaOf(profileId);
+    if (found?.profile.seenAt === undefined) return;
+    delete found.profile.seenAt;
+    this.touch(`account:${found.account.id}`);
   }
 
   ownsProfile(accountId: string, profileId: string) {

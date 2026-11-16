@@ -355,6 +355,9 @@
 :root[data-ui="polish"] .phone-ui .bell-badge { font-size: var(--p-fs-1); }
 /* A friend's card: the line under the name (online, and since when) wraps rather than being cut with an ellipsis: the date is the point of it (and "Friends since 13 Oct 2026" is longer in another language). */
 :root[data-ui="polish"] .phone-ui [data-testid="friend-page"] .account-who .muted { font-size: var(--p-fs-2); white-space: normal; }
+/* ...and over it, on a line of its own, what they are doing and whether they are online (green, as the dot is) or when they last were. */
+:root[data-ui="polish"] .phone-ui [data-testid="friend-page"] .account-who .friend-now { margin-bottom: 2px; color: var(--text-2); font-size: var(--p-fs-2); font-weight: 600; white-space: normal; }
+:root[data-ui="polish"] .phone-ui [data-testid="friend-page"] .account-who .friend-now[data-online="true"] { color: var(--ok); }
 
 /* ------------------------------ held sideways ------------------------------ */
 
