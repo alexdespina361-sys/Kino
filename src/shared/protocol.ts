@@ -25,10 +25,10 @@ export type PlayerTrack = z.infer<typeof PlayerTrackSchema>;
 const StartAtSchema = z.number().finite().min(0).max(86_400);
 
 /**
- * What the screen itself can add to the picture (the "✦" choices of the Quality list, made by the screen's graphics chip, not by the film's host): the
- * picture redrawn at 2K, at 2K and 60 frames a second, or at 60 frames a second only (a film that is 2K already). "off": the picture as it comes.
+ * What the screen itself can add to the picture (the "✦" choice of the Quality list, made by the screen's graphics chip, not by the film's host): the
+ * picture redrawn at 2K. "off": the picture as it comes. (The 60 fps choices were never offered, and the owner dropped them on 16 Nov 2026.)
  */
-export const EnhanceModeSchema = z.enum(["off", "2k", "2k60", "60"]);
+export const EnhanceModeSchema = z.enum(["off", "2k"]);
 export type EnhanceMode = z.infer<typeof EnhanceModeSchema>;
 /** How the screen redraws the picture: Anime4K's network on WebGPU ("anime", the stronger graphics chips), or AMD FSR 1 on WebGL ("sharp"). */
 export const EnhanceTierSchema = z.enum(["anime", "sharp"]);

@@ -557,8 +557,6 @@ export const ro: Dictionary = {
   "player.auto": "Automată",
   "player.enhanceHeading": "✦ Îmbunătățit de acest dispozitiv",
   "player.enhance2k": "✦ 2K",
-  "player.enhance2k60": "✦ 2K · 60 fps",
-  "player.enhance60": "✦ 60 fps",
   "player.enhanceOff": "✦ Oprit",
   "notice.enhanceOn": "{mode} pornit · {by}",
   "notice.enhanceOff": "{mode} oprit",

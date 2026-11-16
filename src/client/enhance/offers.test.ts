@@ -1,28 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { biggest, enhanceOffers, firstTier, isTwoK, readChoice, readTiers, sizeClass, twoKSize, Watch } from "./offers";
 
-const both = { upscale: true, boost: true };
-const upscaleOnly = { upscale: true, boost: false };
+const can = { upscale: true };
 
 describe("the ✦ choices of the Quality list", () => {
-  it("offers 2K and 2K at 60 fps below 2K, and 60 fps alone for a film that is 2K already (the owner's rule)", () => {
-    expect(enhanceOffers({ width: 1280, height: 720 }, 24, both)).toEqual(["2k", "2k60"]);
-    expect(enhanceOffers({ width: 1920, height: 804 }, 23.976, both)).toEqual(["2k", "2k60"]);
-    expect(enhanceOffers({ width: 2560, height: 1440 }, 24, both)).toEqual(["60"]);
-    expect(enhanceOffers({ width: 3840, height: 1608 }, 24, both)).toEqual(["60"]);
-  });
-
-  it("leaves the 60 fps ones out where frames between cannot be made, or the film has 50 a second already", () => {
-    expect(enhanceOffers({ width: 1280, height: 720 }, 24, upscaleOnly)).toEqual(["2k"]);
-    expect(enhanceOffers({ width: 2560, height: 1440 }, 24, upscaleOnly)).toEqual([]);
-    expect(enhanceOffers({ width: 1280, height: 720 }, 50, both)).toEqual(["2k"]);
-    expect(enhanceOffers({ width: 1280, height: 720 }, 0, both)).toEqual(["2k", "2k60"]); // (not known yet: the usual films are 24-30)
+  it("offers 2K below 2K, and nothing for a film that is 2K already (no frames between: the owner dropped them, 16 Nov)", () => {
+    expect(enhanceOffers({ width: 1280, height: 720 }, can)).toEqual(["2k"]);
+    expect(enhanceOffers({ width: 1920, height: 804 }, can)).toEqual(["2k"]);
+    expect(enhanceOffers({ width: 2560, height: 1440 }, can)).toEqual([]);
+    expect(enhanceOffers({ width: 3840, height: 1608 }, can)).toEqual([]);
   });
 
   it("offers nothing where the picture cannot be redrawn, or its size is not known", () => {
-    expect(enhanceOffers({ width: 1280, height: 720 }, 24, { upscale: false, boost: false })).toEqual([]);
-    expect(enhanceOffers(undefined, 24, both)).toEqual([]);
-    expect(enhanceOffers({ width: 0, height: 0 }, 24, both)).toEqual([]);
+    expect(enhanceOffers({ width: 1280, height: 720 }, { upscale: false })).toEqual([]);
+    expect(enhanceOffers(undefined, can)).toEqual([]);
+    expect(enhanceOffers({ width: 0, height: 0 }, can)).toEqual([]);
   });
 
   it("calls 2K what the quality labels call 2K, a film's own shape too", () => {
@@ -82,6 +74,7 @@ describe("what a device remembers", () => {
     expect(readTiers(null)).toEqual({});
     expect(readChoice("2k")).toBe("2k");
     expect(readChoice("4k")).toBe("off");
+    expect(readChoice("2k60")).toBe("off"); // (never offered, and no longer a choice)
     expect(readChoice(null)).toBe("off");
   });
 });

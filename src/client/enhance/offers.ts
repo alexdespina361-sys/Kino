@@ -1,6 +1,7 @@
 /**
- * The "✦" choices of the Quality list: the picture redrawn by the screen's own graphics chip, at 2K (2560 x 1440), and at 60 frames a second. These are
- * the rules of which a film gets (pure, for the tests); enhancer.ts draws them, and is loaded only when one is picked.
+ * The "✦" choice of the Quality list: the picture redrawn by the screen's own graphics chip, at 2K (2560 x 1440). These are the rules of which film gets it
+ * (pure, for the tests); enhancer.ts draws it, and is loaded only when it is picked. (Frames between, at 60 a second, were built and never offered: the owner
+ * dropped them on 16 Nov 2026, "we no longer add frame rate booster, we only keep the 2k". The Labs test page still has its trial of them.)
  */
 
 import type { EnhanceMode, EnhanceTier } from "../../shared";
@@ -22,23 +23,15 @@ export function twoKSize(size: Size): Size {
   return { width: Math.round((size.width * scale) / 2) * 2, height: Math.round((size.height * scale) / 2) * 2 };
 }
 
-/** What this screen can do: redraw the picture bigger (WebGL 2, frames it may read), and make frames between (not yet anywhere: see `boostOn`). */
+/** What this screen can do: redraw the picture bigger (WebGL 2, frames it may read). */
 export interface Can {
   upscale: boolean;
-  boost: boolean;
 }
 
-/**
- * The ✦ choices for a film whose biggest picture is `best` (the biggest of its qualities, or its one file's size), at `fps` frames a second (0: not
- * known yet): 2K and 2K at 60 fps for a film below 2K, 60 fps alone for one that is 2K already (the owner's rule), and the 60 fps ones only for a film
- * under 50 frames a second.
- */
-export function enhanceOffers(best: Size | undefined, fps: number, can: Can): EnhanceOffer[] {
+/** The ✦ choices for a film whose biggest picture is `best` (the biggest of its qualities, or its one file's size): 2K for a film below 2K, where the screen can redraw it. */
+export function enhanceOffers(best: Size | undefined, can: Can): EnhanceOffer[] {
   if (!best || !(best.width > 0) || !(best.height > 0)) return [];
-  const boost = can.boost && !(fps >= 50);
-  if (isTwoK(best)) return boost ? ["60"] : [];
-  if (!can.upscale) return [];
-  return boost ? ["2k", "2k60"] : ["2k"];
+  return can.upscale && !isTwoK(best) ? ["2k"] : [];
 }
 
 /** The biggest of a film's qualities that says its size (or none). A quality that says only its height (a file called "1440p") is taken as 16:9. */
@@ -113,7 +106,7 @@ export function readTiers(text: string | null): Remembered {
 }
 
 /** The ✦ choice kept, read back (anything else is off). */
-export const readChoice = (text: string | null): EnhanceOffer | "off" => (text === "2k" || text === "2k60" || text === "60" ? text : "off");
+export const readChoice = (text: string | null): EnhanceOffer | "off" => (text === "2k" ? text : "off");
 
 /** The way to start with on this device for a picture of `height`: what kept up before, else Anime4K where there is WebGPU, else FSR 1. */
 export function firstTier(remembered: Remembered, height: number, webgpu: boolean): EnhanceTier | "slow" {

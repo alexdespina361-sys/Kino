@@ -557,8 +557,6 @@ export const en = {
   "player.auto": "Auto",
   "player.enhanceHeading": "✦ Enhanced by this device",
   "player.enhance2k": "✦ 2K",
-  "player.enhance2k60": "✦ 2K · 60 fps",
-  "player.enhance60": "✦ 60 fps",
   "player.enhanceOff": "✦ Off",
   "notice.enhanceOn": "{mode} on · {by}",
   "notice.enhanceOff": "{mode} off",

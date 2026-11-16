@@ -554,8 +554,6 @@ export const it: Dictionary = {
   "player.auto": "Auto",
   "player.enhanceHeading": "✦ Migliorato da questo dispositivo",
   "player.enhance2k": "✦ 2K",
-  "player.enhance2k60": "✦ 2K · 60 fps",
-  "player.enhance60": "✦ 60 fps",
   "player.enhanceOff": "✦ Spento",
   "notice.enhanceOn": "{mode} attivo · {by}",
   "notice.enhanceOff": "{mode} spento",

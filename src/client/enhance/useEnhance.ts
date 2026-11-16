@@ -14,9 +14,6 @@ import { biggest, CHOICE_KEY, enhanceOffers, readChoice, type EnhanceOffer, type
 const canRedraw = (): boolean =>
   typeof WebGL2RenderingContext !== "undefined" && typeof HTMLVideoElement !== "undefined" && "requestVideoFrameCallback" in HTMLVideoElement.prototype;
 
-/** Frames between (the 60 fps choices): not offered anywhere yet. They come once RIFE keeps up live (see the improvement program's hand-over, entry 53). */
-const canBoost = (): boolean => false;
-
 function readKept(): EnhanceOffer | "off" {
   try {
     return readChoice(localStorage.getItem(CHOICE_KEY));
@@ -66,7 +63,7 @@ export function useEnhance({ video, host, film, player, readable, say }: Enhance
 
   const showing = player.state !== "idle" && player.state !== "error";
   const best: Size | undefined = biggest(player.quality?.levels ?? []) ?? (video && video.videoWidth > 0 ? { width: video.videoWidth, height: video.videoHeight } : undefined);
-  const offers = showing && film ? enhanceOffers(best, 0, { upscale: readable && canRedraw(), boost: canBoost() }) : [];
+  const offers = showing && film ? enhanceOffers(best, { upscale: readable && canRedraw() }) : [];
   const wanted: EnhanceMode = choice !== "off" && offers.includes(choice) ? choice : "off";
 
   useEffect(() => {

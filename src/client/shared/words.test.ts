@@ -131,7 +131,7 @@ describe("the Quality button with the ✦ choices", () => {
     { id: 0, label: "480p" },
     { id: 1, label: "720p" },
   ];
-  const offers: ("2k" | "2k60" | "60")[] = ["2k"];
+  const offers: "2k"[] = ["2k"];
 
   it("is there for a film of several qualities, or of one with a ✦ choice to pick", () => {
     expect(hasPictureChoice({ quality: { levels, current: -1 } })).toBe(true);
@@ -147,7 +147,7 @@ describe("the Quality button with the ✦ choices", () => {
     expect(pictureName({ enhance: { offers, current: "2k" } })).toBe("✦ 2K");
     expect(pictureName({ quality: { levels: [levels[1]!], current: 1 }, enhance: { offers, current: "off" } })).toBe("720p");
     expect(pictureName({ enhance: { offers, current: "off" } })).toBe("✦ Off");
-    expect(enhanceName("2k60")).toBe("✦ 2K · 60 fps");
+    expect(enhanceName("2k")).toBe("✦ 2K");
     setLanguage("ro", false);
     expect(pictureName({ enhance: { offers, current: "off" } })).toBe("✦ Oprit");
   });
