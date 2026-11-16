@@ -133,14 +133,21 @@ export const DIRECT_START_MS = 12_000;
 /**
  * With Auto off (every piece in the highest quality), the first piece of a film comes in 480p instead, a quarter of the bytes or less, so that the picture
  * starts sooner; the highest follows from the second piece on, without a stop (the owner's idea, 15 Nov: a first piece in 480p, "only if this can be done
- * for the first 3-5 seconds at most"). So only when that first piece plays for no longer than `LOW_FIRST_MAX_S`: the highest's list comes first, as before,
- * and says how long the piece is; a stream cut into longer pieces then starts in the highest, request for request as before (0 turns this off).
- * (Auto starts in the lowest quality there is anyway, and follows the connection from there.)
+ * for the first 3-5 seconds at most"; then, 16 Nov evening, yes to 6 s, which many hosts cut). So only when that first piece plays for no longer than
+ * `LOW_FIRST_MAX_S`: the highest's list comes first, as before, and says how long the piece is; a stream cut into longer pieces then starts in the
+ * highest, request for request as before (0 turns this off). (Auto starts in the lowest quality there is anyway, and follows the connection from there.)
  * Measured on a synthetic 1080p/720p/480p/360p stream (item 9's bench, 16 Nov): with 2 s pieces, from Play to a moving picture took 1.98 s before and 1.05 s
- * after on a 10 Mbps link, 1.05 s and 0.68 s on 25 Mbps; 480p for the first 1.8 s, then 1080p, and no stop to fill at the change. 6 s and 10 s pieces: the
- * same as before within a few tens of ms (4.05/6.2 s on 10 Mbps, 1.9/2.77 s on 25 Mbps).
+ * after on a 10 Mbps link, 1.05 s and 0.68 s on 25 Mbps; 480p for the first 1.8 s, then 1080p, and no stop to fill at the change. 10 s pieces: the
+ * same as before within a few tens of ms (6.2 s on 10 Mbps, 2.77 s on 25 Mbps). 6 s pieces, once 6 s counted (16 Nov evening, 3 runs each): 4.05 s before and
+ * 1.50 s after on 10 Mbps, 1.90 s and 0.89 s on 25 Mbps; 480p for the first 5.9 s, then 1080p, no stop to fill.
  */
-export const LOW_FIRST_MAX_S = 5;
+export const LOW_FIRST_MAX_S = 6;
+/**
+ * How much longer than `LOW_FIRST_MAX_S` a first piece may be and still count. A host that cuts "6 s" pieces cuts at the picture's own frames, so its
+ * lists say 6.006 (30000/1001 frames a second), 6.0067, or 6.2 when the first frame that starts a picture of its own falls later; 0.05 left those out.
+ * The box had no piece lengths to read when this was set (16 Nov: its 5 logged starts predate the `pieceS` line), so it is from how streams are cut.
+ */
+export const LOW_FIRST_SLACK_S = 0.3;
 export const LOW_FIRST_LABEL = "480p";
 
 /**
@@ -514,7 +521,7 @@ export class PlayerEngine {
         const fragments = data.details?.fragments ?? [];
         const at = resumeAt ?? 0;
         const first = fragments.find((fragment) => fragment.start + fragment.duration > at) ?? fragments[0];
-        if (first && first.duration <= LOW_FIRST_MAX_S + 0.05) {
+        if (first && first.duration <= LOW_FIRST_MAX_S + LOW_FIRST_SLACK_S) {
           this.lowStart.down = true;
           hls.loadLevel = this.lowStart.low;
         } else this.lowStart = null;

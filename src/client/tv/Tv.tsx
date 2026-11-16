@@ -62,12 +62,14 @@ import { PartyPage, PartyPanel } from "./Party";
 import { nearTheEnd } from "./preloadNext";
 import { Follower } from "./sync";
 import {
+  defaultSyncMode,
   describeTrack,
   parsePrefs,
   pickBaseSubtitleTrack,
   pickTrack,
   PREFS_KEY,
   serializePrefs,
+  thisDevice,
   type Prefs,
 } from "./prefs";
 import { useWakeLock } from "./useWakeLock";
@@ -228,7 +230,8 @@ export function Tv() {
   const subtitleDelayRef = useRef(subtitleDelay);
   subtitleDelayRef.current = subtitleDelay;
   const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? true);
-  const subtitleSyncModeRef = useRef<SubtitleSyncMode>(initialPrefs.subtitleSyncMode ?? "full");
+  // (What the viewer picked; else Light on a weaker screen and Thorough on the others: see `defaultSyncMode`.)
+  const subtitleSyncModeRef = useRef<SubtitleSyncMode>(initialPrefs.subtitleSyncMode ?? defaultSyncMode(thisDevice()));
   /** Sends the TV's current state to the phone again (set once the player exists). */
   const republishRef = useRef<() => void>(() => {});
   /** The ✦ choices of this film and the one that is on, for the state (see `useEnhance` below). */

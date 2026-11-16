@@ -1012,10 +1012,11 @@ describe("sending a report", () => {
     expect(feedback.size).toBe(12);
   });
 
-  it("says in /api/health when a new report would be turned away", async () => {
+  it("says in the team's /api/health when a new report would be turned away, and in anyone's not at all", async () => {
     const { app } = await start({ maxReports: 2 });
     const page = new Client(app);
-    const health = async () => (await app.inject("/api/health")).json().feedback;
+    const health = async () => (await app.inject({ url: "/api/health", headers: { authorization: `Bearer ${TOKEN}` } })).json().feedback;
+    expect((await app.inject("/api/health")).json()).not.toHaveProperty("feedback");
     expect(await health()).toEqual({ reports: 0, full: false, team: true });
     await page.post("/api/feedback", { key: key(1), message: "One" });
     expect(await health()).toEqual({ reports: 1, full: false, team: true });
@@ -1247,7 +1248,9 @@ describe("the team's side", () => {
       await new Client(app).post("/api/feedback", { key: key(1), message: "Hello" });
       const response = await new Client(app, { authorization: `Bearer ${token ?? "x"}` }).get("/api/admin/feedback");
       expect(response.statusCode).toBe(404);
-      expect((await app.inject("/api/health")).json().feedback).toEqual({ reports: 1, full: false, team: false });
+      // (No team's side, so /api/health has no counters to give: the short answer, whatever the request brings.)
+      const health = await app.inject({ url: "/api/health", headers: { authorization: `Bearer ${token ?? "x"}` } });
+      expect([health.statusCode, health.json().feedback]).toEqual([200, undefined]);
     }
   });
 
@@ -1261,7 +1264,7 @@ describe("the team's side", () => {
     for (let n = 0; n < 7; n++) expect((await guesser.get("/api/admin/feedback")).statusCode).toBe(401);
     // (Ten wrong tries in all; even the right token waits then.)
     expect((await team(app).get("/api/admin/feedback")).statusCode).toBe(429);
-    expect((await app.inject("/api/health")).json().feedback).toEqual({ reports: 0, full: false, team: true });
+    expect((await app.inject("/api/health")).statusCode).toBe(200); // (anyone's /api/health still answers)
   });
 
   it("lists, filters, reads, downloads, answers, sorts and deletes", async () => {

@@ -256,13 +256,15 @@ describe("/api/subsync", () => {
     expect(reply.statusCode).toBe(429);
   });
 
-  it("says in /api/health how many asks found a timing, how many did not, and how many were left", async () => {
-    await open();
-    expect((await app!.inject("/api/health")).json<{ subsync: unknown }>().subsync).toEqual({ found: 0, missed: 0, stored: 0 });
+  it("says in the team's /api/health how many asks found a timing, how many did not, and how many were left", async () => {
+    const token = "subsync-test-team-token-0123456789";
+    app = await buildApp({ subsync: new MemorySubsyncStore(), feedbackAdminToken: token });
+    const counted = async () => (await app!.inject({ url: "/api/health", headers: { authorization: `Bearer ${token}` } })).json<{ subsync: unknown }>().subsync;
+    expect(await counted()).toEqual({ found: 0, missed: 0, stored: 0 });
     await app!.inject(`/api/subsync/${key(1)}`);
     await put(timing(9, [1, 10, 10, 1]));
     await app!.inject(`/api/subsync/${key(1)}`);
     await app!.inject(`/api/subsync/${key(1)}`);
-    expect((await app!.inject("/api/health")).json<{ subsync: unknown }>().subsync).toEqual({ found: 2, missed: 1, stored: 1 });
+    expect(await counted()).toEqual({ found: 2, missed: 1, stored: 1 });
   });
 });

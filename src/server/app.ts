@@ -12,7 +12,7 @@ import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
-import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
+import { feedbackRoutes, FEEDBACK_TOKEN_MIN, teamGuard } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
@@ -276,10 +276,21 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
   // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
   // (`misses`): with screens watching together, the hits are the share of the load that was not multiplied by the number of screens.)
-  app.get("/api/health", async () => ({
-    ok: true,
-    ...(options.storage ? { storage: options.storage } : {}),
-    uptime: Math.round(process.uptime()),
+  // Anyone may ask whether the server is up (an uptime monitor, the box's update script, the debug panel): `ok`, `uptime` and `storage`. The
+  // counters below are the team's, asked with its token as a Bearer (the judge's #12 and the owner's yes, 16 Nov): what the proxy carried, the
+  // reports and whether a new one would be turned away, and so on told anyone how the site was used and when its feedback box was full. A
+  // request that brings a wrong token gets the team guard's 401 (slowed per address), not the short answer, so a mistyped token is noticed.
+  // (A server with no team token has no team's side: there, any request gets the short answer.)
+  const teamOnly = teamGuard(options.feedbackAdminToken);
+  const hasTeam = (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN;
+  app.get("/api/health", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const summary = { ok: true, ...(options.storage ? { storage: options.storage } : {}), uptime: Math.round(process.uptime()) };
+    if (!request.headers.authorization || !hasTeam) return summary;
+    if (!teamOnly(request, reply)) return;
+    return { ...summary, ...healthCounters() };
+  });
+  const healthCounters = () => ({
     segments: { hits: segments.hits, misses: segments.misses, keptMB: Math.round(segments.keptBytes / 1024 / 1024) },
     // (`proxy` is what the proxy has sent on to the screens, in bytes: the films are most of what a host's bandwidth goes on, and this is how much that was.
     // `video` says whether it carries films at all, and `refused` how many asks it turned away because it does not.)
@@ -292,7 +303,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
     features: { cat: catOn },
-  }));
+  });
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());
     // The browser may keep the list for five minutes without asking; after that it asks with the tag of the one it has, and the list is

@@ -88,6 +88,6 @@ line for line without adding, joining or splitting lines, check what comes back,
   - the team's `GET/PUT/DELETE /api/admin/official[/<id>]`.
 - `src/client/subsync/official.ts` and `session.ts` (`offerOfficial`): when a screen offers a file. It offers once, and once more as the film
   closes if a good deal more was placed. `src/client/tv/officialOffer.ts` sends it. The debug panel says `offered for Kino Official`.
-- `/api/health` says how many there are and what became of the offers since the server started:
+- The team's `/api/health` (asked with its token as a Bearer) says how many there are and what became of the offers since the server started:
   `official: { kept, offers: { taken, kept, not_good_enough, unknown_track, different_file, unavailable } }`. Many `different_file` would mean
   the server reads files otherwise than the screens.

@@ -74,8 +74,7 @@ export function qualityName(quality: PlayerState["quality"]): string {
 }
 
 /** What a ✦ choice of the Quality list is called ("✦ 2K"); "off" is "✦ Off". */
-export const enhanceName = (mode: EnhanceMode): string =>
-  t(mode === "2k" ? "player.enhance2k" : mode === "2k60" ? "player.enhance2k60" : mode === "60" ? "player.enhance60" : "player.enhanceOff");
+export const enhanceName = (mode: EnhanceMode): string => t(mode === "2k" ? "player.enhance2k" : "player.enhanceOff");
 
 /** The Quality button is there: the film comes in more than one quality, or this screen offers a ✦ choice for it. */
 export const hasPictureChoice = (player: Pick<PlayerState, "quality" | "enhance">): boolean =>

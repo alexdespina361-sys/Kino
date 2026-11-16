@@ -816,7 +816,7 @@ test.describe("the profile's choice of letting the picture's quality follow the 
     phone.close();
   });
 
-  test("off, with a 480p among the sizes and pieces of 5 seconds or less: the first piece is 480p and the next ones the biggest, the button saying the biggest throughout", async ({ browser, baseURL }) => {
+  test("off, with a 480p among the sizes and pieces of 6 seconds or less: the first piece is 480p and the next ones the biggest, the button saying the biggest throughout", async ({ browser, baseURL }) => {
     const { tv, phone } = await playTwoSizes(browser, baseURL!, guestStorage({ settings: [{ key: "adaptiveQuality", at: Date.now(), value: false }] }), "three");
     await expect.poll(() => firstPiece(phone)).toBeTruthy();
     // (hls.js lists the sizes from the smallest: 180p, 480p, 720p.) 720p is chosen; 480p is what plays first.

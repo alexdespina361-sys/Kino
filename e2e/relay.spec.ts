@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { buildStreamRelay } from "../src/server/streamRelay/app";
 import { signedRelayUrl } from "../src/server/streamRelay/links";
+import { FEEDBACK_TOKEN } from "./feedbackToken";
 import { openTv, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
 
 /**
@@ -44,7 +45,8 @@ test("a film that comes through the relay plays without this server carrying a b
   await relay.listen({ port: 0, host: "127.0.0.1" });
   const relayPort = (relay.server.address() as AddressInfo).port;
   try {
-    const health = async () => (await (await fetch(`${baseURL}/api/health`)).json()) as { proxy: { bytes: number; requests: number } };
+    // (The proxy's counters are the team's: asked with its token.)
+    const health = async () => (await (await fetch(`${baseURL}/api/health`, { headers: { authorization: `Bearer ${FEEDBACK_TOKEN}` } })).json()) as { proxy: { bytes: number; requests: number } };
     const tv = await openTv(browser);
     // Where the screen's page asked for anything but the app's own files: the places, and this server's proxy when it is one of them.
     const filmAsked = new Set<string>();

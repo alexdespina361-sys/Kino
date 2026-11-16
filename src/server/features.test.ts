@@ -14,11 +14,13 @@ describe("/api/features", () => {
 
   it("offers no cat unless the host turned it on", async () => {
     delete process.env.CAT_COMPANION;
-    app = await buildApp();
+    const token = "features-test-team-token-0123456789";
+    app = await buildApp({ feedbackAdminToken: token });
     const answer = await app.inject("/api/features");
     expect(answer.statusCode).toBe(200);
     expect(answer.json()).toEqual({ cat: false });
-    expect((await app.inject("/api/health")).json<{ features: unknown }>().features).toEqual({ cat: false });
+    // (The team's /api/health says the same; anyone's says only that the server is up.)
+    expect((await app.inject({ url: "/api/health", headers: { authorization: `Bearer ${token}` } })).json<{ features: unknown }>().features).toEqual({ cat: false });
   });
 
   it("offers the cat when CAT_COMPANION is on, and takes it back when it is not", async () => {

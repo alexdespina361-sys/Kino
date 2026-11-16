@@ -98,7 +98,8 @@ function spanOf(seconds: number): string {
  * a free host sleeps or restarts; a short time up next to a TV that "lost its phone" is that restart. (Asked once when the panel starts and
  * whenever the page comes back to the front, never on a timer: a page that asked every few seconds would keep a sleeping host awake.)
  * With screens watching a film together, the pieces of it the proxy gave from memory against the ones it fetched say whether the film's own
- * place is asked once or once per screen.
+ * place is asked once or once per screen. (Since 16 Nov those counters come only with the team's token, which the panel never sends: on the
+ * live site the line has the storage and the time up, and the pieces only on a server that still gives them to all.)
  */
 export function describeServer(health: unknown): string {
   const { storage, uptime, segments } = (health && typeof health === "object" ? health : {}) as { storage?: unknown; uptime?: unknown; segments?: { hits?: unknown; misses?: unknown } | null };

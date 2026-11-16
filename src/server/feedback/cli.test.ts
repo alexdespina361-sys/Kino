@@ -132,13 +132,14 @@ describe("the owner's stats", () => {
     ],
   };
 
-  /** A site that answers the stats with this (and remembers what it was asked). */
-  async function statsSite(status: number, body: unknown) {
+  /** A site that answers the stats with this, and /api/health with `health` (a 404 when it has none: a server before the counters were the team's), and remembers what it was asked. */
+  async function statsSite(status: number, body: unknown, health?: unknown) {
     const asked: { url: string; authorization: string }[] = [];
     const server = createServer((request, response) => {
       asked.push({ url: request.url ?? "", authorization: request.headers.authorization ?? "" });
-      response.statusCode = status;
-      response.end(JSON.stringify(body));
+      const isHealth = request.url === "/api/health";
+      response.statusCode = isHealth ? (health ? 200 : 404) : status;
+      response.end(JSON.stringify(isHealth ? (health ?? { error: "NOT_FOUND" }) : body));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     stops.push(() => {
@@ -152,7 +153,11 @@ describe("the owner's stats", () => {
     const { env, asked } = await statsSite(200, view);
     const { code, said } = await reader(SCRIPT, env, ["stats", "--days", "3"]);
     expect(code).toBe(0);
-    expect(asked).toEqual([{ url: "/api/admin/stats?days=3", authorization: `Bearer ${TOKEN}` }]);
+    expect(asked).toEqual([
+      { url: "/api/admin/stats?days=3", authorization: `Bearer ${TOKEN}` },
+      { url: "/api/health", authorization: `Bearer ${TOKEN}` }, // (the server's counters: the team's since 16 Nov)
+    ]);
+    expect(said).not.toContain("Server:"); // (this one has none to give)
     expect(said).toContain("Accounts: 37 (52 profiles). Sign-ups are open, up to 500.");
     expect(said).toContain("made      today 2, last 7 days 9, last 30 days 37");
     expect(said).toContain("used      today 5, last 7 days 14, last 30 days 30");
@@ -178,6 +183,31 @@ describe("the owner's stats", () => {
     expect(code).toBe(0);
     expect(asked[0]?.url).toBe("/api/admin/stats?days=14");
     expect(said).toContain("Accounts: 37");
+  });
+
+  it("adds the server's counters from the team's /api/health", async () => {
+    const health = {
+      ok: true,
+      storage: "postgres",
+      uptime: 26 * 3600 + 120,
+      segments: { hits: 40, misses: 10, keptMB: 12 },
+      proxy: { bytes: 5 * 1024 * 1024, requests: 77, refused: 3, video: "off" },
+      subsync: { found: 9, missed: 4, stored: 2 },
+      official: { kept: 6, offers: {} },
+      feedback: { reports: 11, full: true, team: true },
+      features: { cat: false },
+    };
+    const { env } = await statsSite(200, view, health);
+    const { code, said } = await reader(SCRIPT, env, ["stats"]);
+    expect(code).toBe(0);
+    expect(said).toContain("Server: up 1d 2h, keeps its data in postgres");
+    expect(said).toContain("proxy     films off, 5 MB sent on in 77 asks, 3 turned away");
+    expect(said).toContain("pieces    40 given from memory, 10 fetched (12 MB kept)");
+    expect(said).toContain("timings   9 found, 4 not, 2 left by screens");
+    expect(said).toContain("official  6 Kino Official subtitles kept");
+    expect(said).toContain("feedback  11 reports kept, FULL: a new one would be turned away");
+    const json = await reader(SCRIPT, env, ["stats", "--json"]);
+    expect(JSON.parse(json.said)).toEqual({ ...view, server: health });
   });
 
   it("gives the numbers as they are with --json", async () => {

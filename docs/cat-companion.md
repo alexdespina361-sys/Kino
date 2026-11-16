@@ -33,7 +33,7 @@ The phone as a *remote* has no cat. The cat lives on the screen that plays.
 
 | Gate | Default | How |
 |---|---|---|
-| The host offers it | off | environment variable `CAT_COMPANION=on` → `GET /api/features` `{cat:true}` (also `/api/health` `features.cat`). **Unset it and every screen loses its cat at its next load**; nothing is stored on the server |
+| The host offers it | off | environment variable `CAT_COMPANION=on` → `GET /api/features` `{cat:true}` (also the team's `/api/health` `features.cat`, asked with its token). **Unset it and every screen loses its cat at its next load**; nothing is stored on the server |
 | The screen's role | the screen that plays only | automatic |
 | The device asks for it | off | Settings → Cat companion (`kino.cat` in the device's own storage), or `?cat=on` for one load |
 | (testing) address | – | `?cat=on|off|debug`, `?catseed=N`, `?catbudget=ms`, `?catslow=ms`, `?catart=classic|solid`, `?catcoat=` (the settings offer the two cats; the address can still ask for the tuxedo, grey tabby and calico coats, to look at them), `?catsize=` |
