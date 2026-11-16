@@ -6,6 +6,8 @@ const FAR_PX = 110;
 const START_PX = 12;
 /** How long a line that was swiped away takes to fly off its side before it is cleared. */
 export const FLY_MS = 180;
+/** How long a line that was swiped away stays off before it comes back, when it is still there (its clearing did not take). */
+export const BACK_MS = 2500;
 
 interface SwipeProps {
   style?: CSSProperties | undefined;
@@ -35,11 +37,13 @@ export function useSwipeAway(onAway: (() => void) | undefined): SwipeProps {
   away.current = onAway;
   useEffect(() => {
     if (gone === 0) return;
-    const timer = window.setTimeout(() => {
-      away.current?.();
-      setGone(0); // (a line that is still there, cleared or not, comes back)
-    }, FLY_MS);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => away.current?.(), FLY_MS);
+    // (It stays off while what clears it is on its way, as a server's answer: a line that is still there a while after, whose clearing did not take, comes back.)
+    const back = window.setTimeout(() => setGone(0), FLY_MS + BACK_MS);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(back);
+    };
   }, [gone]);
   if (!onAway) return {};
   const style: CSSProperties | undefined =

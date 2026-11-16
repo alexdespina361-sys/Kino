@@ -702,17 +702,18 @@
  */
 :root[data-ui="polish"] .tv-bell-lists { gap: calc(var(--em) * 2.2); }
 /*
- * (A hand-held screen scrolls the page itself: tv/friends.css.) On a big screen the lists scroll in their box, and a card cut by its bottom edge fades out
- * there instead of being sliced; the room under the last card, as long as the fade, lets it come clear of it, and the scroll padding keeps a card the
- * remote goes to out of the faded strip.
+ * (A hand-held screen scrolls the page itself: tv/friends.css.) On a big screen the lists scroll in their box, and a card cut by its top or bottom edge
+ * fades out there instead of being sliced; the room over the first card and under the last, as long as the fades, lets them come clear of them, and the
+ * scroll padding keeps a card the remote goes to out of the faded strips (measured: the last card stops 47 of the fade's 48 pixels above the edge).
  */
 @media (min-width: 900px) {
   :root[data-ui="polish"] .tv-bell-lists {
     max-height: 56vh;
-    padding: calc(var(--em) * 0.5) calc(var(--em) * 0.5) calc(var(--em) * 2.5);
-    scroll-padding-bottom: calc(var(--em) * 2.5);
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--em) * 2.5), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--em) * 2.5), transparent);
+    margin-top: calc(var(--em) * -0.7); /* (the room over the first card is the fade's: the list stands where it stood with less) */
+    padding: calc(var(--em) * 1.2) calc(var(--em) * 0.5) calc(var(--em) * 2.5);
+    scroll-padding: calc(var(--em) * 1.2) 0 calc(var(--em) * 2.5);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--em) * 1.2), #000 calc(100% - var(--em) * 2.5), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--em) * 1.2), #000 calc(100% - var(--em) * 2.5), transparent);
   }
 }
 :root[data-ui="polish"] .tv-bell-list { gap: calc(var(--em) * 0.8); }
@@ -722,7 +723,7 @@
   background: var(--fill-1);
   touch-action: pan-y;
   transition: background var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease), opacity 0.2s var(--ease);
-  animation: polish-bell-in 0.36s var(--ease) both;
+  animation: polish-bell-in 0.36s var(--ease) backwards; /* (backwards, not both: once in, the card is its own again, for a finger to drag) */
   animation-delay: calc(var(--i, 0) * 45ms);
 }
 :root[data-ui="polish"] .tv-bell-row:hover { background: var(--fill-2); }

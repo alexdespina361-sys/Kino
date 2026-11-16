@@ -119,11 +119,17 @@ interface Screen {
 }
 
 /** A new screen, signed up with the email form and with friends on, left on the profile's page. */
-async function screenWithFriends(browser: Browser, name: string, options: { language?: Language } = {}): Promise<Screen> {
+async function screenWithFriends(browser: Browser, name: string, options: { language?: Language; touch?: boolean } = {}): Promise<Screen> {
   const account = fresh(name);
-  const page = await openLibrary(browser, undefined, HD, options.language ? { "kino.lang": options.language } : {});
+  const seed: Record<string, string> = options.language ? { "kino.lang": options.language } : {};
+  // (`touch`: a screen a finger can touch, as a phone that is the screen or a tablet; it starts as wide as the others, to sign in the same way.)
+  const page = options.touch ? await openDevice(browser, { viewport: HD, hasTouch: true }, seed) : await openLibrary(browser, undefined, HD, seed);
+  if (options.touch) {
+    await page.goto("/tv");
+    await expect(page.getByTestId("tv-browse")).toBeVisible();
+  }
   await openTvSignIn(page);
-  await page.getByTestId("tv-signin-email").click();
+  if (!options.touch) await page.getByTestId("tv-signin-email").click(); // (a screen that can be touched has the form at once: it is typed on)
   await page.getByTestId("auth-switch").click();
   await expect(page.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
   await page.getByTestId("auth-email").fill(account.email);
@@ -136,10 +142,10 @@ async function screenWithFriends(browser: Browser, name: string, options: { lang
 }
 
 /**
- * A finger (or, with `pointerType` "mouse", a mouse) pressed on the middle of `target`, moved `by` pixels to the side in four steps and let go, as the
- * browser tells the page (pointer events: a test's own touch screen has no way to drag).
+ * A finger (or, with `pointerType` "mouse", a mouse) pressed on the middle of `target`, moved `by` pixels to the side in four steps and let go, as pointer
+ * events. With `hold`, it is not let go: what this gives back lets it go there.
  */
-async function swipe(target: Locator, by: number, pointerType: "touch" | "mouse" = "touch") {
+async function swipe(target: Locator, by: number, pointerType: "touch" | "mouse" = "touch", hold = false): Promise<() => Promise<void>> {
   const box = await target.boundingBox();
   if (!box) throw new Error("nothing to swipe");
   const x = box.x + box.width / 2;
@@ -147,7 +153,9 @@ async function swipe(target: Locator, by: number, pointerType: "touch" | "mouse"
   const at = (dx: number, buttons = 1) => ({ pointerId: 7, pointerType, isPrimary: true, bubbles: true, clientX: x + dx, clientY: y, button: 0, buttons });
   await target.dispatchEvent("pointerdown", at(0));
   for (const step of [0.25, 0.5, 0.75, 1]) await target.dispatchEvent("pointermove", at(by * step));
-  await target.dispatchEvent("pointerup", at(by, 0));
+  const lift = () => target.dispatchEvent("pointerup", at(by, 0));
+  if (!hold) await lift();
+  return lift;
 }
 
 /** The remote walks up from the titles to the bell, the first of the corner's buttons. */
@@ -428,49 +436,6 @@ test.describe("the bell on the TV", () => {
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");
   });
 
-  test("on a touch screen a finger swipes a line of the list away; a short drag puts it back, and a mouse clears with the cross", async ({ browser }) => {
-    test.setTimeout(150_000);
-    const cy = await screenWithFriends(browser, "Cy");
-    const bob = await phoneWithFriends(browser, "Bob");
-    await askBy(bob.page, tagOf(cy.name));
-    const cyId = await profileOf(cy.page);
-    const bobId = await profileOf(bob.page);
-    expect((await cy.page.request.post(`/api/profiles/${cyId}/friends/requests/${bobId}/accept`)).ok()).toBe(true);
-    for (const title of ["Alpha Film", "Beta Film"]) {
-      const sent = await bob.page.request.post(`/api/profiles/${bobId}/friends/send`, { data: { kind: "recommend", title, url: `${FILM}?${title.charAt(0)}`, year: 1931, to: [cyId] } });
-      expect(sent.ok()).toBe(true);
-    }
-    const tv = cy.page;
-    await look(tv);
-    await expect(tv.getByTestId("tv-bell-badge")).toHaveText("2");
-    await tv.getByTestId("tv-bell").click();
-    const lines = tv.getByTestId("tv-bell-item");
-    await expect(lines).toHaveCount(2);
-    const rows = tv.locator(".tv-bell-row");
-
-    // A drag a little way to the side, let go: the line goes back where it was.
-    await swipe(lines.first(), -40);
-    await expect(lines).toHaveCount(2);
-    await expect.poll(() => rows.first().evaluate((row) => getComputedStyle(row).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
-    // A mouse dragged across a line does not swipe it (its way is the cross).
-    await swipe(lines.first(), -400, "mouse");
-    await expect(lines).toHaveCount(2);
-    // A finger past a third of the line: it flies off, the list closes up, and it is gone from the server too (the bell opened again does not bring it back).
-    const first = (await lines.first().innerText()).includes("Alpha") ? "Alpha Film" : "Beta Film";
-    const other = first === "Alpha Film" ? "Beta Film" : "Alpha Film";
-    await swipe(lines.first(), -400);
-    await expect(lines).toHaveCount(1);
-    await expect(lines).toContainText(other);
-    await tv.keyboard.press("Escape");
-    await tv.getByTestId("tv-bell").click();
-    await expect(lines).toHaveCount(1);
-    await expect(lines).toContainText(other);
-
-    // The cross, clicked with a mouse, clears the last one: the list says there is nothing new.
-    await tv.getByTestId("tv-bell-clear").click();
-    await expect(lines).toHaveCount(0);
-    await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
-  });
 
   test("the corner and the list fit a screen of any size, with the longest name, in every language", async ({ browser }) => {
     test.setTimeout(240_000);
@@ -536,5 +501,183 @@ test.describe("the bell on the TV", () => {
         await expect(list).toHaveCount(0);
       }
     }
+  });
+});
+
+/* ------------------------------ clearing a line: the cross, a finger ------------------------------ */
+
+/** `from` (a phone's profile, a friend of `to`) sends `to` these titles, as its Send button does. */
+async function sends(from: Page, to: Page, titles: string[]) {
+  const toId = await profileOf(to);
+  for (const title of titles) {
+    const sent = await from.request.post(`/api/profiles/${await profileOf(from)}/friends/send`, { data: { kind: "recommend", title, url: `${FILM}?${title.charAt(0)}`, year: 1931, to: [toId] } });
+    expect(sent.ok()).toBe(true);
+  }
+}
+
+/** `a` (a phone) and `b` are made friends, as a request answered. */
+async function befriend(a: Page, b: { page: Page; name: string }) {
+  await askBy(a, tagOf(b.name));
+  expect((await b.page.request.post(`/api/profiles/${await profileOf(b.page)}/friends/requests/${await profileOf(a)}/accept`)).ok()).toBe(true);
+}
+
+/** Where a part is drawn across, as its transform says: 0 where it is not moved. */
+const shiftOf = (part: Locator) => part.evaluate((element) => new DOMMatrix(getComputedStyle(element).transform === "none" ? undefined : getComputedStyle(element).transform).m41);
+
+/** A real finger on a touch screen, as the browser's own touch events: put on the middle of `target`, moved `by` pixels (to the side, or down) and lifted. */
+async function finger(page: Page, target: Locator, by: number, direction: "side" | "down" = "side") {
+  const box = await target.boundingBox();
+  if (!box) throw new Error("nothing to touch");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const cdp = await page.context().newCDPSession(page);
+  const at = (part: number) => [{ x: direction === "side" ? x + by * part : x, y: direction === "down" ? y + by * part : y }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(0) });
+  for (const part of [0.1, 0.2, 0.4, 0.6, 0.8, 1]) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(part) });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
+test.describe("clearing a line of the bell", () => {
+  test("on the TV a card follows a finger and goes back when let go short; a mouse does not drag it; a finger far enough clears it for good", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const cy = await screenWithFriends(browser, "Cy");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(bob.page, cy);
+    await sends(bob.page, cy.page, ["Alpha Film", "Beta Film"]);
+    const tv = cy.page;
+    await look(tv);
+    await expect(tv.getByTestId("tv-bell-badge")).toHaveText("2");
+    await tv.getByTestId("tv-bell").click();
+    const lines = tv.getByTestId("tv-bell-item");
+    await expect(lines).toHaveCount(2);
+    const card = tv.locator(".tv-bell-row").first();
+
+    // The card is under the finger while it is held (not pinned where it came in), and goes back when let go short of where it would go.
+    const letGo = await swipe(lines.first(), -60, "touch", true);
+    await expect.poll(() => shiftOf(card)).toBeLessThan(-50);
+    await letGo();
+    await expect.poll(() => shiftOf(card)).toBe(0);
+    await expect(lines).toHaveCount(2);
+    // A mouse held and moved across it does not move it (its way is the cross).
+    const mouseUp = await swipe(lines.first(), -400, "mouse", true);
+    expect(await shiftOf(card)).toBe(0);
+    await mouseUp();
+    await tv.waitForTimeout(500);
+    await expect(lines).toHaveCount(2);
+    // A finger past a third of it: it flies off, the list closes up, and it is gone from the server too (the bell opened again does not bring it back).
+    const other = (await lines.first().innerText()).includes("Alpha") ? "Beta Film" : "Alpha Film";
+    await swipe(lines.first(), -400);
+    await expect(lines).toHaveCount(1);
+    await expect(lines).toContainText(other);
+    await tv.keyboard.press("Escape");
+    await tv.getByTestId("tv-bell").click();
+    await expect(lines).toHaveCount(1);
+    await expect(lines).toContainText(other);
+
+    // The cross, clicked with a mouse, clears the last one: the list says there is nothing new.
+    await tv.getByTestId("tv-bell-clear").click();
+    await expect(lines).toHaveCount(0);
+    await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
+  });
+
+  test("on a phone that is the screen, a real finger swipes a card away; one moved up and down scrolls instead, and one let go short leaves it", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const eve = await screenWithFriends(browser, "Eve", { touch: true });
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(bob.page, eve);
+    await sends(bob.page, eve.page, ["Alpha Film", "Beta Film"]);
+    const tv = eve.page;
+    await tv.setViewportSize(SMALL);
+    await look(tv);
+    await expect(tv.getByTestId("tv-bell-badge")).toHaveText("2");
+    await tv.getByTestId("tv-bell").click();
+    const lines = tv.getByTestId("tv-bell-item");
+    await expect(lines).toHaveCount(2);
+
+    await finger(tv, lines.first(), 120, "down");
+    await finger(tv, lines.first(), -40);
+    await tv.waitForTimeout(800); // (what a swipe would have set going has had its time)
+    await expect(lines).toHaveCount(2);
+    await expect(tv.getByTestId("tv-friend-request")).toHaveCount(0); // (and nothing was opened by it)
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+
+    const other = (await lines.first().innerText()).includes("Alpha") ? "Beta Film" : "Alpha Film";
+    await finger(tv, lines.first(), 150); // (past the 110 pixels that are far enough, and still on the screen)
+    await expect(lines).toHaveCount(1);
+    await expect(lines).toContainText(other);
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  });
+
+  test("the remote's OK twice on a cross clears that line only, and the remote goes on to the next cross; Back at once still clears it", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const cy = await screenWithFriends(browser, "Cy");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(bob.page, cy);
+    await sends(bob.page, cy.page, ["Alpha Film", "Beta Film", "Gamma Film"]);
+    const tv = cy.page;
+    // (The server takes its time to answer, as a slow one does: the line is gone from the screen before it is gone from the list.)
+    let dismissed = 0;
+    await tv.route("**/api/profiles/*/friends/inbox/*", async (route) => {
+      if (route.request().method() !== "DELETE") return route.fallback();
+      dismissed++;
+      await new Promise((done) => setTimeout(done, 900));
+      await route.fallback();
+    });
+    await look(tv);
+    await expect(tv.getByTestId("tv-bell-badge")).toHaveText("3");
+    await tv.getByTestId("tv-bell").click();
+    const lines = tv.getByTestId("tv-bell-item");
+    await expect(lines).toHaveCount(3);
+    await expect(lines.first()).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    const crosses = tv.getByTestId("tv-bell-clear");
+    await expect(crosses.first()).toBeFocused();
+    const second = await lines.nth(1).getAttribute("data-entry");
+    await tv.keyboard.press("Enter");
+    await tv.keyboard.press("Enter");
+    // The remote is on the cross of the line that took its place before the server has answered, and only one line was sent away.
+    await expect.poll(() => tv.evaluate(() => document.activeElement?.closest(".tv-bell-row")?.querySelector("[data-entry]")?.getAttribute("data-entry"))).toBe(second);
+    await expect(tv.locator('.tv-bell-row[data-leaving="true"]')).toHaveCount(1);
+    await expect(lines).toHaveCount(2);
+    expect(dismissed).toBe(1);
+
+    // OK on the next cross and Back at once: the list is shut, the remote is on the bell, and the line is cleared all the same.
+    await tv.keyboard.press("Enter");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-bell-page")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-bell")).toBeFocused();
+    await expect.poll(() => dismissed).toBe(2);
+    await tv.waitForTimeout(1200);
+    await tv.getByTestId("tv-bell").click();
+    await expect(lines).toHaveCount(1);
+  });
+
+  test("on the phone, a line swiped away stays away while the server takes its time, and is gone after", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const cy = await screenWithFriends(browser, "Cy");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(bob.page, cy);
+    await sends(cy.page, bob.page, ["Alpha Film"]);
+    const phone = bob.page;
+    await phone.route("**/api/profiles/*/friends/inbox/*", async (route) => {
+      if (route.request().method() !== "DELETE") return route.fallback();
+      await new Promise((done) => setTimeout(done, 900));
+      await route.fallback();
+    });
+    await look(phone);
+    await expect(badge(phone)).toHaveText("1");
+    await bell(phone).click();
+    const line = phone.getByTestId("bell-sheet").getByTestId("inbox-recommendation");
+    await expect(line).toHaveCount(1);
+    await finger(phone, line, 150);
+    // (Looked at every tenth of a second until it is gone: never back on the screen in the meantime.)
+    const seen: number[] = [];
+    for (let at = 0; at < 30 && (await line.count()) > 0; at++) {
+      seen.push(await line.evaluate((element) => Number(getComputedStyle(element).opacity)).catch(() => 0));
+      await phone.waitForTimeout(100);
+    }
+    await expect(line).toHaveCount(0);
+    expect(seen.slice(3).filter((opacity) => opacity > 0.05), `opacity while the server answered: ${seen.join(" ")}`).toEqual([]);
   });
 });

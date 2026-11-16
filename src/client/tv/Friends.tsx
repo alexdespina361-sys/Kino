@@ -20,7 +20,7 @@ import { CopyCode } from "../shared/CopyLink";
 import { BellIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
-import { stillScreen, useSwipeAway } from "../shared/swipe";
+import { BACK_MS, stillScreen, useSwipeAway } from "../shared/swipe";
 import { BackButton, Screen } from "./Idle";
 import type { Entry } from "./pages";
 import "./friends.css";
@@ -659,8 +659,11 @@ function BellLine({
   const card = useRef<HTMLLIElement>(null);
   const [lit, setLit] = useState<"line" | "clear" | null>(null);
   const [leaving, setLeaving] = useState(false);
+  /** When it was cleared last: a second OK on the cross while it goes (the remote is still on it) does nothing. */
+  const clearedAt = useRef(-Infinity);
   const leave = (button: HTMLElement | null) => {
-    if (!onClear || leaving) return;
+    if (!onClear || Date.now() - clearedAt.current < LEAVE_MS + BACK_MS) return;
+    clearedAt.current = Date.now();
     const element = card.current;
     if (!element || stillScreen()) return onClear(button);
     element.style.setProperty("--h", `${element.offsetHeight}px`);
@@ -670,7 +673,7 @@ function BellLine({
   // (A card whose clearing did not take, as when the server could not be reached, comes back.)
   useEffect(() => {
     if (!leaving) return;
-    const timer = window.setTimeout(() => setLeaving(false), LEAVE_MS + 2500);
+    const timer = window.setTimeout(() => setLeaving(false), LEAVE_MS + BACK_MS);
     return () => window.clearTimeout(timer);
   }, [leaving]);
   const { style: swiped, ...swipe } = useSwipeAway(onClear ? () => leave(null) : undefined);
@@ -717,21 +720,22 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
   const { waiting, joined, lately, more } = bellRows(friends.state, Date.now(), cleared, seenBefore);
   const page = useRef<HTMLDivElement>(null);
   /**
-   * A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote goes on to the line that
-   * takes its place (not after a swipe, `button` null: a finger is not the remote, and nothing is lit for it).
+   * A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote, if it is still on the
+   * cross of the card that went, goes on at once to the cross that takes its place, or to the list's button when there is none (not after a swipe, `button`
+   * null: a finger is not the remote, and nothing is lit for it). At once, not when the line is gone: what a friend sent goes when the server says so, and
+   * the remote is not left on a card that is no longer seen. Where it went on by itself meanwhile, or the list was shut, it stays.
    */
   const clearLine = (row: BellRow, button: HTMLElement | null) => {
-    const all = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])];
-    const at = button ? all.indexOf(button) : -1;
+    const active = document.activeElement;
+    if (button && (active === button || !active || active === document.body)) {
+      const crosses = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])].filter((each) => each === button || !each.closest('[data-leaving="true"]'));
+      const at = crosses.indexOf(button);
+      const left = crosses.filter((each) => each !== button);
+      if (at >= 0) (left[Math.min(at, left.length - 1)] ?? page.current?.parentElement?.querySelector<HTMLElement>("[data-testid=tv-bell-friends]"))?.focus();
+    }
     if (row.activity) clear([row.activity]);
     else if (row.entry.inboxId) void friends.dismiss(row.entry.inboxId).catch(() => undefined);
     else if (row.entry.chat) clearChat(row.entry.chat);
-    if (!button) return;
-    window.setTimeout(() => {
-      if (page.current?.contains(document.activeElement) && document.activeElement !== document.body) return;
-      const left = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])];
-      (left[Math.min(at, left.length - 1)] ?? document.querySelector<HTMLElement>("[data-testid=tv-bell-friends]"))?.focus();
-    }, 60);
   };
 
   useEffect(() => {
