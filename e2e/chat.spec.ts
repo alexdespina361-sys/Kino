@@ -1328,11 +1328,11 @@ async function fakeKlipy(page: Page, { key = true } = {}): Promise<URL[]> {
     asked.push(address);
     const words = address.searchParams.get("q") ?? "";
     const at = Number(address.searchParams.get("page") ?? "1");
-    const ids = words === "" ? (at === 1 ? ["t1", "t2", "t3"] : ["t4", "t5"]) : words === "cat" ? ["c1"] : [];
+    const ids = words === "" ? (at === 1 ? ["t1", "t2", "t3"] : ["t4", "t5"]) : words === "cat" ? ["c1"] : words === "many" ? Array.from({ length: 24 }, (_, n) => `m${(at - 1) * 24 + n + 1}`) : [];
     await route.fulfill({
       contentType: "application/json",
       headers: { "access-control-allow-origin": "*" },
-      body: JSON.stringify({ result: true, data: { data: ids.map(klipyEntry), current_page: at, per_page: 24, has_next: words === "" && at === 1 } }),
+      body: JSON.stringify({ result: true, data: { data: ids.map(klipyEntry), current_page: at, per_page: 24, has_next: (words === "" || words === "many") && at === 1 } }),
     });
   });
   await page.route(/^https:\/\/static\d?\.klipy\.com\//, (route) => (route.request().url().includes("/gone/") ? route.fulfill({ status: 404, body: "" }) : route.fulfill({ contentType: "image/gif", body: PIXEL })));
@@ -1340,6 +1340,23 @@ async function fakeKlipy(page: Page, { key = true } = {}): Promise<URL[]> {
 }
 
 const srcs = (pictures: ReturnType<Page["getByTestId"]>) => pictures.locator("img").evaluateAll((all) => all.map((picture) => (picture as HTMLImageElement).src));
+
+/**
+ * The grid of a full page of GIFs ("many": 24), looked at as it lies: any two that lie over each other (the owner's phone, 17 Nov: the grid was squeezed into
+ * what the page had left, and its rows came out a few pixels tall), and any that is not the square it is meant to be.
+ */
+const gridFaults = (pictures: ReturnType<Page["getByTestId"]>) =>
+  pictures.evaluateAll((all) => {
+    const boxes = all.map((each) => each.getBoundingClientRect());
+    const faults: string[] = [];
+    boxes.forEach((box, at) => {
+      if (Math.abs(box.width - box.height) > 1.5) faults.push(`${at} is ${Math.round(box.width)}x${Math.round(box.height)}`);
+      boxes.slice(at + 1).forEach((other, past) => {
+        if (box.left < other.right - 1 && other.left < box.right - 1 && box.top < other.bottom - 1 && other.top < box.bottom - 1) faults.push(`${at} lies over ${at + 1 + past}`);
+      });
+    });
+    return faults;
+  });
 
 test.describe("GIFs in a chat", () => {
   test("on the phone: the GIF button opens KLIPY's Trending in its order, more of it, a search once typing stops; a press sends one, and the friend sees the picture (one KLIPY took away says so), with no button where the site has no key", async ({ browser }) => {
@@ -1369,6 +1386,9 @@ test.describe("GIFs in a chat", () => {
     await expect(picks).toHaveCount(1);
     expect(await srcs(picks)).toEqual([gifAddress("c1")]);
     expect(asked.filter((address) => address.pathname.endsWith("/search"))).toHaveLength(1);
+    await ann.page.getByTestId("chat-gif-search").fill("many");
+    await expect(picks).toHaveCount(24);
+    expect(await gridFaults(picks), "a full page of GIFs: squares, none over another").toEqual([]);
     await ann.page.getByTestId("chat-gif-search").fill("zzz");
     await expect(ann.page.getByTestId("chat-gif-none")).toHaveText(say(en["chat.gifNone"], { query: "zzz" }));
     await ann.page.getByTestId("chat-gif-search").fill("");
@@ -1437,7 +1457,31 @@ test.describe("GIFs in a chat", () => {
     await expect(ann.page.getByTestId("chat-gif-pick")).toHaveCount(3);
     await expect(ann.page.getByTestId("tv-chat-gif-powered")).toHaveText("Powered by KLIPY");
     expect(await outsideTheScreen(ann.page, "tv-chat-gifs-page", false)).toEqual([]);
-    // Back goes back to the chat, sending nothing
+    // a full page of them is one list that scrolls under the search, which stays at the top, and KLIPY's line, which stays at the bottom (the owner's phone, 17 Nov:
+    // the grid was squeezed into what the page had left, and the GIFs lay over each other)
+    const picks = ann.page.getByTestId("chat-gif-pick");
+    await ann.page.getByTestId("tv-chat-gif-search").fill("many");
+    await expect(picks).toHaveCount(24);
+    expect(await gridFaults(picks), "a full page of GIFs: squares, none over another").toEqual([]);
+    await ann.page.getByTestId("tv-chat-gif-more").click(); // (it is at the end of the list)
+    await expect(picks).toHaveCount(48);
+    expect(await gridFaults(picks), "two pages of GIFs: squares, none over another").toEqual([]);
+    const list = ann.page.getByTestId("tv-chat-gif-list");
+    expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight + 100), "the list scrolls").toBe(true);
+    const search = await where(ann.page.getByTestId("tv-chat-gif-search"));
+    const powered = await where(ann.page.getByTestId("tv-chat-gif-powered"));
+    expect((await where(picks.first())).width, "three or so to a row").toBeGreaterThan(70);
+    await picks.last().scrollIntoViewIfNeeded();
+    await expect(picks.last()).toBeInViewport();
+    expect(await where(ann.page.getByTestId("tv-chat-gif-search")), "the search stays where it was").toEqual(search);
+    expect(await where(ann.page.getByTestId("tv-chat-gif-powered")), "KLIPY's line stays where it was").toEqual(powered);
+    expect(powered.y + powered.height, "KLIPY's line is on the screen").toBeLessThanOrEqual(640);
+    expect(await outsideTheScreen(ann.page, "tv-chat-gifs-page", false)).toEqual([]);
+    // the arrow at the top goes back to the chat, sending nothing; so does Back
+    await ann.page.getByTestId("tv-chat-gif-back").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await button.click();
+    await expect(picks).toHaveCount(3);
     await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect(tvLines(ann.page)).toHaveCount(0);

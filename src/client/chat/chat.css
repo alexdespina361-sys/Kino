@@ -323,7 +323,9 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-gif-pane { display: flex; flex-direction: column; gap: 10px; }
 .chat-gif-search { width: 100%; padding: 11px 14px; border: 1.5px solid transparent; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; }
 .chat-gif-search:focus { border-color: var(--accent); outline: none; }
-.chat-gifs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
+/* (Rows as tall as their squares, always: the grid scrolls, it is never squeezed. A tile hides what spills out of its corners, which makes its own least
+   height nothing, so rows left to share a squeezed grid's height came out a few pixels tall and the GIFs lay over each other.) */
+.chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 6px; max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
 .chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
 .chat-gif img, .tv-chat-gif img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .chat-gif:active { opacity: 0.8; }
@@ -334,7 +336,8 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-gif-powered { margin: 0; color: var(--muted); font-size: 0.75rem; text-align: center; }
 .tv-chat-gif-search { width: min(100%, 40em); padding: 0.7em 1.1em; border: none; border-radius: 999px; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 1.3em; }
 .tv-chat-gif-search:focus { outline: none; box-shadow: inset 0 0 0 0.1em var(--accent); }
-.tv-chat-gifs { display: grid; grid-template-columns: repeat(auto-fill, minmax(10em, 1fr)); gap: 0.8em; width: min(100%, 74em); max-height: 52vh; padding: 0.5em; overflow-y: auto; scrollbar-width: none; }
+.tv-chat-gif-list { display: contents; } /* (a hand-held screen's list that scrolls: below) */
+.tv-chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(10em, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 0.8em; width: min(100%, 74em); max-height: 52vh; padding: 0.5em; overflow-y: auto; scrollbar-width: none; }
 .tv-chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 0.7em; overflow: hidden; background: #222227; }
 .tv-chat-gif:hover { box-shadow: 0 0 0 0.12em rgba(255, 255, 255, 0.35); }
 .tv-chat-gif:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
@@ -358,6 +361,15 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-gif-search { font-size: 16px; } /* (16px: as the box of the chat) */
   .tv-chat-gifs { grid-template-columns: repeat(auto-fill, minmax(7em, 1fr)); max-height: 56vh; }
   .tv-chat-gif-note { font-size: 1.3em; }
+  /* The GIF page (GifPick.tsx): the whole screen, as the chat - the arrow and the search at the top, the GIFs one list that scrolls and fills the rest. */
+  .tv-screen.tv-gif-screen { background: #0f0f12; }
+  .tv-gif-head { display: flex; flex: none; align-items: center; gap: 0.5em; width: 100%; padding: max(0.6em, env(safe-area-inset-top)) 0.8em 0.6em 0.4em; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+  .tv-gif-title { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* (said to a screen reader; the search box says the rest) */
+  .tv-gif-head .tv-chat-gif-search { flex: 1 1 auto; width: auto; min-width: 0; }
+  .tv-gif-screen .tv-chat-gif-list { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: 0.8em; width: 100%; min-height: 0; padding: 0.6em 0.6em 1.2em; overflow-y: auto; overscroll-behavior: contain; }
+  .tv-gif-screen .tv-chat-gifs { width: 100%; max-height: none; padding: 0; overflow: visible; gap: 0.45em; }
+  .tv-gif-screen .tv-chat-gif-note { margin-top: 2em; }
+  .tv-gif-screen .tv-chat-gif-powered { flex: none; margin: 0; padding: 0.5em 0 max(0.7em, env(safe-area-inset-bottom)); font-size: 1.1em; }
 
   /*
    * The chat itself on a hand-held screen is the whole screen, as in any messenger (the owner, 16 Nov): the friend at the top with the arrow back, the
@@ -365,6 +377,8 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
    * are not on it: the arrow is the way back.)
    */
   .tv-screen.tv-chat-screen { top: var(--chat-top, 0px); bottom: auto; height: var(--chat-vh, 100%); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; } /* (the part the keyboard leaves free: visibleArea.ts) */
+  /* (Whatever of the screen it does not cover - a keyboard that got shorter before the browser said so - is its own dark, not the friends page under it.) */
+  .tv-screen.tv-chat-screen { box-shadow: 0 0 0 100vmax #0f0f12; }
   .tv-screen.tv-chat-screen::before, .tv-screen.tv-chat-screen::after { content: none; }
   .tv-chat-screen > .tv-brand { display: none; }
   .tv-chat-screen > .tv-chat-window { flex: 1 1 auto; height: auto; min-height: 0; border-radius: 0; background: #0f0f12; box-shadow: none; }

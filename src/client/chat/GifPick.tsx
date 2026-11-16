@@ -2,10 +2,12 @@ import { useEffect } from "react";
 import { checkChatText } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
+import { ChevronLeftIcon } from "../shared/icons";
 import { BackButton, Screen } from "../tv/Idle";
 import type { Gif } from "./gifs";
 import type { ChatSession } from "./useChat";
 import { useGifSearch, type GifSearch } from "./useGifs";
+import { useVisibleArea } from "./visibleArea";
 
 /**
  * Sending a GIF in the chat (see gifs.ts): a grid of KLIPY's Trending, or of what is searched, in KLIPY's order; a press sends that one at once, through the
@@ -128,42 +130,62 @@ export function GifPickSheet({ name, gifKey, session, onClose }: { name: string;
 export function GifPickTv({ name, gifKey, session, narrow, onBack }: { name: string; gifKey: string; session: ChatSession; narrow: boolean; onBack: () => void }) {
   const t = useT();
   const search = useGifSearch(gifKey);
+  // (A hand-held screen is sized to what its keyboard leaves free while the search is typed, as the chat is: visibleArea.ts.)
+  useVisibleArea(narrow);
   // (A hand-held screen lands on nothing: its keyboard would come up over the grid before it is seen. A computer starts in the search box.)
   useEffect(() => {
     if (narrow) return;
     const on = document.activeElement;
     if (on === null || on === document.body) document.querySelector<HTMLElement>("[data-testid='tv-chat-gif-search']")?.focus();
   }, [narrow]);
+  const title = t("chat.gifTo", { name });
+  const searchBox = <GifSearchBox search={search} className="tv-chat-gif-search" testId="tv-chat-gif-search" focusFirst={!narrow} />;
   return (
-    <Screen key="gif" testId="tv-chat-gifs-page" compact focus={!narrow} onBack={onBack}>
-      <h1 className="tv-headline tv-headline-small">{t("chat.gifTo", { name })}</h1>
-      <GifSearchBox search={search} className="tv-chat-gif-search" testId="tv-chat-gif-search" focusFirst={!narrow} />
-      <GifState search={search} prefix="tv-chat" />
-      {search.gifs.length > 0 && (
-        <div className="tv-chat-gifs" data-testid="tv-chat-gifs">
-          {search.gifs.map((gif, at) => (
-            <GifButton
-              key={`${at}:${gif.slug}`}
-              gif={gif}
-              className="tv-chat-gif"
-              nav
-              onSend={() => {
-                onBack();
-                void send(session, gif);
-              }}
-            />
-          ))}
+    // A hand-held screen (the owner, 17 Nov): the whole screen, as the chat is - the arrow back and the search at the top, the GIFs one list that scrolls
+    // under them and fills the rest, KLIPY's line at the bottom. (Before, the grid was squeezed into what the page had left, and its GIFs lay over each other.)
+    <Screen key="gif" testId="tv-chat-gifs-page" compact focus={!narrow} onBack={onBack} {...(narrow ? { className: "tv-chat-screen tv-gif-screen" } : {})}>
+      {narrow ? (
+        <div className="tv-gif-head">
+          <button type="button" className="tv-chat-headback" onClick={onBack} aria-label={t("common.back")} title={t("common.back")} data-nav data-testid="tv-chat-gif-back">
+            <ChevronLeftIcon />
+          </button>
+          <h1 className="tv-gif-title">{title}</h1>
+          {searchBox}
         </div>
+      ) : (
+        <>
+          <h1 className="tv-headline tv-headline-small">{title}</h1>
+          {searchBox}
+        </>
       )}
-      {search.more && search.gifs.length > 0 && (
-        <button type="button" className="tv-chat-gif-more" onClick={search.loadMore} disabled={search.status === "loading"} data-nav data-testid="tv-chat-gif-more">
-          {search.status === "loading" ? t("common.loading") : t("chat.gifMore")}
-        </button>
-      )}
+      <div className="tv-chat-gif-list" data-testid="tv-chat-gif-list">
+        <GifState search={search} prefix="tv-chat" />
+        {search.gifs.length > 0 && (
+          <div className="tv-chat-gifs" data-testid="tv-chat-gifs">
+            {search.gifs.map((gif, at) => (
+              <GifButton
+                key={`${at}:${gif.slug}`}
+                gif={gif}
+                className="tv-chat-gif"
+                nav
+                onSend={() => {
+                  onBack();
+                  void send(session, gif);
+                }}
+              />
+            ))}
+          </div>
+        )}
+        {search.more && search.gifs.length > 0 && (
+          <button type="button" className="tv-chat-gif-more" onClick={search.loadMore} disabled={search.status === "loading"} data-nav data-testid="tv-chat-gif-more">
+            {search.status === "loading" ? t("common.loading") : t("chat.gifMore")}
+          </button>
+        )}
+      </div>
       <p className="tv-hint tv-chat-gif-powered" data-testid="tv-chat-gif-powered">
         {t("chat.gifPowered")}
       </p>
-      <BackButton onClick={onBack} testId="tv-chat-gif-back" />
+      {!narrow && <BackButton onClick={onBack} testId="tv-chat-gif-back" />}
     </Screen>
   );
 }
