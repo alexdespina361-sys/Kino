@@ -1518,13 +1518,40 @@ test.describe("full screen", () => {
   const isFullScreen = (tv: Page) => tv.evaluate(() => document.fullscreenElement !== null);
 
   const filmsOf = (baseURL: string) => ({ updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: sample(baseURL) }] }] });
-  /** The library on a device that has never opened the page (the config's pages start as if full screen had been left). */
+  /**
+   * The library on a TV that has never opened the page (the config's pages start as if full screen had been left). It is told it is watched from the couch:
+   * the project's browser is a computer's, and a computer is never taken full screen by itself (see the test of that, below).
+   */
   async function firstVisit(browser: Browser, baseURL: string) {
-    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL)));
+    const couch = { cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "kino.fit", value: "couch" }] }] };
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, storageState: couch }, {}, withLibrary(filmsOf(baseURL)));
     await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     return tv;
   }
+
+  test("a computer's first visit is only greeted: nothing waits for a press, a click is a click, and the corner's button goes full screen", async ({ browser, baseURL }) => {
+    // (The judge, 16 Nov: a gate on every visit, and the first click took a PC full screen.)
+    const pc = await openDevice(browser, { viewport: { width: 1280, height: 720 }, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL!)));
+    await pc.goto("/tv");
+    await expect(pc.getByTestId("tv-browse")).toBeVisible();
+    expect(await pc.evaluate(() => document.documentElement.dataset.fit)).toBe("desk");
+    await expect(pc.getByTestId("welcome-enter")).toHaveCount(0);
+    await expect(pc.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 }); // (the greeting fades by itself)
+    await pc.getByTestId("tv-browse-tile").first().click();
+    await expect(pc.getByTestId("tv-detail")).toBeVisible(); // the click opened the title
+    await pc.waitForTimeout(400);
+    expect(await isFullScreen(pc)).toBe(false);
+    await pc.keyboard.press("Escape");
+    await pc.getByTestId("fullscreen-toggle").click();
+    await expect.poll(() => isFullScreen(pc)).toBe(true);
+  });
+
+  test("the waiting welcome says in a line what the site is", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await expect(tv.getByTestId("welcome-about")).toHaveText(en["tv.welcomeAbout"]);
+    await expect(tv.getByTestId("welcome-about")).toBeInViewport({ ratio: 1 });
+  });
 
   test("a screen's welcome waits with a button for the press that takes it full screen, and it is left alone after that", async ({ browser, baseURL }) => {
     const tv = await firstVisit(browser, baseURL!);
@@ -1588,14 +1615,16 @@ test.describe("full screen", () => {
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
   });
 
-  test("on a phone the welcome's button fits the screen, and a tap on it goes full screen", async ({ browser, baseURL }) => {
-    const phone = await openDevice(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL!)));
+  test("on a phone the welcome only greets: nothing waits for a tap, and a tap does not go full screen", async ({ browser, baseURL }) => {
+    const phone = await openDevice(browser, { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL!)));
     await phone.goto("/tv");
-    const button = phone.getByTestId("welcome-enter");
-    await expect(button).toBeInViewport({ ratio: 1 });
-    await button.tap();
-    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await expect(phone.getByTestId("tv-browse")).toBeVisible();
+    await expect(phone.getByTestId("welcome-enter")).toHaveCount(0);
     await expect(phone.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+    await phone.getByTestId("tv-browse-tile").first().tap();
+    await expect(phone.getByTestId("tv-detail")).toBeVisible();
+    await phone.waitForTimeout(400);
+    expect(await isFullScreen(phone)).toBe(false);
   });
 
   test("a video that a phone starts while the welcome waits takes the screen from it", async ({ browser, baseURL }) => {

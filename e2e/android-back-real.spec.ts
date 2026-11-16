@@ -116,14 +116,13 @@ class Phone {
   }
 }
 
-/** A phone on the library of the screen, as it is on a first visit: the welcome, and its button, answered. */
+/** A phone on the library of the screen, as it is on a first visit: the welcome greets and fades by itself (a phone's waits for no tap since 16 Nov), untouched. */
 async function library(baseURL: string): Promise<Phone> {
   const phone = await Phone.open(baseURL);
   await phone.page.goto(`${baseURL}/api/health`);
   await phone.page.goto(`${baseURL}/tv`);
-  await phone.waitFor("welcome-enter");
-  await phone.tap("welcome-enter");
   await phone.waitFor("tv-browse");
+  await phone.waitFor("tv-welcome", false);
   await phone.page.waitForTimeout(1_000);
   return phone;
 }

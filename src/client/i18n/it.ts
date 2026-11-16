@@ -437,6 +437,7 @@ export const it: Dictionary = {
   /* the TV's start screens and account pages */
   "tv.welcome": "Benvenuto",
   "tv.welcomeStart": "Inizia a guardare",
+  "tv.welcomeAbout": "Film e serie su questo schermo, con il telefono come telecomando, se vuoi.",
   "tv.ready": "Pronti quando vuoi",
   "tv.pressOk": "Premi OK o tocca per iniziare",
   "tv.finding": "Cerco il tuo video…",

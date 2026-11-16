@@ -204,6 +204,11 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
       <Logo />
       <p>{t("tv.welcome")}</p>
       {ask && (
+        <p className="tv-welcome-about" data-testid="welcome-about">
+          {t("tv.welcomeAbout")}
+        </p>
+      )}
+      {ask && (
         <button className="tv-action" data-testid="welcome-enter">
           {t("tv.welcomeStart")}
         </button>

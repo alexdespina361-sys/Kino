@@ -440,6 +440,7 @@ export const en = {
   /* the TV's start screens and account pages */
   "tv.welcome": "Welcome",
   "tv.welcomeStart": "Start watching",
+  "tv.welcomeAbout": "Films and series on this screen, with your phone as the remote if you like.",
   "tv.ready": "Ready when you are",
   "tv.pressOk": "Press OK or tap to start",
   "tv.finding": "Finding your video…",

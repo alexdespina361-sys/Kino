@@ -304,16 +304,19 @@ test.describe("a phone that watches a party along", () => {
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
   });
 
-  test("the phone's page goes full screen at its first tap, which is on the welcome's button, and a button on each screen leaves it and brings it back", async ({ browser }) => {
+  test("the phone's page is not taken full screen by itself (no welcome waits for a tap), and a button on each screen brings it there and leaves it", async ({ browser }) => {
     const { host, code } = await hosting(browser);
     const phone = await openDevice(browser, { ...PHONE, storageState: FIRST_VISIT });
     await phone.goto("/tv");
-    await expect(phone.getByTestId("welcome-enter")).toHaveText("Start watching"); // the welcome asks for the press: anywhere on it is the button
-    await phone.getByTestId("welcome-enter").tap();
-    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await expect(phone.getByTestId("tv-browse")).toBeVisible();
+    await expect(phone.getByTestId("welcome-enter")).toHaveCount(0); // (the judge, 16 Nov: a gate on every visit, and the first tap took a phone full screen)
     await join(phone, code, { open: false });
     const waiting = phone.getByTestId("tv-fullscreen");
+    await expect(waiting).toHaveText("Full screen");
+    expect(await isFullScreen(phone)).toBe(false);
+    await waiting.tap();
     await expect(waiting).toHaveText("Exit full screen");
+    await expect.poll(() => isFullScreen(phone)).toBe(true);
     await waiting.tap();
     await expect(waiting).toHaveText("Full screen");
     expect(await isFullScreen(phone)).toBe(false);

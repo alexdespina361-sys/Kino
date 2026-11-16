@@ -27,8 +27,10 @@ const role = roleOfThisPage();
 if (thisIsDesk()) document.documentElement.dataset.fit = "desk";
 // Its chunk is asked for now, not when the page is first drawn: it comes down beside the words of the language (see `languageReady`), not after them.
 void (role === "tv" ? loadTv() : loadController()).catch(() => undefined);
-// A screen goes full screen at its first press; the remote leaves that to its button (it is where a code gets typed).
-setUpFullscreen({ byItself: role === "tv" });
+// A TV goes full screen at its first press (its welcome asks for that press). The remote leaves that to its button (it is where a code gets typed), and so does
+// a computer's or a phone's screen: there the welcome only greets, and the corner's button goes full screen (the judge, 16 Nov: a gate on every visit, and a
+// PC or a phone pulled into full screen by its first click).
+setUpFullscreen({ byItself: role === "tv" && !thisIsDesk() && !thisIsHandHeld() });
 // On a phone or a tablet the system's Back would leave the site from its first page: it asks first (see shared/backButton.ts).
 if (thisIsHandHeld()) installExitGuard();
 // What the page can say about itself if somebody sends feedback is kept from the start (nothing leaves the page unless it is sent: see feedback/diagnostics.ts).

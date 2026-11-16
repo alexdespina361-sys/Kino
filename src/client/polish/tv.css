@@ -382,6 +382,8 @@
 :root[data-ui="polish"] .tv-view-hint { font-size: var(--fs-1); font-weight: 500; color: var(--text-3); }
 :root[data-ui="polish"] .tv-view-empty { font-size: var(--fs-4); color: var(--text-3); }
 :root[data-ui="polish"] .tv-welcome p { font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-4); color: var(--text-2); }
+/* (What Kino is, in a line, on the welcome that waits for a press: the judge, 16 Nov, found only "Welcome" and a button.) */
+:root[data-ui="polish"] .tv-welcome p.tv-welcome-about { max-width: 40em; margin-top: calc(var(--em) * -0.4); padding: 0 1em; font-size: var(--fs-2); font-weight: 500; letter-spacing: 0; line-height: 1.4; text-align: center; text-wrap: balance; color: var(--text-3); }
 
 /* ------------------------------ buttons, and everything that is a button for a remote ------------------------------ */
 

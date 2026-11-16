@@ -438,6 +438,7 @@ export const ro: Dictionary = {
   /* the TV's start screens and account pages */
   "tv.welcome": "Bun venit",
   "tv.welcomeStart": "Începe vizionarea",
+  "tv.welcomeAbout": "Filme și seriale pe acest ecran, cu telefonul drept telecomandă, dacă vrei.",
   "tv.ready": "Gata când ești și tu",
   "tv.pressOk": "Apasă OK sau atinge ecranul pentru a porni",
   "tv.finding": "Caut videoclipul…",
