@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { halfToFloat, padded, readPlanes, writePlanes } from "./rife";
+import { halfToFloat, layoutOf, padded, readPlanes, writePlanes } from "./rife";
 
 describe("RIFE's pictures in and out", () => {
   it("pads to the network's step", () => {
@@ -23,6 +23,34 @@ describe("RIFE's pictures in and out", () => {
     expect(planes[0]).toBe(0); // (channels before `first` left alone)
     const back = readPlanes(planes.subarray(3 * width * height, 6 * width * height), 3, 2, width, height);
     expect([...back]).toEqual([...data]);
+  });
+
+  it("knows the layouts of the RIFE exports it fills, and refuses any other", () => {
+    expect(layoutOf([{ name: "input", shape: ["batch", 7, "height", "width"] }])).toEqual({ kind: "seven", input: "input" });
+    expect(
+      layoutOf([
+        { name: "input", shape: ["batch_size", 6, "height", "width"] },
+        { name: "timestep", shape: ["batch_size", 1, 1, 1] },
+      ]),
+    ).toEqual({ kind: "six", input: "input", moment: { name: "timestep", shape: "four" } });
+    expect(
+      layoutOf([
+        { name: "img0", shape: [1, 3, "h", "w"] },
+        { name: "img1", shape: [1, 3, "h", "w"] },
+        { name: "timestep", shape: [1, 1, 1, 1] },
+      ]),
+    ).toEqual({ kind: "three", first: "img0", second: "img1", moment: { name: "timestep", shape: "four" } });
+    expect(layoutOf([{ name: "img0", shape: [1, 3, "h", "w"] }, { name: "img1", shape: [1, 3, "h", "w"] }, { name: "timestep", shape: [1] }]).kind).toBe("three");
+    // (vs-mlrt's first layout: 11 channels, with grids the page does not make; and an export with extra inputs)
+    expect(() => layoutOf([{ name: "input", shape: [1, 11, "h", "w"] }])).toThrow(/not a layout/);
+    expect(() =>
+      layoutOf([
+        { name: "img0", shape: [1, 3, "h", "w"] },
+        { name: "img1", shape: [1, 3, "h", "w"] },
+        { name: "timestep", shape: [1, 1, 1, 1] },
+        { name: "tenFlow_div", shape: [2] },
+      ]),
+    ).toThrow(/not a layout/);
   });
 
   it("reads 16-bit floats", () => {

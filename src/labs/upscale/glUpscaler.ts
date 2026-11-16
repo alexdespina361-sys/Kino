@@ -81,13 +81,13 @@ export class GlUpscaler {
 
   /** The frame boost (frameBoost.ts), made in this context the first time it is asked for: its frames are textures here, drawn with no copy. */
   frameBoost(): FrameBoost {
-    this.boost ??= new FrameBoost(this.gl, this.floatTargets);
+    this.boost ??= new FrameBoost(this.gl);
     return this.boost;
   }
 
   /** A second frame boost, for a check by hand that must not disturb the one the video plays through (see main.ts `interpolate`). */
   spareBoost(): FrameBoost {
-    return new FrameBoost(this.gl, this.floatTargets, 2);
+    return new FrameBoost(this.gl, 2);
   }
 
   /** Draws the frame the video shows now, at `out` (the canvas is made that size). */
