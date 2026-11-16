@@ -5,6 +5,7 @@ import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
 import type { ChildGate } from "../shared/childGate";
 import type { Because } from "../shared/recommend";
+import { landscapeRows } from "../shared/shapes";
 import { addressOf } from "../shared/titleAddress";
 import type { GridSection } from "./browseNav";
 
@@ -160,6 +161,8 @@ export interface HomeRow {
   source?: string;
   /** The heading several rows stand under together (the friends page's "Waiting for you"): drawn once, over the first of them. */
   group?: string;
+  /** A row of the library drawn as wide cards, a still of each title, instead of posters (see `landscapeRows`). Its layout stays "wide". */
+  shape?: "landscape";
   entries: Entry[];
 }
 
@@ -391,8 +394,8 @@ const BECAUSE_ROW = "because:";
 /** The first row of a page is shown as a ranking of this many. */
 const RANKED = 10;
 /** The row of categories comes in after this many rows of titles, and shows this many tiles before "All categories". */
-const CATEGORIES_AFTER = 3;
-const CATEGORY_TILES = 12;
+export const CATEGORIES_AFTER = 3;
+export const CATEGORY_TILES = 12;
 
 function categoriesRow(rows: readonly LibraryRow[], of: LibrarySection | undefined): HomeRow {
   const used = new Set<string>();
@@ -548,8 +551,17 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   }
 
   const library = rowsFor(section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows, child);
+  // (Some of them are wide cards, so that a page is not one size of poster from top to bottom: see `landscapeRows`.)
+  const wide = landscapeRows(library);
   library.forEach((row, index) => {
-    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: rowTitle(row), ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
+    out.push({
+      id: row.id,
+      layout: index === 0 ? "ranked" : "wide",
+      title: rowTitle(row),
+      ...sourceOf(data.rows, row),
+      ...(wide.has(row.id) ? { shape: "landscape" as const } : {}),
+      entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem),
+    });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, section));
   });
   return out;

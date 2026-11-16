@@ -495,6 +495,44 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-row.is-wide .lib-scroller { gap: 12px; scroll-snap-type: x mandatory; }
 .lib-row.is-wide .lib-tile { width: min(72vw, 260px); }
 .lib-row.is-wide .lib-art { aspect-ratio: 16 / 9; }
+/* A row of the library drawn as wide cards (shared/shapes.ts): a little smaller than those, and free to slide, as the rows of posters are. */
+.lib-row.is-landscape .lib-scroller { gap: 10px; scroll-snap-type: x proximity; }
+.lib-row.is-landscape .lib-tile { width: min(60vw, 232px); }
+/* The row of categories: a card of words for each row of the page, on a colour of its own, the posters of its first titles fanned at its end. */
+.lib-cat {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  width: 196px;
+  height: 104px;
+  padding: 12px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, hsl(var(--hue) 42% 30%), hsl(calc(var(--hue) + 40) 48% 13%));
+  color: #fff;
+  text-align: left;
+  scroll-snap-align: start;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.lib-cat-name { position: relative; z-index: 4; max-width: 56%; font-size: 0.98rem; font-weight: 700; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.lib-cat-fan { position: absolute; top: 0; right: 14px; bottom: 0; display: flex; align-items: center; pointer-events: none; }
+.lib-cat-fan img {
+  position: relative;
+  width: 44px;
+  aspect-ratio: 2 / 3;
+  margin-left: -20px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  transform: rotate(calc((var(--at) - 1) * 7deg)) translateY(calc((var(--at) - 1) * (var(--at) - 1) * 3px));
+  z-index: calc(3 - var(--at));
+}
+.lib-cat:focus-visible { box-shadow: 0 0 0 2px #fff; outline: none; }
+.lib-cat:active { transform: scale(0.97); }
 .lib-tile { position: relative; flex: none; width: 138px; scroll-snap-align: start; }
 /* (A hold on a title puts it in a list: no menu from the browser, no selecting its name.) */
 .lib-card { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; -webkit-touch-callout: none; user-select: none; }

@@ -123,6 +123,16 @@ describe("rowsOfPage: home", () => {
     expect(rows[1]).toMatchObject({ id: "next", layout: "wide" });
   });
 
+  it("draws the second library row and every third after it as wide cards, with the categories still after the third, and nothing else", () => {
+    const many = Array.from({ length: 8 }, (_, i) => row(`r${i}`, "movie", 20));
+    const rows = rowsOfPage("home", data({ rows: many, progress: [], because: [{ key: "k", title: "T", why: "watched", items: [item("b")] }] }));
+    expect(rows.map((each) => `${each.id}${each.shape ? "=" + each.shape : ""}`)).toEqual(["because:k", "r0", "r1=landscape", "r2", "categories", "r3", "r4=landscape", "r5", "r6", "r7=landscape"]);
+    // (Its layout stays "wide": that is what a row that grows sideways is.)
+    expect(rows.find((each) => each.id === "r1")!.layout).toBe("wide");
+    // A section's page counts its own rows.
+    expect(rowsOfPage("movies", data({ rows: many })).filter((each) => each.shape).map((each) => each.id)).toEqual(["r1", "r4", "r7"]);
+  });
+
   it("puts a row of categories in after the third row, with an All categories tile once there are more than fit", () => {
     const many = Array.from({ length: 20 }, (_, i) => row(`r${i}`, i % 2 ? "series" : "movie"));
     const rows = rowsOfPage("home", data({ rows: many }));

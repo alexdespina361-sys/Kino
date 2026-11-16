@@ -176,6 +176,10 @@
   /* What is part way through is a card as wide as a picture of the film is, with the bar of how far it got. */
   :root[data-ui="polish"] .tv .tv-tile-continue { width: var(--card); }
   :root[data-ui="polish"] .tv .tv-tile-continue .tv-tile-art { aspect-ratio: 16 / 9; }
+  /* (And so is a title of a row of wide cards: see shared/shapes.ts.) */
+  :root[data-ui="polish"] .tv .tv-tile-landscape { width: var(--card); }
+  :root[data-ui="polish"] .tv .tv-tile-landscape .tv-tile-art { aspect-ratio: 16 / 9; }
+  :root[data-ui="polish"] .tv .tv-row[data-shape="landscape"] .tv-row-tiles > .tv-skeleton { width: var(--card); height: calc(var(--card) * 0.5625); }
   :root[data-ui="polish"] .tv .tv-tile-play { font-size: 36px; }
   :root[data-ui="polish"] .tv .tv-tile-progress { height: 4px; }
   :root[data-ui="polish"] .tv .tv-skeleton { width: var(--poster); height: calc(var(--poster) * 1.5); }
