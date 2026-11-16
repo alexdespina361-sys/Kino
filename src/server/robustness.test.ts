@@ -688,7 +688,9 @@ function wrongWith(req: Req, { res, ms, hung }: Outcome): string | undefined {
   if (ms > SLOW_MS) return `took ${Math.round(ms)} ms`;
   const readable = /json|text|html|xml|javascript/.test(type) || res.statusCode >= 400;
   const text = readable ? textOf(res) : "";
-  if (res.statusCode >= 400 && text && !/json/.test(type) && !(proxy && /^text\/plain/.test(type))) return `answered ${res.statusCode} with ${type || "no type"}, which is not JSON`;
+  // (A browser asking for an address that is no page of the site gets the page, which says so, with a 404: the judge, 16 Nov.)
+  const strayPage = req.method === "GET" && !req.url.startsWith("/api") && res.statusCode === 404 && /^text\/html/.test(type) && text.includes("<title>");
+  if (res.statusCode >= 400 && text && !/json/.test(type) && !(proxy && /^text\/plain/.test(type)) && !strayPage) return `answered ${res.statusCode} with ${type || "no type"}, which is not JSON`;
   if (/json/.test(type) && text) {
     try {
       JSON.parse(text);

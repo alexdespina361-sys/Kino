@@ -19,7 +19,7 @@ import { createLibrary, type LibrarySource } from "./library/library";
 import { playKeyOf, UnavailableStore } from "./library/unavailable";
 import { MemoryPersistence } from "./accounts/persistence";
 import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
-import { looksLikePage, requestForLog } from "./requestLog";
+import { isOwnPage, looksLikePage, requestForLog } from "./requestLog";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
@@ -491,7 +491,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     app.setNotFoundHandler((request, reply) => {
       const isPage = request.method === "GET" && !request.url.startsWith("/api") && !request.url.startsWith("/ws");
       // (Not for what is no page of this site, a file or a place a scanner looks for: see `looksLikePage`.)
-      if (isPage && looksLikePage(request.url) && request.headers.accept?.includes("text/html")) return reply.sendFile("index.html");
+      if (isPage && looksLikePage(request.url) && request.headers.accept?.includes("text/html")) {
+        // Any other address that looks like a page gets the page too, which says there is no such page and opens the library (client/shared/strayAddress.ts),
+        // but with a 404: it is not a page of the site (the judge, 16 Nov).
+        if (!isOwnPage(request.url)) reply.code(404);
+        return reply.sendFile("index.html");
+      }
       return reply.code(404).send({ error: "NOT_FOUND" });
     });
   }

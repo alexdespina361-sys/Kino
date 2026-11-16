@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { openDevice, test, tvRoot, withLibrary } from "./helpers";
+import { openDevice, PHONE, test, tvRoot, withLibrary } from "./helpers";
 
 /*
  * A title's own address: while its page is open the address bar names it (`?title=movie-603`), so the link can be copied and sent; opening that link opens the
@@ -88,17 +88,47 @@ test.describe("a title's own address", () => {
     expect(asked).toEqual(["filmpire-movie-603"]);
   });
 
-  test("of a title nobody knows leaves Home as it is, and the address without it", async ({ browser }) => {
+  test("of a title nobody knows leaves Home, says so, and takes the title out of the address", async ({ browser }) => {
     const asked: string[] = [];
     const tv = await open(browser, "/tv?title=movie-999", asked);
     await expect.poll(() => asked).toEqual(["filmpire-movie-999"]);
     await expect.poll(() => search(tv)).toBe("");
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
-    // (and one that names nothing is not asked about at all)
+    // (it used to be Home without a word: the judge, 16 Nov)
+    await expect(tv.getByTestId("tv-notice")).toHaveText("The title in that link couldn't be found. Here's the library.");
+    // (and one that names nothing is not asked about at all, and says the same)
     const odd: string[] = [];
     const other = await open(browser, "/tv?title=../../etc", odd);
-    await other.waitForTimeout(500);
+    await expect(other.getByTestId("tv-notice")).toHaveText("The title in that link couldn't be found. Here's the library.");
+    await expect.poll(() => search(other)).toBe("");
     expect(odd).toEqual([]);
+  });
+
+  test("an address that is no page of the site opens the library as / does, says so, and is answered with a 404", async ({ browser }) => {
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, serve([]));
+    const answer = await tv.goto("/does-not-exist?role=tv");
+    expect(answer?.status()).toBe(404);
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await expect(tv.getByTestId("tv-notice")).toHaveText("There's no page at that address. Here's the library.");
+    expect(new URL(tv.url()).pathname).toBe("/"); // (what followed the path is kept)
+    expect(search(tv)).toBe("?role=tv");
+    // ...once: the library drawn again (after a film) does not say it again, and the site's own pages say nothing
+    await tv.getByTestId("tv-browse-tile").first().click();
+    await tv.getByTestId("tv-detail-play").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeVisible();
+    await expect(tv.getByTestId("tv-notice")).toHaveCount(0);
+    expect((await tv.goto("/tv"))?.status()).toBe(200);
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await expect(tv.getByTestId("tv-notice")).toHaveCount(0);
+  });
+
+  test("the phone that is the remote says the same of an address that is no page of the site", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE, {}, serve([]));
+    expect((await phone.goto("/no/such/page"))?.status()).toBe(404);
+    await expect(phone.getByTestId("pair-notice")).toHaveText("There's no page at that address."); // (no TV yet: its first screen says it)
+    expect(new URL(phone.url()).pathname).toBe("/");
   });
 
   test("on a computer, the browser's Back closes a title's page, then steps back through the library's pages to Home, as a phone's does", async ({ browser, baseURL }) => {

@@ -32,7 +32,8 @@ import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
-import { addressOf, fetchTitle, showTitle, takeLinkedTitle } from "../shared/titleAddress";
+import { takeStrayAddress } from "../shared/strayAddress";
+import { addressOf, dropLink, pendingLink, showTitle } from "../shared/titleAddress";
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact, useFlatHand } from "./compact";
@@ -97,7 +98,12 @@ const remembered = {
   tile: {} as Record<string, string>,
   /** The page of a show that an episode was started from, and the season it was showing: the library comes back to it, to pick the next one (or another, when that one would not play). */
   detail: null as { page: Focused; season: number | undefined } | null,
+  /** The library's own line over Home (a link that leads nowhere), and until when it is shown: a library drawn again meanwhile shows it too, and a film ends it. */
+  notice: null as { text: string; until: number } | null,
 };
+
+/** How long the library's own line stays (the TV's lines about a film stay as long: Tv.tsx). */
+const NOTICE_MS = 8000;
 
 /** Something else than that show plays: the library comes back to its tile, not to the page. (`link` is the page the video came from.) */
 export function keepPageFor(link: string | undefined) {
@@ -502,7 +508,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // Choosing a page shuts the menu at once. On a page with nothing to stand on (an empty list) the remote stays on the menu's line
   // for it, but the menu itself is closed; an arrow key opens it again.
   const choose = (next: View) => {
-    linkPendingRef.current = false; // (a link still being looked up is not opened over the page chosen meanwhile)
+    dropLink(); // (a link still being looked up is not opened over the page chosen meanwhile)
     remembered.view = next;
     remembered.detail = null;
     setViewState(next);
@@ -549,33 +555,49 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const leaveEdit = () => (overlay?.kind === "edit" && overlay.from ? setOverlay(overlay.from) : closeOverlay());
   /** A title's own page opens over the library, on Play; closing it puts the remote back on the title it came from. */
   const openDetail = (title: Focused) => {
-    linkPendingRef.current = false;
+    dropLink();
     setDetail(title);
     setPending(DETAIL);
   };
   const closeDetail = () => {
-    linkPendingRef.current = false;
+    dropLink();
     remembered.detail = null;
     setDetail(null);
     setPending(CONTENT);
   };
-  // A link to a title's page (`?title=movie-603`, see titleAddress.ts) opens that page over Home once the server has said what the title is; a title nobody
-  // knows leaves Home as it is, and the address without it. Until then the address is left alone. Only the link the site was opened with: the library is
-  // drawn again after every film, and what the address says then is not a link (`takeLinkedTitle`). Nor is it opened over a page the viewer went to meanwhile.
-  const [linked] = useState(takeLinkedTitle);
-  const linkPendingRef = useRef(linked !== null);
+  // A link to a title's page (`?title=movie-603`, see titleAddress.ts) opens that page over Home once the server has said what the title is. Until then the
+  // address is left alone. Only the link the site was opened with, and only until it is dealt with (`pendingLink`): the library is drawn again after every film,
+  // and what the address says then is not a link. Nor is it opened over a page the viewer went to meanwhile, or after a film started from one.
+  // A link whose title nobody knows (`?title=movie-0`, `?title=x`), or an address that is no page of the site (shared/strayAddress.ts), says so in a line over
+  // Home, and the address loses the title: it used to be Home without a word (the judge, 16 Nov).
+  const [linked] = useState(() => pendingLink());
+  const linkPending = () => linked !== null && pendingLink() !== null;
+  const [ownNotice, setOwnNoticeState] = useState<string | null>(() => {
+    if (takeStrayAddress()) remembered.notice = { text: t("notice.noSuchPage"), until: Date.now() + NOTICE_MS };
+    return remembered.notice && remembered.notice.until > Date.now() ? remembered.notice.text : null;
+  });
+  const setOwnNotice = (text: string | null) => {
+    remembered.notice = text ? { text, until: Date.now() + NOTICE_MS } : null;
+    setOwnNoticeState(text);
+  };
+  useEffect(() => {
+    if (!ownNotice) return;
+    const timer = setTimeout(() => setOwnNotice(null), Math.max(0, (remembered.notice?.until ?? 0) - Date.now()));
+    return () => clearTimeout(timer);
+  }, [ownNotice]);
   const detailRef = useRef(detail);
   detailRef.current = detail;
   useEffect(() => {
     if (!linked) return;
     let live = true;
-    void fetchTitle(linked).then((item) => {
-      if (!live) return;
-      const wanted = linkPendingRef.current;
-      linkPendingRef.current = false;
+    void linked.item.then((item) => {
+      if (!live) return; // (drawn again before the answer came: the library drawn now deals with it)
+      const wanted = pendingLink() !== null;
+      dropLink();
       if (detailRef.current) return; // (a page is open: the address is its own)
-      if (wanted && item) openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
-      else showTitle(null);
+      if (wanted && item) return openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
+      showTitle(null);
+      if (wanted) setOwnNotice(t("notice.noSuchTitle"));
     });
     return () => {
       live = false;
@@ -600,7 +622,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // above: the entry a title's page puts on the history is the one that carries its address, and Back goes to one that has none.)
   const openAddress = detail && !detail.entry.opens ? addressOf(detail.entry) : null;
   useEffect(() => {
-    if (!linkPendingRef.current || openAddress) showTitle(openAddress);
+    if (!linkPending() || openAddress) showTitle(openAddress);
   }, [openAddress]);
 
   // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here (the party, a phone). A few lines, so that
@@ -1029,6 +1051,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
   /** Plays a title, or when it is a show's own page that asks, the episode it leads to (`at`), from where that was left. */
   const playEntry = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => {
+    dropLink(); // (a film started before a link's answer came: the library after it is Home, not the link's page)
+    remembered.notice = null; // (nor is the library's line about a link there again after it)
     remembered.detail = detail && series.isShow ? { page: detail, season: series.season } : null; // the library comes back to a show's page, to pick the next episode from it
     const startAt = at ? at.startAt : entry.startAt;
     onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
@@ -1284,9 +1308,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         >
           <Logo />
         </button>
-        {notice && !detail && (
+        {(notice || ownNotice) && !detail && (
           <p className="tv-notice" role="alert" data-testid="tv-notice">
-            {notice}
+            {notice || ownNotice}
           </p>
         )}
         <div className="tv-browse-corner">

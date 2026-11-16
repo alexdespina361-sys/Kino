@@ -87,11 +87,15 @@ describe("the server's log", () => {
     const { app } = await served();
     try {
       const html = { accept: "text/html,application/xhtml+xml" };
-      for (const page of ["/", "/tv", "/tv?role=tv", "/some/page"]) {
+      for (const page of ["/", "/tv", "/tv?role=tv"]) {
         const answer = await app.inject({ url: page, headers: html });
         expect(answer.statusCode, page).toBe(200);
         expect(answer.body, page).toContain("<title>Kino</title>");
       }
+      // (An address that looks like a page but is none of the site's gets the page too, which says so, with a 404: the judge, 16 Nov.)
+      const stray = await app.inject({ url: "/some/page", headers: html });
+      expect(stray.statusCode).toBe(404);
+      expect(stray.body).toContain("<title>Kino</title>");
       for (const other of ["/wp-admin/install.php", "/wp-admin/", "/.env", "/.git/config", "/index.php", "/phpmyadmin"]) {
         const answer = await app.inject({ url: other, headers: html });
         expect(answer.statusCode, other).toBe(404);

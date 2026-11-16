@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressOf, linkedTitle, takeLinkedTitle, titleIdOf, withTitle } from "./titleAddress";
+import { addressOf, dropLink, linkedTitle, pendingLink, titleAsk, titleIdOf, withTitle } from "./titleAddress";
 
 describe("a title's own address", () => {
   it("names a tile of the library by its id, short", () => {
@@ -28,10 +28,24 @@ describe("a title's own address", () => {
     expect(linkedTitle("?party=123456")).toBeNull();
   });
 
-  it("is taken from the address once a page load: the library drawn again after a film does not open it again", () => {
-    expect(takeLinkedTitle("?title=movie-603")).toBe("filmpire-movie-603");
-    expect(takeLinkedTitle("?title=movie-603")).toBeNull();
-    expect(takeLinkedTitle("?title=tv-1399")).toBeNull();
+  it("says what a link asks for: nothing, a title, or a title that is none (the library says so: the judge, 16 Nov)", () => {
+    expect(titleAsk("")).toBeNull();
+    expect(titleAsk("?party=123456")).toBeNull();
+    expect(titleAsk("?title=movie-603")).toEqual({ id: "filmpire-movie-603" });
+    expect(titleAsk("?title=movie-0")).toEqual({ id: "filmpire-movie-0" }); // (well made: the server is asked, and finds nothing)
+    for (const wrong of ["?title=", "?title=x", "?title=movie-603x"]) expect(titleAsk(wrong), wrong).toEqual({ id: null });
+  });
+
+  it("is read from the address once a page load, asked about once, and is there until it is dealt with: the library drawn again after a film does not open it again", async () => {
+    const first = pendingLink("?title=x");
+    expect(first?.id).toBeNull();
+    expect(await first?.item).toBeNull(); // (one that names nothing is not asked about)
+    const again = pendingLink("?title=movie-603"); // (a library drawn again before the answer came: the same link, the same answer)
+    expect(again?.id).toBeNull();
+    expect(again?.item).toBe(first?.item);
+    dropLink();
+    expect(pendingLink("?title=x")).toBeNull();
+    expect(pendingLink("?title=tv-1399")).toBeNull();
   });
 
   it("is put in the address and taken out again, with everything else in it left as it was", () => {

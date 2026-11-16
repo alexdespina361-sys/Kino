@@ -12,6 +12,7 @@ import { installExitGuard } from "./shared/backButton";
 import { ExitHint } from "./shared/ExitHint";
 import { setUpFullscreen } from "./shared/fullscreen";
 import { ScreenGate } from "./shared/ScreenGate";
+import { noteStrayAddress } from "./shared/strayAddress";
 import "./styles.css";
 import "./polish/base.css";
 
@@ -23,6 +24,8 @@ const Controller = lazy(loadController);
 
 // One app, two screens, chosen for this device: the TV player or the phone's remote (see role.ts). "/tv" is always the player.
 const role = roleOfThisPage();
+// An address that is no page of the site opens as "/" does, and says so (see shared/strayAddress.ts).
+noteStrayAddress();
 // A computer gets the big screen's page at a computer's size (see `isDesk`).
 if (thisIsDesk()) document.documentElement.dataset.fit = "desk";
 // Its chunk is asked for now, not when the page is first drawn: it comes down beside the words of the language (see `languageReady`), not after them.

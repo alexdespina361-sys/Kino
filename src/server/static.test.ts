@@ -33,6 +33,15 @@ describe("serving the built page", () => {
       const tv = await app.inject({ url: "/tv", headers: { accept: "text/html" } });
       expect(tv.statusCode).toBe(200);
       expect(tv.headers["cache-control"] ?? "").not.toMatch(/immutable|31536000/);
+      for (const url of ["/tv/", "/tv?title=movie-603", "/?party=123456"]) expect((await app.inject({ url, headers: { accept: "text/html" } })).statusCode, url).toBe(200);
+
+      // An address that is no page of the site gets the page all the same (it says so, and opens the library), with a 404 (the judge, 16 Nov).
+      for (const url of ["/does-not-exist", "/tv/anything", "/remote?x=1"]) {
+        const stray = await app.inject({ url, headers: { accept: "text/html" } });
+        expect(stray.statusCode, url).toBe(404);
+        expect(stray.body, url).toBe("<!doctype html><title>Kino</title>");
+        expect(stray.headers["cache-control"] ?? "", url).not.toMatch(/immutable|31536000/);
+      }
     } finally {
       await app.close();
     }

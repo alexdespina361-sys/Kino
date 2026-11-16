@@ -57,6 +57,12 @@ export function requestForLog(request: Asked): { method?: string; url: string; h
  * does not know is the page's to make sense of). A file (`/x.php`, `/.env`), a folder whose name starts with a dot, and the places a scanner looks for
  * somebody else's software are not pages of this site: they are answered 404, which is what tells a scanner there is nothing here.
  */
+/** The site's own pages: "/" and "/tv" (the screen that plays), with or without a last slash. Any other address the page is sent for is answered with a 404 as well. */
+export function isOwnPage(address: string): boolean {
+  const path = (address.split("?", 1)[0] ?? "").replace(/\/+$/, "");
+  return path === "" || path === "/tv";
+}
+
 export function looksLikePage(address: string): boolean {
   const path = address.split("?", 1)[0] ?? "";
   if (path.includes(".") || path.includes("%2e") || path.includes("%2E")) return false;
