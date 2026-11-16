@@ -1372,6 +1372,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // again the name that is on the card under the remote. Further down (a title they watched, a request, an invitation) it says what that is, as it did.
   const peopleRow = view.kind === "friends" ? homeRows.find((row) => row.id === "friend-people") : undefined;
   const friendsHead = view.kind === "friends" && !compact && (!shown || (peopleRow?.entries.some((entry) => entry.id === shown.entry.id) ?? false));
+  /** The wordmark pressed, by a pointer or a finger, whether the menu is shut or open over it: home, at its top, the menu shut (`choose` shuts it). */
+  const wordmarkHome = () => {
+    if (detail) closeDetail();
+    choose({ kind: "home" });
+    rowsRef.current?.scrollTo({ top: 0 });
+  };
 
   return (
     <section
@@ -1390,23 +1396,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       {/* (The shade of the bright picture: the two fade into each other as the remote leaves the first row and comes back.) */}
       {stage && <div className="tv-browse-shade tv-browse-bill" />}
 
-      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} flat={flatHand && !compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
+      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} flat={flatHand && !compact} onHome={wordmarkHome} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 
       <header className="tv-browse-top">
-        {/* The name is the way home, for a finger or a pointer (the remote has the menu's Home). */}
-        <button
-          type="button"
-          className="tv-browse-logo"
-          data-testid="tv-logo-home"
-          tabIndex={-1}
-          aria-label={t("tv.home")}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            if (detail) closeDetail();
-            choose({ kind: "home" });
-            rowsRef.current?.scrollTo({ top: 0 });
-          }}
-        >
+        {/* The name is the way home, for a finger or a pointer (the remote has the menu's Home); with the menu open over it, the menu passes a click there on (`onHome`). */}
+        <button type="button" className="tv-browse-logo" data-testid="tv-logo-home" tabIndex={-1} aria-label={t("tv.home")} onMouseDown={(event) => event.preventDefault()} onClick={wordmarkHome}>
           <Logo />
         </button>
         {(notice || ownNotice) && !detail && (

@@ -14,6 +14,18 @@ export async function copyText(text: string): Promise<boolean> {
   return copyFromField(text);
 }
 
+/** Whether this browser has a clipboard a page may ask to read (a TV's browser, or a page that is not secure, has none): the Paste buttons are there only then. */
+export const canPaste = (): boolean => typeof navigator !== "undefined" && typeof navigator.clipboard?.readText === "function";
+
+/** What is on the clipboard, or null when the browser will not say (it was refused, or there is no clipboard to read). Called from a press, as every browser wants. */
+export async function pasteText(): Promise<string | null> {
+  try {
+    return canPaste() ? await navigator.clipboard.readText() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The old way, for a page with no clipboard of its own to write to (a TV's browser, a page that is not secure): select a hidden field and copy from it. */
 function copyFromField(text: string): boolean {
   if (typeof document === "undefined") return false;

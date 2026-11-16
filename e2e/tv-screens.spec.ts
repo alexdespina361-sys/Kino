@@ -2445,6 +2445,8 @@ test.describe("a video that will not start", () => {
       await tv.keyboard.press("Enter"); // Play
       await expect(tv.getByTestId("tv-resolving")).toBeVisible();
       await expect(tv.getByTestId("tv-cancel-load")).toHaveCount(0); // nothing to give up on yet
+      // (The screen is drawn by the press itself; the wait is counted from the server's word that it is looking. Skipping ahead before that word came skipped nothing: 1 in 3 failed.)
+      await expect(tv.getByTestId("tv-resolving")).toHaveAttribute("data-heard", "true");
 
       await tv.clock.fastForward(SLOW);
       await expect(tv.getByTestId("tv-resolving")).toContainText("longer than usual");

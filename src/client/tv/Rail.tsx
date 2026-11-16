@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useState, type MouseEvent, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { Logo } from "../shared/Logo";
 
@@ -35,6 +35,7 @@ export function Rail({
   onOpen,
   entries,
   onArrive,
+  onHome,
   bar = false,
   flat = false,
 }: {
@@ -42,12 +43,24 @@ export function Rail({
   onOpen: (open: boolean) => void;
   entries: readonly RailEntry[];
   onArrive: (element: HTMLElement) => void;
+  /** What the page's wordmark does when it is pressed (it goes home): open, the menu lies over it, and a click or a tap there is still that, and shuts the menu. */
+  onHome?: () => void;
   bar?: boolean;
   flat?: boolean;
 }) {
   const t = useT();
   const [resting, setResting] = useState(false);
   const wide = !bar && (open || resting);
+  /**
+   * Whether a click on the menu's own ground (not one of its lines) fell where the page's wordmark is, under it (the owner, 15 Nov: "clicking it should close the
+   * menu and go to Home"). Not asked whether the menu is open: a finger's tap there takes the focus out of the menu first, which shuts it before the click comes
+   * (it is still over the wordmark while it closes), and a shut menu is not over the wordmark at all.
+   */
+  const onWordmark = (event: MouseEvent<HTMLElement>): boolean => {
+    if (bar || (event.target as Element).closest("button")) return false;
+    const mark = document.querySelector('[data-testid="tv-logo-home"]')?.getBoundingClientRect();
+    return !!mark && mark.width > 0 && event.clientX >= mark.left && event.clientX <= mark.right && event.clientY >= mark.top && event.clientY <= mark.bottom;
+  };
   return (
     <nav
       className="tv-rail"
@@ -63,6 +76,12 @@ export function Rail({
       // (A finger on a touch screen is no pointer that rests: its tap takes the focus, and that opens the menu.)
       onPointerEnter={(event) => !bar && event.pointerType !== "touch" && setResting(true)}
       onPointerLeave={() => setResting(false)}
+      onClick={(event) => {
+        if (!onHome || !onWordmark(event)) return;
+        setResting(false);
+        onOpen(false);
+        onHome();
+      }}
     >
       {/* Open, the menu covers the page's wordmark: it carries the name itself, where the page has it (the stylesheet shows it only while the menu is open). */}
       {!bar && (
