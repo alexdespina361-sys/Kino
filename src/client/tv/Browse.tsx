@@ -27,7 +27,7 @@ import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, 
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { comesIn, hueOf, Poster, sharper } from "../shared/Poster";
+import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
@@ -1222,6 +1222,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     return tap === "pick" ? t("rows.inLists") : t(tap === "remove" ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
   };
 
+  /**
+   * What a title is, beside its year in the banner and on its page: a film or a series (as the upright phone's banner says it). Not where the library got it:
+   * the catalog's own name ("Filmpire") meant nothing to a viewer (the judge, 16 Nov). A category says how many titles it has (`note`) and nothing more.
+   */
+  const kindWord = (entry: Entry): string | undefined =>
+    entry.opens ? undefined : entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined;
+
   const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
   // The banner shows the poster of the title the remote is on, beside what it says of it (a category, a person or an invitation has none).
   const heroPoster = !compact && shown && isTitle(shown.entry) ? sharper(shown.entry.image) : undefined;
@@ -1328,7 +1335,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
                   {shown.entry.title}
                 </h1>
-                <p className="tv-hero-meta">{[shown.entry.year, shown.entry.note, shown.entry.opens ? shown.entry.source : (shown.source ?? undefined)].filter(Boolean).join("  ·  ")}</p>
+                <p className="tv-hero-meta">{[shown.entry.year, shown.entry.note, kindWord(shown.entry)].filter(Boolean).join("  ·  ")}</p>
                 {shown.entry.description && <p className="tv-hero-about">{shown.entry.description}</p>}
                 <div className="tv-hero-actions">
                   {actions.map((action, col) => (
@@ -1838,7 +1845,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 <h1 className="tv-detail-title" data-testid="tv-detail-title">
                   {detail.entry.title}
                 </h1>
-                <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
+                <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, kindWord(detail.entry)].filter(Boolean).join("  ·  ")}</p>
                 {/* (Above the buttons, as what the movie database knows is: the page stands on its foot, so what comes after it has opened grows upwards and Play stays where it was.) */}
                 {series.unavailable && (
                   <p className="tv-detail-gone" data-testid="tv-detail-unavailable">
@@ -2145,11 +2152,11 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
         {...common}
         style={{ "--hue": hue } as CSSProperties}
       >
-        {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
+        {showPicture && <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
         {fan && (
           <span className="tv-category-fan" aria-hidden="true">
             {entry.posters!.map((poster, at) => (
-              <img key={poster} src={poster} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
+              <img key={poster} loading="lazy" {...posterSizes(poster)} src={poster} alt="" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
             ))}
           </span>
         )}
@@ -2195,7 +2202,7 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
       <span className="tv-tile-body">
         <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
           {showPicture ? (
-            <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
+            <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
           ) : (
             <span className="tv-tile-initial" aria-hidden="true">
               {entry.title.trim().charAt(0).toUpperCase()}

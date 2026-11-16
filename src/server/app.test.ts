@@ -81,11 +81,14 @@ describe("what every answer tells the browser", () => {
     for (const [header, value] of Object.entries(SAFE)) expect(kept.headers[header], header).toBe(value);
   });
 
-  it("tells a browser, whatever it is sent, what no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame", async () => {
+  it("tells a browser, whatever it is sent, what no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame, run a script not its own", async () => {
     const site = await served();
-    // (Nothing about scripts, styles or pictures: the aligner's WebAssembly needs `'unsafe-eval'` in the Chromium of a Hisense. The proxy's own policy is below.)
+    // (Scripts only from the site's own files, with `'unsafe-eval'` kept for the aligner's WebAssembly in the Chromium of a Hisense; nothing about styles or pictures.
+    // The proxy's own policy is below.)
     for (const [name, request] of [...KINDS, ...UNREADABLE].filter(([name]) => !name.startsWith("the proxy"))) {
-      expect((await site.inject(request)).headers["content-security-policy"], name).toBe("base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'");
+      expect((await site.inject(request)).headers["content-security-policy"], name).toBe(
+        "base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'",
+      );
     }
   });
 

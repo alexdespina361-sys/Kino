@@ -194,6 +194,19 @@ test.describe("a phone used as the screen", () => {
         expect(box.x, `section-${kind} ${where}`).toBeGreaterThanOrEqual(menuRight);
         expect(box.height, `section-${kind} ${where}`).toBeGreaterThanOrEqual(40);
       }
+      // what a thumb presses is 44 px high (they were 31 to 32 px: the judge, 16 Nov): a title's buttons on its page are, the banner's and the corner's keep
+      // their size, which the page has no height for, but a thumb lands on them 6 px past it, up and down (under the banner's, the titles' rows come first)
+      for (const id of ["tv-hero-play", "tv-account-chip", "fullscreen-toggle"]) {
+        const reach = await phone.getByTestId(id).evaluate((button) => {
+          const box = button.getBoundingClientRect();
+          const at = (y: number) => document.elementFromPoint(box.left + box.width / 2, y)?.closest("[data-testid]") === button;
+          return { above: at(box.top - 6), below: at(box.bottom + 6) };
+        });
+        expect(reach, `${id} ${where}`).toEqual({ above: true, below: id !== "tv-hero-play" ? true : reach.below });
+      }
+      await phone.locator(".tv-row .tv-tile").first().tap();
+      for (const id of ["tv-detail-play", "tv-detail-list"]) expect((await phone.getByTestId(id).boundingBox())!.height, `${id} ${where}`).toBeGreaterThanOrEqual(44);
+      await phone.getByTestId("tv-detail-close").tap();
       await phone.getByTestId("section-movies").tap();
       await expect(phone.getByTestId("section-movies")).toHaveAttribute("aria-checked", "true");
       await expect(phone.getByTestId("rail-home")).toHaveAttribute("aria-current", "page");
@@ -201,6 +214,13 @@ test.describe("a phone used as the screen", () => {
       const firstRowBottom = await phone.evaluate(() => document.querySelector(".tv-row")?.getBoundingClientRect().bottom ?? 0);
       expect(firstRowBottom, where).toBeLessThanOrEqual(size.height);
       expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
+      // the search box has one cross that empties it, a thumb's size (it had the browser's and the app's, that one 10 by 14 px and unstyled)
+      await phone.getByTestId("rail-search").tap();
+      await phone.getByTestId("tv-query").fill("film");
+      const cross = (await phone.getByTestId("tv-query-clear").boundingBox())!;
+      expect(Math.min(cross.width, cross.height), where).toBeGreaterThanOrEqual(44);
+      await phone.getByTestId("tv-query-clear").tap();
+      await expect(phone.getByTestId("tv-query")).toHaveValue("");
       // the party and the phone are on the profile's page, as on an upright phone
       await pressMenuLine(phone, "rail-party", "tap");
       await expect(phone.getByTestId("tv-party-start")).toBeVisible();

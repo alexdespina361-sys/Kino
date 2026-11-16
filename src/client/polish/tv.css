@@ -1095,3 +1095,23 @@
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* ...and a title's page has the width of the screen for its buttons (with two lists and a TV to play on there are five), not the column its words keep to on a TV. */
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-detail .tv-detail-text { max-width: none; }
+
+/* ...and what a thumb presses is 44 px high (Apple's; they were 31 to 32, the corner's 32 by 32: the judge, 16 Nov). A title's Play, the lists, Play on TV and Rate, and
+   the profile's page's buttons are that high; the banner's and the corner's keep the size they have, as the page has no height to give them and still show a row of
+   titles under the banner (handheld.spec.ts), and what a thumb lands on reaches 7 px past them, up and down. */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ :is(.tv-detail, .tv-hero-profile) .tv-hero-button { min-height: 44px; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero:not(.tv-hero-profile) .tv-hero-button,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top :is(.tv-corner-button, .tv-account-chip, .tv-back) { position: relative; inset: auto; } /* (the chip's own offsets are a TV's, kept out) */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero:not(.tv-hero-profile) .tv-hero-button::after,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top :is(.tv-corner-button, .tv-account-chip, .tv-back)::after { content: ""; position: absolute; z-index: 1; inset: -7px 0; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top :is(.tv-corner-button, .tv-back)::after { inset: -7px -5px; }
+
+/* The search field of a page under 900 px wide (Browse.tsx `narrow`: a phone either way up, a small window), whatever the height: one cross that empties
+   it, a button a thumb's size in the field's right end, and not the browser's own as well. (A phone on its side had both, the app's at 10 by 14 px and
+   unstyled, as these rules were only said for a phone held upright: the judge, 16 Nov. tv-phone.css still gives the upright field its look.) */
+:root[data-ui="polish"] .tv .tv-query-field { position: relative; }
+:root[data-ui="polish"] .tv .tv-query-field input.tv-query { box-sizing: border-box; padding-right: 52px; }
+:root[data-ui="polish"] .tv input.tv-query::-webkit-search-cancel-button { display: none; -webkit-appearance: none; appearance: none; }
+:root[data-ui="polish"] .tv .tv-query-clear { position: absolute; top: 0; bottom: 0; right: 0; display: grid; place-items: center; width: 48px; height: 48px; margin: auto 0; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--text-2); cursor: pointer; }
+:root[data-ui="polish"] .tv .tv-query-clear svg { width: 22px; height: 22px; }
+:root[data-ui="polish"] .tv .tv-query-clear:active { color: var(--text-1, #fff); background: var(--surf-3, rgb(255 255 255 / 0.08)); }

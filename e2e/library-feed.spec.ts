@@ -73,6 +73,21 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     expect(new Set(asked).size).toBe(asked.length); // each page once
   });
 
+  test("only a row on the screen asks for more of its titles as the page opens: one further down asks when it is scrolled to", async ({ browser }) => {
+    // (The judge, 16 Nov: the live Home asked for the next titles of about 37 rows at once, before anybody scrolled. Rows this short are all near their end.)
+    const asked = new Set<string>();
+    const short = { updatedAt: Date.now(), rows: Array.from({ length: 8 }, (_, i) => rowOf(`c${i}`, `Short ${i + 1}`, 5)) };
+    const tv = await openLibrary(browser, withLibrary(short, undefined, { more: (row) => (asked.add(row), { items: [], last: true }) }));
+    await expect(tiles(tv).first()).toBeFocused();
+    await expect.poll(() => asked.size).toBeGreaterThan(0); // (the rows on the screen do ask)
+    await tv.waitForTimeout(1000);
+    const onScreen = await tv.locator(".tv-row").evaluateAll((rows) => rows.filter((row) => row.getBoundingClientRect().top < innerHeight).map((row) => row.getAttribute("aria-label")));
+    expect(onScreen.length).toBeLessThan(8);
+    expect(asked.has("c7")).toBe(false);
+    await tv.getByRole("region", { name: "Short 8" }).scrollIntoViewIfNeeded();
+    await expect.poll(() => asked.has("c7")).toBe(true);
+  });
+
   test("a category brings more of its titles as the remote goes down its grid, to the last page", async ({ browser }) => {
     const asked: number[] = [];
     const tv = await openLibrary(

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
+import { ro } from "../src/client/i18n/ro";
 import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressMenuLine, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, twoSizes, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
@@ -73,7 +74,7 @@ test.describe("the start screens", () => {
   test("the switch to the remote can be chosen with OK from the page that shows the code", async ({ browser }) => {
     const tv = await openTv(browser);
     await expect(tv.getByTestId("pairing-code")).toBeVisible();
-    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("switch-to-remote")).toBeFocused();
     await tv.keyboard.press("Enter");
@@ -95,20 +96,29 @@ test.describe("the start screens", () => {
     expect(Math.abs(disconnect.x + disconnect.width / 2 - width / 2), "and in the middle").toBeLessThan(3);
   });
 
-  test("the arrow keys reach the library button in the corner of the pairing screen, and OK opens the library", async ({ browser }) => {
+  test("the pairing screen opens on the library button in the corner, lit, the arrow keys reach the rest, and OK opens the library", async ({ browser }) => {
     const tv = await openTv(browser);
     await expect(tv.getByTestId("pairing-code")).toBeVisible();
-    await tv.keyboard.press("ArrowDown"); // the first press only lands on the first button: Copy, under the code
-    await expect(tv.getByTestId("pairing-code-copy")).toBeFocused();
-    await tv.keyboard.press("ArrowUp"); // and Up from it is the corner's pill
-    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
+    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused(); // (no press is spent finding a button: the judge saw nothing lit at first)
     await tv.keyboard.press("ArrowDown"); // Down from the corner is the link at the foot of the page
     await expect(tv.getByTestId("switch-to-remote")).toBeFocused();
-    await tv.keyboard.press("ArrowUp"); // Up from the link is Copy again, and Up from that the corner
-    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp"); // Up from the link is Copy, under the code
+    await expect(tv.getByTestId("pairing-code-copy")).toBeFocused();
+    await tv.keyboard.press("ArrowUp"); // and Up from that the corner
     await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  });
+
+  test("a browser that says it is a TV's is not offered to be a remote", async ({ browser }) => {
+    const tizen = "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36";
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, userAgent: tizen });
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await pressMenuLine(tv, "rail-connect");
+    await expect(tv.getByTestId("pairing-code")).toBeVisible();
+    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
+    await expect(tv.getByTestId("switch-to-remote")).toHaveCount(0);
   });
 });
 
@@ -2247,15 +2257,22 @@ test.describe("categories and search on the TV", () => {
   });
 
   test("the rows are named in the language of the screen: on the home page, in the list of categories and on a category's page", async ({ browser }) => {
+    const movies = films.map((film) => ({ ...film, kind: "movie" })); // (as the catalog lists them: each title says what it is)
     const rows = [
-      { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: films },
-      { id: "filmpire-comedy-movies", title: "Comedy Movies", source: "Filmpire", kind: "movie", items: films.slice(0, 5) },
+      { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: movies },
+      { id: "filmpire-comedy-movies", title: "Comedy Movies", source: "Filmpire", kind: "movie", items: movies.slice(0, 5) },
       { id: "elsewhere-picks", title: "Staff Picks", source: "Elsewhere", kind: "movie", items: films.slice(0, 3) },
     ];
     const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, locale: "ro-RO" }, {}, withLibrary({ updatedAt: Date.now(), rows }));
     await tv.goto("/tv");
     await expect(tiles(tv).first()).toBeFocused();
     await expect(tv.locator(".tv-row-title")).toHaveText(["Filme în tendințe", "Filme de comedie", "Staff Picks"]);
+    // The banner says what the title is, not the catalog it came from (the judge, 16 Nov: "2026 · Filmpire"); its page says the same.
+    await expect(tv.locator(".tv-hero-meta")).toHaveText(new RegExp(`${ro["library.kindMovie"]}$`));
+    await expect(tv.locator(".tv-hero-meta")).not.toContainText("Filmpire");
+    await tv.keyboard.press("Enter");
+    await expect(tv.locator(".tv-detail .tv-hero-meta")).toHaveText(new RegExp(`${ro["library.kindMovie"]}$`));
+    await tv.keyboard.press("Escape");
 
     await choose(tv, "rail-categories");
     await expect(tv.getByTestId("tv-category-tile").nth(1)).toHaveAttribute("title", "Filme de comedie"); // (the list names it the same way)
