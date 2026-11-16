@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LinkView } from "../../shared";
+import { PinAsk } from "../controller/Pin";
 import { useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
 import { CheckIcon, TvIcon } from "../shared/icons";
@@ -7,6 +8,7 @@ import { useAccount } from "./AccountProvider";
 import { api, ApiError } from "./api";
 import { AuthForm } from "./AuthForm";
 import { describeError } from "./errors";
+import { pinAsker } from "./pinAsker";
 
 export type LinkOutcome = "asking" | "approved" | "denied";
 
@@ -14,7 +16,7 @@ export type LinkOutcome = "asking" | "approved" | "denied";
  * A screen that is not signed in has asked for a code, and somebody signed in is looking at the request: who is asking, and the two
  * answers. Nothing is signed in until they say so. Shared by the phone's page and by the TV page of a screen that is signed in itself.
  */
-export function useLinkApproval(code: string) {
+export function useLinkApproval(code: string, asker?: object) {
   const t = useT();
   const account = useAccount();
   const signedIn = account.me !== null;
@@ -36,7 +38,7 @@ export function useLinkApproval(code: string) {
     };
   }, [code, signedIn]);
 
-  const decide = async (approve: boolean) => {
+  const answer = async (approve: boolean) => {
     setBusy(true);
     setProblem(null);
     try {
@@ -47,6 +49,12 @@ export function useLinkApproval(code: string) {
     } finally {
       setBusy(false);
     }
+  };
+  // Another screen signed in to the account chooses its own profile: from a child's profile that is a way out, so it waits for the PIN (see `ChildLock`). No is no.
+  const decide = async (approve: boolean) => {
+    if (!approve) return answer(false);
+    if (asker) pinAsker.set(asker);
+    account.childLock.grownUp(() => void answer(true));
   };
 
   /** "A TV (Chrome on Windows)": who is asking, in words. */
@@ -59,8 +67,11 @@ export function useLinkApproval(code: string) {
 /** "Sign in this device?" on the phone: who is asking, and a button for each answer. */
 export function LinkApprove({ code, onClose }: { code: string; onClose: () => void }) {
   const t = useT();
-  const { signedIn, view, body, problem, outcome, busy, decide } = useLinkApproval(code);
+  const account = useAccount();
+  const self = useRef({}).current;
+  const { signedIn, view, body, problem, outcome, busy, decide } = useLinkApproval(code, self);
 
+  if (account.childLock.asking && pinAsker.is(self)) return <PinAsk />; // (approving was asked on a child's profile)
   if (!signedIn) {
     return (
       <div className="link-approve" data-testid="link-signin">

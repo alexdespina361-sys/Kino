@@ -15,6 +15,7 @@ import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { PinAsk } from "./Pin";
+import { pinAsker } from "../account/pinAsker";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "../shared/backButton";
 import { useChildCards } from "../shared/childGate";
@@ -24,9 +25,6 @@ import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
 /** The pages that are open, the one on top last: a title's page lies over the account's, and Escape goes back from that one only. */
 const pagesOpen: object[] = [];
-
-/** The account's screen that last asked for the PIN of a child's profile: it is the one that shows the PIN's page. */
-let pinAsker: object | null = null;
 
 /**
  * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A `bare` page (a title's, with its picture at the top)
@@ -158,7 +156,7 @@ export function AccountScreen({
   const { asking, cancel, relock } = account.childLock;
   const self = useRef({}).current;
   const grownUp = (action: () => void) => {
-    pinAsker = self;
+    pinAsker.set(self);
     account.childLock.grownUp(action);
   };
   const guarded = (next: View) => () => grownUp(() => setView(next));
@@ -184,7 +182,7 @@ export function AccountScreen({
     if (me && view === "main" && account.choosing) setView("picker");
   }, [me, view, account.choosing]);
 
-  if (asking && pinAsker === self) {
+  if (asking && pinAsker.is(self)) {
     return (
       <Page title={t("pin.title")} onBack={cancel} testId="pin-page">
         <PinAsk />

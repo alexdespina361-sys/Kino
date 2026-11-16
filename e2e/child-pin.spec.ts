@@ -1,6 +1,6 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { openDevice, openTvSettings, PHONE, test } from "./helpers";
+import { openDevice, openLibrary, openTvSettings, openTvSignIn, PHONE, test } from "./helpers";
 
 /*
  * The PIN of a child's profile (the owner, 16 Nov 2026): a child's profile is not left on this account's screens without a grown-up's PIN. Every way out asks for it
@@ -179,6 +179,33 @@ test.describe("the PIN of a child's profile", () => {
     expect(await hasPin(phone)).toBe(false);
     await phone.getByTestId("profile-Grown").click();
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Grown/);
+  });
+
+  test("a TV's sign-in code opened on a phone that is on a child's profile waits for the PIN before it signs the TV in", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const phone = await openDevice(browser, PHONE);
+    const { first } = await family(phone.context(), "remote");
+    await phone.goto("/");
+    await phone.getByTestId(`profile-${first}`).click();
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", new RegExp(first));
+
+    const tv = await openLibrary(browser);
+    await openTvSignIn(tv);
+    const code = tv.getByTestId("tv-link-code");
+    await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    const shown = (await code.textContent())!.trim();
+    await phone.goto(`/?link=${shown.replace("-", "")}`); // (what the TV's QR code opens)
+    await expect(phone.getByTestId("link-code")).toHaveText(shown);
+
+    // The TV would choose its own profile once signed in: from a child's profile, that is a way out.
+    await phone.getByTestId("link-approve-button").click();
+    await expect(phone.getByTestId("pin-ask")).toBeVisible();
+    await phone.getByTestId("pin-cancel").click();
+    await expect(phone.getByTestId("link-approve-button")).toBeVisible();
+    await phone.getByTestId("link-approve-button").click();
+    await phone.getByTestId("pin-input").fill(PIN);
+    await expect(phone.getByTestId("link-done")).toBeVisible();
+    await expect(tv.getByTestId("tv-profiles")).toBeVisible({ timeout: 15_000 }); // (signed in: "Who's watching?")
   });
 
   test("on the phone, the right PIN lets the child's profile go, and the settings set, change and take off the PIN", async ({ browser }) => {
