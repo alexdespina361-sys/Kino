@@ -10,7 +10,7 @@ export const chatEn = {
 
   /* the thread */
   "chat.empty": "No messages yet. Say hello to {name}.",
-  "chat.privacy": "Plain text only; links can't be pressed (a title sent from Kino shows as its poster). Only the last {messages} messages are kept, for {days} days at most, and they are stored on the server without encryption: don't send anything private.",
+  "chat.privacy": "Plain text only; links can't be pressed (a title sent from Kino shows as its poster, a GIF as the picture). Only the last {messages} messages are kept, for {days} days at most, and they are stored on the server without encryption: don't send anything private.",
   "chat.you": "You",
   "chat.messageLabel": "Message",
   "chat.placeholder": "Write a message",
@@ -21,6 +21,17 @@ export const chatEn = {
   "chat.sendTitleTo": "Send a title to {name}",
   "chat.sendTitleHelp": "What you watched and saved. Press one to send it.",
   "chat.noTitles": "Nothing to send yet: the titles you watch or save show up here.",
+  /* GIFs, from KLIPY (chat/gifs.ts): "Search KLIPY" and "Powered by KLIPY" are the attribution KLIPY asks for */
+  "chat.gif": "Send a GIF",
+  "chat.gifTo": "A GIF for {name}",
+  "chat.gifSearch": "Search KLIPY",
+  "chat.gifPowered": "Powered by KLIPY",
+  "chat.gifNone": "No GIFs for “{query}”.",
+  "chat.gifFailed": "The GIFs could not be loaded.",
+  "chat.gifLimited": "Too many GIF searches for now. Try again in a while.",
+  "chat.gifMore": "More GIFs",
+  "chat.gifAlt": "GIF",
+  "chat.gifGone": "A GIF that is no longer available",
   "chat.takeBack": "Take back",
   "chat.takeBackLast": "Take back last message",
   "chat.mute": "Mute",

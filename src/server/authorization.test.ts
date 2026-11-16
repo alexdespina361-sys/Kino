@@ -434,7 +434,7 @@ const ROWS: Row[] = [
 /** Routes anybody may call, and why that is all right. */
 const PUBLIC: Record<string, string> = {
   "GET /ws": "the socket of the watch parties and pairings: it reads no cookie, and a screen is known as a profile only by a proof that is good once (accounts/screens.ts)",
-  "GET /api/features": "one flag, the same for everybody",
+  "GET /api/features": "the cat's flag and the site's KLIPY key (KLIPY puts it in every visitor's request), the same for everybody",
   "GET /api/health": "to anybody, only that it is up (ok, uptime, where it keeps things); the counters only with the team's token",
   "GET /api/library": "the catalogue: the same for everybody",
   "GET /api/library/search": "the catalogue",

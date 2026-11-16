@@ -90,6 +90,11 @@ export interface AppOptions {
   searchesAtOnce?: { perAddress?: number; inAll?: number };
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
   cat?: boolean;
+  /**
+   * The site's KLIPY key, for GIFs in the chats (client/chat/gifs.ts): env KLIPY_KEY. Without one there is no GIF button anywhere. It is handed to every page
+   * (`/api/features`), because each visitor's browser asks KLIPY itself with it in the address, as KLIPY's rules ask (nothing of KLIPY's goes through this server).
+   */
+  klipyKey?: string;
   /** Socket liveness tuning; tests shorten it. */
   hub?: HubOptions;
   /** How much of a film the proxy keeps for the screens of a party (64 MB, 3 minutes unless set; env SEGMENT_CACHE_MB sets the size in megabytes). */
@@ -272,7 +277,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
   const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
-  app.get("/api/features", async (_request, reply) => reply.header("Cache-Control", "no-store").send({ cat: catOn }));
+  // GIFs in the chats: the KLIPY key, when the host has one (and one that looks like a key: anything else is said in the log and left out).
+  const klipyWritten = (options.klipyKey ?? process.env.KLIPY_KEY ?? "").trim();
+  const klipyKey = /^[A-Za-z0-9_-]{8,200}$/.test(klipyWritten) ? klipyWritten : "";
+  if (klipyWritten && !klipyKey) app.log.warn("KLIPY_KEY does not look like a KLIPY key: the chats have no GIFs.");
+  const features = { cat: catOn, ...(klipyKey ? { gifs: klipyKey } : {}) };
+  app.get("/api/features", async (_request, reply) => reply.header("Cache-Control", "no-store").send(features));
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
   // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
   // (`misses`): with screens watching together, the hits are the share of the load that was not multiplied by the number of screens.)
@@ -302,7 +312,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
-    features: { cat: catOn },
+    features: { cat: catOn, ...(klipyKey ? { gifs: true } : {}) },
   });
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());

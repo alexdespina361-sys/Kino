@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatLine, LibraryItem } from "../../shared";
 import { useLanguage, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
 import { actionForKey } from "../tv/keys";
+import { gifOf } from "./gifs";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
 import { onlyNames, titleIn, titleLabel, type TitleInText } from "./titles";
@@ -34,7 +35,8 @@ const CARD = ".chat-card[data-title]";
  * The messages of a chat, oldest first and the newest at the bottom, where the list stays as messages come (unless it was scrolled up to read:
  * then it stays where it was). A message is text (never a link, never markup) in a bubble: one's own on the right, the friend's on the left.
  * A message that names a title by its address on this site (titles.ts) has a card under it, with the poster, which opens the title here; the address
- * is never shown as a link nor followed. What a report would send (`showWriter`) is the text alone, as it is sent.
+ * is never shown as a link nor followed. A message that is the address of a GIF from KLIPY and nothing else (gifs.ts) is the picture. What a report would
+ * send (`showWriter`) is the text alone, as it is sent.
  */
 export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, remote = false, onOpenTitle, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
@@ -42,7 +44,9 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLOListElement>(null);
   const atEnd = useRef(true);
-  const titles = useMemo(() => lines.map((line) => (showWriter ? null : titleIn(line.text))), [lines, showWriter]);
+  // (A report shows what it would send: the text as it is, a GIF's address among it.)
+  const gifs = useMemo(() => lines.map((line) => (showWriter ? null : gifOf(line.text))), [lines, showWriter]);
+  const titles = useMemo(() => lines.map((line, index) => (showWriter || gifs[index] ? null : titleIn(line.text))), [lines, showWriter, gifs]);
   const cards = useMemo(() => cardsOf(titles.map((found) => found?.id ?? null)), [titles]);
 
   // The newest message in view: the first time, for each new one when the person was at the end, and again when what is in the list changes
@@ -158,13 +162,31 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           const pressable = line.mine && onPick !== undefined;
           const open = pressable && picked === line.id;
           const found = titles[index] ?? null;
-          const bubble = (text: string) => (
+          const gif = gifs[index] ?? null;
+          const bubble = (text: ReactNode) => (
             <>
               {showWriter && <span className="chat-writer">{line.mine ? t("chat.you") : name}</span>}
               <span className="chat-text" data-testid="chat-text">
                 {text}
               </span>
               <span className="chat-time">{stampOf(line.at, language)}</span>
+            </>
+          );
+          const said = (text: ReactNode, card: ReactNode) => (
+            <>
+              {pressable ? (
+                <button type="button" className={`chat-bubble${gif ? " chat-bubble-gif" : ""}${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={() => onPick(open ? null : line.id)} data-testid="chat-bubble">
+                  {bubble(text)}
+                </button>
+              ) : (
+                <div className={`chat-bubble${gif ? " chat-bubble-gif" : ""}`}>{bubble(text)}</div>
+              )}
+              {card}
+              {open && onTakeBack && (
+                <button type="button" className="chat-takeback" onClick={() => onTakeBack(line.id)} data-testid="chat-takeback">
+                  {t("chat.takeBack")}
+                </button>
+              )}
             </>
           );
           return (
@@ -174,31 +196,36 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   {dayOf(line.at, now, language)}
                 </span>
               )}
-              <Said line={line} found={found && cards.has(found.id) ? found : null} remote={remote} onOpenTitle={onOpenTitle}>
-                {(text, card) => (
-                  <>
-                    {pressable ? (
-                      <button type="button" className={`chat-bubble${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={() => onPick(open ? null : line.id)} data-testid="chat-bubble">
-                        {bubble(text)}
-                      </button>
-                    ) : (
-                      <div className="chat-bubble">{bubble(text)}</div>
-                    )}
-                    {card}
-                    {open && onTakeBack && (
-                      <button type="button" className="chat-takeback" onClick={() => onTakeBack(line.id)} data-testid="chat-takeback">
-                        {t("chat.takeBack")}
-                      </button>
-                    )}
-                  </>
-                )}
-              </Said>
+              {gif ? (
+                said(<GifPicture url={gif} />, null)
+              ) : (
+                <Said line={line} found={found && cards.has(found.id) ? found : null} remote={remote} onOpenTitle={onOpenTitle}>
+                  {said}
+                </Said>
+              )}
             </li>
           );
         })}
       </ol>
     </div>
   );
+}
+
+/**
+ * A message that is a GIF (gifs.ts): the picture, at the height every GIF has here (the list does not move while it comes, only its width settles), never a
+ * link. It comes from KLIPY to this browser as any picture does. One KLIPY has taken away says so, in a line, instead of a broken picture.
+ */
+function GifPicture({ url }: { url: string }) {
+  const t = useT();
+  const [gone, setGone] = useState(false);
+  if (gone) {
+    return (
+      <span className="chat-gif-gone" data-testid="chat-gif-gone">
+        {t("chat.gifGone")}
+      </span>
+    );
+  }
+  return <img className="chat-gif-picture" src={url} alt={t("chat.gifAlt")} loading="lazy" decoding="async" referrerPolicy="no-referrer" draggable={false} onError={() => setGone(true)} data-testid="chat-gif" />;
 }
 
 type SaidProps = {
