@@ -724,6 +724,8 @@ export function Tv() {
             setControl(null);
             setParty(null); // a party this TV is in is sent right after
             setPartyEnds(null);
+            // (Opened again after the host's page had been closed a while: the library, not that party, and a line that says why. See hub.ts `tvHello`.)
+            if (message.leftParty) setNotice(t("party.leftGone", { name: message.leftParty }));
             if (!message.following) {
               const media = currentMediaRef.current;
               // (What it has on goes along, for a server that has forgotten: see `TV_STATE.media`.)

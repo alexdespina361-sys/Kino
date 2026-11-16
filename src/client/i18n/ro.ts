@@ -813,6 +813,7 @@ export const ro: Dictionary = {
   "party.keys": "Tastatură numerică",
   "party.overlayLead": "Începe o vizionare comună și ceilalți se pot uita cu tine, fiecare pe ecranul lui.",
   "party.ended": "Nu mai faci parte din vizionarea comună.",
+  "party.leftGone": "{name} este deconectat de ceva vreme, așa că acest ecran a ieșit din vizionarea comună.",
   "party.pausedBy": "Pus pe pauză de {name}",
   "party.pausedByYou": "Pus pe pauză de tine",
   "party.resumedBy": "{name} a reluat",

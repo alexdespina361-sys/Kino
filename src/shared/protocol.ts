@@ -333,6 +333,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     pairing: PairingCodeSchema.nullable(),
     /** The name of the TV this one is watching along with, if it is. */
     following: z.string().max(60).optional(),
+    /** The name of the TV whose party this one was taken out of as its page opened: that TV's page had been closed a while (see hub.ts `tvHello`). */
+    leftParty: z.string().max(60).optional(),
   }),
   /** This TV now watches along with another one: it plays what that one plays, and the other TV's phone controls both. */
   z.object({ type: z.literal("TV_FOLLOWING"), leader: z.string().max(60) }),

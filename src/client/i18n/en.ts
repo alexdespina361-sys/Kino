@@ -810,6 +810,7 @@ export const en = {
   "party.keys": "Number pad",
   "party.overlayLead": "Start a party and others can watch this with you, each on their own screen.",
   "party.ended": "You are no longer in the party.",
+  "party.leftGone": "{name} has been offline for a while, so this screen left their watch party.",
   "party.pausedBy": "Paused by {name}",
   "party.pausedByYou": "Paused by you",
   "party.resumedBy": "{name} resumed",

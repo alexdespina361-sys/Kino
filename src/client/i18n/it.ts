@@ -808,6 +808,7 @@ export const it: Dictionary = {
   "party.keys": "Tastierino numerico",
   "party.overlayLead": "Avvia una visione condivisa e gli altri possono guardare con te, ognuno sul proprio schermo.",
   "party.ended": "Non fai più parte della visione condivisa.",
+  "party.leftGone": "{name} è offline da un po', quindi questo schermo è uscito dalla visione condivisa.",
   "party.pausedBy": "In pausa da {name}",
   "party.pausedByYou": "In pausa da te",
   "party.resumedBy": "{name} ha ripreso",
