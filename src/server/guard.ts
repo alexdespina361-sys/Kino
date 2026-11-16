@@ -47,8 +47,8 @@ export function answerUnroutable(error: FastifyError, request: FastifyRequest, r
   void reply.send(error);
 }
 
-/** The library's routes that take the address of a title and ask the place that lists it. */
-const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/title", "/api/library/episodes", "/api/library/seasons"];
+/** The library's routes that take the address of a title and ask the place that lists it, and the player's question about an anime episode's opening and credits (AniList, AniSkip). */
+const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/title", "/api/library/episodes", "/api/library/seasons", "/api/anime/skip"];
 
 /** The library's routes that page through the shelves: more rows are asked for as a page is scrolled, and more titles of one row. Few answers are kept for as many as can be asked. */
 const BROWSE_ASKS = ["/api/library/rows", "/api/library/more"];

@@ -5,8 +5,9 @@ import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { isHttpUrl, LibraryKindSchema, LibrarySectionSchema, type Registration } from "../shared";
+import { AnimeHintSchema, isHttpUrl, LibraryKindSchema, LibrarySectionSchema, type Registration } from "../shared";
 import type { GoogleConfig } from "./accounts/google";
+import { createAnimeSkipLookup, type AnimeSkipLookup } from "./anime/skipTimes";
 import type { PasswordCost } from "./accounts/password";
 import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
@@ -95,6 +96,11 @@ export interface AppOptions {
    * (`/api/features`), because each visitor's browser asks KLIPY itself with it in the address, as KLIPY's rules ask (nothing of KLIPY's goes through this server).
    */
   klipyKey?: string;
+  /**
+   * Where `/api/anime/skip` finds an anime episode's opening and credits (anime/skipTimes.ts: AniList, then AniSkip); tests give their own. null: nowhere
+   * (every answer is "not known"), which env ANIME_SKIP=off also says: the end-to-end tests' server asks no site of the internet.
+   */
+  animeSkip?: AnimeSkipLookup | null;
   /** Socket liveness tuning; tests shorten it. */
   hub?: HubOptions;
   /** How much of a film the proxy keeps for the screens of a party (64 MB, 3 minutes unless set; env SEGMENT_CACHE_MB sets the size in megabytes). */
@@ -278,6 +284,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
   const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
   // GIFs in the chats: the KLIPY key, when the host has one (and one that looks like a key: anything else is said in the log and left out).
+  const animeSkip = options.animeSkip !== undefined ? options.animeSkip : /^(0|off|false|no)$/i.test(process.env.ANIME_SKIP ?? "") ? null : createAnimeSkipLookup();
   const klipyWritten = (options.klipyKey ?? process.env.KLIPY_KEY ?? "").trim();
   const klipyKey = /^[A-Za-z0-9_-]{8,200}$/.test(klipyWritten) ? klipyWritten : "";
   if (klipyWritten && !klipyKey) app.log.warn("KLIPY_KEY does not look like a KLIPY key: the chats have no GIFs.");
@@ -444,6 +451,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     if (typeof rawUrl !== "string" || !rawUrl) return reply.code(400).send({ error: "Missing 'url' parameter" });
     const result = await resolve(rawUrl);
     return reply.send(result);
+  });
+  // Where an anime episode's opening and credits are (anime/skipTimes.ts): asked by the player once the episode plays and its length is known, with what the
+  // look-up of the film knew of it (`media.anime`), never during that look-up. Counted as a question about a title, and only this site's pages may ask (guard.ts).
+  app.get<{ Querystring: Record<string, string | string[] | undefined> }>("/api/anime/skip", async (request, reply) => {
+    const { title, season, episode, length } = request.query;
+    const one = (value: string | string[] | undefined) => (typeof value === "string" ? value : undefined);
+    const hint = AnimeHintSchema.safeParse({ title: one(title)?.trim(), season: Number(one(season) ?? "1"), episode: Number(one(episode) ?? "1") });
+    const seconds = Number(one(length));
+    if (!hint.success || !Number.isFinite(seconds) || seconds < 60 || seconds > 14_400) return reply.code(400).send({ error: "Bad 'title', 'season', 'episode' or 'length' parameter" });
+    const skip = animeSkip ? await animeSkip.find(hint.data, seconds) : null;
+    // (Kept by the browser for an hour when found, ten minutes when not: times are sent in to AniSkip as episodes come out.)
+    return reply.header("Cache-Control", `private, max-age=${skip ? 3600 : 600}`).send({ skip });
   });
   app.get<{ Params: { file: string } }>("/api/subtitles/ro/:file", async (request, reply) => {
     const file = request.params.file || "";

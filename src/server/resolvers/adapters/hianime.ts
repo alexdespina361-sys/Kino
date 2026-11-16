@@ -1,4 +1,5 @@
-import type { AlternateSource, SubtitleTrack } from "../../../shared";
+import { AnimeHintSchema, type AlternateSource, type NormalizedMedia, type SubtitleTrack } from "../../../shared";
+import { sourceSkipTimes } from "../../anime/hint";
 import {
   extractZokoStream,
   getHiAnimeEpisodes,
@@ -10,6 +11,13 @@ import type { ResolveResult, SiteAdapter } from "../types";
 import { streamAddress } from "./streamAddress";
 
 const MAX_SUBTITLES = 40;
+
+/** The show a HiAnime link is of, by its name in the link ("attack-on-titan-season-2-123" is "attack on titan season 2"), as a hint for AniSkip (anime/hint.ts). */
+function animeOfSlug(slug: string, episode: number): Pick<NormalizedMedia, "anime"> {
+  const title = slug.replace(/-?\d+$/, "").replace(/-/g, " ").trim();
+  const anime = AnimeHintSchema.safeParse({ title, season: 1, episode });
+  return title && anime.success ? { anime: anime.data } : {};
+}
 
 export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): SiteAdapter {
   const get = options.fetch ?? providerFetch();
@@ -46,6 +54,7 @@ export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): Si
                 directUrl: stream.src,
               },
               ...(subTracks.length > 0 ? { subtitles: subTracks } : {}),
+              ...sourceSkipTimes(stream.skip),
               page: url.href,
             },
           };
@@ -110,6 +119,9 @@ export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): Si
             },
             ...(subTracks.length > 0 ? { subtitles: subTracks } : {}),
             ...(alternates.length > 0 ? { alternates } : {}),
+            // (HiAnime's own times for its own stream; and the show's name, from the link, for AniSkip's: HiAnime has a page for each season, as AniList does.)
+            ...sourceSkipTimes(resolved.stream.skip),
+            ...animeOfSlug(slug, requestedEp),
             series: {
               season: 1,
               episode: requestedEp,
