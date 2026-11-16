@@ -66,7 +66,7 @@ Signed links expire after 12 hours. The relay checks signatures and expiry, and 
 
 1. Open a movie in Kino. Confirm that video plays and Kino's pause, seek, quality and subtitle controls appear.
 2. In browser Network, film playlists and segments must use the separate relay host. No video request should use `kino.24-7.ro/api/proxy`.
-3. On the website's `/api/health`, `proxy.video` must be `off` and `proxy.bytes` must remain unchanged during playback. Subtitles can still use the website.
+3. On the website's `/api/health`, asked with the team's token (`curl -H "Authorization: Bearer $FEEDBACK_ADMIN_TOKEN" https://<site>/api/health`; without it the answer is only `ok`, `uptime` and `storage`), `proxy.video` must be `off` and `proxy.bytes` must remain unchanged during playback. Subtitles can still use the website.
 4. Pause, seek forward and resume. Try an alternate source and a TV episode too.
 
 If the new host returns `UPSTREAM_TOKEN_FAILED` with HTTP 403, its IP is also rejected by the provider. Obtain provider permission or use a host whose IP passes the access check. The website's zero-video-bandwidth setting should remain off during troubleshooting.

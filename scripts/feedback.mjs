@@ -316,7 +316,9 @@ async function exportAll({ words }) {
 async function stats({ flags }) {
   const days = Math.min(400, Math.max(1, Math.floor(Number(flags.days)) || 14));
   const data = await json("GET", `/api/admin/stats?days=${days}`);
-  if (flags.json) return console.log(JSON.stringify(data, null, 2));
+  // (The server's counters: since 16 Nov /api/health gives them only to the team's token, so they are read here. A server without them is left out.)
+  const health = await json("GET", "/api/health").catch(() => undefined);
+  if (flags.json) return console.log(JSON.stringify({ ...data, ...(health ? { server: health } : {}) }, null, 2));
   const spans = (w) => `today ${w.today}, last 7 days ${w.week}, last 30 days ${w.month}`;
   console.log(`Kino on ${connection.url}, at ${when(data.at)} UTC (days are UTC days: they end at 02:00, in summer 03:00, in Romania)`);
   const a = data.accounts;
@@ -339,6 +341,16 @@ async function stats({ flags }) {
     console.log(`\nYour address, as the server reads it: ${you.address}`);
     console.log(`  the connection ${text(you.connection)}, X-Forwarded-For ${text(you.forwardedFor)}, Cloudflare says ${text(you.cloudflare)}`);
     console.log("  The visitor count and the rate limits use that address for you: if it is not your own, they are counting the wrong thing.");
+  }
+  if (health?.proxy) {
+    const mb = (bytes) => `${Math.round(bytes / 1024 / 1024)} MB`;
+    const hours = Math.floor(health.uptime / 3600);
+    console.log(`\nServer: up ${hours >= 24 ? `${Math.floor(hours / 24)}d ${hours % 24}h` : `${hours}h ${Math.floor((health.uptime % 3600) / 60)}m`}, keeps its data in ${health.storage ?? "?"} (counts since it last started)`);
+    console.log(`  proxy     films ${health.proxy.video}, ${mb(health.proxy.bytes)} sent on in ${health.proxy.requests} asks, ${health.proxy.refused} turned away`);
+    if (health.segments) console.log(`  pieces    ${health.segments.hits} given from memory, ${health.segments.misses} fetched (${health.segments.keptMB} MB kept)`);
+    if (health.subsync) console.log(`  timings   ${health.subsync.found} found, ${health.subsync.missed} not, ${health.subsync.stored} left by screens`);
+    if (health.official) console.log(`  official  ${health.official.kept} Kino Official subtitles kept`);
+    if (health.feedback) console.log(`  feedback  ${health.feedback.reports} reports kept${health.feedback.full ? ", FULL: a new one would be turned away" : ""}`);
   }
   const columns = [
     ["day", "Day", 10],

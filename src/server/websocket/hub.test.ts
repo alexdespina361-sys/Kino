@@ -3699,6 +3699,7 @@ describe("connections that would hold the hub's room", () => {
 });
 
 describe("Kino Official subtitles: a screen's timing of a listed file is what the next Play is sent", () => {
+  const TOKEN = "team-token-for-the-official-counts".padEnd(32, "-");
   // (Made-up lines only: the repo is public.)
   const link = "https://filmpire.sc/watch/60572?s=2&e=3";
   const track = `/api/proxy?url=${encodeURIComponent("https://subs5.strem.io/en/download/file/1")}&format=vtt`;
@@ -3712,6 +3713,7 @@ describe("Kino Official subtitles: a screen's timing of a listed file is what th
     app = await buildApp({
       resolve: (url) => resolveImpl(url),
       officialFetch: async (asked) => (fetched.push(asked), asked === track ? toVtt(cues) : undefined),
+      feedbackAdminToken: TOKEN, // (the team's /api/health has the counters, below)
     });
     await app.ready();
     const { tv, phone } = await pairedSetup();
@@ -3737,6 +3739,6 @@ describe("Kino Official subtitles: a screen's timing of a listed file is what th
     const served = await app.inject({ url: listed[0]!.url });
     expect(served.statusCode).toBe(200);
     expect(served.body).toContain("00:01:01.500 --> 00:01:03.500");
-    expect((await app.inject({ url: "/api/health" })).json()).toMatchObject({ official: { kept: 1, offers: { taken: 1 } } });
+    expect((await app.inject({ url: "/api/health", headers: { authorization: `Bearer ${TOKEN}` } })).json()).toMatchObject({ official: { kept: 1, offers: { taken: 1 } } });
   });
 });
