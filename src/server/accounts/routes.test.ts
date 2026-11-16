@@ -202,6 +202,26 @@ describe("signing up and in", () => {
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
   });
 
+  it("never slows somebody who knows the password, however many devices they sign in, and a right one forgives the wrong ones before it", async () => {
+    const { app } = await start();
+    await signedUp(app);
+    // (A try is counted before the check: a right one must give it back, or a family signing in its phones and TVs would be told to wait.)
+    for (let i = 0; i < 12; i++) expect((await new Client(app).post("/api/auth/login", credentials)).statusCode).toBe(200);
+    for (let round = 0; round < 2; round++) {
+      for (let i = 0; i < 9; i++) expect((await new Client(app).post("/api/auth/login", { email: credentials.email, password: `typo ${i}` })).statusCode).toBe(401);
+      expect((await new Client(app).post("/api/auth/login", credentials)).statusCode).toBe(200);
+    }
+  });
+
+  it("lets in ten password tries at most when many are sent at once", async () => {
+    const { app } = await start();
+    await signedUp(app);
+    const answers = await Promise.all(Array.from({ length: 30 }, (_, i) => new Client(app).post("/api/auth/login", { email: credentials.email, password: `guess ${i}` })));
+    const codes = answers.map((answer) => answer.statusCode);
+    expect(codes.filter((code) => code === 401)).toHaveLength(10);
+    expect(codes.filter((code) => code === 429)).toHaveLength(20);
+  });
+
   it("answers without a session as signed out", async () => {
     const { app } = await start();
     const client = new Client(app);
