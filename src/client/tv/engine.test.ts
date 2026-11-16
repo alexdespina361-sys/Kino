@@ -14,6 +14,7 @@ import {
   bufferPolicy,
   describeHlsError,
   lostTheConnection,
+  lowFirstLevel,
   proxiedQualityCap,
   readableFrom,
   sourceSaidNo,
@@ -40,6 +41,7 @@ const FakeHls = vi.hoisted(() => {
       BUFFER_APPENDING: "bufferAppending",
       AUDIO_TRACK_SWITCHING: "audioTrackSwitching",
       FRAG_LOADED: "fragLoaded",
+      LEVEL_UPDATED: "levelUpdated",
     };
     static ErrorTypes = { MEDIA_ERROR: "mediaError", NETWORK_ERROR: "networkError" };
     handlers = new Map<string, Handler[]>();
@@ -266,7 +268,7 @@ describe("a picture that comes through this server", () => {
   it("is not the business of a profile that asked for the best quality there is", async () => {
     const hls = await parsed(PROXIED, (engine) => engine.setAdaptive(false));
     expect(hls.autoLevelCapping).toBe(-1);
-    expect(hls.currentLevel).toBe(2);
+    expect(hls.currentLevel).toBe(2); // (no 480p to start in: see "the first piece of a film with Auto off")
   });
 
   it.each(["https://cdn.example/a.m3u8", "https://relay.example/api/proxy?url=film"])("does not redirect a failed external stream through the website: %s", async (url) => {
@@ -278,6 +280,153 @@ describe("a picture that comes through this server", () => {
     hls.emit("error", { type: "networkError", details: "manifestLoadError", fatal: true });
     expect(hls.url).toBe(url);
     engine.destroy();
+  });
+});
+
+describe("the first piece of a film with Auto off", () => {
+  const levels = [
+    { width: 640, height: 360, bitrate: 700_000 },
+    { width: 854, height: 480, bitrate: 1_200_000 },
+    { width: 1280, height: 720, bitrate: 2_800_000 },
+    { width: 1920, height: 1080, bitrate: 5_000_000 },
+  ];
+  beforeEach(() => {
+    FakeHls.instances.length = 0;
+    FakeHls.supported = true;
+    stubBrowser();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  /** A film whose pieces are `seconds` long (the last one may differ), from `start`. */
+  const pieces = (...seconds: number[]) => {
+    let start = 0;
+    return seconds.map((duration) => ({ start: (start += duration) - duration, duration }));
+  };
+  const started = async (startAt?: number, adaptive = false) => {
+    const { engine } = newEngine();
+    engine.setAdaptive(adaptive);
+    await engine.load("https://cdn.example/a.m3u8", "hls", undefined, startAt);
+    const hls = Object.assign(FakeHls.instances.at(-1)!, { levels });
+    hls.emit("manifestParsed", { levels });
+    return { engine, hls };
+  };
+  const main = (level: number) => ({ frag: { type: "main", duration: 2, level, stats: { loaded: 400_000 } } });
+  /** The quality the menu says is chosen (what the state carries once the film plays). */
+  const current = (engine: PlayerEngine) => (engine as unknown as { getQualityState(): { current: number } | undefined }).getQualityState()?.current;
+
+  it("comes in 480p, and every piece after it in the highest, from the next one asked for", async () => {
+    const { engine, hls } = await started();
+    expect(hls.currentLevel).toBe(1);
+    expect(current(engine)).toBe(3); // (the menu says the highest: that is the choice, 480p is only the start)
+    hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(2, 2, 2) } });
+    expect(hls.loadLevelWrites).toEqual([]);
+    hls.emit("fragLoaded", { frag: { type: "audio", level: 0, duration: 2, stats: { loaded: 30_000 } } }); // (the sound's is not it)
+    expect(hls.loadLevelWrites).toEqual([]);
+    hls.emit("fragLoaded", main(1));
+    expect(hls.loadLevelWrites).toEqual([3]);
+    hls.emit("fragLoaded", main(3));
+    hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(2, 2) } });
+    expect(hls.loadLevelWrites).toEqual([3]);
+    engine.destroy();
+  });
+
+  it("takes pieces of up to 5 seconds that way, and starts a film cut into longer ones in the highest, as before", async () => {
+    const five = await started();
+    five.hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(5.005, 5.005) } });
+    expect(five.hls.loadLevelWrites).toEqual([]);
+    five.engine.destroy();
+    const six = await started();
+    six.hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(6, 6, 6) } });
+    expect(six.hls.loadLevelWrites).toEqual([3]);
+    six.hls.emit("fragLoaded", main(3));
+    expect(six.hls.loadLevelWrites).toEqual([3]);
+    six.engine.destroy();
+  });
+
+  it("goes by the piece a resume starts in", async () => {
+    const short = await started(3);
+    short.hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(4, 10, 4) } });
+    expect(short.hls.loadLevelWrites).toEqual([]);
+    short.engine.destroy();
+    const long = await started(5);
+    long.hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(4, 10, 4) } });
+    expect(long.hls.loadLevelWrites).toEqual([3]);
+    long.engine.destroy();
+  });
+
+  it("is not done with Auto on: hls.js starts in the lowest there is itself", async () => {
+    const { engine, hls } = await started(undefined, true);
+    expect(hls.currentLevel).toBe(-1);
+    hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(6, 6) } });
+    hls.emit("fragLoaded", main(0));
+    expect(hls.loadLevelWrites).toEqual([]);
+    engine.destroy();
+  });
+
+  it("gives way to a quality picked while the first piece comes in, and to going back to Auto when 480p does not load", async () => {
+    const pick = await started();
+    pick.engine.setQuality(2);
+    pick.hls.emit("fragLoaded", main(1));
+    expect(pick.hls.loadLevelWrites).toEqual([]);
+    pick.engine.destroy();
+    const refused = await started();
+    refused.hls.manualLevel = 1; // (what hls.js's own `currentLevel` does)
+    for (let each = 0; each < QUALITY_GIVE_UPS; each++) refused.hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, errorAction: { action: 2 } });
+    expect(refused.hls.loadLevelWrites).toEqual([-1]);
+    refused.hls.emit("fragLoaded", main(1));
+    expect(refused.hls.loadLevelWrites).toEqual([-1]);
+    refused.engine.destroy();
+  });
+
+  it("goes to the highest at once when the 480p list or piece does not come, whatever hls.js would try next; an error elsewhere is not it", async () => {
+    const list = await started();
+    list.hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, frag: { type: "audio", level: 1 }, errorAction: { action: 5 } }); // (the sound's track 1)
+    list.hls.emit("error", { type: "networkError", details: "audioTrackLoadError", fatal: false, context: { type: "audioTrack", level: 1 }, errorAction: { action: 5 } });
+    list.hls.emit("error", { type: "networkError", details: "levelLoadError", fatal: false, context: { type: "level", level: 2 }, errorAction: { action: 5 } });
+    expect(list.hls.loadLevelWrites).toEqual([]);
+    list.hls.emit("error", { type: "networkError", details: "levelLoadError", fatal: false, context: { type: "level", level: 1 }, errorAction: { action: 5 } });
+    expect(list.hls.loadLevelWrites).toEqual([3]);
+    list.hls.emit("fragLoaded", main(1)); // (a piece already on its way)
+    expect(list.hls.loadLevelWrites).toEqual([3]);
+    list.engine.destroy();
+    const piece = await started();
+    piece.hls.emit("error", { type: "networkError", details: "fragLoadTimeOut", fatal: false, frag: { type: "main", level: 1 }, errorAction: { action: 5 } });
+    expect(piece.hls.loadLevelWrites).toEqual([3]);
+    piece.engine.destroy();
+  });
+
+  it("ends with the film: the next one starts afresh", async () => {
+    const { engine, hls } = await started();
+    engine.setAdaptive(true);
+    await engine.load("https://cdn.example/b.m3u8", "hls");
+    const next = Object.assign(FakeHls.instances.at(-1)!, { levels });
+    next.emit("manifestParsed", { levels });
+    next.emit("fragLoaded", main(1));
+    expect(next.loadLevelWrites).toEqual([]);
+    expect(hls.loadLevelWrites).toEqual([]);
+    engine.destroy();
+  });
+});
+
+describe("lowFirstLevel", () => {
+  const size = (width: number, height: number, bitrate?: number) => ({ width, height, ...(bitrate ? { bitrate } : {}) });
+
+  it("is the 480p one, as the menu names it (by the film's shape too), the better of two", () => {
+    expect(lowFirstLevel([size(1920, 1080), size(1280, 720), size(854, 480), size(640, 360)], 0)).toBe(2);
+    expect(lowFirstLevel([size(640, 360), size(854, 356), size(1280, 536)], 2)).toBe(1); // (a wide film: 854x356 is 480p, 1280x536 is 720p)
+    expect(lowFirstLevel([size(854, 480, 900), size(854, 480, 1500), size(1280, 720)], 2)).toBe(1);
+    expect(lowFirstLevel([{ height: 480 }, { height: 1080 }], 1)).toBe(0);
+  });
+
+  it("is none for a film whose best is under 720p, with no 480p (not 360p or 180p instead), or with its sizes not told", () => {
+    expect(lowFirstLevel([size(640, 360), size(854, 480)], 1)).toBe(-1);
+    expect(lowFirstLevel([size(640, 360), size(1280, 720), size(1920, 1080)], 2)).toBe(-1);
+    expect(lowFirstLevel([size(320, 180), size(1280, 720)], 1)).toBe(-1);
+    expect(lowFirstLevel([{}, {}, { height: 1080 }], 2)).toBe(-1);
+    expect(lowFirstLevel([size(1920, 1080)], 0)).toBe(-1);
+    expect(lowFirstLevel([], 0)).toBe(-1);
   });
 });
 

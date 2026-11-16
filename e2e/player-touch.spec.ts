@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, pressMenuLine, RawPhone, readPairingCode, test, threeSizes, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 /** The picture under a hand: what a tap, two taps and a held finger do, the big button in the middle, the episode's name, and a phone turned sideways. */
 
@@ -785,11 +785,11 @@ test.describe("the profile's choice of letting the picture's quality follow the 
   });
 
   /** A screen that is told, by a phone, to play a film that comes in two sizes (the bigger one listed first); the phone has every state the screen reported. */
-  async function playTwoSizes(browser: Browser, baseURL: string, seed: Record<string, string>) {
-    const tv = await openLibrary(browser, twoSizes, undefined, seed);
+  async function playTwoSizes(browser: Browser, baseURL: string, seed: Record<string, string>, three: false | "three" | "broken 480p" = false) {
+    const tv = await openLibrary(browser, three ? (context) => threeSizes(context, three === "broken 480p") : twoSizes, undefined, seed);
     await tv.getByTestId("rail-connect").click();
     const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
-    phone.cmd({ type: "LOAD", media: { title: "Two sizes", stream: { url: "/fixtures/hls/multi.m3u8", type: "hls" } } });
+    phone.cmd({ type: "LOAD", media: { title: "Two sizes", stream: { url: three ? "/fixtures/hls/three.m3u8" : "/fixtures/hls/multi.m3u8", type: "hls" } } });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     phone.cmd({ type: "PLAY" });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
@@ -813,6 +813,28 @@ test.describe("the profile's choice of letting the picture's quality follow the 
     expect(firstPiece(phone)).toMatchObject({ current: 1, active: 1 });
     await tv.mouse.move(60, 60);
     await expect(tv.getByTestId("tv-quality-btn")).toHaveText("720p");
+    phone.close();
+  });
+
+  test("off, with a 480p among the sizes and pieces of 5 seconds or less: the first piece is 480p and the next ones the biggest, the button saying the biggest throughout", async ({ browser, baseURL }) => {
+    const { tv, phone } = await playTwoSizes(browser, baseURL!, guestStorage({ settings: [{ key: "adaptiveQuality", at: Date.now(), value: false }] }), "three");
+    await expect.poll(() => firstPiece(phone)).toBeTruthy();
+    // (hls.js lists the sizes from the smallest: 180p, 480p, 720p.) 720p is chosen; 480p is what plays first.
+    expect(firstPiece(phone)).toMatchObject({ current: 2, active: 1 });
+    expect(phone.states.find((state) => state.quality)?.quality?.levels.map((level) => level.height)).toEqual([180, 480, 720]);
+    await expect.poll(() => phone.states.at(-1)?.quality?.active, { timeout: 15_000 }).toBe(2); // (from the second piece, 4 s in)
+    expect(phone.states.some((state) => state.quality && state.quality.current !== 2)).toBe(false);
+    await tv.mouse.move(60, 60);
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText("720p");
+    phone.close();
+  });
+
+  test("off, and the film's 480p does not load: it starts in the biggest, as it did before, and plays on", async ({ browser, baseURL }) => {
+    const { tv, phone } = await playTwoSizes(browser, baseURL!, guestStorage({ settings: [{ key: "adaptiveQuality", at: Date.now(), value: false }] }), "broken 480p");
+    await expect.poll(() => firstPiece(phone)).toBeTruthy();
+    expect(firstPiece(phone)).toMatchObject({ current: 2, active: 2 });
+    await expect.poll(() => tvTime(tv), { timeout: 15_000 }).toBeGreaterThan(5); // (past its second piece)
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     phone.close();
   });
 });
