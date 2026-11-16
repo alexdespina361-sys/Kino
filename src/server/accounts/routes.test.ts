@@ -202,12 +202,117 @@ describe("signing up and in", () => {
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
   });
 
+  it("never slows somebody who knows the password, however many devices they sign in, and a right one forgives the wrong ones before it", async () => {
+    const { app } = await start();
+    await signedUp(app);
+    // (A try is counted before the check: a right one must give it back, or a family signing in its phones and TVs would be told to wait.)
+    for (let i = 0; i < 12; i++) expect((await new Client(app).post("/api/auth/login", credentials)).statusCode).toBe(200);
+    for (let round = 0; round < 2; round++) {
+      for (let i = 0; i < 9; i++) expect((await new Client(app).post("/api/auth/login", { email: credentials.email, password: `typo ${i}` })).statusCode).toBe(401);
+      expect((await new Client(app).post("/api/auth/login", credentials)).statusCode).toBe(200);
+    }
+  });
+
+  it("lets in ten password tries at most when many are sent at once", async () => {
+    const { app } = await start();
+    await signedUp(app);
+    const answers = await Promise.all(Array.from({ length: 30 }, (_, i) => new Client(app).post("/api/auth/login", { email: credentials.email, password: `guess ${i}` })));
+    const codes = answers.map((answer) => answer.statusCode);
+    expect(codes.filter((code) => code === 401)).toHaveLength(10);
+    expect(codes.filter((code) => code === 429)).toHaveLength(20);
+  });
+
   it("answers without a session as signed out", async () => {
     const { app } = await start();
     const client = new Client(app);
     for (const url of ["/api/sessions"]) expect((await client.get(url)).statusCode).toBe(401);
     expect((await client.post("/api/profiles", { name: "X" })).statusCode).toBe(401);
     expect((await client.post("/api/profiles/pro_x/sync", { since: 0 })).statusCode).toBe(401);
+  });
+});
+
+describe("the PIN of a child's profile", () => {
+  it("is set by the account, said to be there (never what it is), and checked", async () => {
+    const { app, store } = await start();
+    const { client, me } = await signedUp(app);
+    expect(me.account.childPin).toBeUndefined();
+    expect((await client.post("/api/me/child-pin/check", { pin: "1234" })).data).toEqual({ error: "no_pin" });
+
+    expect((await client.post("/api/me/child-pin", { next: "12a4" })).statusCode).toBe(400);
+    expect((await client.post("/api/me/child-pin", { next: "12345" })).statusCode).toBe(400);
+    const set = await client.post("/api/me/child-pin", { next: "2580" });
+    expect(set.statusCode).toBe(200);
+    expect(set.data.account.childPin).toBe(true);
+    expect(JSON.stringify(set.data)).not.toMatch(/2580|scrypt/);
+    expect((await client.get("/api/me")).data.me.account.childPin).toBe(true);
+    expect(store.getAccount(me.account.id)?.childPin).toMatch(/^scrypt\$/); // (kept as a hash, as a password is)
+
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204);
+    expect((await client.post("/api/me/child-pin/check", { pin: "0000" })).data).toEqual({ error: "wrong_pin" });
+    expect((await new Client(app).post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(401); // (signed out)
+  });
+
+  it("is slowed after five wrong tries, the right one too, and a right one forgives the wrong ones before it", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    for (const wrong of ["0000", "1111", "2222", "3333"]) expect((await client.post("/api/me/child-pin/check", { pin: wrong })).statusCode).toBe(401);
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204); // (four wrong, then right: forgiven)
+    for (const wrong of ["0000", "1111", "2222", "3333", "4444"]) expect((await client.post("/api/me/child-pin/check", { pin: wrong })).statusCode).toBe(401);
+    const slowed = await client.post("/api/me/child-pin/check", { pin: "2580" });
+    expect(slowed.statusCode).toBe(429);
+    expect(slowed.headers["retry-after"]).toBeDefined();
+    // (Another device of the same account is slowed as well: the count is the account's.)
+    const tv = new Client(app);
+    await tv.post("/api/auth/login", credentials);
+    expect((await tv.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(429);
+    // (So is changing it by the PIN; the password still works.)
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(429);
+    expect((await client.post("/api/me/child-pin", { next: "1357", password: credentials.password })).statusCode).toBe(200);
+  });
+
+  it("lets in five tries at most when many are sent at once (the 10,000 PINs are few)", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    const answers = await Promise.all(Array.from({ length: 30 }, (_, i) => client.post("/api/me/child-pin/check", { pin: String(1000 + i) })));
+    const codes = answers.map((answer) => answer.statusCode);
+    expect(codes.filter((code) => code === 401)).toHaveLength(5);
+    expect(codes.filter((code) => code === 429)).toHaveLength(25);
+    // (So is changing it by guesses: those count with the same tries.)
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(429);
+  });
+
+  it("is changed or taken off only with the PIN or the password", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    expect((await client.post("/api/me/child-pin", { next: "1357" })).data).toEqual({ error: "pin_required" });
+    expect((await client.post("/api/me/child-pin", { next: null })).statusCode).toBe(403);
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "9999" })).data).toEqual({ error: "wrong_pin" });
+    expect((await client.post("/api/me/child-pin", { next: null, password: "not it" })).data).toEqual({ error: "invalid_credentials" });
+
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(200);
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(401);
+    expect((await client.post("/api/me/child-pin/check", { pin: "1357" })).statusCode).toBe(204);
+
+    const off = await client.post("/api/me/child-pin", { next: null, password: credentials.password });
+    expect(off.statusCode).toBe(200);
+    expect(off.data.account.childPin).toBeUndefined();
+    expect((await client.post("/api/me/child-pin/check", { pin: "1357" })).data).toEqual({ error: "no_pin" });
+  });
+
+  it("is kept between runs", async () => {
+    const persistence = new MemoryPersistence();
+    const { app, store } = await start({ persistence });
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    await store.flush();
+    const again = await start({ persistence });
+    const tv = new Client(again.app);
+    await tv.post("/api/auth/login", credentials);
+    expect((await tv.get("/api/me")).data.me.account.childPin).toBe(true);
+    expect((await tv.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204);
   });
 });
 

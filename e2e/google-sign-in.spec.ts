@@ -561,6 +561,49 @@ test.describe("with Google sign-in on", () => {
     expect(deletes).toHaveLength(1);
   });
 
+  test("an account made with Google takes a forgotten PIN off a child's profile by confirming with Google, and the word in an address alone takes nothing off", async ({ browser }) => {
+    test.setTimeout(60_000);
+    google.person = newPerson("Mia");
+    const phone = await newPhone(browser);
+    await phone.goto(`${site.origin}/`);
+    await phone.getByTestId("account-button").click();
+    await viaGoogle(phone, google, phone.getByTestId("google-button"));
+    await phone.waitForURL(`${site.origin}/`);
+    // Mia's profile is made a child's, a grown-up's is added, and a PIN set (on another screen, as far as this one knows).
+    const request = phone.context().request;
+    const mia = ((await (await request.get(`${site.origin}/api/me`)).json()) as { me: { profiles: Array<{ id: string }> } }).me.profiles[0]!.id;
+    expect((await request.post(`${site.origin}/api/profiles`, { data: { name: "Grown" } })).ok()).toBe(true);
+    expect((await request.post(`${site.origin}/api/profiles/${mia}/sync`, { data: { since: 0, settings: [{ key: "child", at: Date.now(), value: true }] } })).ok()).toBe(true);
+    expect((await request.post(`${site.origin}/api/me/child-pin`, { data: { next: "1234" } })).ok()).toBe(true);
+    const pinned = async () => ((await (await request.get(`${site.origin}/api/me`)).json()) as { me: { account: { childPin?: true } } }).me.account.childPin === true;
+
+    const changes: string[] = [];
+    phone.on("request", (sent) => {
+      if (new URL(sent.url()).pathname === "/api/me/child-pin") changes.push(sent.url());
+    });
+    await phone.goto(`${site.origin}/?google=reauth`);
+    await expect(phone).toHaveURL(`${site.origin}/`);
+    await phone.waitForTimeout(500);
+    expect(changes).toEqual([]);
+    expect(await pinned()).toBe(true);
+
+    // Leaving Mia's profile: the PIN is asked; forgotten, it is Google that confirms (an account made with Google has no password).
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("menu-switch").click();
+    await phone.getByTestId("pin-forgot").click();
+    await expect(phone.getByTestId("pin-password")).toHaveCount(0);
+    await viaGoogle(phone, google, phone.getByTestId("pin-google"));
+    expect(google.asked.at(-1)!.get("max_age")).toBe("0");
+    await expect(phone.getByTestId("account-toast")).toHaveText(en["pin.removed"]);
+    expect(await pinned()).toBe(false);
+    expect(changes).toHaveLength(1);
+    // Nothing asks now.
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("menu-switch").click();
+    await phone.getByTestId("profile-Grown").click();
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Grown/);
+  });
+
   test("a phone signed in with Google signs a TV in with the TV's code, and the question does not show the account's made-up login", async ({ browser }) => {
     test.setTimeout(60_000);
     google.person = newPerson("Eva");

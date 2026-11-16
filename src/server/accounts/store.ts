@@ -50,6 +50,8 @@ interface AccountDoc {
    * signing in with Google, so its name is one the server made up and nobody knows its password (the hash is of a random secret that was never kept).
    */
   google?: { sub: string; only?: true };
+  /** The scrypt hash of the PIN asked before a child's profile is left on the account's screens (see `CHILD_PIN_LENGTH`). Absent: there is none. */
+  childPin?: string;
 }
 /** An item with the server's counter at the moment it last changed: what lets a screen ask only for what is new. */
 interface Stamped {
@@ -406,6 +408,23 @@ export class AccountStore {
     if (!account) return;
     account.hash = hash;
     this.touch(`account:${accountId}`);
+  }
+
+  /** The child-profile PIN's hash, or none (`undefined` takes it off). */
+  setChildPin(accountId: string, hash: string | undefined) {
+    const account = this.accounts.get(accountId);
+    if (!account) return;
+    if (hash === undefined) delete account.childPin;
+    else account.childPin = hash;
+    this.touch(`account:${accountId}`);
+  }
+
+  /** A proof from `confirmSession` is used up: it was given for one thing (deleting the account, or taking off the PIN), not for the minutes after. */
+  spendConfirmation(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session?.reauthUntil) return;
+    delete session.reauthUntil;
+    this.touch(`session:${session.id}`);
   }
 
   deleteAccount(accountId: string) {

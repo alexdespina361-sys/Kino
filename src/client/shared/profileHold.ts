@@ -1,22 +1,9 @@
-import { useEffect, useState } from "react";
 import { useAccount } from "../account/AccountProvider";
 import { GUEST } from "../account/profileStore";
 import { useProfileData } from "../account/store";
+import { useForAWhile } from "./forAWhile";
 
-/** How long a screen holds what depends on the profile's settings, at most, before it shows what it has: the server may be slow, or down. */
-export const HOLD_MS = 5_000;
-
-/** `on`, for `HOLD_MS` at most from the moment it came on. */
-function useForAWhile(on: boolean): boolean {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    setLate(false);
-    if (!on) return;
-    const timer = setTimeout(() => setLate(true), HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [on]);
-  return on && !late;
-}
+export { HOLD_MS } from "./forAWhile";
 
 /**
  * Whether the screen should still hold what depends on the profile's settings (the library's rows and its search, a title's page asked for by a link): a

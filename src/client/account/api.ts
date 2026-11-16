@@ -8,6 +8,7 @@ import {
   SessionStateSchema,
   SyncResponseSchema,
   type AvatarId,
+  type ChildPinChange,
   type DeviceKind,
   type LinkOutcome,
   type Me,
@@ -76,6 +77,10 @@ export const api = {
 
   changePassword: async (current: string, next: string): Promise<void> => void (await request("POST", "/api/me/password", { current, next })),
   deleteAccount: async (password: string): Promise<void> => void (await request("POST", "/api/me/delete", { password })),
+  /** The PIN of a child's profile, asked before it is left: answers nothing when it is right (401 `wrong_pin`; 404 `no_pin`: there is none any more; 429 slowed). */
+  checkChildPin: async (pin: string): Promise<void> => void (await request("POST", "/api/me/child-pin/check", { pin })),
+  /** Set it, change it, or take it off (`next: null`). Once there is one: with the PIN, the password, or (an account made with Google) after confirming with Google. */
+  changeChildPin: (change: ChildPinChange): Promise<Me> => ask(MeSchema, "POST", "/api/me/child-pin", change),
 
   sessions: (): Promise<SessionInfo[]> => ask(SessionInfoSchema.array(), "GET", "/api/sessions"),
   renameSession: (id: string, label: string): Promise<SessionInfo[]> => ask(SessionInfoSchema.array(), "PATCH", `/api/sessions/${encodeURIComponent(id)}`, { label }),

@@ -17,6 +17,7 @@ import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
 import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
+import { PinSetting } from "./Pin";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 
@@ -260,7 +261,7 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
 }
 
 /** What changes how the site looks and plays: language, colour, autoplay, subtitle languages. */
-export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
+export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => void; /** Do it once the PIN of a child's profile is given (the account's screen asks for it). */ grownUp: (action: () => void) => void }) {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
@@ -310,13 +311,19 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
             label={t("settings.child")}
             checked={child}
             onChange={(on) => {
-              set("child", on ? true : undefined);
-              account.syncNow();
+              const change = () => {
+                set("child", on ? true : undefined);
+                account.syncNow();
+              };
+              if (on) change();
+              else grownUp(change); // (made an ordinary profile again: with the PIN, if there is one)
             }}
             testId="child-profile"
           />
         </Rows>
       </Group>
+      {/* (Set from a grown-up's profile only; one that is there is changed or taken off with it, or the password, from any.) */}
+      {account.me && account.profile && (!child || account.me.account.childPin) && <PinSetting />}
       <FriendsGroup onOpen={onOpenFriends} />
       {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
       <Group title={t("settings.labs")} help={t("settings.labsHelp")}>
