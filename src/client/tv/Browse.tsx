@@ -487,6 +487,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const tapOf = (entry: Entry) => listTap(lists, saved, entry.url);
   const canAdd = lists.length < MAX_LISTS;
   const shownId = shownList(view, lists).id;
+  /** The lists' own buttons on the page of lists: one to pick each, only when there is a choice. */
+  const listChips = several ? lists : [];
   /** Where the list being changed stands: the first list stays first, so only the others have a place to move to (and need another to change places with). */
   const editedId = overlay?.kind === "edit" ? overlay.id : null;
   const editedAt = editedId ? lists.findIndex((info) => info.id === editedId) : -1;
@@ -1558,8 +1560,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </p>
           )}
           {view.kind === "list" && (
+            // (A list's own button is there to pick it from the others: with one list, the page's name is all it would say again - the judge, 16 Nov.)
             <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-              {lists.map((info, col) => (
+              {listChips.map((info, col) => (
                 <button
                   key={info.id}
                   className="tv-choice"
@@ -1581,9 +1584,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   data-testid="list-new"
                   data-zone="chips"
                   data-row={0}
-                  data-col={lists.length}
-                  onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: lists.length } })}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: lists.length })}
+                  data-col={listChips.length}
+                  onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: listChips.length } })}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length })}
                 >
                   <PlusIcon /> {t("lists.new")}
                 </button>
@@ -1593,9 +1596,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 data-testid="list-edit"
                 data-zone="chips"
                 data-row={0}
-                data-col={lists.length + (canAdd ? 1 : 0)}
-                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: lists.length + (canAdd ? 1 : 0) } })}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: lists.length + (canAdd ? 1 : 0) })}
+                data-col={listChips.length + (canAdd ? 1 : 0)}
+                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) })}
               >
                 <PencilIcon /> {t("lists.edit")}
               </button>

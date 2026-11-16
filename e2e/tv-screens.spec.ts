@@ -1836,7 +1836,8 @@ test.describe("movies, series, and the rest of the menu", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
     await expect(rail(tv)).toHaveAttribute("data-open", "false");
-    await expect(tv.getByTestId("list-chip-favourites")).toBeFocused(); // an empty list still has its buttons: that is where the remote goes
+    await expect(tv.getByTestId("list-new")).toBeFocused(); // an empty list still has its buttons: that is where the remote goes
+    await expect(tv.getByTestId("list-chip-favourites")).toHaveCount(0); // (one list: nothing to pick, and the page's name says which it is)
     await tv.keyboard.press("Escape"); // Back is home
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
 
