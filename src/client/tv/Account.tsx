@@ -137,7 +137,7 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
       // (While the form asks whether to make an account with a poor password, Back is the form's: it goes back to the password.)
       <Screen key="email" testId="tv-signin" compact focus onBack={asking ? undefined : formBack}>
         <h1 className="tv-headline tv-headline-small">{t(creating ? "auth.signUp" : "auth.signIn")}</h1>
-        <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} onWarning={setAsking} />
+        <AuthForm tv initialMode={creating ? "signUp" : "signIn"} onDone={onClose} onMode={(next) => setCreating(next === "signUp")} onWarning={setAsking} />
         <button className="tv-action" onClick={() => setMode("phone")} data-nav data-testid="tv-signin-phone">
           {t("link.codeInstead")}
         </button>
@@ -191,9 +191,31 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
             {t("link.newCode")}
           </button>
         )}
-        <button className="tv-action" onClick={() => setMode("email")} data-nav data-testid="tv-signin-email">
+        <button
+          className="tv-action"
+          onClick={() => {
+            setCreating(false);
+            setMode("email");
+          }}
+          data-nav
+          data-testid="tv-signin-email"
+        >
           {t("link.emailInstead")}
         </button>
+        {/* (A new visitor has no account to sign in with on another device: making one was two presses deep, behind the typed form. The judge, 16 Nov.) */}
+        {account.registration === "open" && (
+          <button
+            className="tv-action"
+            onClick={() => {
+              setCreating(true);
+              setMode("email");
+            }}
+            data-nav
+            data-testid="tv-signin-create"
+          >
+            {t("auth.toSignUp")}
+          </button>
+        )}
       </div>
       <BackButton onClick={onBack} testId="tv-signin-back" />
     </Screen>
