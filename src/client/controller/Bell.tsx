@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { activityVerb, type ActivityItem, type ChatNotice, type Friend } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { ago } from "../account/time";
@@ -56,6 +56,23 @@ function LatelyRow({ item, friend, onOpen, onClear }: { item: ActivityItem; frie
   );
 }
 
+/** A friend made since the bell was last opened (a code of this profile's was used, a request was answered): the row opens the Friends page, where they are. */
+function JoinedRow({ friend, onOpen }: { friend: Friend; onOpen: () => void }) {
+  const t = useT();
+  const language = useLanguage();
+  return (
+    <li className="inbox-item" data-testid="bell-joined-item" data-friend={friend.id}>
+      <button className="bell-lately" onClick={onOpen}>
+        <Avatar id={friend.avatar} className="friend-avatar" />
+        <span className="inbox-text">
+          <b>{friend.name}</b>
+          <small>{`${t("bell.nowFriends")} · ${ago(friend.since, Date.now(), language)}`}</small>
+        </span>
+      </button>
+    </li>
+  );
+}
+
 /**
  * A friend who wrote, as a row that opens the chat with them (their messages are not read here: the bell only says how many wait). The cross, or a
  * swipe to the side, marks the chat read without opening it: the messages stay in the chat.
@@ -100,7 +117,8 @@ export function NotificationsSheet({
 }) {
   const t = useT();
   const friends = useFriends();
-  const { markSeen } = useBell();
+  const { markSeen, seen } = useBell();
+  const [seenBefore] = useState(seen); // (as it opens: opening it moves `seen` to now)
   const { cleared, clear } = useCleared();
   const clearChat = useClearChat();
   const { state } = friends;
@@ -114,7 +132,7 @@ export function NotificationsSheet({
     if (friends.unread > 0) void friends.markRead().catch(() => undefined);
   }, [friends.unread]);
 
-  const view = state ? bellView(state, Date.now(), cleared) : null;
+  const view = state ? bellView(state, Date.now(), cleared, seenBefore) : null;
   const waiting = view !== null && view.requests.length + view.inbox.length + view.chat.length > 0;
   return (
     <Sheet title={t("bell.title")} onClose={onClose} testId="bell-sheet">
@@ -130,7 +148,7 @@ export function NotificationsSheet({
         )
       ) : (
         <>
-          {!waiting && view.lately.length === 0 && (
+          {!waiting && view.joined.length === 0 && view.lately.length === 0 && (
             <p className="muted" data-testid="bell-empty">
               {t("bell.empty")}
             </p>
@@ -180,6 +198,23 @@ export function NotificationsSheet({
                   {t("bell.more", { count: view.more })}
                 </p>
               )}
+            </>
+          )}
+          {view.joined.length > 0 && (
+            <>
+              <h3 className="sheet-section">{t("bell.joined")}</h3>
+              <ul className="inbox-list" data-testid="bell-joined">
+                {view.joined.map((friend) => (
+                  <JoinedRow
+                    key={friend.id}
+                    friend={friend}
+                    onOpen={() => {
+                      onClose();
+                      onOpenFriends();
+                    }}
+                  />
+                ))}
+              </ul>
             </>
           )}
           {view.lately.length > 0 && (

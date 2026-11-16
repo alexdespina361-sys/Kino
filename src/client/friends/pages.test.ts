@@ -274,7 +274,7 @@ describe("what waits in the chats, on a TV", () => {
 
 describe("the bell on a TV", () => {
   it("is nothing before the server has answered", () => {
-    expect(bellRows(null, NOW)).toEqual({ waiting: [], lately: [], more: 0 });
+    expect(bellRows(null, NOW)).toEqual({ waiting: [], joined: [], lately: [], more: 0 });
   });
 
   it("lists a plan among what waits for an answer, with who proposes and when, between the request to watch together and what was sent", () => {

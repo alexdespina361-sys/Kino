@@ -302,6 +302,45 @@ test.describe("making friends on the TV", () => {
     await expect(cy.page.getByTestId("tv-friend-code-add")).toHaveCount(0);
   });
 
+  test("the screen that made the code hears within seconds that it was used, unasked, and its bell names the new friend once", async ({ browser }) => {
+    // (The judge, 16 Nov: the code stayed up over "No friends yet", and the bell said "Nothing new from your friends".)
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await openFriends(ann.page);
+    await tile(ann.page, "Add a friend").click();
+    await ann.page.getByTestId("tv-friend-give").click();
+    const code = (await ann.page.getByTestId("tv-friend-code").textContent())!.trim();
+    await openFriends(bob.page);
+    await tile(bob.page, "Add a friend").click();
+    await bob.page.getByTestId("tv-friend-type").click();
+    await bob.page.getByTestId("tv-friend-code-input").fill(code);
+    await bob.page.getByTestId("tv-friend-code-add").click();
+    await expect(tile(bob.page, ann.name)).toBeVisible();
+
+    // Ann's screen is not told to look: within seconds (not the half minute of its usual look) the page of the code goes, and a line says who used it.
+    await expect(ann.page.getByTestId("tv-friend-give-page")).toHaveCount(0, { timeout: 12_000 });
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`You and ${bob.name} are now friends`);
+    await expect(tile(ann.page, bob.name)).toBeVisible();
+    await expect(ann.page.getByTestId("tv-bell-dot")).toBeVisible();
+    await ann.page.getByTestId("tv-bell").click();
+    await expect(ann.page.getByTestId("tv-bell-joined")).toContainText(bob.name);
+    await expect(ann.page.getByTestId("tv-bell-joined")).toContainText(WORDS.en["bell.nowFriends"]);
+    await expect(ann.page.getByTestId("tv-bell-empty")).toHaveCount(0);
+
+    // Bob typed the code: that is no news to his own screen.
+    await bob.page.getByTestId("tv-bell").click();
+    await expect(bob.page.getByTestId("tv-bell-page")).toBeVisible();
+    await expect(bob.page.getByTestId("tv-bell-joined")).toHaveCount(0);
+
+    // Said once: the next time Ann's bell is opened, it is not new any more.
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-bell-dot")).toHaveCount(0);
+    await ann.page.getByTestId("tv-bell").click();
+    await expect(ann.page.getByTestId("tv-bell-page")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-bell-joined")).toHaveCount(0);
+  });
+
   test("the other way round, the one that types needs no code of its own, and a code that is taken back is no use", async ({ browser }) => {
     test.setTimeout(150_000);
     const ann = await screenWithFriends(browser, "Ann");

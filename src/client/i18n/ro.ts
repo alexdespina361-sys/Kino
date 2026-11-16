@@ -1092,6 +1092,8 @@ export const ro: Dictionary = {
   "bell.waiting": "Te așteaptă",
   "bell.empty": "Nimic nou de la prieteni.",
   "bell.more": "Încă {count} pe pagina Prieteni",
+  "bell.joined": "Prieteni noi",
+  "bell.nowFriends": "Acum sunteți prieteni",
   "bell.openFriends": "Deschide Prieteni",
   "error.friends_off": "Prietenii sunt dezactivați. Activează-i din setări.",
   "error.invite_gone": "Codul a fost folosit sau a expirat. Cere-i prietenului unul nou.",

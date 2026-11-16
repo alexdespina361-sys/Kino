@@ -10,7 +10,7 @@ import { ago, formatDay } from "../account/time";
 import { waitingFrom } from "../chat/notices";
 import { PhoneChat } from "../chat/PhoneChat";
 import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, myScoreFor, nameOf, progressFor, progressNote, ratedBy, recommendationOf, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
-import { useFriends } from "../friends/FriendsProvider";
+import { useFriends, useQuickLooks } from "../friends/FriendsProvider";
 import { friendOrder, watchedLately } from "../friends/pages";
 import { dateValue, defaultPlan, duePlans, inboxToShow, momentOf, planLines, planMoment, planStatus, timeValue, whenLabel } from "../friends/plans";
 import { usePeek } from "../friends/usePeek";
@@ -245,6 +245,7 @@ function AddFriend() {
   };
 
   const out = friends.state?.invites ?? [];
+  useQuickLooks(out.length > 0); // (a code on the screen: the friend who uses it appears within seconds)
 
   return (
     <Group title={t("friends.add")}>

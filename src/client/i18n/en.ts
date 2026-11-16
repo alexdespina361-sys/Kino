@@ -1082,6 +1082,8 @@ export const en = {
   "bell.waiting": "Waiting for you",
   "bell.empty": "Nothing new from your friends.",
   "bell.more": "{count} more on the Friends page",
+  "bell.joined": "New friends",
+  "bell.nowFriends": "You're friends now",
   "bell.openFriends": "Open Friends",
   "error.friends_off": "Friends are turned off. Turn them on in the settings.",
   "error.invite_gone": "This code has been used or has run out. Ask your friend for a new one.",

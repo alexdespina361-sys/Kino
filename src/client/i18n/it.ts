@@ -1080,6 +1080,8 @@ export const it: Dictionary = {
   "bell.waiting": "Ti aspettano",
   "bell.empty": "Niente di nuovo dai tuoi amici.",
   "bell.more": "Altre {count} nella pagina Amici",
+  "bell.joined": "Nuovi amici",
+  "bell.nowFriends": "Ora siete amici",
   "bell.openFriends": "Apri Amici",
   "error.friends_off": "Gli amici sono disattivati. Attivali nelle impostazioni.",
   "error.invite_gone": "Questo codice è già stato usato o è scaduto. Chiedine uno nuovo al tuo amico.",
