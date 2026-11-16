@@ -1167,7 +1167,8 @@ test.describe("how soon a friend's news comes (there is no push: each screen ask
     await sendTitle(ann.page, bobId, "Gamma Film");
     await bob.page.clock.fastForward(16_000);
     await bob.page.waitForTimeout(2000);
-    await expect(toast.filter({ hasText: "Gamma Film" })).toHaveCount(0);
+    // (Read once: an assertion that waits for no toast would pass when the toast goes away by itself.)
+    expect((await toast.allTextContents()).join(" ")).not.toContain("Gamma Film");
     await bob.page.clock.fastForward(15_000);
     await expect(toast).toContainText(`${ann.name} sent you Gamma Film`, { timeout: 4000 });
   });
