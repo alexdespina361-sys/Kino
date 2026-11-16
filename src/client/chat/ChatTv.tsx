@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from "re
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, FilmIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
@@ -11,6 +11,7 @@ import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
+import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
 import "./chat.css";
@@ -43,9 +44,10 @@ export interface ChatTvProps {
 /**
  * The chat with one friend, on the TV: pages over the friend's page. One window: the friend at the top, the messages, and the box to write in at
  * the bottom; what is done less often (take back the last, mute, report) is behind the ⋯ at the top, not a row of buttons beside the box.
- * A computer types in the box itself; a TV's box opens a page of its own, where the message is typed with the keys of the page (the way the note of a
- * rating is) and sent with the button. The Back of the remote goes back a page at a time: from the ⋯, a report or the writing to the chat, from the
- * chat to the friend. A report shows what would be sent, and the remote lands on Back there, not on Send.
+ * A computer and a hand-held screen type in the box itself, as any messenger does (the owner, 16 Nov: a phone opened a page of its own to type, "instead of
+ * directly making the chat a main chat like messenger/whatsapp"); a TV's box opens a page of its own, where the message is typed with the keys of the page
+ * (the way the note of a rating is) and sent with the button. The Back of the remote goes back a page at a time: from the ⋯, a report or the writing to the
+ * chat, from the chat to the friend. A report shows what would be sent, and the remote lands on Back there, not on Send.
  */
 export function ChatTv({ name, avatar, online = false, desk = false, session, report, receiving = true, narrow = false, onClose, onOpenTitle, now = Date.now() }: ChatTvProps) {
   const [writing, setWriting] = useState(false);
@@ -78,6 +80,7 @@ export function ChatTv({ name, avatar, online = false, desk = false, session, re
       avatar={avatar}
       online={online}
       desk={desk}
+      narrow={narrow}
       draft={draft}
       setDraft={setDraft}
       session={session}
@@ -97,6 +100,7 @@ export function ReadTv({
   avatar,
   online = false,
   desk = false,
+  narrow = false,
   draft = "",
   setDraft = () => {},
   session,
@@ -112,6 +116,8 @@ export function ReadTv({
   avatar?: AvatarId | undefined;
   online?: boolean;
   desk?: boolean;
+  /** A hand-held screen: it types in the box itself as a computer does, with its own keyboard, which does not come up by itself as the chat opens (it would cover the messages before they are read). */
+  narrow?: boolean;
   draft?: string;
   setDraft?: (text: string) => void;
   session: ChatSession;
@@ -132,6 +138,7 @@ export function ReadTv({
   const more = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLInputElement>(null);
   const checked = checkChatText(draft);
+  useVisibleArea(narrow);
 
   // The ⋯: Back shuts it (and only it), the remote goes into it when it opens and back to the ⋯ when it shuts; going anywhere else shuts it too.
   const shut = () => {
@@ -181,9 +188,17 @@ export function ReadTv({
   }, [blocked]);
 
   return (
-    <Screen key="read" testId="tv-chat" compact focus onBack={onClose}>
+    // (A hand-held screen lands on nothing as the chat opens: the box would bring the keyboard up over the messages, and the arrow at the top would be one
+    // stray Enter from closing the chat. A keyboard's first arrow lands on the first thing, as everywhere.)
+    <Screen key="read" testId="tv-chat" compact focus={!narrow} onBack={onClose} {...(narrow ? { className: "tv-chat-screen" } : {})}>
       <div className="tv-chat-window" role="group" aria-label={t("chat.title", { name })}>
         <div className="tv-chat-head">
+          {/* (A hand-held screen: the chat is the whole screen, and the way back is the arrow at the top of it, as in any messenger.) */}
+          {narrow && (
+            <button type="button" className="tv-chat-headback" onClick={onClose} aria-label={t("common.back")} title={t("common.back")} data-nav {...(blocked ? { "data-autofocus": true } : {})} data-testid="tv-chat-back">
+              <ChevronLeftIcon />
+            </button>
+          )}
           {avatar && (
             <span className="tv-person-pic tv-chat-pic" data-online={online ? "true" : undefined}>
               <Avatar id={avatar} />
@@ -254,8 +269,8 @@ export function ReadTv({
                   <FilmIcon />
                 </button>
               )}
-              {desk ? (
-                // A computer: the box itself, Enter sends.
+              {desk || narrow ? (
+                // A computer or a hand-held screen: the box itself, Enter sends.
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
                   <input
                     ref={box}
@@ -270,7 +285,7 @@ export function ReadTv({
                     placeholder={t("chat.placeholder")}
                     onChange={(event) => type(event.target.value)}
                     data-nav
-                    data-autofocus
+                    {...(narrow ? {} : { "data-autofocus": true })}
                     data-testid="tv-chat-box"
                   />
                   <button type="submit" className="tv-chat-send-round" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} title={t("chat.send")} data-nav data-testid="tv-chat-box-send">
@@ -290,7 +305,7 @@ export function ReadTv({
           )}
         </div>
       </div>
-      <BackButton onClick={onClose} testId="tv-chat-back" {...(blocked ? { autoFocus: true } : {})} />
+      {!narrow && <BackButton onClick={onClose} testId="tv-chat-back" {...(blocked ? { autoFocus: true } : {})} />}
     </Screen>
   );
 }
