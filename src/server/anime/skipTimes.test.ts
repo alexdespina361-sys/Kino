@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app";
-import { baseTitle, createAnimeSkipLookup, namesSeason, plainTitle, sameShow, type AnimeSkipLookup } from "./skipTimes";
+import { baseTitle, createAnimeSkipLookup, lastsAsLong, namesSeason, plainTitle, sameName, sameShow, saysAnotherSeason, type AnimeSkipLookup } from "./skipTimes";
 
 /**
  * AniList and AniSkip as they answer (the shapes are theirs; AniSkip's times are what it answered for Frieren's first episode, 16 Nov 2026: the opening is at
@@ -62,6 +62,21 @@ describe("names", () => {
     expect(sameShow("Frieren", ["Sousou no Frieren"])).toBe(false);
   });
 
+  it("are the very name, or another season's, or episodes as long as a video, only when they are", () => {
+    expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End"])).toBe(true);
+    expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Mini Anime"])).toBe(false);
+    expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Season 2"])).toBe(true); // (a season is not the name: see saysAnotherSeason)
+    expect(saysAnotherSeason("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Season 2"])).toBe(true);
+    expect(saysAnotherSeason("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End", "Sousou no Frieren"])).toBe(false);
+    expect(saysAnotherSeason("Kaiju No. 8", ["Kaiju No. 8"])).toBe(false);
+    expect(saysAnotherSeason("Mob Psycho 100", ["Mob Psycho 100 II"])).toBe(true);
+    expect(lastsAsLong(24, 1510)).toBe(true);
+    expect(lastsAsLong(24, 1260)).toBe(true); // (a cut without its credits)
+    expect(lastsAsLong(1, 1510)).toBe(false);
+    expect(lastsAsLong(120, 1510)).toBe(false);
+    expect(lastsAsLong(null, 1510)).toBe(true); // (AniList does not always say)
+  });
+
   it("say a season", () => {
     expect(namesSeason(["Attack on Titan Season 2"], 2)).toBe(true);
     expect(namesSeason(["Re:ZERO 2nd Season"], 2)).toBe(true);
@@ -103,6 +118,49 @@ describe("AniSkip's times", () => {
 
     const western = fake({ media: [{ ...FRIEREN, countryOfOrigin: "US" }] });
     expect(await createAnimeSkipLookup({ fetch: western.fetch }).find(HINT, 1510)).toBeNull();
+  });
+
+  it("takes Frieren itself, not its one-minute mini anime or its second season, which AniList answers with the same name and first (its answer of 17 Nov 2026)", async () => {
+    const mini = { episodes: 12, duration: 1, format: "ONA", countryOfOrigin: "JP", title: { romaji: "Sousou no Frieren: ●● no Mahou", english: null } };
+    const media = [
+      { ...mini, idMal: null, episodes: 6, title: { ...mini.title, romaji: "Sousou no Frieren: ●● no Mahou Part 2" }, synonyms: ["Sousou no Frieren Mini Anime", "Frieren: Beyond Journey’s End Mini Anime", "Frieren: Beyond Journey's End: Magic of ??"] },
+      { ...mini, idMal: 56885, synonyms: ["Sousou no Frieren Mini Anime", "Frieren: Beyond Journey’s End Mini Anime", "Sousou no Frieren Marumaru no Mahou", "Frieren: Beyond Journey's End: Magic of ??"] },
+      { ...FRIEREN, duration: 24, synonyms: ["Frieren at the Funeral", "Frieren: Más allá del final del viaje"] },
+      { idMal: 59978, episodes: 10, duration: 24, format: "TV", countryOfOrigin: "JP", title: { romaji: "Sousou no Frieren 2nd Season", english: "Frieren: Beyond Journey’s End Season 2" }, synonyms: [] },
+    ];
+    const site = fake({ media });
+    const lookup = createAnimeSkipLookup({ fetch: site.fetch });
+    expect(await lookup.find(HINT, 1510)).toEqual({ intro: { start: 116.75, end: 206.75 }, outro: { start: expect.closeTo(1417.14, 1), end: expect.closeTo(1507.14, 1) } });
+    expect(site.asked.filter((address) => address.includes("aniskip"))).toEqual(["https://api.aniskip.com/v2/skip-times/52991/1?types=op&types=ed&types=recap&episodeLength=1510"]);
+
+    // the second season first, as another search may answer: still the first season's, for a first season
+    const reversed = fake({ media: [media[3], media[2]] });
+    await createAnimeSkipLookup({ fetch: reversed.fetch }).find(HINT, 1510);
+    expect(reversed.asked.find((address) => address.includes("aniskip"))).toContain("/52991/1?");
+  });
+
+  it("asks AniList once for every episode of a show, and chooses by the episode: one past the first answer's episodes is another's", async () => {
+    const long = { ...FRIEREN, idMal: 9, episodes: 50, title: { english: "Frieren: Beyond Journey’s End Complete", romaji: "x" } };
+    const site = fake({ media: [FRIEREN, long] });
+    const lookup = createAnimeSkipLookup({ fetch: site.fetch });
+    await lookup.find({ ...HINT, episode: 29 }, 1510); // (Frieren has 28: the longer one, whose name holds the title)
+    await lookup.find({ ...HINT, episode: 2 }, 1510);
+    expect(site.aniList).toHaveLength(1);
+    expect(site.asked.filter((address) => address.includes("aniskip"))).toEqual([
+      "https://api.aniskip.com/v2/skip-times/9/29?types=op&types=ed&types=recap&episodeLength=1510",
+      "https://api.aniskip.com/v2/skip-times/52991/2?types=op&types=ed&types=recap&episodeLength=1510",
+    ]);
+  });
+
+  it("does not take a show whose episodes last far longer or shorter than this video, nor a season a name only seems to say", async () => {
+    const film = fake({ media: [{ ...FRIEREN, duration: 120 }] });
+    expect(await createAnimeSkipLookup({ fetch: film.fetch }).find(HINT, 1510)).toBeNull(); // (a two-hour film is not a 25-minute episode)
+    expect(film.asked.some((address) => address.includes("aniskip"))).toBe(false);
+
+    const kaiju = { episodes: 12, duration: 24, format: "TV", countryOfOrigin: "JP", synonyms: [] };
+    const site = fake({ media: [{ ...kaiju, idMal: 2, title: { english: "Kaiju No. 8 Season 2", romaji: "Kaijuu 8-gou 2nd Season" } }, { ...kaiju, idMal: 1, title: { english: "Kaiju No. 8", romaji: "Kaijuu 8-gou" } }] });
+    await createAnimeSkipLookup({ fetch: site.fetch }).find({ title: "Kaiju No. 8", season: 1, episode: 1 }, 1420);
+    expect(site.asked.find((address) => address.includes("aniskip"))).toContain("/1/1?"); // ("No. 8" is not an eighth season)
   });
 
   it("takes the second of AniList's answers when the first is not the show", async () => {

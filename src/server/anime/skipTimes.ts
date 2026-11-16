@@ -11,7 +11,9 @@ import { remember } from "../boundedMap";
  *   AniList and AniSkip, up to some 12 seconds, before a film could start).
  * - Two cuts of one episode can have their opening minutes apart (Frieren's first: 3-93 s in a 1560 s cut, 117-207 s in a 1510 s one), and AniSkip answers
  *   with any cut's times unless it is told the length. It is told, and a time whose cut is more than a few seconds longer or shorter is not taken.
- * - The MyAnimeList id is AniList's match only when its name is the title's, it says the season asked for, and it has the episode; nothing is guessed.
+ * - The MyAnimeList id is AniList's match only when its name is the title's, it says the season asked for, it has the episode and its episodes last about
+ *   as long as this one; nothing is guessed. Of those, the show's own name and its own season come first: searched by its English name, Frieren's
+ *   one-minute "mini anime" (named "Frieren: Beyond Journey's End Mini Anime") is AniList's first answer, and its second season the fourth.
  * - "Mixed" openings and endings (played over the story) are not taken: skipping them skips the story.
  * - What was not found is remembered for a while too, a question that is already being asked is not asked again, and AniList and AniSkip are each asked at
  *   most so many times a minute by the whole server (past that: nothing, and nothing remembered, so it is asked again later).
@@ -35,7 +37,7 @@ const ANISKIP = "https://api.aniskip.com/v2/skip-times";
 const TIMEOUT_MS = 4000;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
-/** How long an answer is kept: an id that was found for a week, one that was not for six hours; times for a day, none for six hours; a failure for two minutes. */
+/** How long an answer is kept: AniList's shows of a title for a week, no show for six hours; times for a day, none for six hours; a failure for two minutes. */
 const KEEP = { idFound: 7 * 24 * HOUR, idNone: 6 * HOUR, timesFound: 24 * HOUR, timesNone: 6 * HOUR, failed: 2 * MINUTE };
 const MAX_KEPT = 4000;
 /** How much longer or shorter than this video AniSkip's cut may be for its times to be taken: 10 s, or 1% of a longer video. */
@@ -45,6 +47,8 @@ const KINDS = { op: "intro", recap: "recap", ed: "outro" } as const;
 /** The countries an anime on AniList comes from (an animation from elsewhere that AniList lists is not what this is for). */
 const COUNTRIES = new Set(["JP", "CN", "KR", "TW"]);
 const FORMATS = new Set(["TV", "TV_SHORT", "ONA", "OVA", "MOVIE", "SPECIAL"]);
+/** The formats that are a series (on TV, short, or made for the web), not an OVA, a special or a film. */
+const SERIES = new Set(["TV", "TV_SHORT", "ONA"]);
 
 /* ------------------------------ names ------------------------------ */
 
@@ -85,6 +89,21 @@ export function sameShow(asked: string, names: readonly string[]): boolean {
   });
 }
 
+/** Whether one of `names` is the very name `asked` is (not only one that holds it, as "Frieren: Beyond Journey's End Mini Anime" holds Frieren's). */
+export function sameName(asked: string, names: readonly string[]): boolean {
+  const mine = baseTitle(asked);
+  return mine !== "" && names.some((name) => baseTitle(name) === mine);
+}
+
+/** Whether one of `names` says a season from 2 to 10 that `asked` itself does not say ("Kaiju No. 8" says nothing of an eighth season, nor does AniList's). */
+export function saysAnotherSeason(asked: string, names: readonly string[]): boolean {
+  for (let season = 2; season <= 10; season += 1) if (!namesSeason([asked], season) && namesSeason(names, season)) return true;
+  return false;
+}
+
+/** Whether a video `length` seconds long can be an episode of a show whose episodes AniList says last `minutes`: from half as long to twice as long. */
+export const lastsAsLong = (minutes: number | null, length: number) => minutes === null || (length >= minutes * 30 && length <= minutes * 120);
+
 const ROMAN = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
 const ORDINAL = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th"}`;
 
@@ -113,13 +132,45 @@ interface Kept<T> {
 interface Found {
   idMal?: number | null;
   episodes?: number | null;
+  /** How long an episode is, in minutes. */
+  duration?: number | null;
   format?: string | null;
   countryOfOrigin?: string | null;
   title?: { romaji?: string | null; english?: string | null } | null;
   synonyms?: Array<string | null> | null;
 }
 
-const SEARCH = `query ($search: String) { Page(perPage: 8) { media(search: $search, type: ANIME, sort: SEARCH_MATCH) { idMal episodes format countryOfOrigin title { romaji english } synonyms } } }`;
+/** One of AniList's answers that is named as the show asked for, and says the season asked for. Which of them it is depends on the episode and its length. */
+interface Candidate {
+  id: number;
+  /** How many episodes it has, and how many minutes one lasts, where AniList says. */
+  episodes: number | null;
+  minutes: number | null;
+  /** Its name is the title's very name (see `sameName`). */
+  exact: boolean;
+  /** Asked for a first season, it says another (see `saysAnotherSeason`). */
+  otherSeason: boolean;
+  series: boolean;
+}
+
+const positive = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null);
+
+/**
+ * The candidate that is the episode asked for in a cut `length` seconds long: one that has the episode and whose episodes last about as long, and of those
+ * one that is not another season, then one with the title's very name, then a series; AniList's order between equals.
+ */
+function choose(candidates: readonly Candidate[], episode: number, length: number): number | null {
+  const rank = (candidate: Candidate) => (candidate.otherSeason ? 0 : 4) + (candidate.exact ? 2 : 0) + (candidate.series ? 1 : 0);
+  let best: Candidate | undefined;
+  for (const candidate of candidates) {
+    if (candidate.episodes !== null && episode > candidate.episodes) continue;
+    if (!lastsAsLong(candidate.minutes, length)) continue;
+    if (!best || rank(candidate) > rank(best)) best = candidate;
+  }
+  return best?.id ?? null;
+}
+
+const SEARCH = `query ($search: String) { Page(perPage: 8) { media(search: $search, type: ANIME, sort: SEARCH_MATCH) { idMal episodes duration format countryOfOrigin title { romaji english } synonyms } } }`;
 
 /** A budget of asks a minute, for the whole server. */
 function budget(perMinute: number, now: () => number) {
@@ -145,7 +196,7 @@ export function createAnimeSkipLookup(options: AnimeSkipOptions = {}): AnimeSkip
   const mayAskAniList = budget(perMinute, now);
   const mayAskAniSkip = budget(perMinute, now);
   let aniListRestsUntil = 0;
-  const ids = new Map<string, Kept<number | null>>();
+  const shows = new Map<string, Kept<Candidate[]>>();
   const times = new Map<string, Kept<SkipTimes | null>>();
   const asking = new Map<string, Promise<SkipTimes | null>>();
 
@@ -156,12 +207,20 @@ export function createAnimeSkipLookup(options: AnimeSkipOptions = {}): AnimeSkip
     return undefined;
   };
 
-  /** AniList's MyAnimeList id for the show, season and episode, or null when none of its answers is that show (see above). */
-  const malId = async (hint: AnimeHint): Promise<number | null> => {
+  /** AniList's MyAnimeList id for the show, season and episode in a cut `length` seconds long, or null when none of its answers is that show (see above). */
+  const malId = async (hint: AnimeHint, length: number): Promise<number | null> => {
+    const found = await candidatesFor(hint);
+    return choose(found, hint.episode, length);
+  };
+
+  /**
+   * AniList's answers that are named as `hint`'s show and say its season, in AniList's order: kept by title and season (not by episode or length, which
+   * choose among them), so that every episode of a show is one question to AniList.
+   */
+  const candidatesFor = async (hint: AnimeHint): Promise<Candidate[]> => {
     const key = `${plainTitle(hint.title)}|${hint.season}`;
-    const kept = fresh(ids, key);
-    if (kept && kept.value === null) return null;
-    if (kept && kept.value !== null) return kept.value;
+    const kept = fresh(shows, key);
+    if (kept) return kept.value;
     const title = hint.title.replace(/\(\s*\d{4}\s*\)/g, " ").replace(/\s+/g, " ").trim();
     const searches = [...new Set(hint.season > 1 ? [`${title} Season ${hint.season}`, `${title} ${hint.season}`] : [title])];
     try {
@@ -180,25 +239,35 @@ export function createAnimeSkipLookup(options: AnimeSkipOptions = {}): AnimeSkip
         }
         if (!answer.ok) throw new NoAnswer();
         const body = (await answer.json()) as { data?: { Page?: { media?: Found[] | null } | null } | null };
+        const candidates: Candidate[] = [];
         for (const found of body.data?.Page?.media ?? []) {
           const id = found?.idMal;
-          if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) continue;
+          if (typeof id !== "number" || !Number.isInteger(id) || id <= 0 || candidates.some((candidate) => candidate.id === id)) continue;
           if (found.countryOfOrigin && !COUNTRIES.has(found.countryOfOrigin)) continue;
           if (found.format && !FORMATS.has(found.format)) continue;
           const names = [found.title?.english, found.title?.romaji, ...(found.synonyms ?? [])].filter((name): name is string => typeof name === "string" && name.length > 0);
           if (!sameShow(hint.title, names)) continue;
           if (hint.season > 1 && !namesSeason(names, hint.season)) continue;
-          if (typeof found.episodes === "number" && found.episodes > 0 && hint.episode > found.episodes) continue;
-          remember(ids, key, { value: id, until: now() + KEEP.idFound }, MAX_KEPT);
-          return id;
+          candidates.push({
+            id,
+            episodes: positive(found.episodes),
+            minutes: positive(found.duration),
+            exact: sameName(hint.title, names),
+            otherSeason: hint.season === 1 && saysAnotherSeason(hint.title, names),
+            series: typeof found.format === "string" && SERIES.has(found.format),
+          });
+        }
+        if (candidates.length > 0) {
+          remember(shows, key, { value: candidates, until: now() + KEEP.idFound }, MAX_KEPT);
+          return candidates;
         }
       }
-      remember(ids, key, { value: null, until: now() + KEEP.idNone }, MAX_KEPT);
-      return null;
+      remember(shows, key, { value: [], until: now() + KEEP.idNone }, MAX_KEPT);
+      return [];
     } catch (error) {
       // (A failure is remembered a little while, so that a busy minute does not ask again for every screen; a budget that ran out is not: it is asked again next time.)
-      if (!(error instanceof OutOfBudget)) remember(ids, key, { value: null, until: now() + KEEP.failed }, MAX_KEPT);
-      return null;
+      if (!(error instanceof OutOfBudget)) remember(shows, key, { value: [], until: now() + KEEP.failed }, MAX_KEPT);
+      return [];
     }
   };
 
@@ -243,7 +312,7 @@ export function createAnimeSkipLookup(options: AnimeSkipOptions = {}): AnimeSkip
       if (already) return already;
       const asked = (async () => {
         try {
-          const id = await malId(hint);
+          const id = await malId(hint, length);
           return id === null ? null : await aniSkip(id, hint.episode, length);
         } catch {
           return null;
