@@ -25,9 +25,19 @@ describe("the chat on the phone", () => {
 
   it("limits the box to what the server keeps, and asks the phone to send on Enter", () => {
     const tag = tagOf(render(), "chat-input")!;
-    expect(tag).toContain('maxLength="500"');
+    expect(tag).toContain('data-max-length="500"');
     expect(tag).toContain('enterKeyHint="send"');
-    expect(tag).toContain('autoComplete="off"');
+    expect(tag).toContain('data-placeholder="Write a message"');
+  });
+
+  it("types in an editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, between the box and the keyboard", () => {
+    const html = render();
+    const tag = tagOf(html, "chat-input")!;
+    expect(tag).toMatch(/^<div/);
+    expect(tag).toMatch(/contentEditable="(true|plaintext-only)"/);
+    expect(tag).toContain('role="textbox"');
+    const form = html.slice(html.indexOf('data-testid="chat-compose"'));
+    expect(form.slice(0, form.indexOf("</form>"))).not.toMatch(/<(input|textarea)\b/);
   });
 
   it("says that it is loading, not that it is empty, before the first answer", () => {

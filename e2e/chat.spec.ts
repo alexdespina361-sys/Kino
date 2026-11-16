@@ -217,7 +217,7 @@ test.describe("the chat on the phone", () => {
     await expect(lines(ann.page)).toHaveCount(1);
     await expect(lines(ann.page).first()).toHaveAttribute("data-mine", "true");
     await expect(texts(ann.page).first()).toHaveText("Hello Bob");
-    await expect(ann.page.getByTestId("chat-input")).toHaveValue("");
+    await expect(ann.page.getByTestId("chat-input")).toHaveText("");
     await expect(ann.page.getByTestId("chat-input")).toBeFocused();
 
     // Bob is on his home screen: the number on the bell is the only sign of it; nothing pops up
@@ -300,11 +300,11 @@ test.describe("the chat on the phone", () => {
     await input.pressSequentially("second one typed meanwhile");
     release();
     await expect(texts(ann.page)).toHaveText(["first message"]);
-    await expect(input).toHaveValue("second one typed meanwhile");
+    await expect(input).toHaveText("second one typed meanwhile");
     // ...and it goes as the next message, on its own.
     await ann.page.getByTestId("chat-send").click();
     await expect(texts(ann.page)).toHaveText(["first message", "second one typed meanwhile"]);
-    await expect(input).toHaveValue("");
+    await expect(input).toHaveText("");
   });
 
   test("a message of one's own can be taken back, and is gone for both; a friend can be muted without being told, and the messages are in the chat when it is opened", async ({ browser }) => {
@@ -1115,7 +1115,7 @@ test.describe("a title sent in a chat", () => {
     await expect(lines(ann.page)).toHaveCount(1);
     await expect(ann.page.getByTestId("chat-card")).toContainText("The Matrix");
     await expect(texts(ann.page)).toHaveText(["The Matrix (1999)"]); // (the address is the card's)
-    await expect(ann.page.getByTestId("chat-input")).toHaveValue("half typed");
+    await expect(ann.page.getByTestId("chat-input")).toHaveText("half typed");
 
     await openChat(bob.page);
     const card = bob.page.getByTestId("chat-card");
@@ -1245,13 +1245,41 @@ test.describe("the chat on a hand-held screen that shows the TV's pages", () => 
     // the chat is the screen: the box at its bottom, the messages above it
     const at = await where(box);
     expect(at.y + at.height, "the box is at the bottom of the screen").toBeGreaterThan(viewport.height - 110);
+    // (an editable area, not a form field: Chrome on a phone puts the strip of its form filler, the key, the card and the pin, over a form field)
+    expect(await box.evaluate((element) => [element.tagName, (element as HTMLElement).isContentEditable, element.getAttribute("role")])).toEqual(["DIV", true, "textbox"]);
+    await expect(page.getByTestId("tv-chat-box-form").locator("input, textarea")).toHaveCount(0);
     await box.fill("Hello from the phone");
     await box.press("Enter");
     await expect(tvLines(page)).toHaveCount(1);
     await expect(tvLines(page).first().getByTestId("chat-text")).toHaveText("Hello from the phone");
-    await expect(box).toHaveValue("");
+    await expect(box).toHaveText("");
     await expect(box).toBeFocused(); // (the keyboard stays up for the next one)
     await expect(page.getByTestId("tv-chat-compose")).toHaveCount(0);
+    // the round Send button sends too, and pressing it does not take the keyboard away
+    await box.pressSequentially("Second one");
+    await page.getByTestId("tv-chat-box-send").click();
+    await expect(tvLines(page)).toHaveCount(2);
+    await expect(tvLines(page).last().getByTestId("chat-text")).toHaveText("Second one");
+    await expect(box).toHaveText("");
+    await expect(box).toBeFocused();
+    // a paste is plain text on one line, and what is typed stops where the server stops
+    await box.evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", "line one\nline two");
+      data.setData("text/html", "<b>line one</b><br><img src=x>");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await expect(box).toHaveText("line one line two");
+    expect(await box.evaluate((element) => element.querySelectorAll("b, img, br").length)).toBe(0);
+    await box.fill("x".repeat(600));
+    await expect.poll(() => box.evaluate((element) => element.textContent?.length)).toBe(500);
+    // (and one letter at a time past it: the box does not show more than would be sent)
+    await box.fill("y".repeat(498));
+    await box.pressSequentially("abcd");
+    await expect.poll(() => box.evaluate((element) => element.textContent)).toBe(`${"y".repeat(498)}ab`);
+    await box.fill("");
+    await expect(box).toHaveText("");
+    await expect(page.getByTestId("tv-chat-box-send")).toBeDisabled();
     expect(await outsideTheScreen(page, "tv-chat", false)).toEqual([]);
 
     // the keyboard comes up and the browser moves the page up under it: the chat is what is left, the friend's name at its top, the box right over the keys

@@ -5,6 +5,7 @@ import { useT } from "../i18n";
 import { FilmIcon, SendIcon, ShieldIcon } from "../shared/icons";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
+import { keepTheBox, MessageBox } from "./MessageBox";
 import { CHAT_FACTS } from "./state";
 import { TitlePickSheet } from "./TitlePick";
 import type { ChatReport, ChatSession } from "./useChat";
@@ -105,11 +106,11 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
 function Composer({ session, onPickTitle }: { session: ChatSession; onPickTitle: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLDivElement>(null);
   const checked = checkChatText(text);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const submit = async (event?: FormEvent) => {
+    event?.preventDefault();
     if (!checked.ok || session.sending) return;
     const written = text;
     // (Only what was sent leaves the box: what was typed while the message was on its way, wherever in the box, is the next one. A slow connection is seconds of typing.)
@@ -122,24 +123,22 @@ function Composer({ session, onPickTitle }: { session: ChatSession; onPickTitle:
       <button type="button" className="chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-testid="chat-title-btn">
         <FilmIcon />
       </button>
-      <input
+      {/* (An editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, see MessageBox.tsx.) */}
+      <MessageBox
         ref={input}
         className="chat-input"
-        type="text"
         value={text}
-        maxLength={CHAT_TEXT_MAX}
-        autoComplete="off"
-        autoCapitalize="sentences"
-        enterKeyHint="send"
-        placeholder={t("chat.placeholder")}
-        aria-label={t("chat.messageLabel")}
-        onChange={(event) => {
-          setText(event.target.value);
+        onChange={(now) => {
+          setText(now);
           session.settle();
         }}
-        data-testid="chat-input"
+        onSend={() => void submit()}
+        maxLength={CHAT_TEXT_MAX}
+        placeholder={t("chat.placeholder")}
+        label={t("chat.messageLabel")}
+        testId="chat-input"
       />
-      <button type="submit" className="chat-send" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} data-testid="chat-send">
+      <button type="submit" className="chat-send" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} onMouseDown={keepTheBox} data-testid="chat-send">
         <SendIcon />
       </button>
     </form>

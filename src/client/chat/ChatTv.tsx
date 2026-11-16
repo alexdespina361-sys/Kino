@@ -11,6 +11,7 @@ import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
+import { keepTheBox, MessageBox } from "./MessageBox";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
@@ -142,6 +143,8 @@ export function ReadTv({
   const [menu, setMenu] = useState(false);
   const more = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLInputElement>(null);
+  /** A hand-held screen's box (MessageBox.tsx): an editable area, so that Chrome's form filler puts no strip of its own over it. */
+  const area = useRef<HTMLDivElement>(null);
   const checked = checkChatText(draft);
   useVisibleArea(narrow);
 
@@ -166,12 +169,12 @@ export function ReadTv({
     setDraft(text.slice(0, CHAT_TEXT_MAX));
     session.settle();
   };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const submit = async (event?: FormEvent) => {
+    event?.preventDefault();
     if (!checked.ok || session.sending) return;
     if (await session.send(checked.text)) {
       setDraft("");
-      box.current?.focus(); // (the next message is typed at once, as in any chat on a computer)
+      (narrow ? area : box).current?.focus(); // (the next message is typed at once, as in any chat)
     }
   };
 
@@ -277,23 +280,47 @@ export function ReadTv({
               {desk || narrow ? (
                 // A computer or a hand-held screen: the box itself, Enter sends.
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
-                  <input
-                    ref={box}
-                    className="tv-chat-box"
-                    type="text"
-                    value={draft}
-                    maxLength={CHAT_TEXT_MAX}
-                    autoComplete="off"
-                    autoCapitalize="sentences"
-                    enterKeyHint="send"
-                    aria-label={t("chat.messageLabel")}
-                    placeholder={t("chat.placeholder")}
-                    onChange={(event) => type(event.target.value)}
+                  {narrow ? (
+                    <MessageBox
+                      ref={area}
+                      className="tv-chat-box tv-chat-box-area"
+                      value={draft}
+                      onChange={type}
+                      onSend={() => void submit()}
+                      maxLength={CHAT_TEXT_MAX}
+                      label={t("chat.messageLabel")}
+                      placeholder={t("chat.placeholder")}
+                      extra={{ "data-nav": true }}
+                      testId="tv-chat-box"
+                    />
+                  ) : (
+                    <input
+                      ref={box}
+                      className="tv-chat-box"
+                      type="text"
+                      value={draft}
+                      maxLength={CHAT_TEXT_MAX}
+                      autoComplete="off"
+                      autoCapitalize="sentences"
+                      enterKeyHint="send"
+                      aria-label={t("chat.messageLabel")}
+                      placeholder={t("chat.placeholder")}
+                      onChange={(event) => type(event.target.value)}
+                      data-nav
+                      data-autofocus
+                      data-testid="tv-chat-box"
+                    />
+                  )}
+                  <button
+                    type="submit"
+                    className="tv-chat-send-round"
+                    disabled={!checked.ok || session.sending}
+                    aria-label={t("chat.send")}
+                    title={t("chat.send")}
+                    {...(narrow ? { onMouseDown: keepTheBox } : {})}
                     data-nav
-                    {...(narrow ? {} : { "data-autofocus": true })}
-                    data-testid="tv-chat-box"
-                  />
-                  <button type="submit" className="tv-chat-send-round" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} title={t("chat.send")} data-nav data-testid="tv-chat-box-send">
+                    data-testid="tv-chat-box-send"
+                  >
                     <SendIcon />
                   </button>
                 </form>

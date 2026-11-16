@@ -49,6 +49,24 @@ describe("the chat on the TV", () => {
     expect(has(read({ desk: true, session: fakeSession({ state: { lines, open: false } }) }), "tv-chat-box")).toBe(false);
   });
 
+  it("on a hand-held screen, the box is an editable area, not a form field (Chrome puts its form filler's strip over those), and does not take the keyboard by itself", () => {
+    const html = read({ narrow: true });
+    const tag = tagOf(html, "tv-chat-box")!;
+    expect(tag).toMatch(/^<div/);
+    expect(tag).toMatch(/contentEditable="(true|plaintext-only)"/);
+    expect(tag).toContain('role="textbox"');
+    expect(tag).toContain('enterKeyHint="send"');
+    expect(tag).toContain('data-max-length="500"');
+    expect(tag).toContain('data-placeholder="Write a message"');
+    expect(tag).toContain("data-nav");
+    expect(tag).not.toContain("data-autofocus");
+    const form = html.slice(html.indexOf('data-testid="tv-chat-box-form"'));
+    expect(form.slice(0, form.indexOf("</form>"))).not.toMatch(/<(input|textarea)\b/);
+    expect(tagOf(read({ narrow: true, draft: "Hello" }), "tv-chat-box-send")).not.toContain("disabled");
+    // (a computer keeps its plain box)
+    expect(tagOf(read({ desk: true }), "tv-chat-box")).toMatch(/^<input/);
+  });
+
   it("lands the remote on Write, and can be walked: every button and the list are `data-nav`", () => {
     const html = read();
     expect(tagOf(html, "tv-chat-write")).toContain("data-autofocus");
