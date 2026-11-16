@@ -25,6 +25,12 @@ describe("the next window for the recogniser, when the sound comes as the film p
   it("after a jump, takes the sound around the picture", () => {
     expect(nextWindow({ ...live, playhead: 500, covered: [{ from: 0, to: 120 }, { from: 470, to: 499.5 }] })).toBe(480);
   });
+
+  it("in the light way, is the newest whole window of those on the grid (one in `every`)", () => {
+    expect(nextWindow({ ...live, every: 3 })).toBe(0);
+    expect(nextWindow({ ...live, playhead: 200, covered: [{ from: 0, to: 199 }], every: 3 })).toBe(180);
+    expect(nextWindow({ ...live, playhead: 200, covered: [{ from: 0, to: 199 }], heard: [{ from: 180, to: 195 }], every: 3 })).toBe(135);
+  });
 });
 
 describe("the next window for the recogniser", () => {
@@ -52,6 +58,12 @@ describe("the next window for the recogniser", () => {
 
   it("finds the sound that is after a jump", () => {
     expect(nextWindow({ ...plan, playhead: 500, covered: [{ from: 0, to: 120 }, { from: 495, to: 540 }] })).toBe(495);
+  });
+
+  it("in the light way, hears one window in `every`, on the grid", () => {
+    expect(nextWindow({ ...plan, playhead: 20, every: 3 })).toBe(45);
+    expect(nextWindow({ ...plan, playhead: 20, every: 3, heard: [{ from: 45, to: 60 }] })).toBe(90);
+    expect(nextWindow({ ...plan, playhead: 20, every: 1 })).toBe(15);
   });
 
   it("has nothing to do once everything ahead is heard", () => {

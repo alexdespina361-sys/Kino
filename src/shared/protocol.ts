@@ -49,6 +49,14 @@ const SkipCommand = z.object({ type: z.literal("SKIP"), seconds: z.number().fini
 const StopCommand = z.object({ type: z.literal("STOP") });
 const NextEpisodeCommand = z.object({ type: z.literal("NEXT_EPISODE") });
 
+/**
+ * How the aligner times the subtitles: "full", the recogniser hears every stretch of the sound; "light", once the timing is sure it hears one
+ * stretch in three, for about a third of the work (the recogniser is most of what the aligner costs), the lines between placed from the words
+ * around them.
+ */
+export const SubtitleSyncModeSchema = z.enum(["full", "light"]);
+export type SubtitleSyncMode = z.infer<typeof SubtitleSyncModeSchema>;
+
 export const CommandSchema = z.discriminatedUnion("type", [
   /** `startAt` resumes a video where it was left off; the TV seeks there as soon as it can. */
   z.object({ type: z.literal("LOAD"), media: NormalizedMediaSchema, startAt: StartAtSchema.optional() }),
@@ -74,8 +82,11 @@ export const CommandSchema = z.discriminatedUnion("type", [
   /** The phone signed devices out of the account: the TV looks at its own sign-in now, not at its next regular exchange with the server. */
   z.object({ type: z.literal("REFRESH_ACCOUNT") }),
   z.object({ type: z.literal("SET_SUBTITLE_DELAY"), delay: z.number().finite().min(-60).max(60) }),
-  /** The switch for timing the subtitles to the sound by itself (on unless the viewer turned it off). */
-  z.object({ type: z.literal("SET_SUBTITLE_SYNC"), on: z.boolean() }),
+  /**
+   * The switch for timing the subtitles to the sound by itself (on unless the viewer turned it off), and with `mode` the way it times them
+   * (see `SubtitleSyncModeSchema`). A field, not a command of its own: a TV of an older build turns the aligner on and leaves the rest.
+   */
+  z.object({ type: z.literal("SET_SUBTITLE_SYNC"), on: z.boolean(), mode: SubtitleSyncModeSchema.optional() }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 
@@ -120,6 +131,8 @@ export const PlayerStateSchema = z.object({
    * page of an older build and a server of a newer one (or the other way round, during a deploy) must still understand each other.
    */
   subtitleShift: z.number().finite().min(-600).max(600).optional(),
+  /** With `subtitleSync`: the way the aligner times the lines, as the viewer chose (see `SubtitleSyncModeSchema`). */
+  subtitleSyncMode: SubtitleSyncModeSchema.optional(),
   quality: z
     .object({
       levels: z.array(PlayerQualityLevelSchema),

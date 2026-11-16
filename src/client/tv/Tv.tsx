@@ -20,6 +20,7 @@ import {
   type PartyView,
   type PlayableSource,
   type PlayerState,
+  type SubtitleSyncMode,
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
@@ -227,6 +228,7 @@ export function Tv() {
   const subtitleDelayRef = useRef(subtitleDelay);
   subtitleDelayRef.current = subtitleDelay;
   const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? true);
+  const subtitleSyncModeRef = useRef<SubtitleSyncMode>(initialPrefs.subtitleSyncMode ?? "full");
   /** Sends the TV's current state to the phone again (set once the player exists). */
   const republishRef = useRef<() => void>(() => {});
   /** The ✦ choices of this film and the one that is on, for the state (see `useEnhance` below). */
@@ -582,6 +584,14 @@ export function Tv() {
     toastIdRef.current += 1;
     setToast({ id: toastIdRef.current, text: t(on ? "notice.syncOn" : "notice.syncOff"), notice: true });
   };
+  /** The way the aligner times them: every stretch of the sound, or (light) one in three once the timing is sure. */
+  const chooseSubtitleSyncMode = (mode: SubtitleSyncMode) => {
+    subtitleSyncModeRef.current = mode;
+    remember({ subtitleSyncMode: mode });
+    engineRef.current?.setSubtitleSyncMode(mode);
+    toastIdRef.current += 1;
+    setToast({ id: toastIdRef.current, text: t(mode === "light" ? "notice.syncLight" : "notice.syncFull"), notice: true });
+  };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
   // The ✦ choices of the Quality list: the picture redrawn at 2K by this screen's own graphics chip, over the video (enhance/). The video plays as always under it.
@@ -711,6 +721,7 @@ export function Tv() {
       () => subtitleDelayRef.current,
     );
     engine.setSubtitleSync(subtitleSyncRef.current);
+    engine.setSubtitleSyncMode(subtitleSyncModeRef.current);
     republishRef.current = () => publish(engine.getState());
 
     // Only the first hello of this page says it has just been opened: a socket that reconnects, or says hello again when the page comes back to the front, belongs to a page that has been on.
@@ -924,7 +935,11 @@ export function Tv() {
             else if (command.type === "SET_ENHANCE") chooseEnhanceRef.current(command.mode);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
             else if (command.type === "SET_SUBTITLE_DELAY") chooseSubtitleDelay(command.delay);
-            else if (command.type === "SET_SUBTITLE_SYNC") chooseSubtitleSync(command.on);
+            else if (command.type === "SET_SUBTITLE_SYNC") {
+              // (With a way of timing: the phone chose that, and turns the aligner on with it when it was off.)
+              if (command.mode) chooseSubtitleSyncMode(command.mode);
+              if (!command.mode || command.on !== subtitleSyncRef.current) chooseSubtitleSync(command.on);
+            }
             else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
@@ -1890,6 +1905,7 @@ export function Tv() {
           subtitleDelay={subtitleDelay}
           onSubtitleDelay={chooseSubtitleDelay}
           onSubtitleSync={chooseSubtitleSync}
+          onSubtitleSyncMode={chooseSubtitleSyncMode}
           rootRef={menuRef}
           onClose={() => setMenu(null)}
           onSubtitle={chooseSubtitle}

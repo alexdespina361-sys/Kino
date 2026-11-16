@@ -21,6 +21,7 @@ import {
   type PlayerTrack,
   type SeasonGroup,
   type SeriesInfo,
+  type SubtitleSyncMode,
   versionLabel,
   type WatchedEntry,
 } from "../../shared";
@@ -74,6 +75,8 @@ interface MenuProps {
   onSubtitleDelay?: (delay: number) => void;
   /** Turn the timing of the subtitles to the sound, by itself, on or off (a TV without it has no such row). */
   onSubtitleSync?: (on: boolean) => void;
+  /** The way it times them (a row only while it is on). */
+  onSubtitleSyncMode?: (mode: SubtitleSyncMode) => void;
   /** The show's key and what has been watched, to mark the episode list. */
   show: string | undefined;
   watched: readonly WatchedEntry[];
@@ -363,6 +366,17 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
     sync !== undefined && p.onSubtitleSync
       ? [{ key: "sub-sync", label: t("player.autoSync"), detail: syncWords(sync, player.subtitleShift), active: false, pick: () => p.onSubtitleSync?.(sync === "off") }]
       : [];
+  // (While it is on and can work on this film, the way it times them: OK goes from one to the other. A TV of an older build says nothing of it.)
+  const mode = player.subtitleSyncMode;
+  if (mode && sync !== undefined && sync !== "off" && sync !== "unavailable" && p.onSubtitleSyncMode) {
+    autoSync.push({
+      key: "sub-sync-mode",
+      label: t("player.syncMode"),
+      detail: t(mode === "light" ? "player.syncLight" : "player.syncFull"),
+      active: false,
+      pick: () => p.onSubtitleSyncMode?.(mode === "light" ? "full" : "light"),
+    });
+  }
   columns.push({
     title: t("player.adjust"),
     size: "narrow",

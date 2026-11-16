@@ -14,7 +14,12 @@ export interface Plan {
   speed: number;
   /** The sound arrives as the film plays, never ahead of the picture (a film the browser plays by itself: see capture.ts). */
   live?: boolean;
+  /** Only one window in this many is heard (those on every `every`-th place of the grid): the light way of timing, see `LIGHT_EVERY` in session.ts. */
+  every?: number;
 }
+
+/** Whether the window at `from` is one of those to hear when only one in `every` is. */
+const onGrid = (from: number, every = 1): boolean => every <= 1 || Math.round(from / WINDOW) % every === 0;
 
 /** With sound that arrives as it plays, the recogniser is given windows this far behind the picture at most. */
 export const LIVE_BEHIND = 4;
@@ -33,7 +38,7 @@ export function nextWindow(plan: Plan): number | undefined {
   const end = covered.reduce((latest, range) => Math.max(latest, range.to), 0);
   const takes = WINDOW / Math.max(0.05, speed);
   for (let from = Math.floor(playhead / WINDOW) * WINDOW; from + WINDOW <= end + 0.05; from += WINDOW) {
-    if (!within(covered, from, from + WINDOW) || within(heard, from, from + WINDOW)) continue;
+    if (!onGrid(from, plan.every) || !within(covered, from, from + WINDOW) || within(heard, from, from + WINDOW)) continue;
     if ((from + WINDOW - playhead) / Math.max(0.25, rate) < takes) continue;
     return from;
   }
@@ -45,12 +50,12 @@ export function nextWindow(plan: Plan): number | undefined {
  * screen, and what the words say of their timing is for the lines to come (the timing of a file is mostly one shift, or a slow
  * stretch). So the newest whole window is the one to hear, back to `LIVE_BEHIND` windows behind the sound around the picture.
  */
-function lastWindow({ playhead, covered, heard }: Plan): number | undefined {
+function lastWindow({ playhead, covered, heard, every }: Plan): number | undefined {
   const around = covered.find((range) => range.from <= playhead + 1 && range.to >= playhead - WINDOW) ?? covered[covered.length - 1];
   if (!around) return undefined;
   const newest = Math.floor((around.to + 0.05) / WINDOW) * WINDOW - WINDOW;
   for (let from = newest; from >= 0 && from >= newest - LIVE_BEHIND * WINDOW; from -= WINDOW) {
-    if (within(covered, from, from + WINDOW) && !within(heard, from, from + WINDOW)) return from;
+    if (onGrid(from, every) && within(covered, from, from + WINDOW) && !within(heard, from, from + WINDOW)) return from;
   }
   return undefined;
 }

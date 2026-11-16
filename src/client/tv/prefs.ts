@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CaptionStyleSchema, defaultTrack, normalizeLang, type PlayerTrack } from "../../shared";
+import { CaptionStyleSchema, defaultTrack, normalizeLang, SubtitleSyncModeSchema, type PlayerTrack } from "../../shared";
 
 /**
  * What the TV remembers about how you like to watch, so the second episode starts the way the first one ended:
@@ -19,6 +19,8 @@ const PrefsSchema = z
     subtitleDelay: z.number().optional(),
     /** Whether the subtitles are timed to the sound by themselves while a video plays (on unless the viewer turned it off). */
     subtitleSync: z.boolean().optional(),
+    /** The way it times them, when the viewer chose the light one (see `SubtitleSyncModeSchema`). */
+    subtitleSyncMode: SubtitleSyncModeSchema.optional(),
     /** Older versions stored just a size. */
     subtitleSize: z.enum(["small", "medium", "large"]).optional(),
   })

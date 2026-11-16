@@ -7,6 +7,7 @@ import {
   type PlayerState,
   type PlayerTrack,
   type StreamType,
+  type SubtitleSyncMode,
   type SubtitleTrack,
   trackLabel,
 } from "../../shared";
@@ -33,6 +34,8 @@ export interface SyncFilm {
   report(status: SyncStatus, moved?: number): void;
   /** The viewer's own subtitle delay. */
   delay?: () => number;
+  /** Whether the viewer chose the light way of timing (asked each time: it can change while the film plays). */
+  light?: () => boolean;
   /** Offers a file the aligner has timed well for a Kino Official subtitle (see `subsync/official.ts`). */
   offer?: (id: number, offer: { duration: number; lines: OfficialOfferLine[] }, last: boolean) => void;
 }
@@ -288,6 +291,7 @@ export class PlayerEngine {
   private syncLoader: (() => Promise<SyncStarter>) | undefined;
   private syncDelay: (() => number) | undefined;
   private syncOn = true;
+  private syncMode: SubtitleSyncMode = "full";
   private syncHandle: SyncHandle | undefined;
   private syncStatus: SyncStatus = "ready";
   /** How far the aligner moved the lines, while they are timed (see `SyncSession.moved`). */
@@ -697,6 +701,13 @@ export class PlayerEngine {
    * The viewer's switch for the aligner. Turned off, the lines go back where the file had them; turned on in the middle of a film,
    * it starts from what the player downloads from then on (the init segments of the sound were learned all along, so it can read it).
    */
+  /** The way the aligner times the lines (see `SubtitleSyncModeSchema`). It is asked each time, so a change applies at once, to the film playing. */
+  setSubtitleSyncMode(mode: SubtitleSyncMode): void {
+    if (mode === this.syncMode) return;
+    this.syncMode = mode;
+    this.emit();
+  }
+
   setSubtitleSync(on: boolean): void {
     if (on === this.syncOn) return;
     this.syncOn = on;
@@ -745,6 +756,7 @@ export class PlayerEngine {
             this.emit();
           },
           ...(this.syncDelay ? { delay: this.syncDelay } : {}),
+          light: () => this.syncMode === "light",
           offer: (id, offer, last) => {
             if (generation === this.generation) offerOfficial(this.video, id, offer, last);
           },
@@ -890,7 +902,7 @@ export class PlayerEngine {
       quality: this.getQualityState(),
       subtitles: this.getSubtitleState(),
       audio: this.getAudioState(),
-      ...(this.syncLoader ? { subtitleSync: this.syncOn ? this.syncStatus : ("off" as const) } : {}),
+      ...(this.syncLoader ? { subtitleSync: this.syncOn ? this.syncStatus : ("off" as const), subtitleSyncMode: this.syncMode } : {}),
       ...(this.syncLoader && this.syncOn && this.syncStatus === "synced" && this.syncMoved !== undefined ? { subtitleShift: this.syncMoved } : {}),
     };
   }
