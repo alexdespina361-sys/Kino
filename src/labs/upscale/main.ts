@@ -2,9 +2,9 @@ import "./style.css";
 import { FILM_FROM, GlUpscaler, isFilm, type FilmMode, type GlMode } from "./glUpscaler";
 import { GpuUpscaler, webgpuAdapter, type AnimeMode } from "./gpuUpscaler";
 import { animeSteps, frameRate, ms, summarize, targetSize, verdict, type Timing, type Verdict } from "./measure";
-import { Cadence, HELD_FRAMES, RIFE_LEAD, VideoClock, boostDelay, boostPhase, gridJobs, gridMoment, gridRate, refreshRate, type HeldFrame, type Phase } from "./boostTiming";
+import { Cadence, HELD_FRAMES, RIFE_LEAD, SteadyGrid, VideoClock, boostDelay, boostPhase, gridJobs, gridMoment, refreshRate, type HeldFrame, type Phase } from "./boostTiming";
 import type { BoostHow, FrameBoost, Size } from "./frameBoost";
-import { Rife, type Picture } from "./rife";
+import { Rife, padded, type Motion, type Picture } from "./rife";
 
 /**
  * The upscaler test page (labs/upscale/index.html): plays a video file picked on this computer, draws it bigger with one of several modes, and times
@@ -54,8 +54,8 @@ const isAnime = (mode: Mode): mode is AnimeMode => mode.startsWith("anime-");
 /** Frames drawn and waited for in a speed test (the first ones only warm up). */
 const WARM_UP = 5;
 const TIMED = 40;
-/** How long a speed test plays the video for (`?seconds=2` makes it shorter, for the page's own tests). */
-const PLAY_SECONDS = Math.min(30, Math.max(1, Number(new URLSearchParams(location.search).get("seconds")) || 8));
+/** How long a speed test plays the video for (`?seconds=2` makes it shorter, for the page's own tests; up to 10 minutes, for a long run by hand). */
+const PLAY_SECONDS = Math.min(600, Math.max(1, Number(new URLSearchParams(location.search).get("seconds")) || 8));
 
 const element = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -78,6 +78,7 @@ const testAll = element<HTMLButtonElement>("test-all");
 const testStop = element<HTMLButtonElement>("test-stop");
 const boostSelect = element<HTMLSelectElement>("boost");
 const boostHowSelect = element<HTMLSelectElement>("boost-how");
+const motionSelect = element<HTMLSelectElement>("rife-size");
 /** The left side's copies of the frames the boost holds (one each, by the boost's number for the frame). */
 const heldCanvases = Array.from({ length: HELD_FRAMES }, (_, index) => element<HTMLCanvasElement>(`held-${index}`));
 
@@ -278,6 +279,13 @@ const modeOfKey = (key: string): Mode | undefined => (/^[0-9]$/.test(key) ? MODE
 
 /** The frames counted while a speed test plays the video (by the loop below, and with the frame boost by its own loop: the frames it showed). */
 const counted = { on: false, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] as number[], boostFrames: 0, boostOnTime: 0, boostFirst: -1, boostLast: -1 };
+/**
+ * Why the boost's frames of a speed test were not in time (for a look by hand: `kinoUpscaleLab.boost().misses`): the chip had not finished the frame
+ * before; RIFE had not made the moment (`held`: the video's own frame shown, `late`: an earlier one of RIFE's); moments RIFE left out as too late to make.
+ */
+const misses = { chip: 0, held: 0, late: 0, skipped: 0 };
+/** What drawRife drew last: "own", "made", "late" or "held". */
+let rifeKind = "";
 
 const engineOf = (drawn: Mode): { caughtUp(): boolean; mark(): void } | undefined => (isAnime(drawn) ? gpu : gl);
 
@@ -343,20 +351,51 @@ const screenHz = (): number => refreshRate(refreshGaps);
 /** What the boost worked out last (for a look by hand: `kinoUpscaleLab.boost()`). */
 let lastPhase: object | undefined;
 
-// RIFE's side. The video's frames are kept as pixels (RIFE takes them from the processor's memory); when a frame comes, the moments between it and the
-// one before are asked of RIFE, one after another, ahead of the screen (RIFE_LEAD); the screen shows each moment as RIFE made it, or, if RIFE was not
-// done in time, the video's own frame of before (and that counts as a frame not shown in time).
+// RIFE's side. Each frame of the video is kept at its full size as a texture (the RIFE boost, frameBoost.ts) and, made smaller ("RIFE finds the motion
+// at"), as pixels for RIFE (it takes them from the processor's memory). When a frame comes, the moments between it and the one before are asked of RIFE,
+// one after another, ahead of the screen (RIFE_LEAD). RIFE gives how each part moves (rife.ts `motion`), and the screen's frame is warped from the two
+// full-size frames by that (frameBoost.ts `warp`); if RIFE was not done in time, the video's own frame of before is shown (and that counts as a frame
+// not shown in time).
 interface RifeFrame {
   mediaTime: number;
-  pixels: Picture;
+  /** Its number in the RIFE boost, which holds it at its full size. */
+  serial: number;
+  /** The frame at the size RIFE finds the motion at, as pixels. */
+  small: Picture;
+  /** A copy for the left side ("as it is"), one of RIFE_FRAMES canvases taken in turn. */
+  copy: HTMLCanvasElement;
 }
-/** The video's last frames as pixels, oldest first (enough for the moments RIFE_LEAD late). */
+/** The video's last frames, oldest first (enough for the moments RIFE_LEAD late). */
 let rifeFrames: RifeFrame[] = [];
 const RIFE_FRAMES = 12;
+const leftCopies: HTMLCanvasElement[] = [];
 /** The moments asked of RIFE and not made yet, oldest first. `key`: the grid's rate and number (see gridJobs). */
 let rifeJobs: { key: string; moment: number; a: RifeFrame; b: RifeFrame; t: number }[] = [];
-/** What RIFE made, by key. */
-const rifeMade = new Map<string, { moment: number; pixels: Uint8ClampedArray<ArrayBuffer> }>();
+/** What RIFE made (the motion from the two frames to the moment), by key. */
+const rifeMade = new Map<string, { moment: number; motion: Motion; a: RifeFrame; b: RifeFrame }>();
+/**
+ * How much smaller than the video RIFE finds the motion ("RIFE finds the motion at"): 1, 0.75, 0.5, 0.33 or 0.25, or "auto": the most that keeps RIFE's
+ * pictures (padded) within AUTO_MOTION pixels for the boost chosen. On this PC's RTX 3090 at 60, RIFE kept up on pictures of 320 x 192 (padded) and
+ * not on 448 x 256; at 30 it has twice the time a frame.
+ */
+const AUTO_MOTION = { 60: 320 * 192, 30: 448 * 256 } as const;
+const motionScale = (): number => {
+  const value = Number(motionSelect.value);
+  if (value > 0 && value <= 1) return value;
+  if (!hasFrame()) return 0.5;
+  return autoMotionScale({ width: video.videoWidth, height: video.videoHeight }, boostFps() > 30 ? AUTO_MOTION[60] : AUTO_MOTION[30]);
+};
+/** The largest scale (in hundredths, up to 1) at which `size`, made smaller and padded to RIFE's step, has at most `pixels`. */
+function autoMotionScale(size: Size, pixels: number): number {
+  for (let hundredths = 100; hundredths > 5; hundredths--) {
+    const scale = hundredths / 100;
+    const area = padded(Math.round(size.width * scale), RIFE_STEP) * padded(Math.round(size.height * scale), RIFE_STEP);
+    if (area <= pixels) return scale;
+  }
+  return 0.05;
+}
+/** The size RIFE finds the motion at for a video of `size`. */
+const motionSize = (size: Size): Size => ({ width: Math.max(8, Math.round(size.width * motionScale())), height: Math.max(8, Math.round(size.height * motionScale())) });
 let rifeBusy = false;
 /** Counts the boost's restarts: what RIFE answers for a run before the last restart is dropped. */
 let rifeRun = 0;
@@ -367,6 +406,8 @@ const rifeSizes = new Set<string>();
 /** A canvas for taking the video's pixels. */
 const grab = document.createElement("canvas");
 const gridKey = (rate: number, m: number): string => `${rate.toFixed(3)} ${m}`;
+/** The grid RIFE's moments are on (see SteadyGrid: the measured refresh rate wobbles, the grid must not). */
+const steadyGrid = new SteadyGrid();
 
 /** The moment the screen shows at `now` (s of the video): a frame and a refresh late, and RIFE_LEAD more with RIFE. */
 function boostShown(now: number): number {
@@ -401,18 +442,19 @@ function takeFrame(now: number, mediaTime: number): void {
 }
 
 function takeRifeFrame(mediaTime: number, size: Size): void {
-  if (grab.width !== size.width || grab.height !== size.height) {
-    grab.width = size.width;
-    grab.height = size.height;
+  const serial = gl!.rifeBoost(RIFE_FRAMES).push(video, size);
+  const copy = (leftCopies[serial % RIFE_FRAMES] ??= document.createElement("canvas"));
+  if (copy.width !== size.width || copy.height !== size.height) {
+    copy.width = size.width;
+    copy.height = size.height;
   }
-  const context = grab.getContext("2d", { willReadFrequently: true })!;
-  context.drawImage(video, 0, 0, size.width, size.height);
-  const frame: RifeFrame = { mediaTime, pixels: { data: context.getImageData(0, 0, size.width, size.height).data, width: size.width, height: size.height } };
+  copy.getContext("2d")?.drawImage(video, 0, 0, size.width, size.height);
+  const frame: RifeFrame = { mediaTime, serial, small: smallPicture(video, size), copy };
   const before = rifeFrames.at(-1);
   rifeFrames.push(frame);
   if (rifeFrames.length > RIFE_FRAMES) rifeFrames.shift();
   if (!before) return;
-  const rate = gridRate(boostFps(), screenHz());
+  const rate = steadyGrid.at(boostFps(), screenHz());
   for (const job of gridJobs(before.mediaTime, mediaTime, rate)) {
     const key = gridKey(rate, job.m);
     if (!rifeMade.has(key)) rifeJobs.push({ key, moment: job.m / rate, a: before, b: frame, t: job.t });
@@ -420,33 +462,71 @@ function takeRifeFrame(mediaTime: number, size: Size): void {
   void pumpRife();
 }
 
-/** Has RIFE make the moments asked, one after another, skipping those the screen has already passed. */
+/** `source` (of `size`) at the size RIFE finds the motion at, as pixels. */
+function smallPicture(source: CanvasImageSource, size: Size): Picture {
+  return pictureAt(source, motionSize(size));
+}
+
+/** `source` drawn at `small` (made smaller with the browser's best filter), as pixels. */
+function pictureAt(source: CanvasImageSource, small: Size): Picture {
+  if (grab.width !== small.width || grab.height !== small.height) {
+    grab.width = small.width;
+    grab.height = small.height;
+  }
+  const context = grab.getContext("2d", { willReadFrequently: true })!;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(source, 0, 0, small.width, small.height);
+  return { data: context.getImageData(0, 0, small.width, small.height).data, width: small.width, height: small.height };
+}
+
+/**
+ * The most moments RIFE makes in one run for pictures of `size`: a few on small pictures, where a run of two or three takes little more than a run of
+ * one (on this PC's RTX 3090, 448 x 192: 20 ms for one, 24 for two, 30 for three), one on big ones, where it saves nothing (640 x 384: 29 ms for one,
+ * 54 for two, and three ran out of the card's quick memory).
+ */
+const RIFE_BATCH = 3;
+const rifeBatch = (size: Size): number => Math.max(1, Math.min(RIFE_BATCH, Math.floor((448 * 256 * RIFE_BATCH) / (padded(size.width, RIFE_STEP) * padded(size.height, RIFE_STEP)))));
+/** How long RIFE's last runs took (ms, a run of one or several moments), for knowing which moments it can still make in time. */
+const rifeRunTimes: number[] = [];
+/** How many moments RIFE made in its last run. */
+let rifeLastBatch = 0;
+
+/** Has RIFE make the moments asked, a few at a time, in the order the screen needs them, skipping those it can no longer make in time. */
 async function pumpRife(): Promise<void> {
   if (rifeBusy) return;
   rifeBusy = true;
   const run = rifeRun;
   try {
-    const network = await loadRife();
+    const network = await loadRifeMotion();
     while (rifeJobs.length > 0 && run === rifeRun) {
       const shown = boostShown(performance.now());
       // (Only the moments it can make before the screen gets to them: one it would finish late is skipped, so that a RIFE too slow for every moment
       // makes as many as it can in time, not all of them too late. The screen goes through the video's moments at its playing speed.)
       // (At most most of the lead: a RIFE slower than that still makes the moments furthest ahead, and so its time keeps being measured.)
-      const takes = Math.min(rifeMs() || 50, RIFE_LEAD * 1000 * 0.8) / 1000;
+      const takes = Math.min(median(rifeRunTimes) || 50, RIFE_LEAD * 1000 * 0.8) / 1000;
       const speed = video.playbackRate || 1;
-      rifeJobs = rifeJobs.filter((job) => job.moment - shown > takes * speed);
-      const job = rifeJobs.shift();
-      if (!job) break;
+      // (Both frames at the size of now: one taken before "RIFE finds the motion at" changed is of another.)
+      const size = motionSize({ width: video.videoWidth, height: video.videoHeight });
+      const ofNow = (picture: Picture): boolean => picture.width === size.width && picture.height === size.height;
+      const asked = rifeJobs.length;
+      rifeJobs = rifeJobs.filter((job) => job.moment - shown > takes * speed && ofNow(job.a.small) && ofNow(job.b.small));
+      if (counted.on) misses.skipped += asked - rifeJobs.length;
+      const batch = rifeJobs.splice(0, network.batches ? rifeBatch(size) : 1);
+      if (batch.length === 0) break;
       const started = performance.now();
-      const pixels = await network.make(job.a.pixels, job.b.pixels, job.t);
+      const motions = await network.motions(batch.map((job) => ({ a: job.a.small, b: job.b.small, t: job.t })));
       if (run !== rifeRun) break;
-      // (Not the first frame of a size: the browser builds RIFE's programs for it then, which takes a second once.)
-      const sized = `${job.a.pixels.width}x${job.a.pixels.height}`;
+      // (Not the first run of a size and a batch: the browser builds RIFE's programs for it then, which takes a second once.)
+      const sized = `${size.width}x${size.height}x${batch.length}`;
       if (rifeSizes.has(sized)) {
-        rifeTimes.push(performance.now() - started);
+        const took = performance.now() - started;
+        rifeRunTimes.push(took);
+        if (rifeRunTimes.length > 30) rifeRunTimes.shift();
+        rifeTimes.push(took / batch.length);
         if (rifeTimes.length > 30) rifeTimes.shift();
       } else rifeSizes.add(sized);
-      rifeMade.set(job.key, { moment: job.moment, pixels });
+      rifeLastBatch = batch.length;
+      batch.forEach((job, index) => rifeMade.set(job.key, { moment: job.moment, motion: motions[index]!, a: job.a, b: job.b }));
       for (const [key, made] of rifeMade) if (made.moment < shown - 0.5) rifeMade.delete(key);
     }
   } catch (error) {
@@ -458,17 +538,16 @@ async function pumpRife(): Promise<void> {
   if (run !== rifeRun && rifeJobs.length > 0) void pumpRife();
 }
 
-/** How long RIFE takes for a frame here (ms, the middle of its last ones), 0 before it made any. */
-const rifeMs = (): number => {
-  if (rifeTimes.length === 0) return 0;
-  const sorted = [...rifeTimes].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)]!;
-};
+/** The middle of `values`, 0 for none. */
+const median = (values: readonly number[]): number => (values.length === 0 ? 0 : [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!);
+
+/** How long RIFE takes for a frame here (ms, the middle of its last ones; a run of several counted as its time shared), 0 before it made any. */
+const rifeMs = (): number => median(rifeTimes);
 
 /** How many frames a second RIFE has to make for the boost chosen (the moments that are not the video's own frames). */
 function rifeNeeds(own: number): number {
   if (!(own > 0)) return 0;
-  const rate = gridRate(boostFps(), screenHz());
+  const rate = steadyGrid.at(boostFps(), screenHz());
   let count = 0;
   for (let index = 0; index < Math.round(own); index++) count += gridJobs(index / own, (index + 1) / own, rate).length;
   return count;
@@ -495,7 +574,7 @@ function showHeld(serial: number): void {
   stage.classList.add("boosted");
 }
 
-/** Shows, on the left, the video's own frame `frame` (RIFE: kept as pixels). */
+/** Shows, on the left, the video's own frame `frame` (RIFE: its copy). */
 let leftFrame: RifeFrame | undefined;
 function showRifeLeft(frame: RifeFrame): void {
   stage.classList.add("boosted");
@@ -503,11 +582,11 @@ function showRifeLeft(frame: RifeFrame): void {
   heldCanvases.forEach((each, index) => (each.hidden = index !== 0));
   if (leftFrame === frame) return;
   leftFrame = frame;
-  if (canvas.width !== frame.pixels.width || canvas.height !== frame.pixels.height) {
-    canvas.width = frame.pixels.width;
-    canvas.height = frame.pixels.height;
+  if (canvas.width !== frame.copy.width || canvas.height !== frame.copy.height) {
+    canvas.width = frame.copy.width;
+    canvas.height = frame.copy.height;
   }
-  canvas.getContext("2d")?.putImageData(new ImageData(frame.pixels.data, frame.pixels.width, frame.pixels.height), 0, 0);
+  canvas.getContext("2d")?.drawImage(frame.copy, 0, 0);
 }
 
 /**
@@ -539,7 +618,7 @@ function drawBoost(now: number): { drew: boolean; right: boolean } {
 function drawRife(now: number): { drew: boolean; right: boolean } {
   if (rifeFrames.length === 0) return { drew: false, right: true };
   const shown = boostShown(now);
-  const rate = gridRate(boostFps(), screenHz());
+  const rate = steadyGrid.at(boostFps(), screenHz());
   const m = Number.isFinite(shown) ? gridMoment(shown, rate) : Number.NaN;
   const moment = m / rate;
   // The video's own frame at the moment (or the last before it), and RIFE's for the moment.
@@ -560,14 +639,20 @@ function drawRife(now: number): { drew: boolean; right: boolean } {
       }
     }
   }
-  lastPhase = { shown, rate, m, kind, own: own.mediaTime, picture: pictureMoment, jobs: rifeJobs.length, made: rifeMade.size };
+  const boost = gl!.rifeBoost(RIFE_FRAMES);
+  // (RIFE's frames are warped from the two frames it was asked about: one the boost no longer holds is not drawn, the video's own is.)
+  if (made && !(boost.holds(made.a.serial) && boost.holds(made.b.serial))) {
+    made = undefined;
+    kind = "held";
+    pictureMoment = own.mediaTime;
+  }
+  lastPhase = { shown, rate, m, kind, own: own.mediaTime, picture: pictureMoment, jobs: rifeJobs.length, made: rifeMade.size, motion: made ? `${made.motion.width}x${made.motion.height}` : undefined };
   const key = `${pictureMoment.toFixed(5)} ${mode} ${outSize().width}`;
   if (key === lastDrawn) return { drew: false, right: true };
   lastDrawn = key;
   if (kind === "held" && made) kind = "late";
-  const size = { width: own.pixels.width, height: own.pixels.height };
-  const pixels = made ? made.pixels : own.pixels.data;
-  drawPicture(gl!.frameBoost().upload(new ImageData(pixels, size.width, size.height), size), mode);
+  rifeKind = kind;
+  drawPicture(made ? boost.warp(made.a.serial, made.b.serial, made.motion) : boost.draw(own.serial, own.serial, 0), mode);
   showRifeLeft(own);
   return { drew: true, right: kind === "own" || kind === "made" };
 }
@@ -595,6 +680,8 @@ function onBoostRefresh(now: number): void {
     engineOf(mode)?.mark();
     counted.boostFrames++;
     if (caughtUp && result.right) counted.boostOnTime++;
+    if (!caughtUp) misses.chip++;
+    if (!result.right && (rifeKind === "held" || rifeKind === "late")) misses[rifeKind]++;
     if (counted.boostFirst < 0) counted.boostFirst = now;
     counted.boostLast = now;
   }
@@ -613,6 +700,7 @@ function restartBoost(): void {
   rifeJobs = [];
   rifeMade.clear();
   rifeRun++;
+  steadyGrid.reset();
   leftFrame = undefined;
   videoClock.reset();
   cadence.reset();
@@ -656,10 +744,14 @@ function describeBoost(): void {
       const late = boostDelay(frameTime, hz) + (rife ? RIFE_LEAD : 0);
       parts.push(`It is shown ${Math.round(late * 1000)} ms late (${rife ? "RIFE makes its frames ahead" : "it needs the next frame to make the ones before it"}); the left side is the video's own frame of the same moment.`);
     }
+    if (rife && hasFrame()) {
+      const small = motionSize({ width: video.videoWidth, height: video.videoHeight });
+      parts.push(`RIFE finds the motion on pictures of ${small.width} x ${small.height}${motionScale() < 1 ? ", and the frame is warped at the video's full size by it" : ""}.`);
+    }
     if (rife && rifeMs() > 0 && own > 0) {
       const needs = rifeNeeds(own);
       const keeps = rifeMs() <= (1000 / Math.max(1, needs)) * 0.9;
-      parts.push(`RIFE makes a frame in ${Math.round(rifeMs())} ms here; ${needs} a second are needed (${Math.round(1000 / Math.max(1, needs))} ms each)${keeps ? "" : ": too slow, so some moments show the video's own frame again"}.`);
+      parts.push(`RIFE makes a frame in ${Math.round(rifeMs())} ms here${rifeLastBatch > 1 ? ` (${rifeLastBatch} at a time)` : ""}; ${needs} a second are needed (${Math.round(1000 / Math.max(1, needs))} ms each)${keeps ? "" : ": too slow, so some moments show the video's own frame again"}.`);
     }
   }
   if (hz > 0) parts.push(`This screen refreshes ${Math.round(hz)} times a second${hz < fps * 0.95 ? `, so it shows ${Math.round(hz)} at most` : ""}.`);
@@ -669,6 +761,7 @@ function describeBoost(): void {
 
 boostSelect.addEventListener("change", restartBoost);
 boostHowSelect.addEventListener("change", restartBoost);
+motionSelect.addEventListener("change", restartBoost);
 
 // ---------------------------------------------------------------- the video and its controls
 
@@ -878,8 +971,8 @@ interface Played {
 }
 interface Result {
   mode: Mode;
-  /** The frame boost it was tested with (none: the video's own frames). */
-  boost?: { fps: number; how: BoostHow };
+  /** The frame boost it was tested with (none: the video's own frames); with RIFE, how much smaller it found the motion (motionScale). */
+  boost?: { fps: number; how: BoostHow; motion?: number };
   /** With RIFE: how long it took for a frame while the video played (ms, the middle), and how many a second were needed. */
   rife?: { ms: number; needs: number };
   timing?: Timing;
@@ -892,7 +985,13 @@ interface Result {
 
 /** What the tests found, by mode, and by mode and frame boost (`resultKey`). */
 const results = new Map<string, Result>();
-const resultKey = (tested: Mode): string => (boostOn() ? `${tested} ${boostFps()} ${boostHow()}` : tested);
+/** The frame boost chosen now, as a result names it. */
+const boostNow = (): Result["boost"] => (boostOn() ? { fps: boostFps(), how: boostHow(), ...(boostHow() === "rife" ? { motion: motionScale() } : {}) } : undefined);
+const boostKey = (boost: NonNullable<Result["boost"]>): string => `${boost.fps} ${boost.how}${boost.motion ? ` ${boost.motion}` : ""}`;
+const resultKey = (tested: Mode): string => {
+  const now = boostNow();
+  return now ? `${tested} ${boostKey(now)}` : tested;
+};
 
 /** The frames a second the screen should get with the boost on: the boost's, or the video's own if it has more, and never more than the screen shows. */
 function boostTarget(): number {
@@ -912,17 +1011,35 @@ function drawTimed(tested: Mode): void {
     drawNow(tested);
     return;
   }
-  const boost = gl!.frameBoost();
   const size = { width: video.videoWidth, height: video.videoHeight };
   if (boostHow() === "rife") {
-    drawPicture(boost.upload(video, size), tested);
+    // (RIFE's frame as the screen gets it: the frame warped at its full size by a motion of the size RIFE finds it at, here one of no motion.)
+    const rife = gl!.rifeBoost(RIFE_FRAMES);
+    if (!rife.holds(timedSerial)) timedSerial = rife.push(video, size);
+    const serial = rife.push(video, size);
+    drawPicture(rife.warp(timedSerial, serial, stillMotion(size)), tested);
+    timedSerial = serial;
     return;
   }
+  const boost = gl!.frameBoost();
   if (!boost.holds(timedSerial)) timedSerial = boost.push(video, size);
   // (The video stands still during the timing: the same frame twice costs the boost what two frames do.)
   const serial = boost.push(video, size);
   drawPicture(boost.draw(timedSerial, serial, 0.5), tested);
   timedSerial = serial;
+}
+
+/** A motion of none (RIFE's answer for a picture that stands still) at the size RIFE finds the motion at for a video of `size`: for the speed test. */
+let still: Motion | undefined;
+function stillMotion(size: Size): Motion {
+  const small = motionSize(size);
+  const [padWidth, padHeight] = [padded(small.width, RIFE_STEP), padded(small.height, RIFE_STEP)];
+  if (!still || still.width !== small.width || still.height !== small.height) {
+    const data = new Float32Array(5 * padWidth * padHeight);
+    data.fill(0.5, 4 * padWidth * padHeight); // (the mask: half of each)
+    still = { data, width: small.width, height: small.height, padWidth, padHeight };
+  }
+  return still;
 }
 
 /**
@@ -932,6 +1049,7 @@ function drawTimed(tested: Mode): void {
 async function playThrough(): Promise<Played | "unseen" | undefined> {
   const before = video.getVideoPlaybackQuality?.();
   Object.assign(counted, { on: true, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [], boostFrames: 0, boostOnTime: 0, boostFirst: -1, boostLast: -1 });
+  Object.assign(misses, { chip: 0, held: 0, late: 0, skipped: 0 });
   const looped = video.loop;
   video.loop = true;
   try {
@@ -974,7 +1092,7 @@ async function speedTest(tested: Mode): Promise<Result> {
   showCanvasFor(tested);
   const samples: number[] = [];
   let gettingReady = 0;
-  const boost = boostOn() ? { fps: boostFps(), how: boostHow() } : undefined;
+  const boost = boostNow();
   timing = true;
   try {
     for (let index = 0; index < WARM_UP + TIMED && !stopAsked; index++) {
@@ -1015,6 +1133,7 @@ async function speedTest(tested: Mode): Promise<Result> {
         return { mode: tested, boost, problem: `RIFE did not start: ${problemText(error)}` };
       }
       rifeTimes.length = 0;
+      rifeRunTimes.length = 0;
     }
     say(`${nameOf(tested)}: playing for ${PLAY_SECONDS} seconds and counting the frames...`);
     const seen = await playThrough();
@@ -1036,13 +1155,16 @@ const VERDICT_WORDS: Record<Verdict, string> = { smooth: "Smooth", tight: "Tight
 function showResults(): void {
   const body = element("results-body");
   const order = (result: Result): number => MODES.findIndex((entry) => entry.mode === result.mode) * 1000 + (result.boost?.fps ?? 0) + (result.boost?.how === "blend" ? 1 : 0);
-  const boostText = (result: Result): string => (result.boost ? ` + ${result.boost.fps} fps (${howName(result.boost.how)})` : "");
+  const motionText = (scale: number | undefined): string =>
+    scale === undefined || scale >= 1 ? "" : `, motion at ${({ 0.75: "3/4", 0.5: "1/2", 0.33: "1/3", 0.25: "1/4" } as Record<number, string>)[scale] ?? `${Math.round(scale * 100)}%`}`;
+  const boostText = (result: Result): string => (result.boost ? ` + ${result.boost.fps} fps (${howName(result.boost.how)}${motionText(result.boost.motion)})` : "");
   body.replaceChildren(
     ...[...results.values()].sort((a, b) => order(a) - order(b)).map((result) => {
       const each = result.mode;
       const name = `${nameOf(each)}${boostText(result)}`;
       const row = document.createElement("tr");
-      row.dataset.testid = result.boost ? `upscale-result-${each}-${result.boost.fps}-${result.boost.how}` : `upscale-result-${each}`;
+      const boostId = result.boost ? `-${result.boost.fps}-${result.boost.how}${result.boost.motion ? `-${result.boost.motion}` : ""}` : "";
+      row.dataset.testid = `upscale-result-${each}${boostId}`;
       const cell = (text: string, className = ""): HTMLTableCellElement => {
         const td = document.createElement("td");
         td.textContent = text;
@@ -1072,14 +1194,14 @@ function showResults(): void {
             : "not played (the video did not start)",
       );
       const word = cell(VERDICT_WORDS[result.verdict!], `verdict ${result.verdict!}`);
-      word.dataset.testid = result.boost ? `upscale-verdict-${each}-${result.boost.fps}-${result.boost.how}` : `upscale-verdict-${each}`;
+      word.dataset.testid = `upscale-verdict-${each}${boostId}`;
       return row;
     }),
   );
   element("results").hidden = results.size === 0;
   // (The summary is for the frame boost chosen now: the modes tested with it, or without one.)
-  const now = boostOn() ? { fps: boostFps(), how: boostHow() } : undefined;
-  const tested = MODES.map(({ mode: each }) => results.get(now ? `${each} ${now.fps} ${now.how}` : each)).filter((result): result is Result => Boolean(result?.verdict));
+  const now = boostNow();
+  const tested = MODES.map(({ mode: each }) => results.get(now ? `${each} ${boostKey(now)}` : each)).filter((result): result is Result => Boolean(result?.verdict));
   const height = `${Number(targetSelect.value)}p${now ? ` with ${boostName()}` : ""}`;
   // For each group, the heaviest mode that keeps up with room to spare (each group's modes are listed lightest first), and a heavier one that keeps
   // up barely.
@@ -1245,7 +1367,7 @@ async function snapshot(shot: Mode = mode, region?: { x: number; y: number; widt
  * For the page's own tests and the known-answer check by hand: the frame the boost makes `t` of the way from picture `first` to picture `second`
  * (addresses of two pictures of one size), by `how`, as a PNG (data: address). Uses a boost of its own: the playing video's is left alone.
  */
-async function interpolate(first: string, second: string, t: number, how: BoostHow = "rife"): Promise<string> {
+async function interpolate(first: string, second: string, t: number, how: BoostHow = "rife", motion?: number): Promise<string> {
   if (!gl) return glProblem || "WebGL 2 is not available";
   const pictures = await Promise.all(
     [first, second].map(async (address) => createImageBitmap(await (await fetch(address)).blob(), { colorSpaceConversion: "none", premultiplyAlpha: "none" })),
@@ -1255,7 +1377,7 @@ async function interpolate(first: string, second: string, t: number, how: BoostH
   const spare = gl.spareBoost();
   timing = true;
   try {
-    const made = await madeFrame(spare, pictures, size, t, how);
+    const made = await madeFrame(spare, pictures, size, t, how, motion);
     gl.drawFrom(made().texture, size, "off", size);
     const canvas = document.createElement("canvas");
     canvas.width = size.width;
@@ -1285,19 +1407,37 @@ const loadRife = (): Promise<Rife> => {
   return rifeNetwork;
 };
 
-/** RIFE ready for the video playing: its network loaded and a first frame of the video's size made (the browser builds its programs then, once). */
+/**
+ * RIFE cut before its last step (the same network and weights, its answer the motion and the mask: see the README there), for the live boost: its frames
+ * are warped here at the full size (frameBoost.ts `warp`), so the motion can be found on smaller pictures.
+ */
+const RIFE_MOTION_FILE = "/labs/upscale/rife/rife-v4.25-lite-motion.onnx";
+/** The size RIFE's sizes must divide by. */
+const RIFE_STEP = 64;
+let rifeMotionNetwork: Promise<Rife> | undefined;
+const loadRifeMotion = (): Promise<Rife> => {
+  rifeMotionNetwork ??= Rife.load(RIFE_MOTION_FILE, RIFE_STEP)
+    .then((network) => {
+      if (!network.givesMotion) throw new Error("The motion file is not RIFE's motion");
+      return network;
+    })
+    .catch((error: unknown) => {
+      rifeMotionNetwork = undefined;
+      throw error;
+    });
+  return rifeMotionNetwork;
+};
+
+/** RIFE ready for the video playing: its network loaded and a first frame of the size it finds the motion at made (the browser builds its programs then, once). */
 async function warmRife(): Promise<void> {
-  const network = await loadRife();
+  const network = await loadRifeMotion();
   if (!hasFrame()) return;
-  const size = { width: video.videoWidth, height: video.videoHeight };
-  const canvas = document.createElement("canvas");
-  canvas.width = size.width;
-  canvas.height = size.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true })!;
-  context.drawImage(video, 0, 0, size.width, size.height);
-  const picture = { data: context.getImageData(0, 0, size.width, size.height).data, width: size.width, height: size.height };
-  await network.make(picture, picture, 0.5);
-  rifeSizes.add(`${size.width}x${size.height}`);
+  const picture = smallPicture(video, { width: video.videoWidth, height: video.videoHeight });
+  // (A run of each number of moments it makes at a time: each is a program of its own.)
+  for (let batch = 1; batch <= (network.batches ? rifeBatch(picture) : 1); batch++) {
+    await network.motions(Array.from({ length: batch }, () => ({ a: picture, b: picture, t: 0.5 })));
+    rifeSizes.add(`${picture.width}x${picture.height}x${batch}`);
+  }
 }
 
 /** A picture's RGBA bytes (through a 2D canvas). */
@@ -1310,12 +1450,28 @@ function pixelsOf(picture: ImageBitmap): Picture {
   return { data: context.getImageData(0, 0, picture.width, picture.height).data, width: picture.width, height: picture.height };
 }
 
-/** Makes the frame `t` of the way from picture 0 to picture 1 by `how` in `spare`. Gives a function that draws it there (call it in the task that uses it). */
-async function madeFrame(spare: FrameBoost, pictures: ImageBitmap[], size: Size, t: number, how: BoostHow): Promise<() => { texture: WebGLTexture; size: Size }> {
+/**
+ * Makes the frame `t` of the way from picture 0 to picture 1 by `how` in `spare`. Gives a function that draws it there (call it in the task that uses it).
+ * With `motion` (RIFE only): as the live boost makes it, the motion found by the cut network on pictures that much smaller and the frame warped here
+ * (1: at the full size, which must give the stock network's own frame).
+ */
+async function madeFrame(spare: FrameBoost, pictures: ImageBitmap[], size: Size, t: number, how: BoostHow, motion?: number): Promise<() => { texture: WebGLTexture; size: Size }> {
   if (how === "blend") {
     const a = spare.push(pictures[0]!, size);
     const b = spare.push(pictures[1]!, size);
     return () => spare.draw(a, b, t);
+  }
+  if (motion !== undefined) {
+    const network = await loadRifeMotion();
+    const a = spare.push(pictures[0]!, size);
+    const b = spare.push(pictures[1]!, size);
+    if (t <= 0 || t >= 1) return () => spare.draw(a, b, t);
+    const small = { width: Math.max(8, Math.round(size.width * motion)), height: Math.max(8, Math.round(size.height * motion)) };
+    const started = performance.now();
+    const found = await network.motion(pictureAt(pictures[0]!, small), pictureAt(pictures[1]!, small), t);
+    lastRifeMs = performance.now() - started;
+    lastRifeTimes = { ...network.times };
+    return () => spare.warp(a, b, found);
   }
   const network = await loadRife();
   const started = performance.now();
@@ -1372,6 +1528,11 @@ const boost = (): object => ({
   lastPhase,
   rifeMs: rifeMs(),
   rifeJobs: rifeJobs.length,
+  motionScale: motionScale(),
+  rifeRunMs: median(rifeRunTimes),
+  rifeLastBatch,
+  misses: { ...misses },
+  counted: { frames: counted.boostFrames, onTime: counted.boostOnTime },
   lastRifeMs,
   lastRifeTimes,
 });
