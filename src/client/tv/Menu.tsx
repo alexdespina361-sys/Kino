@@ -16,6 +16,7 @@ import {
   PLAYBACK_SPEEDS,
   type CaptionSetting,
   type CaptionStyle,
+  type EnhanceMode,
   type PlayerState,
   type PlayerTrack,
   type SeasonGroup,
@@ -29,7 +30,7 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { useEpisodeDetails, type SeasonDetails } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
 import { CheckIcon, CloseIcon } from "../shared/icons";
-import { captionLabel, captionPresetName, captionTitle, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
+import { captionLabel, captionPresetName, captionTitle, enhanceName, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 
 /** `captions` is the subtitle look (three looks to pick), `captionsMore` its page of eight settings. */
@@ -82,6 +83,8 @@ interface MenuProps {
   onAudio: (track: number) => void;
   onSpeed: (rate: number) => void;
   onQuality: (level: number) => void;
+  /** A ✦ choice of the Quality list (see `PlayerState.enhance`), or "off". */
+  onEnhance: (mode: EnhanceMode) => void;
   onSource: (index: number) => void;
   onCaption: (changes: Partial<CaptionStyle>) => void;
   onKind: (kind: MenuKind) => void;
@@ -189,17 +192,33 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
   if (kind === "quality") {
     const quality = player.quality;
     const levels = [...(quality?.levels ?? [])].sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
+    const several = levels.length > 1;
+    const enhance = player.enhance;
     return [
       {
         title: t("player.quality"),
         options: [
-          ...(quality?.auto === false ? [] : [{ key: -1, label: t("player.auto"), active: quality?.current === -1, pick: () => p.onQuality(-1) }]),
-          ...levels.map((level) => ({
-            key: level.id,
-            label: level.label,
-            active: quality?.current === level.id,
-            pick: () => p.onQuality(level.id),
-          })),
+          ...(several && quality?.auto !== false ? [{ key: -1, label: t("player.auto"), active: quality?.current === -1, pick: () => p.onQuality(-1) }] : []),
+          ...(several
+            ? levels.map((level) => ({
+                key: level.id,
+                label: level.label,
+                active: quality?.current === level.id,
+                pick: () => p.onQuality(level.id),
+              }))
+            : []),
+          // What this screen adds to the picture, apart under its own line: what is downloaded stays as it is picked above.
+          ...(enhance && enhance.offers.length > 0
+            ? [
+                { key: "enhance", heading: t("player.enhanceHeading") },
+                ...(["off", ...enhance.offers] as const).map((mode) => ({
+                  key: `enhance-${mode}`,
+                  label: enhanceName(mode),
+                  active: enhance.current === mode,
+                  pick: () => p.onEnhance(mode),
+                })),
+              ]
+            : []),
         ],
       },
     ];

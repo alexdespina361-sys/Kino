@@ -1,4 +1,4 @@
-import { MAX_FOLLOWERS, localTrackLabel, type CaptionPreset, type CaptionSetting, type CaptionStyle, type ChangeNotice, type PlayerState, type ResolveStatus, type StatusWords } from "../../shared";
+import { MAX_FOLLOWERS, localTrackLabel, type CaptionPreset, type CaptionSetting, type CaptionStyle, type ChangeNotice, type EnhanceMode, type PlayerState, type ResolveStatus, type StatusWords } from "../../shared";
 import { getLanguage, hasKey, t, type Key } from "../i18n";
 
 /**
@@ -71,6 +71,24 @@ export function qualityName(quality: PlayerState["quality"]): string {
   if (quality.current !== -1) return label(quality.current) ?? "HD";
   const active = label(quality.active);
   return active ? `${t("player.auto")} · ${active}` : t("player.auto");
+}
+
+/** What a ✦ choice of the Quality list is called ("✦ 2K"); "off" is "✦ Off". */
+export const enhanceName = (mode: EnhanceMode): string =>
+  t(mode === "2k" ? "player.enhance2k" : mode === "2k60" ? "player.enhance2k60" : mode === "60" ? "player.enhance60" : "player.enhanceOff");
+
+/** The Quality button is there: the film comes in more than one quality, or this screen offers a ✦ choice for it. */
+export const hasPictureChoice = (player: Pick<PlayerState, "quality" | "enhance">): boolean =>
+  Boolean((player.quality && player.quality.levels.length > 1) || (player.enhance?.offers.length ?? 0) > 0);
+
+/**
+ * What the Quality button says: the quality, and the ✦ choice that is on ("Auto · 720p · ✦ 2K"). A film of one quality has only the ✦ choices to pick
+ * from: the one that is on ("✦ 2K"), else its own quality when it says one ("720p"), else "✦ Off" (there is no "Auto" to speak of).
+ */
+export function pictureName(player: Pick<PlayerState, "quality" | "enhance">): string {
+  const on = player.enhance && player.enhance.current !== "off" ? enhanceName(player.enhance.current) : "";
+  if (!player.quality || player.quality.levels.length <= 1) return on || player.quality?.levels[0]?.label || enhanceName("off");
+  return on ? `${qualityName(player.quality)} · ${on}` : qualityName(player.quality);
 }
 
 /** The words of "Watched" and "12 min left" on an episode list. */

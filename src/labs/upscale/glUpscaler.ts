@@ -178,6 +178,18 @@ export class GlUpscaler {
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.pixel);
   }
 
+  /** The graphics driver took the context away (it restarts, or the page has too many): nothing more can be drawn with it. */
+  lost(): boolean {
+    return this.gl.isContextLost();
+  }
+
+  /** Gives the context back at once (the player's ✦ 2K makes one for each film): the browser keeps only a few, and a dropped canvas holds its own until it is collected. */
+  dispose(): void {
+    if (this.fence) this.gl.deleteSync(this.fence);
+    this.fence = null;
+    this.gl.getExtension("WEBGL_lose_context")?.loseContext();
+  }
+
   /** The colour of one pixel of what was drawn last, x and y from the top left (for the test that checks a picture was drawn). */
   sample(x: number, y: number): [number, number, number] {
     const gl = this.gl;

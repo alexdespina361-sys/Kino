@@ -44,6 +44,7 @@ import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
 import { EdgeScrollHint } from "./EdgeScrollHint";
 import { PlayerEngine, PlayerError } from "./engine";
+import { useEnhance } from "../enhance/useEnhance";
 import { pickInRows } from "./dpad";
 import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, zoneOf, type PointerKind, type Side } from "./gestures";
 import { holdLine, resumeLine, sameHold, type Hold } from "./hold";
@@ -225,6 +226,8 @@ export function Tv() {
   const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? true);
   /** Sends the TV's current state to the phone again (set once the player exists). */
   const republishRef = useRef<() => void>(() => {});
+  /** The ✦ choices of this film and the one that is on, for the state (see `useEnhance` below). */
+  const enhanceRef = useRef<PlayerState["enhance"]>(undefined);
   // Whether the remembered choice has been applied to the video that is loaded now (once per video).
   const appliedRef = useRef({ subtitles: false, audio: false });
   const playerRef = useRef<PlayerState>(IDLE_STATE);
@@ -572,6 +575,24 @@ export function Tv() {
   };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
+  // The ✦ choices of the Quality list: the picture redrawn at 2K by this screen's own graphics chip, over the video (enhance/). The video plays as always under it.
+  const [enhanceHost, setEnhanceHost] = useState<HTMLDivElement | null>(null);
+  const enhance = useEnhance({
+    video: videoRef.current,
+    host: enhanceHost,
+    film: streamUrl,
+    player,
+    readable: engineRef.current?.pictureReadable() ?? false,
+    say: (text) => {
+      toastIdRef.current += 1;
+      setToast({ id: toastIdRef.current, text, notice: true });
+    },
+  });
+  enhanceRef.current = enhance.state;
+  const chooseEnhanceRef = useRef(enhance.choose);
+  chooseEnhanceRef.current = enhance.choose;
+  const enhanceKey = JSON.stringify(enhance.state ?? null);
+  useEffect(() => republishRef.current(), [enhanceKey]); // (the phone's list shows the ✦ choices this screen has, and the one that is on)
   useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
   useEffect(() => republishRef.current(), [ended, upNextCountdown, autoplay, following]); // the phone follows the end of the picture and the countdown to the next episode
 
@@ -655,7 +676,7 @@ export function Tv() {
     const video = videoRef.current!;
     video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
-      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
+      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, enhanceRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
     };
@@ -708,7 +729,7 @@ export function Tv() {
               // (What it has on goes along, for a server that has forgotten: see `TV_STATE.media`.)
               socketRef.current?.send({
                 type: "TV_STATE",
-                state: withTvState(engine.getState(), captionStyleRef.current, media, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current),
+                state: withTvState(engine.getState(), captionStyleRef.current, media, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, enhanceRef.current),
                 ...(media ? { media } : {}),
               });
             }
@@ -889,6 +910,7 @@ export function Tv() {
               setMenu(null);
               engine.stop();
             } else if (command.type === "SET_QUALITY") chooseQuality(command.level);
+            else if (command.type === "SET_ENHANCE") chooseEnhanceRef.current(command.mode);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
             else if (command.type === "SET_SUBTITLE_DELAY") chooseSubtitleDelay(command.delay);
             else if (command.type === "SET_SUBTITLE_SYNC") chooseSubtitleSync(command.on);
@@ -1631,6 +1653,8 @@ export function Tv() {
       }}
     >
       <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
+      {/* (Where ✦ 2K draws the picture over the video, when it is on: it takes no taps, which go to the video under it.) */}
+      <div ref={setEnhanceHost} className="tv-enhance-layer" style={{ display: showVideo ? "block" : "none" }} />
 
       {showVideo && !lookMenu && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
@@ -1836,6 +1860,7 @@ export function Tv() {
           onAudio={chooseAudio}
           onSpeed={(rate) => engineRef.current?.setPlaybackRate(rate)}
           onQuality={chooseQuality}
+          onEnhance={enhance.choose}
           onSource={(index) => {
             setMenu(null);
             chooseSource(index);
@@ -1897,7 +1922,8 @@ function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerStat
     .filter((index) => !isAutoQuality(all[index]!.quality))
     .map((index) => {
       const name = all[index]!.quality!;
-      const height = /^\d{3,4}p?$/.test(name) ? parseInt(name, 10) : undefined;
+      // (A file called "2K" or "4K" says its size too: the Quality list puts it first, and ✦ 2K is not offered for a film that has it.)
+      const height = /^\d{3,4}p?$/.test(name) ? parseInt(name, 10) : /^2k$/i.test(name) ? 1440 : /^4k$/i.test(name) ? 2160 : undefined;
       return { id: FILE_QUALITY + index, label: qualityLabel(name), ...(height ? { height } : {}) };
     });
   return {
@@ -1918,8 +1944,9 @@ interface Ending {
   upNext?: { seconds: number | null } | undefined;
 }
 
-const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending): PlayerState => ({
+const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending, enhance: PlayerState["enhance"]): PlayerState => ({
   ...state,
+  ...(enhance && state.state !== "idle" ? { enhance } : {}),
   ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
   ...(media && state.state !== "idle" ? pickersOf(media, sourceIndex) : {}),
   fullscreen: Boolean(document.fullscreenElement),

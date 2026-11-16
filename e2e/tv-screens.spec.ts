@@ -204,7 +204,7 @@ test.describe("the controls fit the screen", () => {
         return (top + bottom) / 2;
       }),
     );
-    expect(middles.length).toBe(9); // play, two skips, subtitles, speed, party, mute, full screen, stop
+    expect(middles.length).toBe(10); // play, two skips, subtitles, speed, quality (for the screen's ✦ 2K: e2e/enhance.spec.ts), party, mute, full screen, stop
     expect(Math.max(...middles) - Math.min(...middles)).toBeLessThan(6); // all on one line
     phone.close();
   });

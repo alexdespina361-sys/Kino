@@ -1,7 +1,23 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { CAPTION_SETTINGS, CAPTION_VALUES, MAX_FOLLOWERS, type ResolveStatus } from "../../shared";
 import { loadLanguage, setLanguage, t } from "../i18n";
-import { captionLabel, captionTitle, friendlyError, hasAudioChoice, noticeText, qualityName, resolveFailure, socketError, statusWords, syncWords, trackName, tracksTitle } from "./words";
+import {
+  captionLabel,
+  captionTitle,
+  enhanceName,
+  friendlyError,
+  hasAudioChoice,
+  hasPictureChoice,
+  noticeText,
+  pictureName,
+  qualityName,
+  resolveFailure,
+  socketError,
+  statusWords,
+  syncWords,
+  trackName,
+  tracksTitle,
+} from "./words";
 
 // (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
 await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
@@ -107,6 +123,33 @@ describe("qualityName", () => {
     expect(qualityName(undefined)).toBe("Auto");
     setLanguage("ro", false);
     expect(qualityName({ levels, current: -1, active: 2 })).toBe("Automată · 1080p");
+  });
+});
+
+describe("the Quality button with the ✦ choices", () => {
+  const levels = [
+    { id: 0, label: "480p" },
+    { id: 1, label: "720p" },
+  ];
+  const offers: ("2k" | "2k60" | "60")[] = ["2k"];
+
+  it("is there for a film of several qualities, or of one with a ✦ choice to pick", () => {
+    expect(hasPictureChoice({ quality: { levels, current: -1 } })).toBe(true);
+    expect(hasPictureChoice({ quality: { levels: [levels[0]!], current: 0 } })).toBe(false);
+    expect(hasPictureChoice({ enhance: { offers, current: "off" } })).toBe(true);
+    expect(hasPictureChoice({ enhance: { offers: [], current: "off" } })).toBe(false); // (a choice it no longer has: nothing to show)
+    expect(hasPictureChoice({})).toBe(false);
+  });
+
+  it("says the quality and the ✦ choice that is on, and for a film of one quality no 'Auto'", () => {
+    expect(pictureName({ quality: { levels, current: 1 }, enhance: { offers, current: "2k" } })).toBe("720p · ✦ 2K");
+    expect(pictureName({ quality: { levels, current: -1, active: 0 }, enhance: { offers, current: "off" } })).toBe("Auto · 480p");
+    expect(pictureName({ enhance: { offers, current: "2k" } })).toBe("✦ 2K");
+    expect(pictureName({ quality: { levels: [levels[1]!], current: 1 }, enhance: { offers, current: "off" } })).toBe("720p");
+    expect(pictureName({ enhance: { offers, current: "off" } })).toBe("✦ Off");
+    expect(enhanceName("2k60")).toBe("✦ 2K · 60 fps");
+    setLanguage("ro", false);
+    expect(pictureName({ enhance: { offers, current: "off" } })).toBe("✦ Oprit");
   });
 });
 
