@@ -18,6 +18,12 @@ const MAX_QUEUE_BYTES = 16 * 1024 * 1024;
 export const AHEAD_S = 120;
 /** Pieces of a film are this close to each other when they follow on (hls.js times them to the audio's own clock). */
 const GAP = 0.1;
+/**
+ * A hole this short between two pieces is no break in the sound: the window across it is heard with silence in it. The sound of a film
+ * the browser plays by itself is taken as it plays, and where the device was too busy to take some of it (a fraction of a second, now and
+ * then) its stretches have holes; the recogniser, which hears only windows with sound all through, skipped every window across one.
+ */
+const HOLE = 0.5;
 
 interface Stored {
   start: number;
@@ -101,7 +107,13 @@ export class AudioFeed {
 
   /** The sound that has gone to the voice detector, which can be asked for with `pcm`. */
   ranges(): Range[] {
-    return mergeRanges(this.store.map((s) => ({ from: s.start, to: s.end + GAP })));
+    const out: Range[] = [];
+    for (const { from, to } of mergeRanges(this.store.map((s) => ({ from: s.start, to: s.end + GAP })))) {
+      const last = out[out.length - 1];
+      if (last && from <= last.to - GAP + HOLE) last.to = Math.max(last.to, to);
+      else out.push({ from, to });
+    }
+    return out;
   }
 
   /** The sound from `from` to `to` as the recogniser wants it, or undefined when some of it is missing. */
@@ -112,7 +124,7 @@ export class AudioFeed {
     for (const piece of this.store) {
       if (piece.end <= from) continue;
       if (piece.start >= to) break;
-      if (piece.start > reached + GAP) return undefined;
+      if (piece.start > reached + HOLE) return undefined;
       const first = Math.round((Math.max(piece.start, from) - piece.start) * SAMPLE_RATE);
       const into = Math.round((Math.max(piece.start, from) - from) * SAMPLE_RATE);
       const count = Math.min(piece.samples.length - first, length - into);

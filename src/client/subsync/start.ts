@@ -64,6 +64,7 @@ export const startSync: SyncStarter = (film) => {
     // (A file timed well enough is offered for a Kino Official subtitle: see official.ts.)
     ...(film.offer ? { offer: film.offer } : {}),
     cores: navigator.hardwareConcurrency || 4,
+    ...(film.light ? { light: film.light } : {}),
     log: (message) => console.debug("[Kino subtitle sync]", message),
     recogniser: async (): Promise<Recogniser> => {
       // The model is 17 MB and needs a good deal of memory: a device that is short of it, or has fallen over on it before, does without.

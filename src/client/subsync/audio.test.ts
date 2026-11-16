@@ -131,6 +131,25 @@ describe("the film's sound arriving in pieces", () => {
     expect(window[SAMPLE_RATE * 2 + 1]).toBeCloseTo(0.02, 3);
   });
 
+  it("takes a short hole between pieces as no break, with silence in it (a film whose sound is taken as it plays, on a busy device)", async () => {
+    const { feed: f } = feed();
+    f.push(piece(1)); // (5 to 10 s)
+    f.push(piece(2, 10.3)); // (10.3 to 15.3 s)
+    f.push(piece(4)); // (20 to 25 s: a hole of 4.7 s)
+    await f.idle();
+    const ranges = f.ranges();
+    expect(ranges).toHaveLength(2);
+    expect(ranges[0]!.from).toBe(5);
+    expect(ranges[0]!.to).toBeCloseTo(15.4, 5);
+    expect(ranges[1]!.from).toBe(20);
+    const window = f.pcm(8, 13) as Float32Array;
+    expect(window).toBeDefined();
+    expect(window[Math.round(1 * SAMPLE_RATE)]).toBeCloseTo(0.01, 3);
+    expect(window[Math.round(2.15 * SAMPLE_RATE)]).toBe(0); // (10.15 s: in the hole)
+    expect(window[Math.round(3 * SAMPLE_RATE)]).toBeCloseTo(0.02, 3);
+    expect(f.pcm(14, 21)).toBeUndefined();
+  });
+
   it("has no window where a piece is missing", async () => {
     const { feed: f } = feed();
     f.push(piece(1));

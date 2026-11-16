@@ -113,6 +113,8 @@ interface Rigging {
   show?: (id: number) => void;
   /** The sound comes as the film plays, never ahead of the picture (a film the browser plays by itself). */
   live?: boolean;
+  /** The viewer chose the light way of timing. */
+  light?: boolean;
 }
 
 /** A film with its tracks, a player to feed the aligner, and the aligner. */
@@ -167,6 +169,7 @@ class Rig {
       ...(rigging.shared ? { shared: rigging.shared } : {}),
       ...(rigging.offer ? { offer: rigging.offer } : {}),
       ...(rigging.live ? { live: true } : {}),
+      ...(rigging.light ? { light: () => true } : {}),
       report: (status, moved) => {
         this.statuses.push(status);
         this.moves.push(moved);
@@ -250,6 +253,31 @@ describe("timing the subtitles of a film while it plays", () => {
     expect(rig.within(0, 0.5, 20, 250)).toBeGreaterThan(0.9);
     expect(rig.session.status()).toBe("synced");
     expect(rig.recogniserCalls).toBe(1);
+    rig.session.close();
+  });
+
+  it("in the light way, hears about one window in three once the timing is sure, and still puts the lines where they are said", { timeout: 120_000 }, async () => {
+    const heard: number[] = [];
+    const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, light: true, recogniser: async () => listener({ heard }) });
+    await rig.play(SECONDS);
+    expect(rig.within(0, 0.5, 20, 250)).toBeGreaterThan(0.9);
+    expect(rig.session.status()).toBe("synced");
+    // (Every window at first, until a solve with words makes the timing sure; then the ones on every third place of the grid.)
+    const after = heard.filter((from) => from >= 60);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((from) => Math.round(from / 15) % 3 === 0)).toBe(true);
+    expect(heard.length).toBeLessThan(SECONDS / 15 / 2);
+    // (The lines between keep the shift the words found, rather than be placed by the voice detector alone, which does worse: at most one or two such solves before the words came.)
+    expect(alignerStats.methods["silero"] ?? 0).toBeLessThanOrEqual(2);
+    rig.session.close();
+  });
+
+  it("in the light way, still hears every window of a film whose sound comes as it plays (one in three was worse there)", { timeout: 120_000 }, async () => {
+    const heard: number[] = [];
+    const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, light: true, live: true, recogniser: async () => listener({ heard }) });
+    await rig.play(SECONDS);
+    expect(rig.within(0, 0.5, 20, 250)).toBeGreaterThan(0.9);
+    expect(heard.some((from) => from >= 60 && Math.round(from / 15) % 3 !== 0)).toBe(true);
     rig.session.close();
   });
 

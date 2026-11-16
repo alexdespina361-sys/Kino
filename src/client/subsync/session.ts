@@ -75,6 +75,8 @@ export interface SessionDeps {
   offer?(id: number, offer: { duration: number; lines: OfficialOfferLine[] }, last: boolean): void;
   /** Processors of the device; the recogniser takes less of a small one. */
   cores?: number;
+  /** The viewer chose the light way of timing (asked each time: it can change while the film plays). See `LIGHT_EVERY`. */
+  light?(): boolean;
   now?(): number;
   log?(message: string): void;
 }
@@ -94,6 +96,12 @@ const SWITCH_WAIT_MS = 30_000;
 const IDLE_MS = 500;
 /** The furthest ahead of the picture the sound goes on to the voice detector for a slow recogniser (see the feed's `ahead`). */
 const MAX_AHEAD_S = 600;
+/**
+ * The light way of timing: once the track's timing is sure (`trusted`), the recogniser - most of what the aligner costs - hears one window
+ * in this many, and the solves place the lines between from the words around them and the voice detector. (Not the voice detector alone:
+ * on real sound that was worse than the file's own timing, seconds off and on a hard file ten.)
+ */
+const LIGHT_EVERY = 3;
 const TICK_MS = 500;
 /** Seconds either side of the picture with no line in them: a stretch with nothing to time (the status says so, see `status`). */
 const QUIET_AROUND = 10;
@@ -454,7 +462,7 @@ export class SyncSession {
    * move the lines the words placed (`absorb`).
    */
   private noteSound(): void {
-    if (this.listening() && this.wordsKeepUp()) return;
+    if (this.listening() && (this.wordsKeepUp() || this.lightAndSure())) return;
     const end = this.coveredEnd();
     for (const follow of this.solving()) {
       if (end - (this.queued.get(follow) ?? -Infinity) >= SOLVE_STEP) this.queue(follow, end);
@@ -469,6 +477,24 @@ export class SyncSession {
     const at = this.deps.video.currentTime;
     const reach = this.deps.live ? at - WINDOW : at + WINDOW;
     return this.solving().every((follow) => follow.coverage.some((range) => range.from - 5 <= at && range.to >= reach));
+  }
+
+  /**
+   * The light way, once words have made the timing sure: the recogniser hears one window in `LIGHT_EVERY`, and the lines between its solves
+   * keep the shift the words found (`carryShift`) rather than be placed by the voice detector alone, which on real sound is worse than that.
+   */
+  private lightAndSure(): boolean {
+    return this.listenEvery() > 1 && this.heardWords > 0;
+  }
+
+  /**
+   * One window in how many the recogniser hears: all of them, or in the light way once the timing is sure, one in `LIGHT_EVERY`. Not with
+   * sound that comes as the film plays (`live`): there a window is heard after it was played, the solve after it has no sound past the
+   * picture, and one in three was measured worse than every one (half a second off on average against a quarter); such a film's recogniser
+   * costs less to begin with (it waits for the sound), so it hears them all.
+   */
+  private listenEvery(): number {
+    return this.deps.light?.() && !this.deps.live && this.current?.trusted ? LIGHT_EVERY : 1;
   }
 
   private coveredEnd(): number {
@@ -594,7 +620,7 @@ export class SyncSession {
   /** Where the recogniser would listen next. What a believed timing places is not listened to again. */
   private nextToHear(): number | undefined {
     const done = this.current?.borrowed?.state === "trusted" ? mergeRanges([...this.heard, ...this.current.borrowed.ranges()]) : this.heard;
-    return nextWindow({ playhead: this.deps.video.currentTime, rate: this.deps.video.playbackRate || 1, covered: this.feed.ranges(), heard: done, speed: this.speed, ...(this.deps.live ? { live: true } : {}) });
+    return nextWindow({ playhead: this.deps.video.currentTime, rate: this.deps.video.playbackRate || 1, covered: this.feed.ranges(), heard: done, speed: this.speed, every: this.listenEvery(), ...(this.deps.live ? { live: true } : {}) });
   }
 
   private clock(): number {

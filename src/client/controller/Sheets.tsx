@@ -28,6 +28,7 @@ import {
   type PlayerState,
   type PlayerTrack,
   type SeriesInfo,
+  type SubtitleSyncMode,
   type WatchedEntry,
 } from "../../shared";
 import { languageNames, useSubtitleLists } from "../account/subtitles";
@@ -128,6 +129,7 @@ export function SourcesSheet({ player, onPick, onClose }: Close & { player: Play
 }
 
 const NO_TRACKS: PlayerTrack[] = [];
+const SYNC_MODES: readonly SubtitleSyncMode[] = ["full", "light"];
 
 export function TracksSheet({
   player,
@@ -136,6 +138,7 @@ export function TracksSheet({
   onStyle,
   onDelay,
   onSync,
+  onSyncMode,
   onClose,
 }: Close & {
   player: PlayerState;
@@ -145,6 +148,8 @@ export function TracksSheet({
   onDelay?: (delay: number) => void;
   /** Turn the timing of the subtitles to the sound, by itself, on or off. */
   onSync?: (on: boolean) => void;
+  /** The way it times them (see `SubtitleSyncModeSchema`). */
+  onSyncMode?: (mode: SubtitleSyncMode) => void;
 }) {
   useT();
   const subtitles = player.subtitles;
@@ -274,6 +279,25 @@ export function TracksSheet({
         <Rows>
           <Switch label={t("player.autoSyncLabel")} hint={syncHint} checked={sync !== "off"} onChange={onSync} testId="subtitle-sync" />
         </Rows>
+      )}
+      {/* (While it is on and can work on this film, the way it times them; a TV of an older build says nothing of it.) */}
+      {onSyncMode && sync !== undefined && sync !== "off" && sync !== "unavailable" && player.subtitleSyncMode && (
+        <>
+          <div className="cap-choices" role="listbox" aria-label={t("player.syncMode")} data-testid="subtitle-sync-mode">
+            <span className="cap-label" role="presentation">
+              {t("player.syncMode")}
+            </span>
+            {SYNC_MODES.map((mode) => {
+              const active = player.subtitleSyncMode === mode;
+              return (
+                <button key={mode} type="button" role="option" aria-selected={active} className={`cap-choice ${active ? "active" : ""}`} data-testid={`subtitle-sync-${mode}`} onClick={() => onSyncMode(mode)}>
+                  {t(mode === "light" ? "player.syncLight" : "player.syncFull")}
+                </button>
+              );
+            })}
+          </div>
+          <p className="muted small">{t("player.syncModeHelp")}</p>
+        </>
       )}
       {onDelay && (subtitles?.current ?? -1) !== -1 && (
         <div className="delay-row" data-testid="subtitle-delay">

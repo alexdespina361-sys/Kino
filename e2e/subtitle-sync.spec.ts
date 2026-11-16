@@ -65,7 +65,7 @@ function watchAssets(tv: Page): Map<string, number> {
   return assets;
 }
 
-const prefs = (tv: Page) => tv.evaluate(() => JSON.parse(localStorage.getItem("tv.prefs") ?? "{}") as { subtitleSync?: boolean });
+const prefs = (tv: Page) => tv.evaluate(() => JSON.parse(localStorage.getItem("tv.prefs") ?? "{}") as { subtitleSync?: boolean; subtitleSyncMode?: string });
 
 test.describe("the subtitle aligner", () => {
   test("starts by itself with a film that plays through hls.js, and says so", async ({ browser }) => {
@@ -209,6 +209,10 @@ test.describe("the subtitle aligner", () => {
     expect(await tv.evaluate(() => document.querySelector("video")!.crossOrigin)).toBeNull();
     expect(origins.length).toBeGreaterThan(0);
     expect(origins.every((origin) => origin === undefined)).toBe(true);
+    // (With nothing it can time here, the TV's menu says so, and does not offer the way it would time them either.)
+    await tv.getByTestId("tv-audio-sub-btn").click();
+    await expect(tv.locator("[data-key='sub-sync']")).toBeVisible();
+    await expect(tv.locator("[data-key='sub-sync-mode']")).toHaveCount(0);
     phone.close();
   });
 
@@ -243,6 +247,35 @@ test.describe("the subtitle aligner", () => {
     await phone.getByTestId("chip-tracks").click();
     await phone.getByTestId("subtitle-0").click();
     await expect(phone.getByTestId("subtitle-sync")).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("the way it times them is chosen from the phone or the TV's menu (Thorough, or Light), and kept; with it off there is nothing to choose", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await loadOnTv(phone, film("Tone"));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+
+    await phone.getByTestId("chip-tracks").click();
+    await phone.getByTestId("subtitle-0").click(); // English
+    await expect(phone.getByTestId("subtitle-sync-full")).toHaveAttribute("aria-selected", "true");
+    await phone.getByTestId("subtitle-sync-light").click();
+    await expect(phone.getByTestId("subtitle-sync-light")).toHaveAttribute("aria-selected", "true");
+    await expect.poll(async () => (await prefs(tv)).subtitleSyncMode).toBe("light");
+
+    // The TV's own menu says the same, and goes back to Thorough with OK.
+    await tv.getByTestId("tv-audio-sub-btn").click();
+    const row = tv.locator("[data-key='sub-sync-mode']");
+    await expect(row).toContainText("Light");
+    await row.click();
+    await expect(row).toContainText("Thorough");
+    await expect.poll(async () => (await prefs(tv)).subtitleSyncMode).toBe("full");
+    await expect(phone.getByTestId("subtitle-sync-full")).toHaveAttribute("aria-selected", "true"); // (the phone was told)
+
+    // Off: no way of timing to choose, on either.
+    await phone.getByTestId("subtitle-sync").click();
+    await expect(phone.getByTestId("subtitle-sync-mode")).toHaveCount(0);
+    await expect(row).toHaveCount(0);
+    await expect(tv.locator("[data-key='sub-sync']")).toContainText("Off");
   });
 });
 
