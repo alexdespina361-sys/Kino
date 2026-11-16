@@ -79,8 +79,8 @@ export type FriendChoices = { [K in FriendSetting]: boolean };
  * What a profile has chosen about friends, with the default for each thing it has not.
  *
  * Friends are on for everybody (the owner, 15 Nov 2026: "remove the ratings and friends and turn it on for all accounts"): the old master switch `friends` is not
- * read to say whether they are, and only `friendsOff` turns them off (nothing sets it yet: it is kept for the child profile). What a profile chose before is kept
- * and is not undone behind its back:
+ * read to say whether they are: they are off only for a child's profile (`child`) and where `friendsOff` says so (nothing sets that now). Turning a child's profile
+ * back into an ordinary one brings friends back as they were: nothing about them was written. What a profile chose before is kept and is not undone behind its back:
  *  - one that had turned friends off (`friends: false`) does not share what it watches, whatever `friendsGive` says, until it turns that on again;
  *  - one that had turned ratings off (`ratings: false`) does not show its ratings to friends until it turns that on again.
  * (`friendSwitchWrites` writes what turning one of them on again takes. Nothing here writes or deletes a setting: a profile that never touches a switch keeps what it had.)
@@ -89,7 +89,7 @@ export function friendChoices(settings: Settings): FriendChoices {
   const choice = (key: FriendSetting): boolean => settings[key] ?? FRIEND_DEFAULTS[key];
   const gives = settings.friends === false ? false : choice("friendsGive");
   return {
-    friends: settings.friendsOff !== true,
+    friends: settings.friendsOff !== true && settings.child !== true,
     friendsLists: choice("friendsLists"),
     friendsRatings: settings.ratings === false ? false : choice("friendsRatings"),
     friendsGive: gives,

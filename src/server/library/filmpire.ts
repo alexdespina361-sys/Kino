@@ -253,10 +253,15 @@ const TmdbItemSchema = z.object({
  * else is a film or a show. Said by `LibraryItem.section` only when it is a Cartoon or an Anime.
  */
 function animationOf(doc: z.infer<typeof TmdbItemSchema>): Extract<LibrarySection, "cartoon" | "anime"> | undefined {
-  const animated = doc.genre_ids?.includes(ANIMATION_GENRE) || doc.genres?.some((genre) => genre.id === ANIMATION_GENRE);
-  if (!animated) return undefined;
+  if (!hasGenre(doc, ANIMATION_GENRE)) return undefined;
   return doc.original_language === "ja" || doc.origin_country?.includes("JP") ? "anime" : "cartoon";
 }
+
+const hasGenre = (doc: z.infer<typeof TmdbItemSchema>, genre: number): boolean => Boolean(doc.genre_ids?.includes(genre) || doc.genres?.some((each) => each.id === genre));
+
+/** TMDB's Family (films and shows) and Kids (shows) genres: animation filed under one of them is for children (`LibraryItem.kids`, the child profile's rule). */
+const CHILDREN_GENRES = [10751, 10762] as const;
+const forKids = (doc: z.infer<typeof TmdbItemSchema>): boolean => CHILDREN_GENRES.some((genre) => hasGenre(doc, genre));
 
 /** How many titles of a page of TMDB's answers are taken: a page has twenty, and whatever more one says it has is not looked at (each title of a search's first page is checked for video). */
 export const PAGE_TITLES = 20;
@@ -382,6 +387,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
     ...(section ? { section } : {}),
     url,
     ...(hasRoDub ? { hasRoDub: true } : {}),
+    ...(section && forKids(doc) ? { kids: true as const } : {}), // (said of animation only: what a child profile may see, see `forChildren`)
   };
 }
 

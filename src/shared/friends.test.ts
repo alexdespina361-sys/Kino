@@ -52,7 +52,10 @@ describe("the switches", () => {
     expect(SETTING_SCHEMAS.friendsOff).toBeDefined();
     expect(friendChoices({})).toEqual({ friends: true, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true, friendsMessages: true });
     expect(friendChoices({ friends: false }).friends).toBe(true); // (the old master switch is not read for it)
-    expect(friendChoices({ friendsOff: true }).friends).toBe(false); // (the one way left to turn them off, for the child profile to come)
+    expect(friendChoices({ friendsOff: true }).friends).toBe(false);
+    // A child's profile has no friends; made an ordinary one again it has them back as they were (nothing about them was written).
+    expect(friendChoices({ child: true, friendsGive: true }).friends).toBe(false);
+    expect(friendChoices({ child: false, friendsGive: true })).toMatchObject({ friends: true, friendsGive: true });
     expect(FRIEND_DEFAULTS.friends).toBe(false);
   });
 

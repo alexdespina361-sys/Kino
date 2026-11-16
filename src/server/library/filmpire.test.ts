@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LibraryRowSchema } from "../../shared";
+import { forChildren, LibraryItemSchema, LibraryRowSchema } from "../../shared";
 import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, MAX_PRELOADED_SEASONS, PAGE_TITLES, Slots, probePlayback, type FilmpireCategory, type ProbeRecord } from "./filmpire";
 import type { LibrarySource } from "./library";
 import { sectionOfCategory } from "./shelves";
@@ -315,6 +315,30 @@ describe("filmpireSource sections", () => {
         ["Anime Show", "series", "anime"],
       ].sort(),
     );
+  });
+
+  it("says `kids` of animation that TMDB files under Family or Kids, and of nothing else: what a child profile may see", async () => {
+    const FAMILY = 10751;
+    const KIDS = 10762;
+    const docs = [
+      film(20, "Family Toon", { genre_ids: [ANIMATION, FAMILY], original_language: "en" }),
+      show(21, "Kids Toon Show", { genre_ids: [ANIMATION, KIDS], original_language: "en", origin_country: ["US"] }),
+      show(22, "Grown-up Toon Show", { genre_ids: [ANIMATION, 35], original_language: "en", origin_country: ["US"] }), // (Family Guy, South Park)
+      film(23, "Family Film", { genre_ids: [FAMILY, 35], original_language: "en" }), // (not animated: no child profile's)
+      show(24, "Kids Anime", { genre_ids: [ANIMATION, KIDS], original_language: "ja", origin_country: ["JP"] }), // (an anime: said, but not a cartoon)
+      // (a title's own page at TMDB says its genres as objects)
+      { id: 25, title: "Page Toon", release_date: "2001-01-01", genres: [{ id: ANIMATION, name: "Animation" }, { id: FAMILY, name: "Family" }], original_language: "fr" },
+    ];
+    const results = await filmpireSource({ fetch: vi.fn(async () => json({ results: docs })) as never }).search!("anything");
+    expect(Object.fromEntries(results.map((one) => [one.title, [one.section, one.kids, forChildren(one)]]))).toEqual({
+      "Family Toon": ["cartoon", true, true],
+      "Kids Toon Show": ["cartoon", true, true],
+      "Grown-up Toon Show": ["cartoon", undefined, false],
+      "Family Film": [undefined, undefined, false],
+      "Kids Anime": ["anime", true, false],
+      "Page Toon": ["cartoon", true, true],
+    });
+    for (const one of results) expect(LibraryItemSchema.safeParse(one).data, one.title).toEqual(one); // (the flag goes through the schema the client reads with)
   });
 
   it("puts only the titles of a category's own section in its row: the film that is a cartoon is not among the movies, nor the anime among the cartoons", async () => {
