@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z, type ZodError } from "zod";
 import {
+  ChildPinChangeSchema,
+  ChildPinSchema,
   LinkPollSchema,
   LinkStartSchema,
   LoginSchema,
@@ -56,6 +58,7 @@ export const signUpsNow = (registration: Registration, accounts: number, maxAcco
 
 const PasswordChangeSchema = z.object({ current: z.string().max(200), next: NewPasswordSchema });
 const ConfirmSchema = z.object({ password: z.string().max(200) });
+const PinCheckSchema = z.object({ pin: ChildPinSchema });
 const CreateProfileSchema = NewProfileSchema.partial({ avatar: true });
 
 /** The messages the forms know how to word; anything else the person typed wrong is just "invalid". */
@@ -97,6 +100,8 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const linkPollByIp = new RateLimiter(900, MINUTE);
   const linkLookupByAccount = new RateLimiter(30, 5 * MINUTE);
   const syncByAccount = new RateLimiter(600, MINUTE);
+  // Four digits are 10,000 tries: a few wrong ones per account, then a wait (the visitor's wrong ones count where its wrong passwords do).
+  const wrongPinByAccount = new RateLimiter(5, 15 * MINUTE);
 
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -123,7 +128,9 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const meOf = (accountId: string): Me => {
     const account = store.getAccount(accountId);
     const google = account?.google ? { google: true as const, ...(account.google.only ? { googleOnly: true as const } : {}) } : {};
-    return { account: { id: account?.id ?? accountId, email: account?.email ?? "", ...google }, profiles: store.profilesOf(accountId) };
+    // (Only that there is a PIN: never the PIN, nor its hash.)
+    const pin = account?.childPin ? { childPin: true as const } : {};
+    return { account: { id: account?.id ?? accountId, email: account?.email ?? "", ...google, ...pin }, profiles: store.profilesOf(accountId) };
   };
   const registrationNow = (): Registration => signUpsNow(registration, store.countAccounts(), maxAccounts);
 
@@ -151,6 +158,21 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     }
     failedByEmail.reset(email);
     return { right: true, wait: 0 };
+  }
+
+  /** Check the child-profile PIN, counting a wrong one against the account and the visitor. `none`: the account has no PIN (any is right, and nothing is counted). */
+  async function pinIsRight(accountId: string, ip: string, pin: string): Promise<{ right: boolean; wait: number; none?: true }> {
+    const hash = store.getAccount(accountId)?.childPin;
+    if (!hash) return { right: true, wait: 0, none: true };
+    const wait = Math.max(wrongPinByAccount.wait(accountId), failedByIp.wait(ip));
+    if (wait > 0) return { right: false, wait };
+    if (await verifyPassword(pin, hash)) {
+      wrongPinByAccount.reset(accountId);
+      return { right: true, wait: 0 };
+    }
+    wrongPinByAccount.hit(accountId);
+    failedByIp.hit(ip);
+    return { right: false, wait: 0 };
   }
 
   /* ------------------------------ signing up and in ------------------------------ */
@@ -231,6 +253,50 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     store.deleteAccount(account.id);
     signOutCookie(request, reply);
     return reply.code(204).send();
+  });
+
+  /* ------------------------------ the PIN of a child's profile ------------------------------ */
+
+  // A screen whose profile is a child's asks for the PIN before it is left (see CHILD_PIN_LENGTH). The screen does the asking; this says whether it was right.
+  app.post("/api/me/child-pin/check", async (request, reply) => {
+    const auth = authenticate(request);
+    if (!auth) return signedOut(reply);
+    const parsed = PinCheckSchema.safeParse(request.body);
+    if (!parsed.success) return invalid(reply, parsed.error);
+    const { right, wait, none } = await pinIsRight(auth.accountId, request.ip, parsed.data.pin);
+    if (none) return reply.code(404).send({ error: "no_pin" }); // (taken off on another screen: there is nothing to ask)
+    if (wait > 0) return tooMany(reply, wait);
+    return right ? reply.code(204).send() : reply.code(401).send({ error: "wrong_pin" });
+  });
+
+  /** Setting the PIN, changing it, or taking it off. Answers with the account as it is now. */
+  app.post("/api/me/child-pin", async (request, reply) => {
+    const auth = authenticate(request);
+    if (!auth) return signedOut(reply);
+    const parsed = ChildPinChangeSchema.safeParse(request.body);
+    if (!parsed.success) return invalid(reply, parsed.error);
+    const account = store.getAccount(auth.accountId);
+    if (!account) return signedOut(reply);
+    const { next, pin, password } = parsed.data;
+    if (account.childPin) {
+      // One that is set is changed or taken off only by whoever knows it, or the account's password, or (an account made with Google, which has no password
+      // anybody knows) a Google confirmation on this device a moment ago, which is then used up.
+      if (pin !== undefined) {
+        const checked = await pinIsRight(account.id, request.ip, pin);
+        if (checked.wait > 0) return tooMany(reply, checked.wait);
+        if (!checked.right) return reply.code(401).send({ error: "wrong_pin" });
+      } else if (password !== undefined && !account.google?.only) {
+        const checked = await passwordIsRight(account.email, request.ip, password);
+        if (checked.wait > 0) return tooMany(reply, checked.wait);
+        if (!checked.right) return reply.code(401).send({ error: "invalid_credentials" });
+      } else if (account.google?.only && store.confirmedNow(auth.sessionId)) {
+        store.spendConfirmation(auth.sessionId);
+      } else {
+        return reply.code(403).send({ error: account.google?.only ? "reauth_required" : "pin_required" });
+      }
+    }
+    store.setChildPin(account.id, next === null ? undefined : await hashPassword(next, options.passwordCost));
+    return reply.send(meOf(account.id));
   });
 
   /* ------------------------------ devices ------------------------------ */

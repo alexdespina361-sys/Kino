@@ -211,6 +211,79 @@ describe("signing up and in", () => {
   });
 });
 
+describe("the PIN of a child's profile", () => {
+  it("is set by the account, said to be there (never what it is), and checked", async () => {
+    const { app, store } = await start();
+    const { client, me } = await signedUp(app);
+    expect(me.account.childPin).toBeUndefined();
+    expect((await client.post("/api/me/child-pin/check", { pin: "1234" })).data).toEqual({ error: "no_pin" });
+
+    expect((await client.post("/api/me/child-pin", { next: "12a4" })).statusCode).toBe(400);
+    expect((await client.post("/api/me/child-pin", { next: "12345" })).statusCode).toBe(400);
+    const set = await client.post("/api/me/child-pin", { next: "2580" });
+    expect(set.statusCode).toBe(200);
+    expect(set.data.account.childPin).toBe(true);
+    expect(JSON.stringify(set.data)).not.toMatch(/2580|scrypt/);
+    expect((await client.get("/api/me")).data.me.account.childPin).toBe(true);
+    expect(store.getAccount(me.account.id)?.childPin).toMatch(/^scrypt\$/); // (kept as a hash, as a password is)
+
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204);
+    expect((await client.post("/api/me/child-pin/check", { pin: "0000" })).data).toEqual({ error: "wrong_pin" });
+    expect((await new Client(app).post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(401); // (signed out)
+  });
+
+  it("is slowed after five wrong tries, the right one too, and a right one forgives the wrong ones before it", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    for (const wrong of ["0000", "1111", "2222", "3333"]) expect((await client.post("/api/me/child-pin/check", { pin: wrong })).statusCode).toBe(401);
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204); // (four wrong, then right: forgiven)
+    for (const wrong of ["0000", "1111", "2222", "3333", "4444"]) expect((await client.post("/api/me/child-pin/check", { pin: wrong })).statusCode).toBe(401);
+    const slowed = await client.post("/api/me/child-pin/check", { pin: "2580" });
+    expect(slowed.statusCode).toBe(429);
+    expect(slowed.headers["retry-after"]).toBeDefined();
+    // (Another device of the same account is slowed as well: the count is the account's.)
+    const tv = new Client(app);
+    await tv.post("/api/auth/login", credentials);
+    expect((await tv.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(429);
+    // (So is changing it by the PIN; the password still works.)
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(429);
+    expect((await client.post("/api/me/child-pin", { next: "1357", password: credentials.password })).statusCode).toBe(200);
+  });
+
+  it("is changed or taken off only with the PIN or the password", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    expect((await client.post("/api/me/child-pin", { next: "1357" })).data).toEqual({ error: "pin_required" });
+    expect((await client.post("/api/me/child-pin", { next: null })).statusCode).toBe(403);
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "9999" })).data).toEqual({ error: "wrong_pin" });
+    expect((await client.post("/api/me/child-pin", { next: null, password: "not it" })).data).toEqual({ error: "invalid_credentials" });
+
+    expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(200);
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(401);
+    expect((await client.post("/api/me/child-pin/check", { pin: "1357" })).statusCode).toBe(204);
+
+    const off = await client.post("/api/me/child-pin", { next: null, password: credentials.password });
+    expect(off.statusCode).toBe(200);
+    expect(off.data.account.childPin).toBeUndefined();
+    expect((await client.post("/api/me/child-pin/check", { pin: "1357" })).data).toEqual({ error: "no_pin" });
+  });
+
+  it("is kept between runs", async () => {
+    const persistence = new MemoryPersistence();
+    const { app, store } = await start({ persistence });
+    const { client } = await signedUp(app);
+    await client.post("/api/me/child-pin", { next: "2580" });
+    await store.flush();
+    const again = await start({ persistence });
+    const tv = new Client(again.app);
+    await tv.post("/api/auth/login", credentials);
+    expect((await tv.get("/api/me")).data.me.account.childPin).toBe(true);
+    expect((await tv.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204);
+  });
+});
+
 describe("the account", () => {
   it("changes the password, signs the other devices out, and keeps this one", async () => {
     const { app } = await start();

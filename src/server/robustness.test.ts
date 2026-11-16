@@ -427,6 +427,8 @@ const SPECS: Record<string, Spec> = {
   "POST /api/auth/logout": { fresh: true, ok: [204] },
   "POST /api/me/password": { fresh: true, body: (w) => ({ current: w.password, next: "another-password" }), ok: [204] },
   "POST /api/me/delete": { fresh: true, body: (w) => ({ password: w.password }), ok: [204] },
+  "POST /api/me/child-pin": { fresh: true, body: () => ({ next: "1234" }) },
+  "POST /api/me/child-pin/check": { body: () => ({ pin: "1234" }), ok: [404] }, // (the account asking has no PIN)
   // (The start sends the browser to Google; the way back is given a state that no flow has, which is a way back that went wrong: both answer with a redirect.)
   "GET /api/auth/google/start": { query: () => ({ device: "remote", next: "/", mode: "signin" }) },
   "GET /api/auth/google/callback": { query: () => ({ state: "s".repeat(43), code: "4/0Asweep" }) },

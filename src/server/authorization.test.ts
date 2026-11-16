@@ -380,6 +380,9 @@ const ROWS: Row[] = [
   row("GET /api/me", {}, { anon: (reply) => reply.statusCode === 200 && reply.data.me === null }),
   row("POST /api/me/password", {}, { secret: true, body: (_, as) => ({ current: as.password, next: "a new password" }) }),
   row("POST /api/me/delete", {}, { secret: true, body: (_, as) => ({ password: as.password }) }),
+  row("POST /api/me/child-pin", {}, { body: () => ({ next: "1234" }) }),
+  // (The owner has no PIN to check: "no_pin" is its answer, and anybody else's too, about their own account.)
+  row("POST /api/me/child-pin/check", {}, { body: () => ({ pin: "1234" }), ok: (reply) => [204, 404].includes(reply.statusCode) }),
   row("POST /api/auth/logout", {}, { anon: (reply) => reply.statusCode === 204 }),
   // the devices it is signed in on
   row("GET /api/sessions"),

@@ -369,6 +369,25 @@ describe("signing in with Google", () => {
     expect(store.countAccounts()).toBe(1);
   });
 
+  it("takes the child-profile PIN off an account made with Google after a fresh Google confirmation, and uses the proof up (it cannot then delete the account)", async () => {
+    const { app } = await site();
+    const browser = new Browser(app);
+    await viaGoogle(browser);
+    expect((await browser.post("/api/me/child-pin", { next: "2580" })).statusCode).toBe(200);
+    // (No password anybody knows: an empty one, or any, is no proof.)
+    expect((await browser.post("/api/me/child-pin", { next: null, password: "" })).data).toEqual({ error: "reauth_required" });
+    expect((await browser.post("/api/me/child-pin", { next: null })).statusCode).toBe(403);
+
+    await viaGoogle(browser, { mode: "reauth" });
+    const off = await browser.post("/api/me/child-pin", { next: null });
+    expect(off.statusCode).toBe(200);
+    expect(off.data.account.childPin).toBeUndefined();
+    expect((await browser.post("/api/me/delete", {})).data).toEqual({ error: "reauth_required" }); // (the proof was for the PIN)
+    // (The PIN itself still works as a proof, as for anybody.)
+    await browser.post("/api/me/child-pin", { next: "1357" });
+    expect((await browser.post("/api/me/child-pin", { next: "2468", pin: "1357" })).statusCode).toBe(200);
+  });
+
   it("the proof of signing in again lasts five minutes, on that device only", async () => {
     const { app } = await site();
     const phone = new Browser(app);

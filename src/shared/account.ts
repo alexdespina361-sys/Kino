@@ -60,9 +60,27 @@ export const ProfilePatchSchema = NewProfileSchema.partial();
 
 /**
  * `google`: a Google account signs in to this one. `googleOnly`: the account was made by signing in with Google, so that is the only way in: its name was made up
- * by the server (it is shown as nobody's) and it has no password anybody knows.
+ * by the server (it is shown as nobody's) and it has no password anybody knows. `childPin`: the account has a PIN that is asked before a child's profile is left
+ * on its screens (see `CHILD_PIN_LENGTH`); the PIN itself never leaves the server, only that there is one.
  */
-export const AccountSchema = z.object({ id: z.string().max(60), email: z.string().max(254), google: z.literal(true).optional(), googleOnly: z.literal(true).optional() });
+export const AccountSchema = z.object({
+  id: z.string().max(60),
+  email: z.string().max(254),
+  google: z.literal(true).optional(),
+  googleOnly: z.literal(true).optional(),
+  childPin: z.literal(true).optional(),
+});
+
+/**
+ * The PIN of a child's profile (the owner, 16 Nov 2026): four digits, asked on a screen whose profile is a child's before it is left (another profile, signing out,
+ * the profiles changed, the account's devices and security) or made an ordinary profile again. It is a lock of the app on the account's own screens, not of the
+ * server: a child who signs in to the account on another device is not stopped by it.
+ */
+export const CHILD_PIN_LENGTH = 4;
+export const ChildPinSchema = z.string().regex(/^\d{4}$/);
+/** Setting the PIN (`next`), changing it, or taking it off (`next: null`). Once there is one, the current PIN, the password, or a fresh Google confirmation says it may be. */
+export const ChildPinChangeSchema = z.object({ next: ChildPinSchema.nullable(), pin: ChildPinSchema.optional(), password: z.string().max(200).optional() });
+export type ChildPinChange = z.infer<typeof ChildPinChangeSchema>;
 export const MeSchema = z.object({ account: AccountSchema, profiles: z.array(ProfileSchema).max(MAX_PROFILES) });
 export type Me = z.infer<typeof MeSchema>;
 
