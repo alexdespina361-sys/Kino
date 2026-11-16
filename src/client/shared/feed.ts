@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { itemsOf, LibraryMoreSchema, LibraryRowsSchema, TitleIndex, type LibraryItem, type LibraryRow, type LibrarySection } from "../../shared";
+import { spreadOf } from "./spread";
 
 /**
  * The library as it grows while a page is scrolled: the rows the server lists first (`base`), the rows it brings after them a few at a
@@ -113,7 +114,8 @@ export function freshShelves(shown: readonly LibraryRow[], shelves: readonly Lib
  * keeps those of its section: a screen decides that, as it knows what its page is made of).
  */
 export function pageRows(data: FeedData, section: LibrarySection | undefined, cap = ROW_CAP): LibraryRow[] {
-  const base = data.base.filter((row) => row.items.length > 0);
+  // (The first rows with their titles spread, so the same few do not open every one of them: see spread.ts.)
+  const base = spreadOf(data.base).filter((row) => row.items.length > 0);
   const shelves = freshShelves(base, data.shelves[shelfKey(section)].rows);
   return [...base, ...shelves].map((row) => withMore(row, data.more[row.id]?.items, cap));
 }
