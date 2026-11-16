@@ -739,9 +739,12 @@
 /* The places are three equal cards as wide as the head over them (a guest's two take two of the three): on a wide computer screen they stood at the left of an empty half. */
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: calc(var(--em) * 1); padding-right: var(--edge-r); }
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-tile-place { width: auto; }
+/* (At least that tall, and taller when the words need it: at a fixed height a name over a note of two lines was squeezed, and the bottom of its letters cut
+   - "My ratings", the owner's report of 15 Nov. The cards of a row stay one height: the row stretches them to the tallest.) */
 :root[data-ui="polish"] .tv-tile-place {
   width: calc(var(--em) * 27);
-  height: calc(var(--em) * 13.6);
+  height: auto;
+  min-height: calc(var(--em) * 13.6);
   justify-content: flex-start;
   gap: calc(var(--em) * 0.35);
   padding: calc(var(--em) * 7.4) calc(var(--em) * 1.8) calc(var(--em) * 1.6);
@@ -764,8 +767,9 @@
   color: var(--text-1);
   font-size: calc(var(--em) * 2.4);
 }
-:root[data-ui="polish"] .tv-tile-place .tv-category-name { font-size: var(--fs-4); font-weight: 700; }
-:root[data-ui="polish"] .tv-tile-place .tv-category-count { display: -webkit-box; overflow: hidden; font-size: var(--fs-2); -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+:root[data-ui="polish"] .tv-tile-place .tv-category-name { flex-shrink: 0; font-size: var(--fs-4); font-weight: 700; }
+/* (Three lines at most: a narrow card, or Italian, needs a third for what a place is for; the card grows to it.) */
+:root[data-ui="polish"] .tv-tile-place .tv-category-count { flex-shrink: 0; display: -webkit-box; overflow: hidden; font-size: var(--fs-2); -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 :root[data-ui="polish"] .tv-tile-place:focus { box-shadow: var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-tile-place:focus .tv-place-icon { background: var(--fill-3); }
 /* Friends (see tv/tv.css): one quiet surface each, the picture or a glyph first; adding one is the card drawn in outline, its glyph in the accent. */
@@ -1030,7 +1034,7 @@
   :root[data-ui="polish"] .tv-profile-actions { flex-basis: 100%; margin-top: 0; }
   :root[data-ui="polish"] .tv-profile-avatar { font-size: calc(var(--em) * 6.4); }
   :root[data-ui="polish"] .tv-profile-guest { width: calc(var(--em) * 6.4); height: calc(var(--em) * 6.4); font-size: calc(var(--em) * 2.8); }
-  :root[data-ui="polish"] .tv-tile-place { width: calc(var(--em) * 21); height: calc(var(--em) * 12); padding: calc(var(--em) * 5.8) calc(var(--em) * 1.4) calc(var(--em) * 1.2); }
+  :root[data-ui="polish"] .tv-tile-place { width: calc(var(--em) * 21); height: auto; min-height: calc(var(--em) * 12); padding: calc(var(--em) * 5.8) calc(var(--em) * 1.4) calc(var(--em) * 1.2); }
   :root[data-ui="polish"] .tv-profile-head { padding: calc(var(--em) * 1.2) calc(var(--em) * 1.4); }
   :root[data-ui="polish"] .tv-profile-actions { justify-content: flex-start; max-width: none; }
   :root[data-ui="polish"] .tv-place-icon { top: calc(var(--em) * 1.4); left: calc(var(--em) * 1.4); width: calc(var(--em) * 3.6); height: calc(var(--em) * 3.6); font-size: calc(var(--em) * 1.9); }

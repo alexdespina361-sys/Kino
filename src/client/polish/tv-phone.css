@@ -197,7 +197,7 @@
   :root[data-ui="polish"] .tv .tv-person-pic { font-size: 48px; }
   /* (What the profile holds is two across, the third under them: nothing to slide sideways, nothing cut at the edge of a 320 px screen.) */
   /* (The words hang under the glyph, as on the bigger screens: the glyph is 12 + 36 px from the top. Only the places wrap; the rows of titles under them slide, as everywhere.) */
-  :root[data-ui="polish"] .tv .tv-tile-place { flex: none; width: calc(50% - var(--tile-gap) / 2); height: 128px; padding: 58px 12px 10px; }
+  :root[data-ui="polish"] .tv .tv-tile-place { flex: none; width: calc(50% - var(--tile-gap) / 2); height: auto; min-height: 128px; padding: 58px 12px 10px; }
   :root[data-ui="polish"] .tv .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding-top: 4px; padding-right: var(--page-r); }
   :root[data-ui="polish"] .tv .tv-place-icon { top: 12px; left: 12px; width: 36px; height: 36px; font-size: 18px; }
   :root[data-ui="polish"] .tv .tv-category-name { font-size: var(--fs-3); }
