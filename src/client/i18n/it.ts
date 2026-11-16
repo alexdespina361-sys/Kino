@@ -1091,6 +1091,7 @@ export const it: Dictionary = {
   "bell.ariaCount": "Notifiche, {count} in attesa",
   "bell.waiting": "Ti aspettano",
   "bell.empty": "Niente di nuovo dai tuoi amici.",
+  "bell.emptyTitle": "Sei in pari",
   "bell.more": "Altre {count} nella pagina Amici",
   "bell.joined": "Nuovi amici",
   "bell.nowFriends": "Ora siete amici",

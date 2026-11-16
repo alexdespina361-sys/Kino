@@ -13,7 +13,7 @@ import { BellIcon, CloseIcon } from "../shared/icons";
 import type { Entry } from "../tv/pages";
 import { InboxRow, RequestRow } from "./Friends";
 import { Sheet } from "./Sheet";
-import { useSwipeAway } from "./swipe";
+import { useSwipeAway } from "../shared/swipe";
 
 /** The bell beside the profile's picture: how many things wait for an answer, or a quiet dot when friends only watched something. Not there while friends are off. */
 export function BellButton({ onClick }: { onClick: () => void }) {
@@ -149,9 +149,14 @@ export function NotificationsSheet({
       ) : (
         <>
           {!waiting && view.joined.length === 0 && view.lately.length === 0 && (
-            <p className="muted" data-testid="bell-empty">
-              {t("bell.empty")}
-            </p>
+            // (A quiet picture of the bell and two lines, with room round them, as on the TV.)
+            <div className="bell-empty" data-testid="bell-empty">
+              <span className="bell-empty-icon" aria-hidden="true">
+                <BellIcon />
+              </span>
+              <b>{t("bell.emptyTitle")}</b>
+              <p className="muted">{t("bell.empty")}</p>
+            </div>
           )}
           {waiting && (
             <>

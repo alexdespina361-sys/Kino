@@ -28,7 +28,7 @@ import { useProfileData } from "../account/store";
 import { listName } from "../account/cards";
 import { Group } from "./AccountPages";
 import { Sheet } from "./Sheet";
-import { useSwipeAway } from "./swipe";
+import { useSwipeAway } from "../shared/swipe";
 import { Card, CardRow } from "./Rows";
 import "./friends.css";
 

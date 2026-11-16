@@ -1093,6 +1093,7 @@ export const en = {
   "bell.ariaCount": "Notifications, {count} waiting",
   "bell.waiting": "Waiting for you",
   "bell.empty": "Nothing new from your friends.",
+  "bell.emptyTitle": "You're all caught up",
   "bell.more": "{count} more on the Friends page",
   "bell.joined": "New friends",
   "bell.nowFriends": "You're friends now",

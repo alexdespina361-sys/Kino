@@ -694,14 +694,89 @@
 
 /* ------------------------------ friends and the bell ------------------------------ */
 
-:root[data-ui="polish"] .tv-bell-heading { font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-2); }
-:root[data-ui="polish"] .tv-bell-line { border-radius: var(--r-2); background: var(--fill-1); color: var(--text-1); font-size: var(--fs-3); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
-:root[data-ui="polish"] .tv-bell-line:hover { background: var(--fill-2); color: var(--text-1); }
-:root[data-ui="polish"] .tv-bell-icon { background: var(--fill-2); }
-:root[data-ui="polish"] .tv-bell-clear { background: var(--fill-1); color: var(--text-2); font-size: var(--fs-3); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-bell-heading { margin: 0 0 calc(var(--em) * 0.8) calc(var(--em) * 0.3); font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-2); }
+/*
+ * The bell's list (the owner, 15 Nov: "keep the X, but inside the notification card, with better looks, animation and spacing"): each line is a card, the cross
+ * inside it at its right. The card is lit as a whole while the remote is on its line (`data-lit`, set by Friends.tsx: a card has two buttons, and an old TV
+ * has no :has()); on the cross, only the cross lights. The cards come in one just after the other, and a cleared one slides off and the list closes up under it.
+ */
+:root[data-ui="polish"] .tv-bell-lists { gap: calc(var(--em) * 2.2); }
+/*
+ * (A hand-held screen scrolls the page itself: tv/friends.css.) On a big screen the lists scroll in their box, and a card cut by its bottom edge fades out
+ * there instead of being sliced; the room under the last card, as long as the fade, lets it come clear of it, and the scroll padding keeps a card the
+ * remote goes to out of the faded strip.
+ */
+@media (min-width: 900px) {
+  :root[data-ui="polish"] .tv-bell-lists {
+    max-height: 56vh;
+    padding: calc(var(--em) * 0.5) calc(var(--em) * 0.5) calc(var(--em) * 2.5);
+    scroll-padding-bottom: calc(var(--em) * 2.5);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--em) * 2.5), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--em) * 2.5), transparent);
+  }
+}
+:root[data-ui="polish"] .tv-bell-list { gap: calc(var(--em) * 0.8); }
+:root[data-ui="polish"] .tv-bell-row {
+  gap: 0;
+  border-radius: var(--r-3);
+  background: var(--fill-1);
+  touch-action: pan-y;
+  transition: background var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease), opacity 0.2s var(--ease);
+  animation: polish-bell-in 0.36s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+:root[data-ui="polish"] .tv-bell-row:hover { background: var(--fill-2); }
+:root[data-ui="polish"] .tv-bell-row[data-lit="line"] { background: var(--surf-4); box-shadow: inset 0 0 0 calc(var(--em) * 0.3) #fff, var(--lift); transform: scale(1.015); }
+:root[data-ui="polish"] .tv-bell-row[data-lit="clear"] { background: var(--fill-2); }
+:root[data-ui="polish"] .tv-bell-line { gap: calc(var(--em) * 1.1); padding: calc(var(--em) * 1) calc(var(--em) * 1.3); border-radius: var(--r-3); background: transparent; color: var(--text-1); font-size: var(--fs-3); }
+:root[data-ui="polish"] .tv-bell-line:hover,
+:root[data-ui="polish"] .tv-bell-row .tv-bell-line:focus-visible { background: transparent; color: var(--text-1); box-shadow: none; transform: none; }
+:root[data-ui="polish"] .tv-bell-icon { width: calc(var(--em) * 3.6); height: calc(var(--em) * 3.6); background: var(--fill-2); }
+:root[data-ui="polish"] .tv-bell-icon svg { width: calc(var(--em) * 1.7); height: calc(var(--em) * 1.7); }
+:root[data-ui="polish"] .tv-bell-text { gap: calc(var(--em) * 0.25); }
+:root[data-ui="polish"] .tv-bell-clear {
+  width: calc(var(--em) * 3.4);
+  height: calc(var(--em) * 3.4);
+  margin-right: calc(var(--em) * 1);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--fs-3);
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease);
+}
+:root[data-ui="polish"] .tv-bell-clear svg { width: calc(var(--em) * 1.4); height: calc(var(--em) * 1.4); }
 :root[data-ui="polish"] .tv-bell-clear:hover { background: var(--fill-2); color: var(--text-1); }
-:root[data-ui="polish"] .tv-bell-clear:focus-visible { background: var(--surf-4); color: var(--text-1); outline: none; box-shadow: inset 0 0 0 calc(var(--em) * 0.3) #fff; }
+:root[data-ui="polish"] .tv-bell-row[data-lit="line"] .tv-bell-clear { color: var(--text-2); }
+:root[data-ui="polish"] .tv-bell-clear:focus-visible { background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.08); }
 :root[data-ui="polish"] .tv-bell-text small { font-size: var(--fs-1); color: var(--text-3); }
+/* (A card that is cleared: it slides off, then closes up to nothing. Its height is the one it had, put on it by Friends.tsx as --h.) */
+:root[data-ui="polish"] .tv-bell-row[data-leaving="true"] { overflow: hidden; opacity: 0; transform: translateX(calc(var(--em) * 3)); pointer-events: none; animation: polish-bell-close 0.26s var(--ease) 0.12s forwards; }
+@keyframes polish-bell-in {
+  from { opacity: 0; transform: translateY(calc(var(--em) * 0.9)); }
+}
+@keyframes polish-bell-close {
+  from { height: var(--h); }
+  to { height: 0; margin-bottom: calc(var(--em) * -0.8); }
+}
+/* Nothing new: the bell drawn quietly in a round, a line that says so and the one under it, with room round them. */
+:root[data-ui="polish"] .tv-bell-empty { display: flex; flex-direction: column; align-items: center; gap: calc(var(--em) * 0.7); margin: calc(var(--em) * 1.5) 0 calc(var(--em) * 2.6); text-align: center; animation: polish-bell-in 0.4s var(--ease) both; }
+:root[data-ui="polish"] .tv-bell-empty-icon {
+  display: grid;
+  place-items: center;
+  width: calc(var(--em) * 7.5);
+  height: calc(var(--em) * 7.5);
+  margin-bottom: calc(var(--em) * 1.2);
+  border-radius: 50%;
+  background: var(--fill-1);
+  color: var(--text-2);
+  box-shadow: 0 0 0 calc(var(--em) * 1.1) rgba(255, 255, 255, 0.03);
+}
+:root[data-ui="polish"] .tv-bell-empty-icon svg { width: calc(var(--em) * 3.2); height: calc(var(--em) * 3.2); }
+:root[data-ui="polish"] .tv-bell-empty-title { margin: 0; font-size: var(--fs-5); font-weight: 700; color: var(--text-1); }
+:root[data-ui="polish"] .tv-bell-empty-text { margin: 0; font-size: var(--fs-3); color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="polish"] .tv-bell-row,
+  :root[data-ui="polish"] .tv-bell-empty { animation: none; }
+}
 :root[data-ui="polish"] .tv-bell-badge { font-size: var(--fs-1); }
 :root[data-ui="polish"] .tv-friend-ask { font-size: var(--fs-4); }
 :root[data-ui="polish"] .tv-friend-ask b { font-weight: 700; }

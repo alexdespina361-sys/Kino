@@ -1103,6 +1103,7 @@ export const ro: Dictionary = {
   "bell.ariaCount": "Notificări, {count} în așteptare",
   "bell.waiting": "Te așteaptă",
   "bell.empty": "Nimic nou de la prieteni.",
+  "bell.emptyTitle": "Ești la zi",
   "bell.more": "Încă {count} pe pagina Prieteni",
   "bell.joined": "Prieteni noi",
   "bell.nowFriends": "Acum sunteți prieteni",

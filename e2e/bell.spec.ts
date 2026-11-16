@@ -1,4 +1,4 @@
-import { expect, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -133,6 +133,21 @@ async function screenWithFriends(browser: Browser, name: string, options: { lang
   await showProfilePage(page); // (friends are on for everybody: the profile's page has them at once)
   await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible(); // (back on the profile's page, which has its friends now)
   return { page, name: nameOf(account) };
+}
+
+/**
+ * A finger (or, with `pointerType` "mouse", a mouse) pressed on the middle of `target`, moved `by` pixels to the side in four steps and let go, as the
+ * browser tells the page (pointer events: a test's own touch screen has no way to drag).
+ */
+async function swipe(target: Locator, by: number, pointerType: "touch" | "mouse" = "touch") {
+  const box = await target.boundingBox();
+  if (!box) throw new Error("nothing to swipe");
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const at = (dx: number, buttons = 1) => ({ pointerId: 7, pointerType, isPrimary: true, bubbles: true, clientX: x + dx, clientY: y, button: 0, buttons });
+  await target.dispatchEvent("pointerdown", at(0));
+  for (const step of [0.25, 0.5, 0.75, 1]) await target.dispatchEvent("pointermove", at(by * step));
+  await target.dispatchEvent("pointerup", at(by, 0));
 }
 
 /** The remote walks up from the titles to the bell, the first of the corner's buttons. */
@@ -411,6 +426,50 @@ test.describe("the bell on the TV", () => {
     await tv.keyboard.press("Enter");
     await expect(list).toHaveCount(0);
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");
+  });
+
+  test("on a touch screen a finger swipes a line of the list away; a short drag puts it back, and a mouse clears with the cross", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const cy = await screenWithFriends(browser, "Cy");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await askBy(bob.page, tagOf(cy.name));
+    const cyId = await profileOf(cy.page);
+    const bobId = await profileOf(bob.page);
+    expect((await cy.page.request.post(`/api/profiles/${cyId}/friends/requests/${bobId}/accept`)).ok()).toBe(true);
+    for (const title of ["Alpha Film", "Beta Film"]) {
+      const sent = await bob.page.request.post(`/api/profiles/${bobId}/friends/send`, { data: { kind: "recommend", title, url: `${FILM}?${title.charAt(0)}`, year: 1931, to: [cyId] } });
+      expect(sent.ok()).toBe(true);
+    }
+    const tv = cy.page;
+    await look(tv);
+    await expect(tv.getByTestId("tv-bell-badge")).toHaveText("2");
+    await tv.getByTestId("tv-bell").click();
+    const lines = tv.getByTestId("tv-bell-item");
+    await expect(lines).toHaveCount(2);
+    const rows = tv.locator(".tv-bell-row");
+
+    // A drag a little way to the side, let go: the line goes back where it was.
+    await swipe(lines.first(), -40);
+    await expect(lines).toHaveCount(2);
+    await expect.poll(() => rows.first().evaluate((row) => getComputedStyle(row).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+    // A mouse dragged across a line does not swipe it (its way is the cross).
+    await swipe(lines.first(), -400, "mouse");
+    await expect(lines).toHaveCount(2);
+    // A finger past a third of the line: it flies off, the list closes up, and it is gone from the server too (the bell opened again does not bring it back).
+    const first = (await lines.first().innerText()).includes("Alpha") ? "Alpha Film" : "Beta Film";
+    const other = first === "Alpha Film" ? "Beta Film" : "Alpha Film";
+    await swipe(lines.first(), -400);
+    await expect(lines).toHaveCount(1);
+    await expect(lines).toContainText(other);
+    await tv.keyboard.press("Escape");
+    await tv.getByTestId("tv-bell").click();
+    await expect(lines).toHaveCount(1);
+    await expect(lines).toContainText(other);
+
+    // The cross, clicked with a mouse, clears the last one: the list says there is nothing new.
+    await tv.getByTestId("tv-bell-clear").click();
+    await expect(lines).toHaveCount(0);
+    await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
   });
 
   test("the corner and the list fit a screen of any size, with the longest name, in every language", async ({ browser }) => {

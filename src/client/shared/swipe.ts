@@ -1,9 +1,11 @@
-import { useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 
 /** How far a line is dragged before it counts as swiped away: a third of its width, and never more than this. */
 const FAR_PX = 110;
 /** A finger that moves less than this has not started a swipe (it may be a tap, or the start of a scroll). */
 const START_PX = 12;
+/** How long a line that was swiped away takes to fly off its side before it is cleared. */
+export const FLY_MS = 180;
 
 interface SwipeProps {
   style?: CSSProperties | undefined;
@@ -14,20 +16,42 @@ interface SwipeProps {
   onClickCapture?: (event: MouseEvent<HTMLElement>) => void;
 }
 
+/** Whether the screen asks for as little movement as can be (then a line is cleared at once, without flying off). */
+export const stillScreen = (): boolean => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 /**
- * A line of a list that a finger can swipe away, to either side: it follows the finger, and past a third of its width letting go clears it (`onAway`);
- * short of that it goes back. Up-and-down movement stays the list's scrolling (the line needs `touch-action: pan-y`), and a mouse is left alone: its
- * way to clear a line is the cross. Spread what this returns on the line. With no `onAway` the line does nothing.
+ * A line of a list that a finger can swipe away, to either side: it follows the finger, and past a third of its width letting go sends it off that side and
+ * then clears it (`onAway`); short of that it goes back. Up-and-down movement stays the list's scrolling (the line needs `touch-action: pan-y`), and a mouse is
+ * left alone: its way to clear a line is the cross. Spread what this returns on the line. With no `onAway` the line does nothing. Used by the phone's lists
+ * (the bell, what friends sent) and by the bell of the TV's page on a touch screen (a phone that is the screen, a tablet).
  */
 export function useSwipeAway(onAway: (() => void) | undefined): SwipeProps {
   const drag = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const swallowClick = useRef(false);
   const [dx, setDx] = useState(0);
+  /** The side it is flying off to, once let go far enough: -1 or 1. */
+  const [gone, setGone] = useState(0);
+  const away = useRef(onAway);
+  away.current = onAway;
+  useEffect(() => {
+    if (gone === 0) return;
+    const timer = window.setTimeout(() => {
+      away.current?.();
+      setGone(0); // (a line that is still there, cleared or not, comes back)
+    }, FLY_MS);
+    return () => window.clearTimeout(timer);
+  }, [gone]);
   if (!onAway) return {};
+  const style: CSSProperties | undefined =
+    gone !== 0
+      ? { transform: `translateX(${gone * 110}%)`, opacity: 0, transition: `transform ${FLY_MS}ms ease-in, opacity ${FLY_MS}ms ease-in` }
+      : dx === 0
+        ? undefined
+        : { transform: `translateX(${dx}px)`, opacity: Math.max(0.25, 1 - Math.abs(dx) / 260), transition: "none" };
   return {
-    style: dx === 0 ? undefined : { transform: `translateX(${dx}px)`, opacity: Math.max(0.25, 1 - Math.abs(dx) / 260), transition: "none" },
+    style,
     onPointerDown: (event) => {
-      if (event.pointerType === "mouse") return;
+      if (event.pointerType === "mouse" || gone !== 0) return;
       drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
     },
     onPointerMove: (event) => {
@@ -52,9 +76,12 @@ export function useSwipeAway(onAway: (() => void) | undefined): SwipeProps {
       if (!from?.moved) return;
       swallowClick.current = true; // (the tap that ends a swipe is not a press of what is under the finger)
       window.setTimeout(() => (swallowClick.current = false), 0);
-      const far = Math.abs(event.clientX - from.x) >= Math.min(FAR_PX, event.currentTarget.offsetWidth / 3);
+      const by = event.clientX - from.x;
+      const far = Math.abs(by) >= Math.min(FAR_PX, event.currentTarget.offsetWidth / 3);
       setDx(0);
-      if (far) onAway();
+      if (!far) return;
+      if (stillScreen()) return onAway();
+      setGone(by < 0 ? -1 : 1);
     },
     onPointerCancel: () => {
       drag.current = null;
