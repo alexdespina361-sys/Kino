@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FocusEvent } from "react";
 import { friendChoices, friendLink, friendSwitchWrites, parseTag, reachable, sunsetSwitches, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person, type PlanItem, type SunsetSwitch } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -17,9 +17,10 @@ import { useClearChat } from "../chat/useClearChat";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
 import { CopyCode } from "../shared/CopyLink";
-import { CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
+import { BellIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
+import { BACK_MS, stillScreen, useSwipeAway } from "../shared/swipe";
 import { BackButton, Screen } from "./Idle";
 import type { Entry } from "./pages";
 import "./friends.css";
@@ -620,24 +621,67 @@ export function PlanPickerTv({ friendId, onClose }: { friendId: string; onClose:
 
 /* ------------------------------ the bell ------------------------------ */
 
-/** A line of the bell's list: pressing it does what pressing the same tile of the friends page does. */
+/** How long a line takes to go once it is cleared (it slides off, then the list closes up under it) before the list is told: see `data-leaving` in polish/tv.css. */
+const LEAVE_MS = 380;
+
+/** Whether a part was lit by the remote or the keyboard (`:focus-visible`), not by a click or a tap. (A browser that does not know the question says yes.) */
+const keyLit = (element: Element): boolean => {
+  try {
+    return element.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+};
+
+/**
+ * A line of the bell's list, a card: pressing it does what pressing the same tile of the friends page does. The cross that clears it is inside the card, at
+ * its right (the owner, 15 Nov: "keep the X, but inside the notification card"), and a finger can swipe the card away to either side instead (a phone that is
+ * the screen, a tablet). A cleared card slides off and the list closes up under it before it is gone. The card is lit as a whole while the remote is on the
+ * line (`data-lit="line"`); on the cross, only the cross is.
+ */
 function BellLine({
   row,
+  at,
   onPress,
   onClear,
   testId = "tv-bell-item",
 }: {
   row: BellRow;
+  /** Its place in the list, from the top: the cards come in one just after the other. */
+  at: number;
   onPress: (entry: Entry) => void;
-  /** Not given for a line that waits for an answer nobody else can give (a request to be friends), nor for news that is said once (a new friend). */
-  onClear?: ((button: HTMLElement) => void) | undefined;
+  /** Not given for a line that waits for an answer nobody else can give (a request to be friends), nor for news that is said once (a new friend). The cross pressed, or null when a finger swiped the card. */
+  onClear?: ((button: HTMLElement | null) => void) | undefined;
   testId?: string;
 }) {
   const t = useT();
   const { entry } = row;
+  const card = useRef<HTMLLIElement>(null);
+  const [lit, setLit] = useState<"line" | "clear" | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  /** When it was cleared last: a second OK on the cross while it goes (the remote is still on it) does nothing. */
+  const clearedAt = useRef(-Infinity);
+  const leave = (button: HTMLElement | null) => {
+    if (!onClear || Date.now() - clearedAt.current < LEAVE_MS + BACK_MS) return;
+    clearedAt.current = Date.now();
+    const element = card.current;
+    if (!element || stillScreen()) return onClear(button);
+    element.style.setProperty("--h", `${element.offsetHeight}px`);
+    setLeaving(true);
+    window.setTimeout(() => onClear(button), LEAVE_MS);
+  };
+  // (A card whose clearing did not take, as when the server could not be reached, comes back.)
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(() => setLeaving(false), LEAVE_MS + BACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  const { style: swiped, ...swipe } = useSwipeAway(onClear ? () => leave(null) : undefined);
+  const light = (part: "line" | "clear") => (event: FocusEvent<HTMLElement>) => setLit(keyLit(event.currentTarget) ? part : null);
+  const unlight = () => setLit(null);
   return (
-    <li className="tv-bell-row">
-      <button className="tv-bell-line" onClick={() => onPress(entry)} data-nav data-testid={testId} data-entry={entry.id}>
+    <li ref={card} className="tv-bell-row" data-lit={lit ?? undefined} data-leaving={leaving ? "true" : undefined} data-clears={onClear ? "true" : undefined} style={{ ...swiped, "--i": at } as CSSProperties} {...swipe}>
+      <button className="tv-bell-line" onClick={() => onPress(entry)} onFocus={light("line")} onBlur={unlight} data-nav data-testid={testId} data-entry={entry.id}>
         <span className="tv-bell-icon">{row.avatar ? <Avatar id={row.avatar} className="tv-bell-avatar" /> : entry.plan ? <ClockIcon /> : entry.party || entry.wants || entry.ask ? <UsersIcon /> : <PlayIcon />}</span>
         <span className="tv-bell-text">
           <b>{row.heading}</b>
@@ -645,7 +689,16 @@ function BellLine({
         </span>
       </button>
       {onClear && (
-        <button className="tv-bell-clear" onClick={(event) => onClear(event.currentTarget)} data-nav aria-label={`${t("friends.dismiss")}: ${row.heading}`} title={t("friends.dismiss")} data-testid="tv-bell-clear">
+        <button
+          className="tv-bell-clear"
+          onClick={(event) => leave(event.currentTarget)}
+          onFocus={light("clear")}
+          onBlur={unlight}
+          data-nav
+          aria-label={`${t("friends.dismiss")}: ${row.heading}`}
+          title={t("friends.dismiss")}
+          data-testid="tv-bell-clear"
+        >
           <CloseIcon />
         </button>
       )}
@@ -666,18 +719,23 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
   const clearChat = useClearChat();
   const { waiting, joined, lately, more } = bellRows(friends.state, Date.now(), cleared, seenBefore);
   const page = useRef<HTMLDivElement>(null);
-  /** A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote goes on to the line that takes its place. */
-  const clearLine = (row: BellRow, button: HTMLElement) => {
-    const all = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])];
-    const at = all.indexOf(button);
+  /**
+   * A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote, if it is still on the
+   * cross of the card that went, goes on at once to the cross that takes its place, or to the list's button when there is none (not after a swipe, `button`
+   * null: a finger is not the remote, and nothing is lit for it). At once, not when the line is gone: what a friend sent goes when the server says so, and
+   * the remote is not left on a card that is no longer seen. Where it went on by itself meanwhile, or the list was shut, it stays.
+   */
+  const clearLine = (row: BellRow, button: HTMLElement | null) => {
+    const active = document.activeElement;
+    if (button && (active === button || !active || active === document.body)) {
+      const crosses = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])].filter((each) => each === button || !each.closest('[data-leaving="true"]'));
+      const at = crosses.indexOf(button);
+      const left = crosses.filter((each) => each !== button);
+      if (at >= 0) (left[Math.min(at, left.length - 1)] ?? page.current?.parentElement?.querySelector<HTMLElement>("[data-testid=tv-bell-friends]"))?.focus();
+    }
     if (row.activity) clear([row.activity]);
     else if (row.entry.inboxId) void friends.dismiss(row.entry.inboxId).catch(() => undefined);
     else if (row.entry.chat) clearChat(row.entry.chat);
-    window.setTimeout(() => {
-      if (page.current?.contains(document.activeElement) && document.activeElement !== document.body) return;
-      const left = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])];
-      (left[Math.min(at, left.length - 1)] ?? document.querySelector<HTMLElement>("[data-testid=tv-bell-friends]"))?.focus();
-    }, 60);
   };
 
   useEffect(() => {
@@ -696,17 +754,22 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
           <span className="spinner" /> {friends.status === "offline" ? t("friends.offline") : t("common.loading")}
         </p>
       ) : waiting.length === 0 && joined.length === 0 && lately.length === 0 ? (
-        <p className="tv-lead" data-testid="tv-bell-empty">
-          {t("bell.empty")}
-        </p>
+        // Nothing new: a quiet picture of the bell and two lines, with room round them (the owner, 15 Nov: "the page should feel roomier and nicer").
+        <div className="tv-bell-empty" data-testid="tv-bell-empty">
+          <span className="tv-bell-empty-icon" aria-hidden="true">
+            <BellIcon />
+          </span>
+          <p className="tv-bell-empty-title">{t("bell.emptyTitle")}</p>
+          <p className="tv-bell-empty-text">{t("bell.empty")}</p>
+        </div>
       ) : (
         <div className="tv-bell-lists" ref={page}>
           {waiting.length > 0 && (
             <section>
               <h2 className="tv-bell-heading">{t("bell.waiting")}</h2>
               <ul className="tv-bell-list" data-testid="tv-bell-waiting">
-                {waiting.map((row) => (
-                  <BellLine key={row.entry.id} row={row} onPress={onPress} onClear={row.entry.inboxId || row.entry.chat ? (button) => clearLine(row, button) : undefined} />
+                {waiting.map((row, at) => (
+                  <BellLine key={row.entry.id} row={row} at={at} onPress={onPress} onClear={row.entry.inboxId || row.entry.chat ? (button) => clearLine(row, button) : undefined} />
                 ))}
               </ul>
               {more > 0 && (
@@ -720,8 +783,8 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
             <section>
               <h2 className="tv-bell-heading">{t("bell.joined")}</h2>
               <ul className="tv-bell-list" data-testid="tv-bell-joined">
-                {joined.map((row) => (
-                  <BellLine key={row.entry.id} row={row} onPress={onPress} testId="tv-bell-joined-item" />
+                {joined.map((row, at) => (
+                  <BellLine key={row.entry.id} row={row} at={waiting.length + at} onPress={onPress} testId="tv-bell-joined-item" />
                 ))}
               </ul>
             </section>
@@ -730,8 +793,8 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
             <section>
               <h2 className="tv-bell-heading">{t("friends.activity")}</h2>
               <ul className="tv-bell-list" data-testid="tv-bell-lately">
-                {lately.map((row) => (
-                  <BellLine key={row.entry.id} row={row} onPress={onPress} onClear={(button) => clearLine(row, button)} />
+                {lately.map((row, at) => (
+                  <BellLine key={row.entry.id} row={row} at={waiting.length + joined.length + at} onPress={onPress} onClear={(button) => clearLine(row, button)} />
                 ))}
               </ul>
             </section>

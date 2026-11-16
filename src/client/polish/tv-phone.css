@@ -459,6 +459,16 @@
   /* The six colours: a row of circles of 44 px (the screens too narrow for that, below, have three and three). */
   :root[data-ui="polish"] .tv .tv-set .tv-swatches { justify-content: space-between; gap: 6px; }
   :root[data-ui="polish"] .tv .tv-set .tv-swatch { flex: none; width: var(--tap); height: var(--tap); }
+  /* The bell's cards: a thumb's size for the cross inside each (a finger can also swipe a card away), and the round of the bell when there is nothing new. */
+  :root[data-ui="polish"] .tv .tv-bell-list { gap: 8px; }
+  :root[data-ui="polish"] .tv .tv-bell-line { gap: 12px; padding: 12px; }
+  :root[data-ui="polish"] .tv .tv-bell-icon { width: 40px; height: 40px; }
+  :root[data-ui="polish"] .tv .tv-bell-icon svg { width: 20px; height: 20px; }
+  :root[data-ui="polish"] .tv .tv-bell-clear { width: var(--tap); height: var(--tap); margin-right: 6px; }
+  :root[data-ui="polish"] .tv .tv-bell-clear svg { width: 18px; height: 18px; }
+  :root[data-ui="polish"] .tv .tv-bell-empty { gap: 6px; margin: 16px 0 28px; }
+  :root[data-ui="polish"] .tv .tv-bell-empty-icon { width: 72px; height: 72px; margin-bottom: 10px; box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.03); }
+  :root[data-ui="polish"] .tv .tv-bell-empty-icon svg { width: 30px; height: 30px; }
 
   /* ------------------------------ small print the player and its sheets kept ------------------------------ */
 
