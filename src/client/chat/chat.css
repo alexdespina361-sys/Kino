@@ -125,6 +125,32 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-send { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 1.2rem; }
 .chat-send:disabled { opacity: 0.4; }
 .chat-send:active:not(:disabled) { background: var(--accent-hover); }
+/* Send a title (TitlePick.tsx): the round button before the box, and the sheet of titles, a row each (poster, name, year). */
+.chat-title-btn { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 1.2rem; }
+.chat-title-btn:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); }
+.chat-picks { display: flex; flex-direction: column; gap: 6px; max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; }
+.chat-pick {
+  display: grid;
+  flex: none;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.chat-pick:active:not(:disabled) { background: var(--surface-3, rgba(255, 255, 255, 0.14)); }
+.chat-pick:disabled { opacity: 0.5; }
+.chat-pick-art, .tv-chat-pick-art { position: relative; display: grid; place-items: center; border-radius: 6px; overflow: hidden; }
+.chat-pick-art { width: 40px; height: 60px; }
+.chat-pick-art img, .tv-chat-pick-art img { width: 100%; height: 100%; object-fit: cover; }
+.chat-pick-art .poster-initial, .tv-chat-pick-art .poster-initial { font-weight: 700; color: rgba(255, 255, 255, 0.85); }
+.chat-pick-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.chat-pick-year { color: var(--muted); font-size: 0.85em; }
 
 /* ------------------------------ the TV ------------------------------ */
 
@@ -238,6 +264,31 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-send-round svg { width: 1.45em; height: 1.45em; }
 button.tv-chat-send-round:disabled { opacity: 0.35; }
 button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
+/* Send a title (TitlePick.tsx): a round button before the box, and a page of posters the remote walks. */
+.tv-chat-compose-row { display: flex; align-items: center; gap: 0.8em; width: 100%; }
+.tv-chat-compose-row > .tv-chat-composer { flex: 1 1 auto; min-width: 0; }
+.tv-chat-title-btn { display: grid; flex: none; place-items: center; width: 3.2em; height: 3.2em; border-radius: 50%; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font-size: 1em; }
+.tv-chat-title-btn svg { width: 1.45em; height: 1.45em; }
+.tv-chat-title-btn:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.tv-chat-title-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff, 0 0 0 0.25em rgb(var(--accent-rgb) / 0.35); }
+.tv-chat-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr));
+  gap: 1em;
+  width: min(100%, 74em);
+  max-height: 62vh;
+  padding: 0.5em;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.tv-chat-pick { display: flex; flex-direction: column; gap: 0.35em; padding: 0.45em; border-radius: 0.8em; background: transparent; color: #fff; font: inherit; text-align: left; }
+.tv-chat-pick-art { width: 100%; aspect-ratio: 2 / 3; border-radius: 0.5em; }
+.tv-chat-pick-art .poster-initial { font-size: 2.4em; }
+.tv-chat-pick-name { display: -webkit-box; overflow: hidden; font-size: 1.15em; font-weight: 600; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tv-chat-pick-year { color: rgba(255, 255, 255, 0.6); font-size: 1em; }
+.tv-chat-pick:hover { background: rgba(255, 255, 255, 0.06); }
+.tv-chat-pick:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; }
+.tv-chat-pick:disabled { opacity: 0.5; }
 /* (The way back, which the stylesheet puts in the top corner on every page that fills the screen, as before.) */
 
 /* A hand-held screen: the list takes the width, and stacks above the buttons. */

@@ -8,13 +8,17 @@ export const chatIt: ChatDictionary = {
 
   /* la conversazione */
   "chat.empty": "Ancora nessun messaggio. Saluta {name}.",
-  "chat.privacy": "Solo testo semplice; i link non si possono toccare. Si conservano solo gli ultimi {messages} messaggi, per al massimo {days} giorni, e sono salvati sul server senza cifratura: non mandare niente di privato.",
+  "chat.privacy": "Solo testo semplice; i link non si possono toccare (un titolo mandato da Kino appare con la sua locandina). Si conservano solo gli ultimi {messages} messaggi, per al massimo {days} giorni, e sono salvati sul server senza cifratura: non mandare niente di privato.",
   "chat.you": "Tu",
   "chat.messageLabel": "Messaggio",
   "chat.placeholder": "Scrivi un messaggio",
   "chat.compose": "Scrivi un messaggio",
   "chat.writeTitle": "Messaggio per {name}",
   "chat.send": "Invia",
+  "chat.sendTitle": "Manda un titolo",
+  "chat.sendTitleTo": "Manda un titolo a {name}",
+  "chat.sendTitleHelp": "Quello che hai visto e salvato. Premine uno per mandarlo.",
+  "chat.noTitles": "Ancora niente da mandare: qui compaiono i titoli che guardi o salvi.",
   "chat.takeBack": "Ritira",
   "chat.takeBackLast": "Ritira l'ultimo messaggio",
   "chat.mute": "Silenzia",

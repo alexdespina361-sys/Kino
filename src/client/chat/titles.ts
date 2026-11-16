@@ -50,8 +50,45 @@ export const titleLabel = (title: { title: string; year?: number | undefined }):
 /** What is written to send a title: its name, and its address on this site. None for a title that has no address (a link pasted on the phone). */
 export function titleMessage(entry: { id: string; url: string; kind?: string; title: string; year?: number | undefined }, origin: string): string | null {
   const address = addressOf(entry);
-  if (!address) return null;
-  return `${titleLabel(entry)} ${origin}/tv?${TITLE_PARAM}=${address}`;
+  return address ? messageOf({ address, title: entry.title, year: entry.year }, origin) : null;
+}
+
+/** A title that can be sent from the chat: one this profile watched or saved, by its address on the site. */
+export interface Sendable {
+  address: string;
+  title: string;
+  year?: number | undefined;
+  image?: string | undefined;
+}
+
+/** The message that sends one (see `titleMessage`). */
+export const messageOf = (title: Sendable, origin: string): string => `${titleLabel(title)} ${origin}/tv?${TITLE_PARAM}=${title.address}`;
+
+/** How many are offered: the newest, which are the ones a friend is told about. */
+export const SENDABLE_MAX = 24;
+
+/**
+ * What the chat offers to send: what this profile watched (Continue watching and what it finished) and what it saved, in any list, the newest first, each
+ * title once. A title without an address on the site (a link pasted on the phone) is left out: it would be a link nobody could open.
+ */
+export function sendableTitles(
+  progress: readonly { key: string; at: number; title: string; url: string; image?: string | undefined; year?: number | undefined; season?: number | undefined }[],
+  saved: readonly { id: string; at: number; title: string; url: string; image?: string | undefined; year?: number | undefined }[],
+  max = SENDABLE_MAX,
+): Sendable[] {
+  const all = [
+    ...progress.map((card) => ({ at: card.at, title: card, address: addressOf({ id: card.key, url: card.url, kind: card.season !== undefined ? "series" : "movie" }) })),
+    ...saved.map((card) => ({ at: card.at, title: card, address: addressOf({ id: card.id, url: card.url }) })),
+  ].sort((a, b) => b.at - a.at);
+  const seen = new Set<string>();
+  const out: Sendable[] = [];
+  for (const { title, address } of all) {
+    if (!address || seen.has(address)) continue;
+    seen.add(address);
+    out.push({ address, title: title.title, ...(title.year ? { year: title.year } : {}), ...(title.image ? { image: title.image } : {}) });
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 /** Whether what the message says besides the address only names the title (then the card says it, and the words are not said twice). */

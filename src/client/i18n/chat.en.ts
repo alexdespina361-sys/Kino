@@ -10,13 +10,17 @@ export const chatEn = {
 
   /* the thread */
   "chat.empty": "No messages yet. Say hello to {name}.",
-  "chat.privacy": "Plain text only; links can't be pressed. Only the last {messages} messages are kept, for {days} days at most, and they are stored on the server without encryption: don't send anything private.",
+  "chat.privacy": "Plain text only; links can't be pressed (a title sent from Kino shows as its poster). Only the last {messages} messages are kept, for {days} days at most, and they are stored on the server without encryption: don't send anything private.",
   "chat.you": "You",
   "chat.messageLabel": "Message",
   "chat.placeholder": "Write a message",
   "chat.compose": "Write a message",
   "chat.writeTitle": "Message to {name}",
   "chat.send": "Send",
+  "chat.sendTitle": "Send a title",
+  "chat.sendTitleTo": "Send a title to {name}",
+  "chat.sendTitleHelp": "What you watched and saved. Press one to send it.",
+  "chat.noTitles": "Nothing to send yet: the titles you watch or save show up here.",
   "chat.takeBack": "Take back",
   "chat.takeBackLast": "Take back last message",
   "chat.mute": "Mute",

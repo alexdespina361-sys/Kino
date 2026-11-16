@@ -2,10 +2,11 @@ import { useRef, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
-import { SendIcon, ShieldIcon } from "../shared/icons";
+import { FilmIcon, SendIcon, ShieldIcon } from "../shared/icons";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS } from "./state";
+import { TitlePickSheet } from "./TitlePick";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
 import "./chat.css";
@@ -32,6 +33,8 @@ export function ChatPhone({ name, session, report, receiving = true, onClose, on
   const t = useT();
   const { state } = session;
   const [picked, setPicked] = useState<number | null>(null);
+  /** The sheet of titles to send is open. */
+  const [picking, setPicking] = useState(false);
   const blocked = whyNotWrite(session);
 
   return (
@@ -80,17 +83,18 @@ export function ChatPhone({ name, session, report, receiving = true, onClose, on
               {blocked === "ended" && session.ended ? problemText(t, session.ended, name) : t("chat.closed", { name })}
             </p>
           ) : (
-            <Composer session={session} />
+            <Composer session={session} onPickTitle={() => setPicking(true)} />
           )}
         </div>
       </Sheet>
+      {picking && !blocked && <TitlePickSheet name={name} session={session} onClose={() => setPicking(false)} />}
       {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} />}
     </>
   );
 }
 
-/** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. */
-function Composer({ session }: { session: ChatSession }) {
+/** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. Beside the box, the button that sends a title instead (see TitlePick.tsx). */
+function Composer({ session, onPickTitle }: { session: ChatSession; onPickTitle: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -107,6 +111,9 @@ function Composer({ session }: { session: ChatSession }) {
 
   return (
     <form className="chat-compose" onSubmit={(event) => void submit(event)} noValidate data-testid="chat-compose">
+      <button type="button" className="chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-testid="chat-title-btn">
+        <FilmIcon />
+      </button>
       <input
         ref={input}
         className="chat-input"
