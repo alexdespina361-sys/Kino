@@ -1369,6 +1369,45 @@ test.describe("plans to watch together on the TV", () => {
   });
 });
 
+test.describe("the page of friends starts at the top", () => {
+  for (const screen of [
+    { name: "720p", width: 1280, height: 720 },
+    { name: "1080p", width: 1920, height: 1080 },
+  ]) {
+    // (The owner's report of 15 Nov: a wide empty band over "Friends", as if something should be there - the heading sat at the foot of a banner's height - and
+    // the row of what a friend watched was below the edge, so nothing said there was more.)
+    test(`its heading is just under the top, and the row of what a friend watched shows at least half under the friends: ${screen.name}`, async ({ browser }) => {
+      test.setTimeout(150_000);
+      const viewport = { width: screen.width, height: screen.height };
+      const ann = await screenWithFriends(browser, "Ann", { viewport });
+      const bob = await screenWithFriends(browser, "Bob", { viewport });
+      await meet(ann, bob);
+      await tellsWhatItWatches(bob, ann);
+      await seed(bob.page, { progress: [{ key: "beta", at: Date.now(), title: "Beta Film", url: "https://films.example/watch/18", year: 1940, position: 300, duration: 5400 }] });
+      await look(ann.page);
+      const page = ann.page;
+      await openFriends(page);
+      const watched = page.locator(`section.tv-row[aria-label="What ${bob.name} watched"]`);
+      await expect(watched).toHaveCount(1);
+      await expect(tile(page, bob.name)).toBeVisible();
+
+      const box = async (target: ReturnType<Page["locator"]>) => (await target.boundingBox())!;
+      const corner = await box(page.getByTestId("tv-account-chip"));
+      const heading = await box(page.getByTestId("tv-friends-title"));
+      const row = await box(watched);
+      if (process.env.SHOT_DIR) {
+        await page.waitForTimeout(1500); // (for a picture of it: the page has come in, and the news toast has gone)
+        await page.screenshot({ path: `${process.env.SHOT_DIR}/friends-${screen.name}.png` });
+      }
+      console.log(`friends page ${screen.name}: top bar ends ${Math.round(corner.y + corner.height)}, heading at ${Math.round(heading.y)}, watched row ${Math.round(row.y)}..${Math.round(row.y + row.height)}`);
+      // The heading is close under the top bar (not a banner's height under it).
+      expect(heading.y - (corner.y + corner.height), "the space over the heading").toBeLessThan(screen.height * 0.06);
+      // At least half of the first row of what a friend watched is on the screen, as the page opens.
+      expect(row.y + row.height / 2, "half of the row of what a friend watched").toBeLessThanOrEqual(screen.height);
+    });
+  }
+});
+
 test.describe("everything of friends fits the screen", () => {
   for (const screen of [
     { name: "720p", width: 1280, height: 720 },

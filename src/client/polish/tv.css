@@ -182,6 +182,10 @@
 }
 :root[data-ui="polish"] .tv-hero-title { flex-shrink: 0; font-size: var(--fs-6); font-weight: 700; line-height: 1.12; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-browse[data-deep="true"] .tv-hero-title { font-size: var(--fs-deep); }
+/* The page of friends has a heading, not a banner: just under the top bar, as tall as its two lines (at a banner's height it stood at the foot of an empty band,
+   and the row of what a friend watched was pushed off the screen - the owner's report of 15 Nov). Its size stays when the remote goes down, so nothing jumps. */
+:root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-hero.tv-hero-friends { height: auto; min-height: 0; padding-top: calc(var(--em) * 1.1); padding-bottom: calc(var(--em) * 0.5); }
+:root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-hero-friends .tv-hero-title { font-size: var(--fs-6); }
 :root[data-ui="polish"] .tv-hero .tv-hero-status { font-size: var(--fs-5); }
 :root[data-ui="polish"] .tv-hero-meta { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
 :root[data-ui="polish"] .tv-hero-about { font-size: var(--fs-2); line-height: 1.4; color: var(--text-2); }

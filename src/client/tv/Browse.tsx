@@ -1286,7 +1286,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               ))}
             </div>
           )}
-          <div className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : ""}`} data-testid="tv-hero" data-poster={heroPoster && view.kind !== "profile" ? "true" : undefined}>
+          <div
+            className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : friendsHead ? " tv-hero-friends" : ""}`}
+            data-testid="tv-hero"
+            data-poster={heroPoster && view.kind !== "profile" ? "true" : undefined}
+          >
             {view.kind === "profile" ? (
               <ProfileHead
                 name={signedIn && profile ? profile.name : t("profile.guest")}
