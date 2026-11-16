@@ -63,5 +63,6 @@ export function useBell() {
   }, [profileId]);
 
   const on = friends.on && profileId !== undefined;
-  return { on, badge: on ? friends.attention : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen };
+  /** (`seen`: when it was opened before; the list takes it as it opens, before `markSeen` moves it, to tell which friends are new.) */
+  return { on, badge: on ? friends.attention : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen, seen };
 }

@@ -42,16 +42,37 @@ export function titleIdOf(address: string | null | undefined): string | null {
 /** The title the address of this page names, if any. */
 export const linkedTitle = (search: string = typeof location === "undefined" ? "" : location.search): string | null => titleIdOf(new URLSearchParams(search).get(TITLE_PARAM));
 
-let linkTaken = false;
+/** What a link asks for: none (`null`) when the address has no title in it, else the library's id of the one it names - `id: null` for one that names nothing (`?title=x`). */
+export type TitleAsk = { id: string | null } | null;
+
+/** What the address of this page asks for (see `TitleAsk`). */
+export function titleAsk(search: string = typeof location === "undefined" ? "" : location.search): TitleAsk {
+  const params = new URLSearchParams(search);
+  return params.has(TITLE_PARAM) ? { id: titleIdOf(params.get(TITLE_PARAM)) } : null;
+}
+
+/** The link the site was opened with: what it asked for (read from the address once, when the library was first drawn), whether it has been dealt with, and the server's answer. */
+let link: { ask: TitleAsk; done: boolean; item?: Promise<LibraryItem | null> } | undefined;
+
 /**
- * The title a link opened the site with: once, for the first library drawn after the page loads, and nothing after that. The library is drawn again after every
- * film, and by then the address may still name a title whose page a film was started from: that is not a link anybody opened, and its page must not open again
- * (it did, over and over, after other titles had played: the owner's report of 15 Nov).
+ * The title a link opened the site with (see `TitleAsk`), with the server's answer about it: until it has been dealt with (`dropLink`), and nothing after that.
+ * The library is drawn again after every film, and by then the address may still name a title whose page a film was started from: that is not a link anybody
+ * opened, and its page must not open again (it did, over and over, after other titles had played: the owner's report of 15 Nov). Until it is dealt with, a
+ * library drawn again has the same link and the same answer: the server is asked once (a library drawn twice before the answer came lost the link, and its
+ * page never opened - seen in the tests, 16 Nov).
  */
-export function takeLinkedTitle(search?: string): string | null {
-  if (linkTaken) return null;
-  linkTaken = true;
-  return linkedTitle(search);
+export function pendingLink(search?: string): { id: string | null; item: Promise<LibraryItem | null> } | null {
+  link ??= { ask: titleAsk(search), done: false };
+  if (link.done || !link.ask) return null;
+  const { id } = link.ask;
+  link.item ??= id ? fetchTitle(id) : Promise.resolve(null);
+  return { id, item: link.item };
+}
+
+/** The link has been dealt with: its page was opened, or Home said it names nothing, or the viewer went somewhere else before the answer came. */
+export function dropLink(): void {
+  if (link) link.done = true;
+  else link = { ask: null, done: true };
 }
 
 /** The address with this title in it (none: without one), everything else in it as it was. */

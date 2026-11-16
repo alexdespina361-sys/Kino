@@ -27,12 +27,13 @@ import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, 
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { comesIn, hueOf, Poster, sharper } from "../shared/Poster";
+import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
-import { addressOf, fetchTitle, showTitle, takeLinkedTitle } from "../shared/titleAddress";
+import { takeStrayAddress } from "../shared/strayAddress";
+import { addressOf, dropLink, pendingLink, showTitle } from "../shared/titleAddress";
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact, useFlatHand } from "./compact";
@@ -76,6 +77,8 @@ interface BrowseProps {
   partySize: number;
   /** Said when the title that was just chosen would not play. */
   notice?: string | null;
+  /** The welcome is over the library: the library's own line (see `remembered.notice`) waits to start its time. */
+  quiet?: boolean;
 }
 
 /** What the screen looked like when it was left, so coming back from a film lands on the same title, at once. */
@@ -97,10 +100,20 @@ const remembered = {
   tile: {} as Record<string, string>,
   /** The page of a show that an episode was started from, and the season it was showing: the library comes back to it, to pick the next one (or another, when that one would not play). */
   detail: null as { page: Focused; season: number | undefined } | null,
+  /**
+   * The library's own line over Home (a link that leads nowhere), and until when it is shown (none yet while the welcome is over the library: its time starts
+   * when the welcome has gone). A library drawn again meanwhile shows it too, and a film ends it.
+   */
+  notice: null as { text: string; until: number | null } | null,
 };
+
+/** How long the library's own line stays (the TV's lines about a film stay as long: Tv.tsx). */
+const NOTICE_MS = 8000;
 
 /** Something else than that show plays: the library comes back to its tile, not to the page. (`link` is the page the video came from.) */
 export function keepPageFor(link: string | undefined) {
+  dropLink(); // (a film started from anywhere - the phone, the party - before a link's answer came: the library after it is not the link's page)
+  remembered.notice = null;
   const kept = remembered.detail;
   if (kept && (!link || titleLink(link) !== titleLink(kept.page.entry.url))) remembered.detail = null;
   // (Nor does the address go on naming a title whose page will not be there: a reload, during the film or after it, comes back to the library, not to that page.)
@@ -122,6 +135,8 @@ const CATEGORY_COLUMNS = 4;
 /** A grid of wide tiles that are not titles. */
 const WIDE_COLUMNS = 5;
 const RESULT_COLUMNS = 5;
+/** A show's episodes on its page (see `SeriesSection`). */
+const EPISODE_COLUMNS = 2;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
 const NARROW = "(max-width: 899px)";
 /** About how wide a title is on a hand-held screen, with the room around it. */
@@ -253,8 +268,10 @@ function landOnPage(next: Target, from: Pos, root: ParentNode): Target {
     return shown ? { ...next, col: Number(shown.dataset.col) } : next;
   }
   if (next.zone === "episodes") {
+    // (From the rows of titles under them, Up comes back to the last line of the episodes instead.)
+    if (from.zone === "related") return next;
     const target = pick('[data-zone="episodes"][data-target="true"]');
-    return target ? { ...next, row: Number(target.dataset.row) } : next;
+    return target ? { ...next, row: Number(target.dataset.row), col: Number(target.dataset.col) } : next;
   }
   return next;
 }
@@ -295,7 +312,7 @@ function slideAlong(element: HTMLElement) {
  * the menu, OK on a title opens its own page (play it, keep it in a list), and Back steps out: of that page, of the menu, then to
  * the home page, and from there into the menu.
  */
-export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice }: BrowseProps) {
+export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice, quiet = false }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
   const { status: accountStatus, me, profile, say, withGoogle } = useAccount();
@@ -441,6 +458,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       : posterGrid
         ? narrowColumns || columnsFor(wide, GRID_COLUMNS, PITCH_EM.poster)
         : narrowCategoryColumns || columnsFor(wide, WIDE_COLUMNS, PITCH_EM.wide);
+  // A show's episodes on its page: two across on a TV or a computer (more in a window much wider than 16 by 9), one on a phone or in a narrow window.
+  const episodeColumns = narrow || few ? 1 : columnsFor(wide, EPISODE_COLUMNS, PITCH_EM.episode);
   // (A grid in sections, a friend's lists, has each section start a row of its own, under its heading.)
   const sectionPlace = grid?.sections ? sectionPlaces(grid.sections, gridColumns) : undefined;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
@@ -487,6 +506,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const tapOf = (entry: Entry) => listTap(lists, saved, entry.url);
   const canAdd = lists.length < MAX_LISTS;
   const shownId = shownList(view, lists).id;
+  /** The lists' own buttons on the page of lists: one to pick each, only when there is a choice. */
+  const listChips = several ? lists : [];
   /** Where the list being changed stands: the first list stays first, so only the others have a place to move to (and need another to change places with). */
   const editedId = overlay?.kind === "edit" ? overlay.id : null;
   const editedAt = editedId ? lists.findIndex((info) => info.id === editedId) : -1;
@@ -494,7 +515,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // Choosing a page shuts the menu at once. On a page with nothing to stand on (an empty list) the remote stays on the menu's line
   // for it, but the menu itself is closed; an arrow key opens it again.
   const choose = (next: View) => {
-    linkPendingRef.current = false; // (a link still being looked up is not opened over the page chosen meanwhile)
+    dropLink(); // (a link still being looked up is not opened over the page chosen meanwhile)
     remembered.view = next;
     remembered.detail = null;
     setViewState(next);
@@ -541,33 +562,52 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const leaveEdit = () => (overlay?.kind === "edit" && overlay.from ? setOverlay(overlay.from) : closeOverlay());
   /** A title's own page opens over the library, on Play; closing it puts the remote back on the title it came from. */
   const openDetail = (title: Focused) => {
-    linkPendingRef.current = false;
+    dropLink();
     setDetail(title);
     setPending(DETAIL);
   };
   const closeDetail = () => {
-    linkPendingRef.current = false;
+    dropLink();
     remembered.detail = null;
     setDetail(null);
     setPending(CONTENT);
   };
-  // A link to a title's page (`?title=movie-603`, see titleAddress.ts) opens that page over Home once the server has said what the title is; a title nobody
-  // knows leaves Home as it is, and the address without it. Until then the address is left alone. Only the link the site was opened with: the library is
-  // drawn again after every film, and what the address says then is not a link (`takeLinkedTitle`). Nor is it opened over a page the viewer went to meanwhile.
-  const [linked] = useState(takeLinkedTitle);
-  const linkPendingRef = useRef(linked !== null);
+  // A link to a title's page (`?title=movie-603`, see titleAddress.ts) opens that page over Home once the server has said what the title is. Until then the
+  // address is left alone. Only the link the site was opened with, and only until it is dealt with (`pendingLink`): the library is drawn again after every film,
+  // and what the address says then is not a link. Nor is it opened over a page the viewer went to meanwhile, or after a film started from one.
+  // A link whose title nobody knows (`?title=movie-0`, `?title=x`), or an address that is no page of the site (shared/strayAddress.ts), says so in a line over
+  // Home, and the address loses the title: it used to be Home without a word (the judge, 16 Nov).
+  const [linked] = useState(() => pendingLink());  const linkPending = () => linked !== null && pendingLink() !== null;
+  const [ownNotice, setOwnNoticeState] = useState<string | null>(() => {
+    if (takeStrayAddress()) remembered.notice = { text: t("notice.noSuchPage"), until: null };
+    const kept = remembered.notice;
+    return kept && (kept.until === null || kept.until > Date.now()) ? kept.text : null;
+  });
+  const setOwnNotice = (text: string | null) => {
+    remembered.notice = text ? { text, until: null } : null;
+    setOwnNoticeState(text);
+  };
+  // (Its time runs once nothing is over the library: a TV's welcome can wait a long while for its first press.)
+  useEffect(() => {
+    const kept = remembered.notice;
+    if (!ownNotice || !kept || quiet) return;
+    kept.until ??= Date.now() + NOTICE_MS;
+    const timer = setTimeout(() => setOwnNotice(null), Math.max(0, kept.until - Date.now()));
+    return () => clearTimeout(timer);
+  }, [ownNotice, quiet]);
   const detailRef = useRef(detail);
   detailRef.current = detail;
   useEffect(() => {
     if (!linked) return;
     let live = true;
-    void fetchTitle(linked).then((item) => {
-      if (!live) return;
-      const wanted = linkPendingRef.current;
-      linkPendingRef.current = false;
+    void linked.item.then((item) => {
+      if (!live) return; // (drawn again before the answer came: the library drawn now deals with it)
+      const wanted = pendingLink() !== null;
+      dropLink();
       if (detailRef.current) return; // (a page is open: the address is its own)
-      if (wanted && item) openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
-      else showTitle(null);
+      if (wanted && item) return openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
+      showTitle(null);
+      if (wanted) setOwnNotice(t("notice.noSuchTitle"));
     });
     return () => {
       live = false;
@@ -592,7 +632,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // above: the entry a title's page puts on the history is the one that carries its address, and Back goes to one that has none.)
   const openAddress = detail && !detail.entry.opens ? addressOf(detail.entry) : null;
   useEffect(() => {
-    if (!linkPendingRef.current || openAddress) showTitle(openAddress);
+    if (!linkPending() || openAddress) showTitle(openAddress);
   }, [openAddress]);
 
   // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here (the party, a phone). A few lines, so that
@@ -671,7 +711,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           close: [1],
           detail: [overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
-          ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
+          ...(series.episodes?.length ? { episodes: gridRows(series.episodes.length, episodeColumns) } : {}),
           ...(aboutList.length > 0 ? { related: aboutList.map((row) => row.items.length) } : {}),
         }
       : {}),
@@ -874,17 +914,18 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         edit({ kind: "selectAll" });
         return;
       }
+      // (Before the shortcuts are left alone: AltGr, which Windows reports as Ctrl+Alt, types characters, see typedCharacter.)
+      const typed = boxKeys ? typedCharacter(event) : null;
+      if (typed !== null) {
+        event.preventDefault();
+        edit({ kind: "type", char: typed });
+        return;
+      }
       if (event.altKey || event.ctrlKey || event.metaKey) return; // (the rest of the browser's shortcuts are the browser's: Ctrl+C, X and V come back as the clipboard's events, below)
       const extendTo = !boxKeys || !event.shiftKey ? null : event.key === "ArrowLeft" ? "left" : event.key === "ArrowRight" ? "right" : event.key === "Home" ? "start" : event.key === "End" ? "end" : null;
       if (extendTo) {
         event.preventDefault();
         edit({ kind: "move", to: extendTo, extend: true });
-        return;
-      }
-      const typed = boxKeys ? typedCharacter(event) : null;
-      if (typed !== null) {
-        event.preventDefault();
-        edit({ kind: "type", char: typed });
         return;
       }
       // ...and Delete takes the character after the caret, Home and End take it to the ends of the text.
@@ -902,6 +943,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         if (event.key === "Backspace" && page.kind === "search") {
           if (text) return edit({ kind: "backspace" }); // (at the very start of the text there is nothing before the caret: nothing goes, and the page is not left either)
           if (event.repeat) return; // (holding it down empties the box and stops there: the repeats must not go on to leave the page)
+          // On a computer Backspace only ever deletes, as in any box: one press too many left the search (the judge, 16 Nov). Esc, the Back
+          // button and the browser's own Back leave it. (A TV's keyboard or remote may have no other Back, so there it still is one.)
+          if (document.documentElement.dataset.fit === "desk") return;
         }
         const back = backOf(page); // (a page that is a step in from another goes back to that one, the others to Home, also from the menu when the page has no title to go back to)
         if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);
@@ -921,6 +965,20 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         return go(action === "left" ? RAIL : action === "up" && now.top?.length ? { zone: "top", row: 0, col: 0 } : null);
       }
       const next = stepFrom(now, at, action);
+      // Down from the profile's buttons lands on the place under the button the remote is on, not on the first place (the judge, 16 Nov: from Settings or
+      // Feedback, on the right, it went to My ratings at the far left, with History right under them).
+      if (page.kind === "profile" && at.zone === "hero" && action === "down" && next?.row === -1) {
+        const from = (event.target as HTMLElement).getBoundingClientRect();
+        const middle = from.left + from.width / 2;
+        const zone = CONTENT_ZONES.find((one) => (now[one]?.length ?? 0) > 0);
+        let under: { col: number; far: number } | null = null;
+        for (let col = 0; zone && col < (now[zone]?.[0] ?? 0); col++) {
+          const box = find(root, { zone, row: 0, col })?.getBoundingClientRect();
+          const far = box ? Math.max(box.left - middle, 0, middle - box.right) : Infinity; // (0 for the place the button's middle is over)
+          if (far < (under?.far ?? Infinity)) under = { col, far };
+        }
+        if (zone && under) return go({ zone, row: 0, col: under.col }, at.zone);
+      }
       // Up from the titles lands on the button of the list (or the half of a friend's page) that is shown, not on the one above whichever title the remote was on.
       const shownChip = page.kind === "friend" ? friendChip(page.tab) : Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id));
       // (Likewise on a phone's page of rows, where the buttons over the titles are the sections: from the titles, and from the account button over them, the one that is shown.)
@@ -1003,6 +1061,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
   /** Plays a title, or when it is a show's own page that asks, the episode it leads to (`at`), from where that was left. */
   const playEntry = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => {
+    dropLink(); // (a film started before a link's answer came: the library after it is Home, not the link's page)
+    remembered.notice = null; // (nor is the library's line about a link there again after it)
     remembered.detail = detail && series.isShow ? { page: detail, season: series.season } : null; // the library comes back to a show's page, to pick the next episode from it
     const startAt = at ? at.startAt : entry.startAt;
     onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
@@ -1218,6 +1278,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     return tap === "pick" ? t("rows.inLists") : t(tap === "remove" ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
   };
 
+  /**
+   * What a title is, beside its year in the banner and on its page: a film or a series (as the upright phone's banner says it). Not where the library got it:
+   * the catalog's own name ("Filmpire") meant nothing to a viewer (the judge, 16 Nov). A category says how many titles it has (`note`) and nothing more.
+   */
+  const kindWord = (entry: Entry): string | undefined =>
+    entry.opens ? undefined : entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined;
+
   const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
   // The banner shows the poster of the title the remote is on, beside what it says of it (a category, a person or an invitation has none).
   const heroPoster = !compact && shown && isTitle(shown.entry) ? sharper(shown.entry.image) : undefined;
@@ -1251,9 +1318,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         >
           <Logo />
         </button>
-        {notice && !detail && (
+        {(notice || ownNotice) && !detail && (
           <p className="tv-notice" role="alert" data-testid="tv-notice">
-            {notice}
+            {notice || ownNotice}
           </p>
         )}
         <div className="tv-browse-corner">
@@ -1320,11 +1387,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               <>
                 {heroPoster && <Poster key={`poster-${shown.entry.id}`} className="tv-hero-poster" title={shown.entry.title} image={heroPoster} seed={shown.entry.id} />}
               <div className="tv-hero-text" key={shown.entry.id}>
-                <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.byCategory") : shown.label}</p>
+                {/* (Not "Browse by category": the row under it says that, one line away - the judge, 16 Nov.) */}
+                <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.categories") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
                   {shown.entry.title}
                 </h1>
-                <p className="tv-hero-meta">{[shown.entry.year, shown.entry.note, shown.entry.opens ? shown.entry.source : (shown.source ?? undefined)].filter(Boolean).join("  ·  ")}</p>
+                <p className="tv-hero-meta">{[shown.entry.year, shown.entry.note, kindWord(shown.entry)].filter(Boolean).join("  ·  ")}</p>
                 {shown.entry.description && <p className="tv-hero-about">{shown.entry.description}</p>}
                 <div className="tv-hero-actions">
                   {actions.map((action, col) => (
@@ -1532,8 +1600,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </p>
           )}
           {view.kind === "list" && (
+            // (A list's own button is there to pick it from the others: with one list, the page's name is all it would say again - the judge, 16 Nov.)
             <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-              {lists.map((info, col) => (
+              {listChips.map((info, col) => (
                 <button
                   key={info.id}
                   className="tv-choice"
@@ -1555,9 +1624,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   data-testid="list-new"
                   data-zone="chips"
                   data-row={0}
-                  data-col={lists.length}
-                  onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: lists.length } })}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: lists.length })}
+                  data-col={listChips.length}
+                  onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: listChips.length } })}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length })}
                 >
                   <PlusIcon /> {t("lists.new")}
                 </button>
@@ -1567,9 +1636,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 data-testid="list-edit"
                 data-zone="chips"
                 data-row={0}
-                data-col={lists.length + (canAdd ? 1 : 0)}
-                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: lists.length + (canAdd ? 1 : 0) } })}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: lists.length + (canAdd ? 1 : 0) })}
+                data-col={listChips.length + (canAdd ? 1 : 0)}
+                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) })}
               >
                 <PencilIcon /> {t("lists.edit")}
               </button>
@@ -1834,7 +1903,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 <h1 className="tv-detail-title" data-testid="tv-detail-title">
                   {detail.entry.title}
                 </h1>
-                <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
+                <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, kindWord(detail.entry)].filter(Boolean).join("  ·  ")}</p>
                 {/* (Above the buttons, as what the movie database knows is: the page stands on its foot, so what comes after it has opened grows upwards and Play stays where it was.) */}
                 {series.unavailable && (
                   <p className="tv-detail-gone" data-testid="tv-detail-unavailable">
@@ -1864,7 +1933,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 </div>
               </div>
             </div>
-            {series.isShow && <SeriesSection page={series} onPlay={playEpisode} onSlide={slideIntoView} />}
+            {series.isShow && <SeriesSection page={series} columns={episodeColumns} onPlay={playEpisode} onSlide={slideIntoView} />}
             {aboutList.map((row, r) => (
               <section className="tv-detail-more" key={`${detail.entry.id}-${row.id}`} aria-label={t(`about.${row.id}`)} data-testid={`tv-about-${row.id}`}>
                 <h2 className="tv-row-title">{t(`about.${row.id}`)}</h2>
@@ -2141,11 +2210,11 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
         {...common}
         style={{ "--hue": hue } as CSSProperties}
       >
-        {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
+        {showPicture && <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
         {fan && (
           <span className="tv-category-fan" aria-hidden="true">
             {entry.posters!.map((poster, at) => (
-              <img key={poster} src={poster} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
+              <img key={poster} loading="lazy" {...posterSizes(poster)} src={poster} alt="" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
             ))}
           </span>
         )}
@@ -2191,7 +2260,7 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
       <span className="tv-tile-body">
         <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
           {showPicture ? (
-            <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
+            <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
           ) : (
             <span className="tv-tile-initial" aria-hidden="true">
               {entry.title.trim().charAt(0).toUpperCase()}

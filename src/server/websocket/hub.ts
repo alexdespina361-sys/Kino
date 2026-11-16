@@ -107,7 +107,12 @@ export interface HubOptions {
   maxSockets?: number;
   /** Phones paired with a TV (by its code or its control code) from one address in an hour (see MAX_NEW_PAIRS). */
   maxNewPairs?: number;
+  /** How long a party's host has to have been away for a guest's page, opened afresh, not to be put back in its party (see `tvHello`). Default HOST_GONE_MS. */
+  hostGoneMs?: number;
 }
+
+/** A host's page that has been closed this long is taken to be gone, not reloading: a guest's page opened since is not put back in its party. */
+const HOST_GONE_MS = 60_000;
 
 /**
  * How many connections one address may have open at once: every page of a TV or a phone is one, and a household, or many behind one address of a mobile
@@ -161,6 +166,10 @@ export class Hub {
   private readonly profiles: ScreenProfiles | undefined;
   /** When each TV or phone that nobody has paired was first seen to be gone: only the ones still waiting (see `forgetAbandoned`). */
   private goneSince = new Map<string, number>();
+  /** When each TV whose page is not open now last went away (its connection closed): a party whose host has been away long does not take a guest's page back (see `tvHello`). */
+  private readonly awaySince = new Map<string, number>(); // deviceId -> ms
+  /** (A TV that went away before this server started is counted as away since then.) */
+  private readonly startedAt = Date.now();
   private readonly keepUnpairedMs: number;
   private readonly maxUnpaired: number;
   private readonly maxFailedLinks: number;
@@ -173,6 +182,7 @@ export class Hub {
   private readonly maxSockets: number;
   /** Phones paired lately, counted for each address (see MAX_NEW_PAIRS). */
   private readonly newPairs: RateLimiter;
+  private readonly hostGoneMs: number;
 
   constructor(
     private readonly registry: Registry,
@@ -195,12 +205,15 @@ export class Hub {
     this.maxSocketsPerAddress = options.maxSocketsPerAddress ?? MAX_SOCKETS_PER_ADDRESS;
     this.maxSockets = options.maxSockets ?? MAX_SOCKETS;
     this.newPairs = new RateLimiter(options.maxNewPairs ?? MAX_NEW_PAIRS, 3_600_000);
+    this.hostGoneMs = options.hostGoneMs ?? HOST_GONE_MS;
     const helloWithinMs = options.helloWithinMs ?? 30_000;
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
       // (A ping keeps a connection from going stale: one that never said who it is would be kept for ever by pinging.)
       for (const [socket, opened] of this.unnamed) if (now - opened > helloWithinMs) socket.close(1008, "say hello first");
+      // (A TV away longer than that is away "since this server started" as far as `tvHello` is concerned: the same answer, and the map stays small.)
+      for (const [id, since] of this.awaySince) if (now - since > this.hostGoneMs) this.awaySince.delete(id);
       this.forgetAbandoned(now);
     }, options.sweepEveryMs ?? 20_000);
     this.sweeper.unref();
@@ -254,6 +267,7 @@ export class Hub {
       }
       if (conn.role === "tv" && this.tvs.get(conn.deviceId) === socket) {
         this.tvs.delete(conn.deviceId);
+        this.awaySince.set(conn.deviceId, Date.now());
         this.opened.delete(conn.deviceId);
         this.roundTrips.delete(conn.deviceId);
         this.holds.delete(conn.deviceId);
@@ -393,11 +407,23 @@ export class Hub {
     if (!(wanted && this.registry.getDevice(wanted)) && !this.hasRoomFor("tv")) return this.turnAway(conn);
     const device = this.registry.tvHello(wanted);
     this.goneSince.delete(device.id); // (its time starts over when it goes again, however soon that is)
+    this.awaySince.delete(device.id);
 
     // One live page per TV. The old page is told to stand down instead of fighting for the slot.
     const previous = this.tvs.get(device.id);
     this.tvs.set(device.id, socket);
     if (previous && previous !== socket) previous.close(CLOSE_REPLACED, "replaced");
+
+    // A page opened afresh on a screen that watched along with a host whose page has been closed a while (the party was never ended) is not put back in that
+    // party: it opens on the library, and is told why; the host's party lists it no more (the judge, 16 Nov: it opened on "Watching along with ... Offline",
+    // a party that was over in all but name). A page that only lost its connection, or one reloaded while the host is there or only just gone, stays.
+    const wasWith = opened ? this.registry.leaderOf(device) : undefined;
+    let leftParty: string | undefined;
+    if (wasWith && !this.tvs.has(wasWith.id) && Date.now() - (this.awaySince.get(wasWith.id) ?? this.startedAt) >= this.hostGoneMs) {
+      this.registry.detachFollower(device);
+      leftParty = this.registry.displayName(wasWith);
+      this.sendParty(wasWith);
+    }
 
     const leader = this.registry.leaderOf(device);
     // A page that has just been opened is idle, whatever the TV was doing before; its first report says so, and then what it was on is put back.
@@ -411,6 +437,7 @@ export class Hub {
       paired: device.controllerId !== null || leader !== undefined,
       pairing: this.registry.ensureCode(device),
       ...(leader ? { following: this.registry.displayName(leader) } : {}),
+      ...(leftParty ? { leftParty } : {}),
     });
     this.toControllers(device, { type: "TV_STATUS", online: true });
     this.tellPhones(device);

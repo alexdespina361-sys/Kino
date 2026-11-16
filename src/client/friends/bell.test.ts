@@ -15,7 +15,17 @@ const watched = (key: string, at: number, friend = "pro_sam"): ActivityItem => (
 
 describe("what the bell lists", () => {
   it("is nothing when nothing waits and nothing was watched", () => {
-    expect(bellView(state(), NOW)).toEqual({ requests: [], inbox: [], chat: [], lately: [], more: 0 });
+    expect(bellView(state(), NOW)).toEqual({ requests: [], inbox: [], chat: [], lately: [], joined: [], more: 0 });
+  });
+
+  it("names the friends made since it was last opened, the newest first, and none when it never was", () => {
+    const kim: Friend = { ...sam, id: "pro_kim", name: "Kim", since: NOW - 100 };
+    const ann: Friend = { ...sam, id: "pro_ann", name: "Ann", since: NOW - 10 };
+    const old: Friend = { ...sam, id: "pro_old", name: "Old", since: NOW - 5000 };
+    expect(bellView(state({ friends: [old, kim, ann] }), NOW, {}, NOW - 1000).joined.map((friend) => friend.name)).toEqual(["Ann", "Kim"]);
+    expect(bellView(state({ friends: [old, kim, ann] }), NOW).joined).toEqual([]);
+    expect(bellView(state({ friends: [old, kim, ann] }), NOW, {}, NOW - 1000, new Set(["pro_ann"])).joined.map((friend) => friend.name)).toEqual(["Kim"]); // (Ann was made on this screen: no news to it)
+    expect(bellView(state({ friends: Array.from({ length: 6 }, (_, at) => ({ ...sam, id: `pro_${at}`, since: NOW - at })) }), NOW, {}, 1).joined).toHaveLength(4);
   });
 
   it("puts an invitation to a party that is on first, then a request to watch together, then titles, then a party that is over, the newest first within each", () => {
@@ -114,5 +124,11 @@ describe("whether friends watched something new", () => {
     expect(hasNewActivity(state({ activity: [watched("a", NOW - 2000)] }), seen)).toBe(false);
     expect(hasNewActivity(state({ activity: [watched("a", NOW - 500, "pro_gone")] }), seen)).toBe(false);
     expect(hasNewActivity(state(), seen)).toBe(false);
+  });
+
+  it("is so when somebody became a friend after the bell was last opened (a code that was used, a request that was answered)", () => {
+    const seen = NOW - 1000;
+    expect(hasNewActivity(state({ friends: [sam, { ...sam, id: "pro_ann", since: NOW - 10 }] }), seen)).toBe(true);
+    expect(hasNewActivity(state({ friends: [sam, { ...sam, id: "pro_ann", since: NOW - 2000 }] }), seen)).toBe(false);
   });
 });

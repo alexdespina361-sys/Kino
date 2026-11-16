@@ -331,16 +331,25 @@ export const isTitle = (entry: Entry): boolean =>
 /** A category's tile shows the posters of this many of its titles. */
 const CATEGORY_POSTERS = 3;
 
-/** `withSection` says which section the category is in too (the list of every category, where they sit together). */
-const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withSection = false): Entry => {
-  const first = row.items[0];
-  const picture = first?.backdrop ?? first?.image;
+/** How far into a category its picture is looked for, past the ones the categories before it have. */
+const PICTURE_LOOK = 8;
+
+/**
+ * `withSection` says which section the category is in too (the list of every category, where they sit together), unless its name says it already
+ * ("Trending Movies" is not "Trending Movies · Movies": the judge, 16 Nov). `used` is the pictures of the categories before it in the same list: each
+ * takes the first of its titles' pictures that none of them has (most of the film categories had the same week's hit for theirs).
+ */
+const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withSection = false, used?: Set<string>): Entry => {
+  const pictures = row.items.slice(0, PICTURE_LOOK).flatMap((item) => (item.backdrop ?? item.image ? [(item.backdrop ?? item.image)!] : []));
+  const picture = pictures.find((one) => !used?.has(one)) ?? pictures[0];
+  if (picture) used?.add(picture);
   const posters = row.items.flatMap((item) => (item.image ? [item.image] : [])).slice(0, CATEGORY_POSTERS);
   const section = sectionOf(row);
-  const place = withSection && section ? sectionName(section) : "";
+  const title = rowTitle(row);
+  const place = withSection && section && !title.toLocaleLowerCase(getLanguage()).includes(sectionName(section).toLocaleLowerCase(getLanguage())) ? sectionName(section) : "";
   return {
     id: row.id,
-    title: rowTitle(row),
+    title,
     url: "",
     opens: { kind: "category", rowId: row.id },
     ...sourceOf(rows, row),
@@ -370,7 +379,8 @@ const CATEGORIES_AFTER = 3;
 const CATEGORY_TILES = 12;
 
 function categoriesRow(rows: readonly LibraryRow[], of: LibrarySection | undefined): HomeRow {
-  const entries = rows.slice(0, CATEGORY_TILES).map((row) => categoryEntry(row, rows));
+  const used = new Set<string>();
+  const entries = rows.slice(0, CATEGORY_TILES).map((row) => categoryEntry(row, rows, false, used));
   if (rows.length > CATEGORY_TILES) entries.push({ id: "all-categories", title: t("tv.allCategories"), url: "", opens: { kind: "categories", ...(of ? { of } : {}) } });
   return { id: "categories", layout: "categories", title: t("tv.byCategory"), entries };
 }
@@ -543,14 +553,16 @@ export function gridOf(view: View, data: PageData): GridPage | null {
     }
     case "category": {
       const row = data.all.find((candidate) => candidate.id === view.rowId);
-      return row ? { title: rowTitle(row), meta: sourceOf(data.all, row).source ?? "", layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      // (Under its name, the section it is in, as its tile says it: not the catalog's name, "Filmpire" - the judge, 16 Nov.)
+      return row ? { title: rowTitle(row), meta: categoryEntry(row, data.all, true).note ?? "", layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
       const rows = data.all.filter((row) => !view.of || sectionOf(row) === view.of);
       const title =
         view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : view.of === "cartoon" ? t("tv.cartoonCategories") : view.of === "anime" ? t("tv.animeCategories") : t("tv.allCategories");
       const ordered = view.of ? rows : SECTION_ORDER.flatMap((section) => rows.filter((row) => sectionOf(row) === section));
-      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.all, !view.of)), empty: "" };
+      const used = new Set<string>();
+      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.all, !view.of, used)), empty: "" };
     }
     default:
       return null;

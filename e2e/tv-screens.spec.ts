@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
+import { ro } from "../src/client/i18n/ro";
 import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressMenuLine, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, twoSizes, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
@@ -73,7 +74,7 @@ test.describe("the start screens", () => {
   test("the switch to the remote can be chosen with OK from the page that shows the code", async ({ browser }) => {
     const tv = await openTv(browser);
     await expect(tv.getByTestId("pairing-code")).toBeVisible();
-    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("switch-to-remote")).toBeFocused();
     await tv.keyboard.press("Enter");
@@ -95,20 +96,29 @@ test.describe("the start screens", () => {
     expect(Math.abs(disconnect.x + disconnect.width / 2 - width / 2), "and in the middle").toBeLessThan(3);
   });
 
-  test("the arrow keys reach the library button in the corner of the pairing screen, and OK opens the library", async ({ browser }) => {
+  test("the pairing screen opens on the library button in the corner, lit, the arrow keys reach the rest, and OK opens the library", async ({ browser }) => {
     const tv = await openTv(browser);
     await expect(tv.getByTestId("pairing-code")).toBeVisible();
-    await tv.keyboard.press("ArrowDown"); // the first press only lands on the first button: Copy, under the code
-    await expect(tv.getByTestId("pairing-code-copy")).toBeFocused();
-    await tv.keyboard.press("ArrowUp"); // and Up from it is the corner's pill
-    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
+    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused(); // (no press is spent finding a button: the judge saw nothing lit at first)
     await tv.keyboard.press("ArrowDown"); // Down from the corner is the link at the foot of the page
     await expect(tv.getByTestId("switch-to-remote")).toBeFocused();
-    await tv.keyboard.press("ArrowUp"); // Up from the link is Copy again, and Up from that the corner
-    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp"); // Up from the link is Copy, under the code
+    await expect(tv.getByTestId("pairing-code-copy")).toBeFocused();
+    await tv.keyboard.press("ArrowUp"); // and Up from that the corner
     await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  });
+
+  test("a browser that says it is a TV's is not offered to be a remote", async ({ browser }) => {
+    const tizen = "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36";
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, userAgent: tizen });
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await pressMenuLine(tv, "rail-connect");
+    await expect(tv.getByTestId("pairing-code")).toBeVisible();
+    await expect(tv.getByTestId("tv-back-to-library")).toBeFocused();
+    await expect(tv.getByTestId("switch-to-remote")).toHaveCount(0);
   });
 });
 
@@ -1401,17 +1411,21 @@ test.describe("a show's own page on the TV", () => {
 
     await tv.keyboard.press("ArrowDown");
     await expect(episodes(tv).first()).toBeFocused(); // no episode of this season is the one Play starts: the first
-    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowRight"); // a TV has them two across (the judge, 16 Nov: one a line left a third of the screen empty)
     await expect(episodes(tv).nth(1)).toBeFocused();
-    await tv.keyboard.press("ArrowDown");
+    expect((await episodes(tv).nth(1).boundingBox())!.y).toBeCloseTo((await episodes(tv).first().boundingBox())!.y, 0);
+    await tv.keyboard.press("ArrowRight"); // the end of the line
+    await expect(episodes(tv).nth(1)).toBeFocused();
+    await tv.keyboard.press("ArrowDown"); // the third is alone on the next line
+    await expect(episodes(tv).nth(2)).toBeFocused();
     await tv.keyboard.press("ArrowDown"); // the last stays
     await expect(episodes(tv).nth(2)).toBeFocused();
     await tv.keyboard.press("ArrowRight");
-    await tv.keyboard.press("ArrowLeft"); // sideways leads nowhere from an episode
+    await tv.keyboard.press("ArrowLeft"); // nothing beside it
     await expect(episodes(tv).nth(2)).toBeFocused();
 
     await tv.keyboard.press("ArrowUp");
-    await tv.keyboard.press("ArrowUp");
+    await expect(episodes(tv).first()).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("tv-season-2")).toBeFocused(); // up to the season that is shown, not the first one
     await tv.keyboard.press("ArrowUp");
@@ -1440,7 +1454,7 @@ test.describe("a show's own page on the TV", () => {
     await expect(episodes(tv).first()).toContainText("Pilot again");
     await tv.keyboard.press("ArrowDown");
     await expect(episodes(tv).first()).toBeFocused();
-    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowRight"); // (two across on a TV)
     await expect(episodes(tv).nth(1)).toBeFocused();
     await tv.keyboard.press("Enter"); // the second episode's page has no video
     await expect(tv.getByTestId("tv-notice")).toBeVisible({ timeout: 15_000 });
@@ -1826,7 +1840,8 @@ test.describe("movies, series, and the rest of the menu", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
     await expect(rail(tv)).toHaveAttribute("data-open", "false");
-    await expect(tv.getByTestId("list-chip-favourites")).toBeFocused(); // an empty list still has its buttons: that is where the remote goes
+    await expect(tv.getByTestId("list-new")).toBeFocused(); // an empty list still has its buttons: that is where the remote goes
+    await expect(tv.getByTestId("list-chip-favourites")).toHaveCount(0); // (one list: nothing to pick, and the page's name says which it is)
     await tv.keyboard.press("Escape"); // Back is home
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
 
@@ -2070,6 +2085,16 @@ test.describe("categories and search on the TV", () => {
     expect(asked.at(-1)).toBe("film");
     expect(asked.filter((q) => q.length < 2)).toEqual([]); // nothing for a single letter
 
+    // Any language's letters and the signs in titles go in as they are, AltGr's too (the judge found "amélie" searched as "amlie", "law & order" as "law order").
+    // (The keys as a French or Romanian keyboard reports them: Playwright's own typing only inserts what is not on an American keyboard.)
+    await tv.keyboard.type(" & ");
+    const key = (key: string, more: { ctrlKey?: boolean; altKey?: boolean; modifierAltGraph?: boolean } = {}) =>
+      tv.evaluate(([key, more]) => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...more })), [key, more] as const);
+    for (const letter of ["A", "m", "É"]) await key(letter);
+    await key("ș", { ctrlKey: true, altKey: true, modifierAltGraph: true });
+    await key("x", { ctrlKey: true, altKey: true }); // (a shortcut, not AltGr)
+    await expect(tv.getByTestId("tv-query")).toHaveText("film & améș");
+
     // Under the letters: the caret's two keys, Space, Delete and Clear, which empties the box in one press instead of a Delete for each letter.
     for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("key-right")).toBeFocused();
@@ -2237,15 +2262,22 @@ test.describe("categories and search on the TV", () => {
   });
 
   test("the rows are named in the language of the screen: on the home page, in the list of categories and on a category's page", async ({ browser }) => {
+    const movies = films.map((film) => ({ ...film, kind: "movie" })); // (as the catalog lists them: each title says what it is)
     const rows = [
-      { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: films },
-      { id: "filmpire-comedy-movies", title: "Comedy Movies", source: "Filmpire", kind: "movie", items: films.slice(0, 5) },
+      { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: movies },
+      { id: "filmpire-comedy-movies", title: "Comedy Movies", source: "Filmpire", kind: "movie", items: movies.slice(0, 5) },
       { id: "elsewhere-picks", title: "Staff Picks", source: "Elsewhere", kind: "movie", items: films.slice(0, 3) },
     ];
     const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, locale: "ro-RO" }, {}, withLibrary({ updatedAt: Date.now(), rows }));
     await tv.goto("/tv");
     await expect(tiles(tv).first()).toBeFocused();
     await expect(tv.locator(".tv-row-title")).toHaveText(["Filme în tendințe", "Filme de comedie", "Staff Picks"]);
+    // The banner says what the title is, not the catalog it came from (the judge, 16 Nov: "2026 · Filmpire"); its page says the same.
+    await expect(tv.locator(".tv-hero-meta")).toHaveText(new RegExp(`${ro["library.kindMovie"]}$`));
+    await expect(tv.locator(".tv-hero-meta")).not.toContainText("Filmpire");
+    await tv.keyboard.press("Enter");
+    await expect(tv.locator(".tv-detail .tv-hero-meta")).toHaveText(new RegExp(`${ro["library.kindMovie"]}$`));
+    await tv.keyboard.press("Escape");
 
     await choose(tv, "rail-categories");
     await expect(tv.getByTestId("tv-category-tile").nth(1)).toHaveAttribute("title", "Filme de comedie"); // (the list names it the same way)

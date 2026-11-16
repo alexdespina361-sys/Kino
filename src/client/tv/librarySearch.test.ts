@@ -131,8 +131,18 @@ describe("the keyboard", () => {
     expect(typedCharacter({ key: " " })).toBe(" ");
     expect(typedCharacter({ key: "Enter" })).toBeNull();
     expect(typedCharacter({ key: "ArrowLeft" })).toBeNull();
-    expect(typedCharacter({ key: "!" })).toBeNull();
     expect(typedCharacter({ key: "c", ctrlKey: true })).toBeNull();
+    expect(typedCharacter({ key: "c", altKey: true })).toBeNull();
+    expect(typedCharacter({ key: "c", metaKey: true })).toBeNull();
+    // Any language's letters and the signs in titles (the judge's "amélie" and "law & order"), lower-cased; keys with names are not characters.
+    for (const [key, typed] of [["é", "é"], ["É", "é"], ["ş", "ş"], ["Ș", "ș"], ["ñ", "ñ"], ["&", "&"], ["'", "'"], ["!", "!"], ["-", "-"], ["😀", "😀"]] as const) {
+      expect(typedCharacter({ key })).toBe(typed);
+    }
+    for (const key of ["Dead", "Process", "Unidentified", "Tab", "\t", "\n", "​"]) expect(typedCharacter({ key })).toBeNull();
+    // AltGr (Ctrl+Alt on Windows) types: ș on a Romanian Programmers keyboard, @ on a German one.
+    const altGraph = (key: string) => ({ key, ctrlKey: true, altKey: true, getModifierState: (name: string) => name === "AltGraph" });
+    expect(typedCharacter(altGraph("ș"))).toBe("ș");
+    expect(typedCharacter(altGraph("@"))).toBe("@");
   });
 
   it("keeps the text tidy: no leading or double spaces, and a limit", () => {

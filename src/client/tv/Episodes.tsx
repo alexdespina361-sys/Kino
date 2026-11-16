@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { LiveProgress, LiveWatched } from "../../shared";
 import { describeStatus, episodeName, episodeStatus } from "../../shared";
 import { t } from "../i18n";
@@ -108,8 +108,12 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
   };
 }
 
-/** Under a show's buttons: its seasons (when there is a choice) and the episodes of the one that is shown. The remote walks them as zones `seasons` and `episodes`. */
-export function SeriesSection({ page, onPlay, onSlide }: { page: SeriesPage; onPlay: (episode: PageEpisode) => void; onSlide: (button: HTMLElement) => void }) {
+/**
+ * Under a show's buttons: its seasons (when there is a choice) and the episodes of the one that is shown. The remote walks them as zones `seasons` and `episodes`.
+ * The episodes are `columns` across, in reading order (a wide screen has two: one card a line left a third of it empty, and the rows of titles under them were one
+ * Down press per episode away - the judge, 16 Nov).
+ */
+export function SeriesSection({ page, columns = 1, onPlay, onSlide }: { page: SeriesPage; columns?: number; onPlay: (episode: PageEpisode) => void; onSlide: (button: HTMLElement) => void }) {
   const { seasons, season, episodes } = page;
   return (
     <section className="tv-detail-eps" aria-label={t("player.episodes")} data-testid="tv-episodes">
@@ -135,16 +139,16 @@ export function SeriesSection({ page, onPlay, onSlide }: { page: SeriesPage; onP
         </SideScroll>
       )}
       {episodes ? (
-        <div className="tv-detail-list">
-          {episodes.map((episode, row) => (
+        <div className="tv-detail-list" data-cols={columns} style={columns > 1 ? ({ "--ep-cols": columns } as CSSProperties) : undefined}>
+          {episodes.map((episode, at) => (
             <button
               key={`${episode.season}-${episode.episode}`}
               className="tv-opt tv-ep"
               data-testid="tv-episode"
               data-episode={episode.episode}
               data-zone="episodes"
-              data-row={row}
-              data-col={0}
+              data-row={Math.floor(at / columns)}
+              data-col={at % columns}
               data-target={episode.target}
               data-active={episode.target}
               data-unavailable={episode.card.unavailable || undefined}

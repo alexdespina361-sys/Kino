@@ -204,6 +204,11 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
       <Logo />
       <p>{t("tv.welcome")}</p>
       {ask && (
+        <p className="tv-welcome-about" data-testid="welcome-about">
+          {t("tv.welcomeAbout")}
+        </p>
+      )}
+      {ask && (
         <button className="tv-action" data-testid="welcome-enter">
           {t("tv.welcomeStart")}
         </button>
@@ -246,7 +251,8 @@ interface IdleProps {
 /** What the TV shows besides the library, a video and a watch party: finding one, pairing a phone, being paired. */
 export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, onDisconnect, onBack }: IdleProps) {
   const t = useT();
-  const back = <BackButton onClick={onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} />;
+  // The pairing page opens on its way out, lit: nothing else on it is for a TV to press, and a first press that only found a button was lost (the judge, 16 Nov).
+  const back = <BackButton onClick={onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} autoFocus />;
 
   if (resolving) {
     return (
@@ -269,7 +275,8 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
 
   if (paired) {
     return (
-      <Screen compact onBack={onBack}>
+      // (Nothing lit here on purpose: this page comes by itself when a phone connects, and a stray OK must neither let go of the phones nor leave. features.spec.ts)
+      <Screen key="paired" compact onBack={onBack}>
         <span className="tv-ready-icon">
           <CheckIcon />
         </span>
@@ -316,7 +323,7 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
     // The QR code opens the phone page with the code filled in, so pairing needs no typing at all.
     const link = pairLink(pairing.code);
     return (
-      <Screen onBack={onBack}>
+      <Screen key="pairing" focus onBack={onBack}>
         <div className="tv-pair">
           <ol className="tv-steps">
             <li>

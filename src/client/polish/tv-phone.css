@@ -228,13 +228,8 @@
   /* The name at the top is the way home: what a thumb can land on reaches a little past the drawing, up and down. */
   :root[data-ui="polish"] .tv .tv-browse-logo { position: relative; }
   :root[data-ui="polish"] .tv .tv-browse-logo::after { content: ""; position: absolute; inset: -8px -4px; }
-  /* The cross that empties the field: a button of its own, as big as a thumb (the browser's is a few pixels wide and is put away). */
-  :root[data-ui="polish"] .tv .tv-query-field { position: relative; }
-  :root[data-ui="polish"] .tv .tv-query-field input.tv-query { padding-right: 52px; }
-  :root[data-ui="polish"] .tv input.tv-query::-webkit-search-cancel-button { display: none; }
-  :root[data-ui="polish"] .tv .tv-query-clear { position: absolute; top: 4px; right: 0; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--text-2); }
-  :root[data-ui="polish"] .tv .tv-query-clear svg { width: 22px; height: 22px; }
-  :root[data-ui="polish"] .tv .tv-query-clear:active { color: var(--text-1, #fff); background: var(--surf-3, rgb(255 255 255 / 0.08)); }
+  /* The cross that empties the field is a button of its own, as big as a thumb (polish/tv.css, for every narrow page); here it is level with the field under its 4 px. */
+  :root[data-ui="polish"] .tv .tv-query-clear { top: 4px; }
   :root[data-ui="polish"] .tv .tv-search-main .tv-view-meta { margin-top: 0; }
 
   /* ------------------------------ the profile's page ------------------------------ */

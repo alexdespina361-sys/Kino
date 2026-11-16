@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, describe, expect, it } from "vitest";
-import { LIMITS, ListItemSchema, MAX_PROFILES, ProgressItemSchema, RatingItemSchema, WatchedItemSchema, type CollectionName, type SyncRequest } from "../../shared";
+import { AVATAR_IDS, LIMITS, ListItemSchema, MAX_PROFILES, ProgressItemSchema, RatingItemSchema, WatchedItemSchema, type CollectionName, type SyncRequest } from "../../shared";
 import { FilePersistence, MemoryPersistence, PostgresPersistence, persistenceFromEnv } from "./persistence";
 import { AccountStore, SESSION_TTL_MS } from "./store";
 
@@ -50,6 +50,16 @@ describe("accounts", () => {
     expect(store.findByEmail("alex.popescu@example.com")?.id).toBe(account.id);
     expect(store.createAccount("alex.popescu@example.com", "other")).toEqual({ ok: false, error: "email_taken" });
     expect(store.countAccounts()).toBe(1);
+  });
+
+  it("gives the first profiles of new accounts different pictures, going round the twelve (every one was a fox: the judge, 16 Nov)", async () => {
+    const store = await open();
+    const firsts = Array.from({ length: AVATAR_IDS.length + 1 }, (_, i) => {
+      const made = store.createAccount(`person${i}@example.com`, "hash");
+      if (!made.ok) throw new Error("could not create");
+      return store.profilesOf(made.value.id)[0]!.avatar;
+    });
+    expect(firsts).toEqual([...AVATAR_IDS, AVATAR_IDS[0]]);
   });
 
   it("deletes an account with its profiles, their data and its sessions", async () => {

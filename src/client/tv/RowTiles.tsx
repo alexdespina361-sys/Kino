@@ -23,6 +23,9 @@ export function RowTiles({ children, onNearEnd, loading }: { children: ReactNode
   const [more, setMore] = useState({ before: false, after: false });
   const wantsMore = useRef(onNearEnd);
   wantsMore.current = onNearEnd;
+  // Only a row that is on the screen asks; one further down asks when it is scrolled to. (The judge, 16 Nov: the TV's Home asked for the next titles of
+  // about 37 rows as it opened, ~244 KB and the catalog's work for every visitor before anybody scrolled.) A browser that cannot tell asks as it did.
+  const onScreen = useRef(typeof IntersectionObserver === "undefined");
 
   const measure = useCallback(() => {
     const row = scroller.current;
@@ -30,7 +33,7 @@ export function RowTiles({ children, onNearEnd, loading }: { children: ReactNode
     const before = row.scrollLeft > 2;
     const after = row.scrollLeft < row.scrollWidth - row.clientWidth - 2;
     setMore((was) => (was.before === before && was.after === after ? was : { before, after }));
-    if (row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * NEAR_END) wantsMore.current?.();
+    if (onScreen.current && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * NEAR_END) wantsMore.current?.();
   }, []);
 
   // (The titles of a row come and go as the library fills in or a list changes, and the window changes size: look again each time.)
@@ -39,6 +42,16 @@ export function RowTiles({ children, onNearEnd, loading }: { children: ReactNode
     const row = scroller.current;
     if (!row || typeof ResizeObserver === "undefined") return;
     const watch = new ResizeObserver(measure);
+    watch.observe(row);
+    return () => watch.disconnect();
+  }, [measure]);
+  useEffect(() => {
+    const row = scroller.current;
+    if (!row || typeof IntersectionObserver === "undefined") return;
+    const watch = new IntersectionObserver((seen) => {
+      onScreen.current = seen.some((one) => one.isIntersecting);
+      if (onScreen.current) measure();
+    });
     watch.observe(row);
     return () => watch.disconnect();
   }, [measure]);

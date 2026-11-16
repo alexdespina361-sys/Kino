@@ -93,7 +93,9 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
   });
 
   test("?fullscreen=off keeps any browser from being asked, on this visit and the next ones, until ?fullscreen=on", async ({ browser, baseURL }) => {
-    const tv = await openDevice(browser, { viewport: TV_SIZE, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL!)));
+    // (told it is watched from the couch: the project's browser is a computer's, and a computer's welcome never asks)
+    const couch = { cookies: [], origins: [{ origin: new URL(baseURL!).origin, localStorage: [{ name: "kino.fit", value: "couch" }] }] };
+    const tv = await openDevice(browser, { viewport: TV_SIZE, storageState: couch }, {}, withLibrary(filmsOf(baseURL!)));
     await tv.goto("/tv?fullscreen=off");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tv.getByTestId("fullscreen-toggle")).toHaveCount(0);

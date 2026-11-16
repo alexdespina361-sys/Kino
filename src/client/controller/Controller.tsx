@@ -32,6 +32,7 @@ import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { ChevronLeftIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
+import { forgetStrayAddress, strayAddress } from "../shared/strayAddress";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
@@ -356,6 +357,17 @@ export function Controller() {
     const timer = setTimeout(() => setToast(null), toast.long ? 4500 : 2000);
     return () => clearTimeout(timer);
   }, [toast]);
+  // An address that is no page of the site opened the remote as "/" does: it says so (see shared/strayAddress.ts), in the line at the bottom, or on the
+  // first screen of a phone with no TV yet, which has no such line.
+  // (Read while drawing, and only marked as said once the page is up: a first drawing that React throws away does not lose it.)
+  const [stray, setStray] = useState(strayAddress);
+  useEffect(() => {
+    if (!stray) return;
+    forgetStrayAddress();
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text: t("notice.noSuchPageShort"), long: true }));
+    const timer = setTimeout(() => setStray(false), 8000);
+    return () => clearTimeout(timer);
+  }, [stray]);
   // What a hold on a title did (it went in a list, or came out) is said down here as well, where the finger is.
   useEffect(() => {
     const say = (event: Event) => setToast((current) => ({ id: (current?.id ?? 0) + 1, text: String((event as CustomEvent<string>).detail) }));
@@ -540,7 +552,7 @@ export function Controller() {
           connection={connection}
           pending={pairing}
           error={error}
-          notice={lost ? t("phone.tvGone") : null}
+          notice={lost ? t("phone.tvGone") : stray ? t("notice.noSuchPageShort") : null}
           tvCount={tvs.length}
           onTvs={() => setSheet("tvs")}
           corner={

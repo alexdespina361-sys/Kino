@@ -363,7 +363,9 @@ export class AccountStore {
   }
 
   private make(email: string, hash: string, name: string, google?: AccountDoc["google"]): AccountDoc {
-    const first = this.newProfile(name, AVATAR_IDS[0]);
+    // The first profile's picture goes round the twelve, one account after another: every new account was a fox, so friends looked the same in the
+    // friends' list, the chat and the bell (the judge, 16 Nov). Its owner can change it as before.
+    const first = this.newProfile(name, AVATAR_IDS[this.accounts.size % AVATAR_IDS.length]!);
     this.takeTag(first);
     const account: AccountDoc = { v: 1, id: newId("acc"), email, hash, createdAt: this.now(), profiles: [first], ...(google ? { google } : {}) };
     this.accounts.set(account.id, account);

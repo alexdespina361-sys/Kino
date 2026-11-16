@@ -260,10 +260,12 @@ test.describe("the bell on the phone", () => {
     await expect(lately).toHaveCount(1);
     await pull(180);
     await expect(lately).toHaveCount(0);
-    await expect(bob.page.getByTestId("bell-empty")).toBeVisible();
+    // (Bob asked and Ann said yes on her phone: news to his, said once, under the line that is cleared)
+    await expect(bob.page.getByTestId("bell-joined-item")).toContainText(annName);
     await bob.page.keyboard.press("Escape");
     await bell(bob.page).click();
     await expect(bob.page.getByTestId("bell-empty")).toBeVisible();
+    await expect(bob.page.getByTestId("bell-joined-item")).toHaveCount(0);
 
     // The list's last button goes on to the Friends page, and Back from there is straight home.
     await bob.page.getByTestId("bell-open-friends").click();

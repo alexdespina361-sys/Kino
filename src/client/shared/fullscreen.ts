@@ -4,8 +4,9 @@ import { readStorage, writeStorage } from "./format";
 
 /**
  * Full screen for the page itself. A browser lets a page go full screen only right after a key press or click on it, so a page can't
- * open that way: a screen goes full screen at its first press, once, and from then on it is the viewer's call. What they did last is
- * kept in this browser: leave full screen and the next visit stays as it is; go in again and it opens full screen once more.
+ * open that way: a TV's screen goes full screen at its first press, once, and from then on it is the viewer's call. What they did last is
+ * kept in this browser: leave full screen and the next visit stays as it is; go in again and it opens full screen once more. A computer's
+ * or a phone's screen is never taken there by itself: its button does it (see main.tsx).
  */
 
 const LEFT_KEY = "kino.fullscreen.left";
@@ -105,8 +106,11 @@ const fillsDisplay = (): boolean => isFullscreen() || matchMedia("(display-mode:
 /** Whether the page may go full screen at the first press: the browser has one to give, takes typing there, and the viewer did not leave it last time. */
 const mayEnterByItself = (): boolean => canFullscreen() && takesTyping() && readStorage(LEFT_KEY) === undefined;
 
+/** Whether this page goes full screen at its first press at all (`setUpFullscreen`'s `byItself`): a TV's does, a computer's and a phone's do not. */
+let atFirstPress = false;
+
 /** Whether the first press would take this page full screen, so that the welcome can ask for it with a button. */
-export const entersAtFirstPress = (): boolean => mayEnterByItself() && !fillsDisplay();
+export const entersAtFirstPress = (): boolean => atFirstPress && mayEnterByItself() && !fillsDisplay();
 
 /**
  * Once, as the page starts. Keeps what the viewer chose: every way into and out of full screen (the button, a key, the phone's, the
@@ -123,6 +127,7 @@ export function setUpFullscreen({ byItself }: { byItself: boolean }): void {
     else if (!unloading && document.visibilityState === "visible") writeStorage(LEFT_KEY, "1");
   });
 
+  atFirstPress = byItself;
   if (!byItself || !mayEnterByItself()) return;
   let asking = false;
   const stop = () => {

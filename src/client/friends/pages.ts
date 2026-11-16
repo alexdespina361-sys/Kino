@@ -203,10 +203,11 @@ export interface BellRow {
 
 /**
  * What the bell lists on a TV: what waits for an answer (the friends page's own entries for requests to be friends, invitations, requests to watch
- * together and titles friends sent, a few of them) and what friends watch lately, with how many waiting things are left for the friends page.
+ * together and titles friends sent, a few of them), the friends made since it was last opened (`seenAt`: each line opens the friend's page) and what
+ * friends watch lately, with how many waiting things are left for the friends page.
  */
-export function bellRows(state: FriendsState | null, now: number, cleared: Cleared = {}): { waiting: BellRow[]; lately: BellRow[]; more: number } {
-  if (!state) return { waiting: [], lately: [], more: 0 };
+export function bellRows(state: FriendsState | null, now: number, cleared: Cleared = {}, seenAt = 0): { waiting: BellRow[]; joined: BellRow[]; lately: BellRow[]; more: number } {
+  if (!state) return { waiting: [], joined: [], lately: [], more: 0 };
   const rows = friendRows(state, now);
   const asking = rows.filter((row) => ASKING_ROWS.includes(row.id)).flatMap((row) => row.entries);
   // (The friends who wrote come after what asks for an answer, with the same few places: see `bellView`.)
@@ -215,13 +216,16 @@ export function bellRows(state: FriendsState | null, now: number, cleared: Clear
     return friend ? [entryOfChat(friend, count)] : [];
   });
   const waiting = [...asking, ...wrote];
-  const lately = bellView(state, now, cleared).lately.flatMap((item): BellRow[] => {
+  const view = bellView(state, now, cleared, seenAt);
+  const joined = view.joined.map((friend): BellRow => ({ entry: entryOfFriend(friend, state.activity, now), heading: friend.name, detail: `${t("bell.nowFriends")} · ${ago(friend.since, now, getLanguage())}`, avatar: friend.avatar }));
+  const lately = view.lately.flatMap((item): BellRow[] => {
     const friend = state.friends.find((each) => each.id === item.friend);
     if (!friend) return [];
     return [{ entry: entryOfActivity(item, friend.name, now), heading: friend.name, detail: `${t(`friends.line.${activityVerb(item, now)}`, { title: item.title })} · ${ago(item.at, now, getLanguage())}`, avatar: friend.avatar, activity: item }];
   });
   return {
     waiting: waiting.slice(0, BELL_WAITING).map((entry) => ({ entry, heading: entry.title, detail: entry.note, ...(entry.avatar ? { avatar: entry.avatar } : {}) })),
+    joined,
     lately,
     more: Math.max(0, waiting.length - BELL_WAITING),
   };

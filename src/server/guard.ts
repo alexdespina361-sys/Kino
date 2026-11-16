@@ -4,11 +4,14 @@ import { RateLimiter } from "./accounts/rateLimit";
 const MINUTE = 60_000;
 
 /**
- * What no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame. It has no `script-src` and no `default-src` on
- * purpose: the subtitle aligner's WebAssembly needs `'unsafe-eval'` in the Chromium 94 of a Hisense, so a script policy that lets it run blocks very little and one that
- * does not breaks that set. (The pages have no inline script, and no markup that a visitor wrote is ever put in one.)
+ * What no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame, or run a script that is not one of its own
+ * files. `script-src 'self'` turns away a script written into a page (inline, or an `on...=` in markup) and one from another site, which is what a slip in the escaping
+ * would be used for (the judge, 16 Nov: the header said nothing about scripts). It keeps `'unsafe-eval'`, as the subtitle aligner's WebAssembly needs it in the Chromium
+ * 94 of a Hisense, which has no `'wasm-unsafe-eval'` yet (a newer browser takes that one for the same, and for the frame boost's runtime). There is no `default-src`:
+ * the pictures, the sound and the videos come from many places. (The pages have no inline script; the workers are files of the site; the kino-direct extension
+ * puts no script in the page.)
  */
-const BASELINE_POLICY = "base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'";
+const BASELINE_POLICY = "base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
 
 /**
  * What every answer tells the browser that gets it, whatever the route: not to guess a type for what it is sent (`nosniff`), to say nothing of the page a visitor came

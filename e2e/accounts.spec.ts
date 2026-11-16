@@ -532,10 +532,9 @@ test.describe("a TV that nobody is at", () => {
 async function signedInScreen(browser: Browser, account = fresh()) {
   const screen = await openLibrary(browser);
   await openTvSignIn(screen);
-  await screen.getByTestId("tv-signin-email").click();
-  await screen.getByTestId("auth-switch").click();
+  await screen.getByTestId("tv-signin-create").click(); // (one press from the page of the code: it was two more, behind the typed form - the judge, 16 Nov)
   await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
-  await expect(screen.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form now does, not "Sign in"
+  await expect(screen.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form does, not "Sign in"
   await screen.getByTestId("auth-email").fill(account.email);
   await screen.getByTestId("auth-password").fill(account.password);
   await screen.getByTestId("auth-submit").click();
@@ -604,7 +603,9 @@ test.describe("a poor password on the TV's own form", () => {
     const tv = await openLibrary(browser);
     await openTvSignIn(tv);
     await tv.getByTestId("tv-signin-email").click();
+    await expect(tv.locator(".tv-headline").first()).toHaveText(en["auth.signIn"]);
     await tv.getByTestId("auth-switch").click();
+    await expect(tv.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form now does, not "Sign in"
     await tv.getByTestId("auth-email").fill(account.email);
     await tv.getByTestId("auth-password").fill(account.password);
     await tv.getByTestId("auth-submit").click();

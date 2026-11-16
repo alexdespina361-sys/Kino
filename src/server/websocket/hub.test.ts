@@ -2160,6 +2160,49 @@ describe("a watch party started on a TV", () => {
     expect((await host.tv.nextWhere("TV_PARTY", twoGuests)).party).toMatchObject({ role: "host", code: { code: opened.code!.code } });
   });
 
+  it("lets a guest's page opened afresh go from a party whose host's page has been closed a while: it opens on the library, told why (the judge, 16 Nov)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const host = await openParty();
+      const guest = await joinWith(host.code);
+      const guestId = guest.welcome.deviceId;
+      host.tv.close(); // (the host's tab is closed; the party is never ended)
+      await guest.tv.nextWhere("TV_PARTY", (m) => m.party?.host.online === false);
+      guest.tv.close();
+
+      // Opened again while the host is only just gone (a reload on its side, say): still in the party.
+      const soon = await connect();
+      soon.send({ type: "TV_HELLO", deviceId: guestId, opened: true });
+      const stays = await soon.next("TV_WELCOME");
+      expect(stays.following).toMatch(/^TV /);
+      expect(stays).not.toHaveProperty("leftParty");
+      soon.close();
+
+      vi.setSystemTime(Date.now() + 61_000);
+      // A connection that comes back (the page was open all along) is not let go either: the host may yet come back to it.
+      const blip = await connect();
+      blip.send({ type: "TV_HELLO", deviceId: guestId });
+      expect((await blip.next("TV_WELCOME")).following).toMatch(/^TV /);
+      blip.close();
+
+      // A page opened afresh a minute on is let go, and told whose party it left.
+      const later = await connect();
+      later.send({ type: "TV_HELLO", deviceId: guestId, opened: true });
+      const welcome = await later.next("TV_WELCOME");
+      expect(welcome).toMatchObject({ paired: false, leftParty: stays.following });
+      expect(welcome).not.toHaveProperty("following");
+      await later.expectNone((m) => m.type === "TV_PARTY" || m.type === "TV_FOLLOWING");
+
+      // The host, back, has the party still, without that guest.
+      const back = await connect();
+      back.send({ type: "TV_HELLO", deviceId: host.welcome.deviceId, opened: true });
+      await back.next("TV_WELCOME");
+      expect((await back.next("TV_PARTY")).party).toMatchObject({ role: "host", guests: [] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("carries what the host plays to the guests: the video, its place, its speed, and its stopping", async () => {
     resolveImpl = async () => ({ status: "success", resolver: "test", media });
     const host = await openParty();

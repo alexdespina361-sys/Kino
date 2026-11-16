@@ -141,6 +141,12 @@ test("what is typed in the search box can be selected as in any field: a double 
   await page.keyboard.press("Backspace");
   await expect(query).toHaveText("Search titles"); // (empty: the hint)
   await expect(page.getByTestId("tv-search")).toBeVisible(); // (Backspace took the selection, and did not leave the page)
+  // On a computer Backspace in an empty box does nothing, held or pressed once more (a TV's leaves the search: tv-screens.spec.ts); Esc leaves.
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Backspace");
+  await expect(page.getByTestId("tv-search")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("tv-search")).toBeHidden();
 });
 
 test("J, K and L go back, pause and go on in a film, as they do on the video sites; in the search they are letters", async ({ browser, baseURL }) => {

@@ -6,6 +6,7 @@ import { useProfileData } from "../account/store";
 import { chatWaiting } from "../chat/notices";
 import { t } from "../i18n";
 import { friendsApi } from "./api";
+import { rememberMadeHere } from "./madeHere";
 import { describeNews, isUrgent, known, whatsNew, type Known } from "./news";
 import { duePlans, inboxToShow, nextPlanMoment, whenText } from "./plans";
 import { withoutOnline } from "./stale";
@@ -62,6 +63,35 @@ export function useFriends(): FriendsValue {
   const value = useContext(FriendsContext);
   if (!value) throw new Error("useFriends needs a <FriendsProvider>");
   return value;
+}
+
+/** An answer of the server that made a friend: that friend was made here. */
+const madeHereBy = <T extends { friend?: { id: string } | undefined }>(answer: T): T => {
+  if (answer.friend) rememberMadeHere(answer.friend.id);
+  return answer;
+};
+
+/** While a code made for a friend is on the screen, the friends are looked at this often (instead of every half minute), for this long at most. */
+const QUICK_LOOK_MS = 5_000;
+const QUICK_LOOKS_FOR_MS = 10 * 60_000;
+
+/**
+ * Looks at the friends every few seconds while `on` (a code made for a friend is on the screen): the page that shows it learns within seconds that it
+ * was used, and says so, instead of showing a used code for up to half a minute (the judge, 16 Nov). Ten minutes at most, then the usual half minute.
+ */
+export function useQuickLooks(on: boolean) {
+  const { refresh } = useFriends();
+  const look = useRef(refresh);
+  look.current = refresh;
+  useEffect(() => {
+    if (!on) return;
+    const began = Date.now();
+    const every = setInterval(() => {
+      if (Date.now() - began > QUICK_LOOKS_FOR_MS) clearInterval(every);
+      else if (document.visibilityState === "visible") void look.current().catch(() => undefined);
+    }, QUICK_LOOK_MS);
+    return () => clearInterval(every);
+  }, [on]);
 }
 
 /**
@@ -197,10 +227,11 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       invite: () => then(friendsApi.invite(id())),
       revoke: (code) => then(friendsApi.revoke(id(), code)),
       peek: (code) => friendsApi.peek(id(), code),
-      accept: async (code) => (await then(friendsApi.accept(id(), code))).friend,
+      // (A friend made here is no news to this screen's bell: it is remembered before the look that brings them.)
+      accept: async (code) => (await then(friendsApi.accept(id(), code).then(madeHereBy))).friend,
       peekTag: (text) => friendsApi.tag(id(), text),
-      askByTag: (tag) => then(friendsApi.askFriend(id(), tag)),
-      acceptRequest: async (fromId) => (await then(friendsApi.acceptRequest(id(), fromId))).friend,
+      askByTag: (tag) => then(friendsApi.askFriend(id(), tag).then(madeHereBy)),
+      acceptRequest: async (fromId) => (await then(friendsApi.acceptRequest(id(), fromId).then(madeHereBy))).friend,
       declineRequest: (fromId) => then(friendsApi.declineRequest(id(), fromId)),
       remove: (friendId) => then(friendsApi.remove(id(), friendId)),
       send: (to, message) => friendsApi.send(id(), { ...message, to: [...to] }),

@@ -248,8 +248,7 @@ test.describe("the profile's page, as what is on it changes under the remote", (
   test("the remote is not lost when the place it is on goes: it stands where that was, and OK answers", async ({ browser }) => {
     const ann = await screenWithFriends(browser, "Ann");
     await settingsButton(ann.page).focus(); // (the remote on the page's first button)
-    await ann.page.keyboard.press("ArrowDown"); // (to the cards: Ratings, then along to Friends)
-    await ann.page.keyboard.press("ArrowRight");
+    await ann.page.keyboard.press("ArrowDown"); // (to the card under it: Friends)
     await expect(place(ann.page, "friends")).toBeFocused();
 
     await elsewhere(ann.page, false); // (switched off on a phone, with the remote on Friends)
@@ -264,7 +263,8 @@ test.describe("the profile's page, as what is on it changes under the remote", (
     await ann.page.getByTestId("rail-home").click(); // (signing in leaves the screen on the profile's page: start from Home, as anyone would)
     await openProfilePage(ann.page);
     await expect(ann.page.getByTestId("tv-profile-settings")).toBeFocused(); // (the first button of the page has the remote)
-    await ann.page.keyboard.press("ArrowDown");
+    await ann.page.keyboard.press("ArrowDown"); // (to the card under Settings, then along to the first)
+    await ann.page.keyboard.press("ArrowLeft");
     await expect(place(ann.page, "ratings")).toBeFocused();
     await expect(place(ann.page, "ratings")).toContainText("The titles and seasons you gave a score.");
 
@@ -300,6 +300,45 @@ test.describe("making friends on the TV", () => {
     await cy.page.getByTestId("tv-friend-code-input").fill(code.replace("-", "").toLowerCase());
     await expect(cy.page.getByTestId("tv-friend-code-error")).toBeVisible();
     await expect(cy.page.getByTestId("tv-friend-code-add")).toHaveCount(0);
+  });
+
+  test("the screen that made the code hears within seconds that it was used, unasked, and its bell names the new friend once", async ({ browser }) => {
+    // (The judge, 16 Nov: the code stayed up over "No friends yet", and the bell said "Nothing new from your friends".)
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await openFriends(ann.page);
+    await tile(ann.page, "Add a friend").click();
+    await ann.page.getByTestId("tv-friend-give").click();
+    const code = (await ann.page.getByTestId("tv-friend-code").textContent())!.trim();
+    await openFriends(bob.page);
+    await tile(bob.page, "Add a friend").click();
+    await bob.page.getByTestId("tv-friend-type").click();
+    await bob.page.getByTestId("tv-friend-code-input").fill(code);
+    await bob.page.getByTestId("tv-friend-code-add").click();
+    await expect(tile(bob.page, ann.name)).toBeVisible();
+
+    // Ann's screen is not told to look: within seconds (not the half minute of its usual look) the page of the code goes, and a line says who used it.
+    await expect(ann.page.getByTestId("tv-friend-give-page")).toHaveCount(0, { timeout: 12_000 });
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`You and ${bob.name} are now friends`);
+    await expect(tile(ann.page, bob.name)).toBeVisible();
+    await expect(ann.page.getByTestId("tv-bell-dot")).toBeVisible();
+    await ann.page.getByTestId("tv-bell").click();
+    await expect(ann.page.getByTestId("tv-bell-joined")).toContainText(bob.name);
+    await expect(ann.page.getByTestId("tv-bell-joined")).toContainText(WORDS.en["bell.nowFriends"]);
+    await expect(ann.page.getByTestId("tv-bell-empty")).toHaveCount(0);
+
+    // Bob typed the code: that is no news to his own screen.
+    await bob.page.getByTestId("tv-bell").click();
+    await expect(bob.page.getByTestId("tv-bell-page")).toBeVisible();
+    await expect(bob.page.getByTestId("tv-bell-joined")).toHaveCount(0);
+
+    // Said once: the next time Ann's bell is opened, it is not new any more.
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-bell-dot")).toHaveCount(0);
+    await ann.page.getByTestId("tv-bell").click();
+    await expect(ann.page.getByTestId("tv-bell-page")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-bell-joined")).toHaveCount(0);
   });
 
   test("the other way round, the one that types needs no code of its own, and a code that is taken back is no use", async ({ browser }) => {

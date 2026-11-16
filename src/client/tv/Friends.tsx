@@ -7,7 +7,7 @@ import { useSettings } from "../account/settings";
 import { clockTime, dayChip, formatDay } from "../account/time";
 import { CHAT_FACTS } from "../chat/state";
 import { nameOf } from "../friends/entries";
-import { useFriends } from "../friends/FriendsProvider";
+import { useFriends, useQuickLooks } from "../friends/FriendsProvider";
 import { bellRows, type BellRow } from "../friends/pages";
 import { PLAN_DAYS, PLAN_HOURS, defaultPlan, planLines, planMoment, planOffered, planStatus, whenLabel } from "../friends/plans";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
@@ -142,6 +142,7 @@ function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   const friendsThen = useRef(0);
   const friendCount = friends.state?.friends.length ?? 0;
   const invite = (friends.state?.invites ?? []).reduce<OpenInvite | undefined>((newest, each) => (!newest || each.expiresAt > newest.expiresAt ? each : newest), undefined);
+  useQuickLooks(invite !== undefined);
 
   // (this one first: a code that is gone makes the next effect ask for another in the same moment)
   useEffect(() => {
@@ -620,12 +621,23 @@ export function PlanPickerTv({ friendId, onClose }: { friendId: string; onClose:
 /* ------------------------------ the bell ------------------------------ */
 
 /** A line of the bell's list: pressing it does what pressing the same tile of the friends page does. */
-function BellLine({ row, onPress, onClear }: { row: BellRow; onPress: (entry: Entry) => void; /** Not given for a line that waits for an answer nobody else can give (a request to be friends). */ onClear?: ((button: HTMLElement) => void) | undefined }) {
+function BellLine({
+  row,
+  onPress,
+  onClear,
+  testId = "tv-bell-item",
+}: {
+  row: BellRow;
+  onPress: (entry: Entry) => void;
+  /** Not given for a line that waits for an answer nobody else can give (a request to be friends), nor for news that is said once (a new friend). */
+  onClear?: ((button: HTMLElement) => void) | undefined;
+  testId?: string;
+}) {
   const t = useT();
   const { entry } = row;
   return (
     <li className="tv-bell-row">
-      <button className="tv-bell-line" onClick={() => onPress(entry)} data-nav data-testid="tv-bell-item" data-entry={entry.id}>
+      <button className="tv-bell-line" onClick={() => onPress(entry)} data-nav data-testid={testId} data-entry={entry.id}>
         <span className="tv-bell-icon">{row.avatar ? <Avatar id={row.avatar} className="tv-bell-avatar" /> : entry.plan ? <ClockIcon /> : entry.party || entry.wants || entry.ask ? <UsersIcon /> : <PlayIcon />}</span>
         <span className="tv-bell-text">
           <b>{row.heading}</b>
@@ -648,10 +660,11 @@ function BellLine({ row, onPress, onClear }: { row: BellRow; onPress: (entry: En
 export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (entry: Entry) => void; onFriends: () => void; onClose: () => void }) {
   const t = useT();
   const friends = useFriends();
-  const { markSeen } = useBell();
+  const { markSeen, seen } = useBell();
+  const [seenBefore] = useState(seen); // (as it opens: opening it moves `seen` to now)
   const { cleared, clear } = useCleared();
   const clearChat = useClearChat();
-  const { waiting, lately, more } = bellRows(friends.state, Date.now(), cleared);
+  const { waiting, joined, lately, more } = bellRows(friends.state, Date.now(), cleared, seenBefore);
   const page = useRef<HTMLDivElement>(null);
   /** A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote goes on to the line that takes its place. */
   const clearLine = (row: BellRow, button: HTMLElement) => {
@@ -682,7 +695,7 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
         <p className="tv-lead" role="status">
           <span className="spinner" /> {friends.status === "offline" ? t("friends.offline") : t("common.loading")}
         </p>
-      ) : waiting.length === 0 && lately.length === 0 ? (
+      ) : waiting.length === 0 && joined.length === 0 && lately.length === 0 ? (
         <p className="tv-lead" data-testid="tv-bell-empty">
           {t("bell.empty")}
         </p>
@@ -701,6 +714,16 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
                   {t("bell.more", { count: more })}
                 </p>
               )}
+            </section>
+          )}
+          {joined.length > 0 && (
+            <section>
+              <h2 className="tv-bell-heading">{t("bell.joined")}</h2>
+              <ul className="tv-bell-list" data-testid="tv-bell-joined">
+                {joined.map((row) => (
+                  <BellLine key={row.entry.id} row={row} onPress={onPress} testId="tv-bell-joined-item" />
+                ))}
+              </ul>
             </section>
           )}
           {lately.length > 0 && (
