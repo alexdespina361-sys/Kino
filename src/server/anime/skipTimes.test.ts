@@ -25,7 +25,7 @@ function fake({ media = [FRIEREN] as unknown[], aniListStatus = 200, aniSkipStat
   const asked: string[] = [];
   const aniList: Array<{ search: string }> = [];
   const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetch: typeof globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const address = String(input);
     asked.push(address);
     if (address.startsWith("https://graphql.anilist.co")) {
@@ -38,7 +38,7 @@ function fake({ media = [FRIEREN] as unknown[], aniListStatus = 200, aniSkipStat
       return near.length > 0 && aniSkipStatus === 200 ? answer(200, { found: true, results: near, message: "ok", statusCode: 200 }) : answer(aniSkipStatus === 200 ? 404 : aniSkipStatus, { found: false, results: [] });
     }
     throw new Error(`asked ${address}`);
-  }) as typeof fetch;
+  }) as typeof globalThis.fetch;
   return { fetch, asked, aniList };
 }
 

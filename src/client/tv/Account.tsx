@@ -514,6 +514,7 @@ export function TvAccountPanel({
   const { settings, set } = useSettings();
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
+  const autoSkip = settings.autoSkip ?? false;
   const tapToPause = settings.tapToPause ?? false;
   const adaptiveQuality = settings.adaptiveQuality ?? true;
   const child = settings.child === true;
@@ -631,6 +632,7 @@ export function TvAccountPanel({
           <div className="tv-set-col" data-nav-column>
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
+              <SettingsSwitch label={t("settings.autoSkip")} on={autoSkip} onToggle={() => set("autoSkip", !autoSkip)} testId="tv-autoskip" />
             </SettingsGroup>
             {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen.
                 In the column with the most room, with a short line under it: the settings still fit a 720p screen in every language. */}

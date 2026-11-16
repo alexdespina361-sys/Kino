@@ -661,10 +661,12 @@
 :root[data-ui="polish"] .hud-pause-card em { font-size: var(--fs-4); font-weight: 600; }
 :root[data-ui="polish"] .hud-paused { border-width: calc(var(--em) * 0.16); }
 :root[data-ui="polish"] .hud-toast { font-weight: 700; border-radius: var(--r-2); }
-:root[data-ui="polish"] .hud-upnext { border-radius: var(--r-3); border-color: rgba(255, 255, 255, 0.12); background: rgba(24, 24, 27, 0.96); }
-:root[data-ui="polish"] .hud-upnext-head { font-size: var(--fs-1); letter-spacing: 0; text-transform: none; color: var(--text-3); }
-:root[data-ui="polish"] .hud-upnext p { font-size: var(--fs-4); font-weight: 700; }
-:root[data-ui="polish"] .hud-upnext-actions .tv-btn-red:focus-visible { outline: none; }
+:root[data-ui="polish"] .hud-skip-btn { font-size: var(--fs-3); border-color: rgba(255, 255, 255, 0.22); background: rgba(24, 24, 27, 0.62); }
+:root[data-ui="polish"] .hud-skip-sub { color: var(--text-2); }
+:root[data-ui="polish"] .hud-skip[data-fresh] .hud-skip-btn,
+:root[data-ui="polish"] .hud-skip-btn:hover,
+:root[data-ui="polish"] .hud-skip-btn:focus-visible { border-color: #fff; background: rgba(36, 36, 40, 0.84); }
+:root[data-ui="polish"] .hud-skip-close { width: 2.4em; height: 2.4em; font-size: var(--fs-3); border-color: rgba(255, 255, 255, 0.16); background: rgba(24, 24, 27, 0.58); }
 :root[data-ui="polish"] .hud-stuck .tv-btn { outline: none; box-shadow: var(--focus-ring); }
 :root[data-ui="polish"] .hud-stuck p { font-size: var(--fs-3); color: var(--text-2); }
 :root[data-ui="polish"] .hud-error { border-radius: var(--r-3); }
@@ -1122,7 +1124,7 @@
   :root[data-ui="polish"] .tv *,
   :root[data-ui="polish"] .tv *::before,
   :root[data-ui="polish"] .tv *::after { transition-duration: 0.01ms !important; transition-delay: 0s !important; }
-  :root[data-ui="polish"] .tv .hud-upnext-bar div { transition-duration: 1s !important; }
+  :root[data-ui="polish"] .tv .hud-skip-fill { transition-duration: 1s !important; }
   :root[data-ui="polish"] .tv-tile:focus,
   :root[data-ui="polish"] .tv-tile-category:focus,
   :root[data-ui="polish"] .tv-end-tile:focus-visible { transform: none; }

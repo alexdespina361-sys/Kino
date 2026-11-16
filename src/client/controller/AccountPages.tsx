@@ -301,6 +301,7 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
       <Group title={t("settings.playback")} help={t("settings.playbackHelp")}>
         <Rows>
           <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
+          <Switch label={t("settings.autoSkip")} checked={settings.autoSkip ?? false} onChange={(on) => set("autoSkip", on)} testId="auto-skip" />
         </Rows>
       </Group>
       <SubtitleLanguages />

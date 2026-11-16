@@ -135,6 +135,15 @@ describe("newer protocol pieces", () => {
     expect(state({ upNext: {} })).toBeNull();
     expect(parseClientMessage(msg({ type: "CMD", command: { type: "DISMISS_UP_NEXT" } }))).not.toBeNull();
   });
+
+  it("player state says when the TV's Skip button is up, and the phone can press it", () => {
+    const state = (extra: unknown) => parseClientMessage(msg({ type: "TV_STATE", state: { state: "playing", currentTime: 60, duration: 1400, ...(extra as object) } }));
+    for (const kind of ["intro", "recap", "credits"]) expect(state({ skip: { kind } })).not.toBeNull();
+    expect(state({ skip: { kind: "ending" } })).toBeNull();
+    expect(state({ skip: {} })).toBeNull();
+    expect(parseClientMessage(msg({ type: "CMD", command: { type: "SKIP_SEGMENT" } }))).not.toBeNull();
+    expect(parseClientMessage(msg({ type: "TV_PARTY_CMD", command: { type: "SKIP_SEGMENT" } }))).toBeNull(); // (a guest of a party does not skip for the host)
+  });
 });
 
 describe("media helpers", () => {

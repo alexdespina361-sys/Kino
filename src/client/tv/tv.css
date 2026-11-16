@@ -714,35 +714,85 @@
 .hud-controls[data-fit~="wrap"] { flex-wrap: wrap; }
 .hud-controls[data-fit~="wrap"] .hud-group { flex: 0 1 auto; flex-wrap: wrap; min-width: 0; }
 
-.hud-upnext {
+/*
+ * The Skip intro / Skip recap / Skip credits button, and the Next episode one (Hud.tsx's SkipPill): a pill over the bottom right of the picture, just over
+ * the progress bar. New, filling, under the pointer, with the remote on it or with the controls up, it is whole; else see-through, so that it does not sit on
+ * the film like a sign. While it counts down it fills up from the left with the accent, a second at a time.
+ */
+.hud-skip {
   position: absolute;
   right: 3.2em;
-  bottom: 13em; /* just over the progress bar: the controls are one line */
+  bottom: 13em; /* the controls are one line */
   z-index: 25;
-  transition: bottom 0.3s ease;
   display: flex;
-  flex-direction: column;
-  gap: 0.9em;
-  width: 28em;
-  padding: 1.6em 1.8em;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 1em;
-  background: rgba(20, 20, 20, 0.95);
-  box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.8);
+  align-items: center;
+  gap: 0.5em;
+  max-width: calc(100% - 6.4em);
+  opacity: 0.58;
+  transition: bottom 0.3s ease, opacity 0.3s ease;
   animation: hud-rise 0.3s ease;
 }
-/* With the controls gone the card drops down to where they were. */
-.tv[data-hud="hidden"] .hud-upnext { bottom: 4em; }
-@keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; opacity: 1; } }
-.hud-upnext-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.3em; color: #aaa; text-transform: uppercase; letter-spacing: 0.06em; }
-.hud-upnext-head b { color: var(--accent); font-size: 1.15em; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
-.hud-upnext p { margin: 0; font-size: 1.8em; font-weight: 800; }
-.hud-upnext-bar { height: 0.45em; border-radius: 0.25em; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
-.hud-upnext-bar div { height: 100%; background: var(--accent); transition: width 1s linear; }
-.hud-upnext-actions { display: flex; gap: 0.8em; }
-.hud-upnext-actions .tv-btn { flex: 1; justify-content: center; font-size: 1.3em; }
-/* OK plays the next one, so the button looks the chosen one from the start (Cancel is Back). */
-.hud-upnext-actions .tv-btn-red { outline: 0.2em solid #fff; outline-offset: 0.12em; }
+/* With the controls gone it drops down to where they were. */
+.tv[data-hud="hidden"] .hud-skip { bottom: 4em; }
+.tv[data-hud="visible"] .hud-skip,
+.hud-skip[data-fresh],
+.hud-skip[data-counting="true"],
+.hud-skip:hover,
+.hud-skip:focus-within { opacity: 1; }
+@keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; } }
+.hud-skip-btn {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 0;
+  padding: 0.7em 1.3em 0.7em 1.05em;
+  border: 0.1em solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(16, 16, 20, 0.66);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0.6em 2em rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font: inherit;
+  font-size: 1.4em;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.hud-skip-btn > svg { flex: none; width: 1.25em; height: 1.25em; }
+/* OK presses it while it is new (Back turns it down): it wears the chosen one's ring, as the remote's focus does elsewhere. */
+.hud-skip[data-fresh] .hud-skip-btn,
+.hud-skip-btn:hover,
+.hud-skip-btn:focus-visible { border-color: #fff; background: rgba(36, 36, 42, 0.82); outline: none; }
+.hud-skip-fill { position: absolute; top: 0; left: 0; bottom: 0; right: 0; z-index: -1; background: var(--accent); opacity: 0.9; transform: scaleX(0); transform-origin: left center; transition: transform 1s linear; }
+.hud-skip-words { display: flex; flex-direction: column; min-width: 0; }
+.hud-skip-label { white-space: nowrap; }
+.hud-skip-sub { overflow: hidden; max-width: 18em; font-size: 0.72em; font-weight: 500; color: rgba(255, 255, 255, 0.78); white-space: nowrap; text-overflow: ellipsis; }
+.hud-skip-count { flex: none; margin-left: 0.15em; font-variant-numeric: tabular-nums; font-size: 0.9em; }
+.hud-skip-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.7em;
+  height: 2.7em;
+  padding: 0;
+  border: 0.1em solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(16, 16, 20, 0.6);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.hud-skip-close > svg { width: 1.2em; height: 1.2em; }
+.hud-skip-close:hover,
+.hud-skip-close:focus-visible { border-color: #fff; background: rgba(36, 36, 42, 0.85); color: #fff; outline: none; }
 
 /* ------------------------------ the end card ------------------------------ */
 
@@ -2087,8 +2137,8 @@
   .tv-fail .tv-report { font-size: 1.1em; white-space: normal; }
   .hud-stuck { padding: 1em 1.4em 1.2em; }
   .hud-stuck p { font-size: 1.4em; }
-  .hud-upnext { left: 1.6em; right: 1.6em; width: auto; bottom: 15em; }
-  .tv[data-hud="hidden"] .hud-upnext { bottom: 3em; }
+  .hud-skip { right: 1.6em; max-width: calc(100% - 3.2em); bottom: 15em; }
+  .tv[data-hud="hidden"] .hud-skip { bottom: 3em; }
   .tv-end { justify-content: flex-start; gap: 1.2em; padding: 4em 1.6em 2em; overflow-y: auto; }
   .tv-end::before, .tv-end::after { content: ""; margin: auto; }
   .tv-end-kicker { font-size: 1.2em; }
@@ -2206,7 +2256,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
+  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-skip, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
   /* (What fades out at the end is simply shown for its time: a quick animation would leave it where it ends, gone.) */
   .tv-toast, .tv-note { animation: none; }
   /* (The ring is half full while the page waits and full once it moves: the same news without the filling.) */
@@ -2214,7 +2264,7 @@
   .tv-edge[data-phase="waiting"] .fill { animation: none; stroke-dashoffset: 50; }
   .tv-detail { animation-duration: 0.01s, 0.5s; } /* the fade is quick; the pointer is still let through for as long */
   .tv-welcome { transition-duration: 0.01s; }
-  .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
+  .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-skip { transition-duration: 0.01s; }
   .tv-hero { transition: none; }
   .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key, .tv-tile-corner { transition: none; }
   .tv-tile:focus, .tv-tile-category:focus, .tv-end-tile:focus-visible { transform: none; }
