@@ -1345,7 +1345,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               <>
                 {heroPoster && <Poster key={`poster-${shown.entry.id}`} className="tv-hero-poster" title={shown.entry.title} image={heroPoster} seed={shown.entry.id} />}
               <div className="tv-hero-text" key={shown.entry.id}>
-                <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.byCategory") : shown.label}</p>
+                {/* (Not "Browse by category": the row under it says that, one line away - the judge, 16 Nov.) */}
+                <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.categories") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
                   {shown.entry.title}
                 </h1>

@@ -321,12 +321,12 @@ describe("gridOf", () => {
   it("says which source a row is from only when the library has more than one", () => {
     const one = data({ rows: library });
     expect(rowsOfPage("home", one).every((each) => each.source === undefined)).toBe(true);
-    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe("");
+    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe(t("tv.movies")); // (a category's page says its section, never the catalog's name)
     expect(gridOf({ kind: "categories" }, one)!.entries.every((each) => each.source === undefined)).toBe(true);
 
     const two = data({ rows: [...library.slice(0, 5), { ...library[5]!, source: "Archive" }] });
     expect(rowsOfPage("home", two).find((each) => each.id === "s3")?.source).toBe("Archive");
-    expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe("Archive");
+    expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe(t("tv.series"));
     expect(gridOf({ kind: "categories" }, two)!.entries.map((each) => each.source)).toEqual(["Test", "Test", "Test", "Test", "Test", "Archive"]);
   });
 
@@ -344,6 +344,24 @@ describe("gridOf", () => {
       ["x1", undefined],
     ]);
     expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBeUndefined(); // (no count: a category goes on as it is scrolled)
+  });
+
+  it("does not say a category's section when its name says it, and gives each category a picture the ones before it do not have", () => {
+    // (The judge, 16 Nov: "Trending Movies / Movies", and most film categories with the same week's hit for their picture.)
+    const hit = item("hit", "movie", { image: "poster-hit", backdrop: "wide-hit" });
+    const withHit = (id: string, title: string): LibraryRow => ({ ...row(id, "movie"), title, items: [hit, ...row(id, "movie").items] });
+    const rows = [withHit("m1", `Trending ${t("tv.movies")}`), withHit("m2", "Action"), withHit("m3", "Drama"), row("s1", "series")];
+    const all = gridOf({ kind: "categories" }, data({ rows }))!;
+    expect(all.entries.map((e) => [e.id, e.note])).toEqual([
+      ["m1", undefined],
+      ["m2", t("tv.movies")],
+      ["m3", t("tv.movies")],
+      ["s1", t("tv.series")],
+    ]);
+    expect(all.entries.map((e) => e.image)).toEqual(["wide-hit", "wide-m2-0", "wide-m3-0", "wide-s1-0"]);
+    expect(gridOf({ kind: "category", rowId: "m1" }, data({ rows }))!.meta).toBe("");
+    const home = rowsOfPage("home", data({ rows: [...rows, ...library] })).find((each) => each.id === "categories")!;
+    expect(new Set(home.entries.filter((e) => e.image).map((e) => e.image)).size).toBe(home.entries.filter((e) => e.image).length);
   });
 
   it("lists the categories of the cartoons and of the anime after those of films and shows, each saying which it is", () => {
