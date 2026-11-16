@@ -241,6 +241,9 @@
 
 :root[data-ui="polish"] .tv-row-title { margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-3); font-weight: 600; color: var(--text-1); }
 :root[data-ui="polish"] .tv-row-tiles { gap: var(--tile-gap); padding: calc(var(--em) * 0.6) var(--page-r) calc(var(--em) * 1) var(--gutter); }
+/* Room between the library's rows (the owner's "breathing room", 16 Nov: yes, more space between rows). Not on the friends page, which spaces its
+   rows by what waits for an answer (below), nor on the profile page, whose rows are its places. */
+:root[data-ui="polish"] .tv-browse:not([data-view="friends"]):not([data-view="profile"]) .tv-row + .tv-row { margin-top: calc(var(--em) * 0.8); }
 /* The friends page tells what waits for an answer from the rest by weight and room, not by lines: one heading ("Waiting for you", with the dot the bell has) over its rows, which are named
    quietly under it, and the rows that are not waiting (what friends watch, the friends) have a heading of their own size with room above it. */
 :root[data-ui="polish"] .tv-row-group { display: flex; align-items: center; gap: calc(var(--em) * 0.7); margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-4); font-weight: 700; color: var(--text-1); }
