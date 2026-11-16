@@ -40,10 +40,12 @@ interface ScreenProps {
   onBack?: (() => void) | undefined;
   /** What the system's Back of a phone or a tablet does here, where it is not what the remote's does (see `useBack`). */
   leaving?: (() => void) | undefined;
+  /** A class of the page's own, for a page laid out unlike the others (the chat on a hand-held screen fills it, as a messenger does). */
+  className?: string;
 }
 
 /** A full-screen page the remote can walk around: its `[data-nav]` buttons are reached with the arrow keys. */
-export function Screen({ children, testId, compact = false, focus = false, onBack, leaving }: ScreenProps) {
+export function Screen({ children, testId, compact = false, focus = false, onBack, leaving, className }: ScreenProps) {
   const ref = useRef<HTMLElement>(null);
   useDpad(ref);
   useBack(onBack, leaving);
@@ -52,7 +54,7 @@ export function Screen({ children, testId, compact = false, focus = false, onBac
     (ref.current.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)") ?? navItems(ref.current)[0])?.focus();
   }, [focus]);
   return (
-    <section className={`tv-screen${compact ? " tv-screen-compact" : ""}`} ref={ref} data-testid={testId}>
+    <section className={`tv-screen${compact ? " tv-screen-compact" : ""}${className ? ` ${className}` : ""}`} ref={ref} data-testid={testId}>
       <Brand />
       {children}
     </section>

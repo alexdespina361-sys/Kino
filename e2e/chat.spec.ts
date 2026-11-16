@@ -993,12 +993,19 @@ test.describe("the chat on the TV", () => {
       const cut = await page.getByTestId("tv-chat-lines").evaluate((box) => [...box.querySelectorAll<HTMLElement>(".chat-text, .chat-bubble")].filter((part) => part.scrollWidth > part.clientWidth + 1).map((part) => part.className));
       expect(cut, "text that runs out of its bubble").toEqual([]);
 
-      // the page that writes, with a message as long as can be in the field
-      await page.getByTestId("tv-chat-write").click();
-      await expect(page.getByTestId("tv-chat-compose")).toBeVisible();
-      await page.getByTestId("tv-chat-input").fill(LONG);
-      await fits("tv-chat-compose", "the page that writes");
-      await page.keyboard.press("Escape");
+      // writing, a message as long as can be: a TV opens the page that writes; a hand-held screen types in the chat's own box, as a messenger does
+      if (wide) {
+        await page.getByTestId("tv-chat-write").click();
+        await expect(page.getByTestId("tv-chat-compose")).toBeVisible();
+        await page.getByTestId("tv-chat-input").fill(LONG);
+        await fits("tv-chat-compose", "the page that writes");
+        await page.keyboard.press("Escape");
+      } else {
+        await expect(page.getByTestId("tv-chat-write")).toHaveCount(0);
+        await page.getByTestId("tv-chat-box").fill(LONG);
+        await fits("tv-chat", "the chat with a message as long as can be in its box");
+        await page.getByTestId("tv-chat-box").fill("");
+      }
 
       // the report
       await tvReport(page);
@@ -1169,5 +1176,61 @@ test.describe("a title sent in a chat", () => {
     await expect(bob.page.getByTestId("chat-card")).toContainText("The Matrix");
     expect(asks).toBe(2);
     await expect(texts(bob.page)).toHaveText(["The Matrix (1999)"]);
+  });
+});
+
+test.describe("the chat on a hand-held screen that shows the TV's pages", () => {
+  test("is typed in its own box at the bottom, as in any messenger: no page that writes, the keyboard does not come up by itself, Enter sends and the box stays ready for the next one", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const viewport = { width: 390, height: 844 };
+    const ann = await screenWithFriends(browser, "Ann", { viewport });
+    const bob = await screenWithFriends(browser, "Bob", { viewport });
+    await meet(ann, bob);
+    const page = ann.page;
+    // (a phone's keyboard as its browser tells of it, `visualViewport`: the part of the screen left above the keys, and how far the page was moved up under them)
+    await page.evaluate(() => {
+      const view = Object.assign(new EventTarget(), { height: innerHeight, width: innerWidth, offsetTop: 0 });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: view });
+      (window as unknown as { keys: (height: number, top: number) => void }).keys = (height, top) => {
+        Object.assign(view, { height, offsetTop: top });
+        view.dispatchEvent(new Event("resize"));
+      };
+    });
+    const keys = (height: number, top: number) => page.evaluate(([h, y]) => (window as unknown as { keys: (height: number, top: number) => void }).keys(h!, y!), [height, top]);
+    await tile(page, bob.name).click();
+    await page.getByTestId("friend-chat").click();
+    await expect(page.getByTestId("tv-chat")).toBeVisible();
+    const box = page.getByTestId("tv-chat-box");
+    await expect(box).toBeVisible();
+    await expect(page.getByTestId("tv-chat-write")).toHaveCount(0);
+    await expect(box).not.toBeFocused(); // (a phone's keyboard would cover the messages before they are read)
+    // the chat is the screen: the box at its bottom, the messages above it
+    const at = await where(box);
+    expect(at.y + at.height, "the box is at the bottom of the screen").toBeGreaterThan(viewport.height - 110);
+    await box.fill("Hello from the phone");
+    await box.press("Enter");
+    await expect(tvLines(page)).toHaveCount(1);
+    await expect(tvLines(page).first().getByTestId("chat-text")).toHaveText("Hello from the phone");
+    await expect(box).toHaveValue("");
+    await expect(box).toBeFocused(); // (the keyboard stays up for the next one)
+    await expect(page.getByTestId("tv-chat-compose")).toHaveCount(0);
+    expect(await outsideTheScreen(page, "tv-chat", false)).toEqual([]);
+
+    // the keyboard comes up and the browser moves the page up under it: the chat is what is left, the friend's name at its top, the box right over the keys
+    await keys(480, 120);
+    await expect.poll(async () => Math.round((await where(box)).y + (await where(box)).height)).toBeLessThanOrEqual(600);
+    expect((await where(box)).y + (await where(box)).height, "the box is right over the keys").toBeGreaterThan(600 - 90);
+    expect((await where(page.getByTestId("tv-chat-name"))).y, "the friend's name is in view").toBeGreaterThanOrEqual(119);
+    const newest = await where(tvLines(page).last());
+    expect(newest.y + newest.height, "the newest message is over the box").toBeLessThanOrEqual((await where(box)).y + 1);
+    expect(newest.y, "the newest message is in view").toBeGreaterThanOrEqual(120);
+    // ...and it goes: the whole screen again
+    await keys(viewport.height, 0);
+    await expect.poll(async () => Math.round((await where(box)).y + (await where(box)).height)).toBeGreaterThan(viewport.height - 110);
+
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page).first().getByTestId("chat-text")).toHaveText("Hello from the phone");
   });
 });

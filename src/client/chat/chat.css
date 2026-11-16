@@ -302,4 +302,26 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
   .tv-chat-lead, .tv .chat-privacy { font-size: 1.2em; }
+
+  /*
+   * The chat itself on a hand-held screen is the whole screen, as in any messenger (the owner, 16 Nov): the friend at the top with the arrow back, the
+   * messages filling the middle, and the box at the bottom, typed in with the screen's own keyboard. (The wordmark and the Back pill of the other pages
+   * are not on it: the arrow is the way back.)
+   */
+  .tv-screen.tv-chat-screen { top: var(--chat-top, 0px); bottom: auto; height: var(--chat-vh, 100%); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; } /* (the part the keyboard leaves free: visibleArea.ts) */
+  .tv-screen.tv-chat-screen::before, .tv-screen.tv-chat-screen::after { content: none; }
+  .tv-chat-screen > .tv-brand { display: none; }
+  .tv-chat-screen > .tv-chat-window { flex: 1 1 auto; height: auto; min-height: 0; border-radius: 0; background: #0f0f12; box-shadow: none; }
+  .tv-chat-screen .tv-chat-window > .chat-lines { display: flex; flex-direction: column; max-height: none; padding: 0.8em 1em; font-size: 1.5em; }
+  .tv-chat-screen .tv-chat-window > .chat-lines > .chat-list { margin-top: auto; } /* (a few messages sit over the box, where the eye is, as in any messenger) */
+  .tv-chat-screen .tv-chat-head { gap: 0.6em; padding: max(0.7em, env(safe-area-inset-top)) 0.8em 0.7em 0.4em; }
+  .tv-chat-screen .tv-chat-pic { font-size: 3em; }
+  .tv-chat-screen .tv-chat-foot { padding: 0.7em 0.8em max(0.8em, env(safe-area-inset-bottom)); }
+  .tv-chat-screen .tv-chat-box { font-size: 16px; } /* (16px: a smaller one makes a phone's browser zoom the page when the box is touched) */
+  .tv-chat-screen .tv-chat-title-btn, .tv-chat-screen .tv-chat-send-round { width: 4.2em; height: 4.2em; }
+  .tv-chat-headback { display: grid; flex: none; place-items: center; width: 4em; height: 4em; border-radius: 50%; background: transparent; color: #fff; font-size: 1em; }
+  .tv-chat-headback svg { width: 2em; height: 2em; }
+  .tv-chat-headback:active, .tv-chat-headback:focus-visible { background: rgba(255, 255, 255, 0.12); outline: none; }
+  /* (A note that comes up while the chat is open stands over the box, not on it.) */
+  :root[data-ui="polish"] .tv:has(.tv-chat-screen) .tv-toast, .tv:has(.tv-chat-screen) .tv-toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
 }
