@@ -874,17 +874,18 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         edit({ kind: "selectAll" });
         return;
       }
+      // (Before the shortcuts are left alone: AltGr, which Windows reports as Ctrl+Alt, types characters, see typedCharacter.)
+      const typed = boxKeys ? typedCharacter(event) : null;
+      if (typed !== null) {
+        event.preventDefault();
+        edit({ kind: "type", char: typed });
+        return;
+      }
       if (event.altKey || event.ctrlKey || event.metaKey) return; // (the rest of the browser's shortcuts are the browser's: Ctrl+C, X and V come back as the clipboard's events, below)
       const extendTo = !boxKeys || !event.shiftKey ? null : event.key === "ArrowLeft" ? "left" : event.key === "ArrowRight" ? "right" : event.key === "Home" ? "start" : event.key === "End" ? "end" : null;
       if (extendTo) {
         event.preventDefault();
         edit({ kind: "move", to: extendTo, extend: true });
-        return;
-      }
-      const typed = boxKeys ? typedCharacter(event) : null;
-      if (typed !== null) {
-        event.preventDefault();
-        edit({ kind: "type", char: typed });
         return;
       }
       // ...and Delete takes the character after the caret, Home and End take it to the ends of the text.
@@ -902,6 +903,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         if (event.key === "Backspace" && page.kind === "search") {
           if (text) return edit({ kind: "backspace" }); // (at the very start of the text there is nothing before the caret: nothing goes, and the page is not left either)
           if (event.repeat) return; // (holding it down empties the box and stops there: the repeats must not go on to leave the page)
+          // On a computer Backspace only ever deletes, as in any box: one press too many left the search (the judge, 16 Nov). Esc, the Back
+          // button and the browser's own Back leave it. (A TV's keyboard or remote may have no other Back, so there it still is one.)
+          if (document.documentElement.dataset.fit === "desk") return;
         }
         const back = backOf(page); // (a page that is a step in from another goes back to that one, the others to Home, also from the menu when the page has no title to go back to)
         if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);

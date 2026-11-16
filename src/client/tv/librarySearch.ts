@@ -65,10 +65,17 @@ export const KEYBOARD_COLUMNS = 6;
 /** The keyboard's rows, then the row under them: the two keys that move the caret (one column each), Space (two), Delete and Clear (one each). */
 export const KEYBOARD_SHAPE = [...Array.from({ length: KEYBOARD_KEYS.length / KEYBOARD_COLUMNS }, () => KEYBOARD_COLUMNS), 5];
 
-/** What a physical key adds to the search box, if anything (`null`: not a character for it). */
-export function typedCharacter(event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }): string | null {
-  if (event.altKey || event.ctrlKey || event.metaKey) return null;
-  return /^[a-zA-Z0-9]$/.test(event.key) ? event.key.toLowerCase() : event.key === " " ? " " : null;
+/**
+ * What a physical key adds to the search box, if anything (`null`: not a character for it): any one character a keyboard types, in any language
+ * (é, ş, ñ), a digit or a sign (& ' -), lower-cased; a key with a name (Enter, ArrowLeft, Dead, Process) is not one. AltGr, which Windows reports as Ctrl
+ * and Alt held together, types too (ș on a Romanian Programmers keyboard, @ and € on many others); Ctrl, Alt or Cmd on their own are shortcuts.
+ * (Found by the judge on 16 Nov: "amélie" was searched as "amlie", "law & order" as "law order".)
+ */
+export function typedCharacter(event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; getModifierState?: (key: string) => boolean }): string | null {
+  const altGraph = event.getModifierState?.("AltGraph") ?? false;
+  if (event.metaKey || ((event.altKey || event.ctrlKey) && !altGraph)) return null;
+  if (event.key === " ") return " ";
+  return [...event.key].length === 1 && /^[^\p{C}\s]$/u.test(event.key) ? event.key.toLowerCase() : null;
 }
 
 /** The box's text after a key: no leading space, no double spaces, and not longer than a title could be (or than `max`). */

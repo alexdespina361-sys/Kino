@@ -2070,6 +2070,16 @@ test.describe("categories and search on the TV", () => {
     expect(asked.at(-1)).toBe("film");
     expect(asked.filter((q) => q.length < 2)).toEqual([]); // nothing for a single letter
 
+    // Any language's letters and the signs in titles go in as they are, AltGr's too (the judge found "amélie" searched as "amlie", "law & order" as "law order").
+    // (The keys as a French or Romanian keyboard reports them: Playwright's own typing only inserts what is not on an American keyboard.)
+    await tv.keyboard.type(" & ");
+    const key = (key: string, more: { ctrlKey?: boolean; altKey?: boolean; modifierAltGraph?: boolean } = {}) =>
+      tv.evaluate(([key, more]) => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...more })), [key, more] as const);
+    for (const letter of ["A", "m", "É"]) await key(letter);
+    await key("ș", { ctrlKey: true, altKey: true, modifierAltGraph: true });
+    await key("x", { ctrlKey: true, altKey: true }); // (a shortcut, not AltGr)
+    await expect(tv.getByTestId("tv-query")).toHaveText("film & améș");
+
     // Under the letters: the caret's two keys, Space, Delete and Clear, which empties the box in one press instead of a Delete for each letter.
     for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("key-right")).toBeFocused();
