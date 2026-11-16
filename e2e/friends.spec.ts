@@ -1115,6 +1115,64 @@ test.describe("sending things to friends", () => {
   });
 });
 
+test.describe("how soon a friend's news comes (there is no push: each screen asks)", () => {
+  /** A phone signed up with friends on, whose clock the test moves on with `fastForward` (time goes on by itself as well): left on the account page. */
+  async function phoneWithClock(browser: Browser, name: string) {
+    const account = fresh(name);
+    const page = await openDevice(browser, PHONE, {}, async (context) => context.clock.install());
+    await page.goto("/");
+    await signUp(page, account);
+    await turnOnFriends(page);
+    return { page, account, name: nameOf(account) };
+  }
+  const profileOf = async (page: Page) => (await page.evaluate(() => localStorage.getItem("kino.profile")))!;
+  /** `from` sends a title to `to`, the way a screen does (the screen that sends it is not the one under test). Each title its own address: the inbox keeps one of each. */
+  async function sendTitle(from: Page, to: string, title: string) {
+    const url = `https://films.example/watch/${encodeURIComponent(title)}`;
+    const answer = await from.request.post(`/api/profiles/${await profileOf(from)}/friends/send`, { data: { kind: "recommend", title, url, to: [to] } });
+    expect(answer.ok()).toBe(true);
+  }
+
+  test("a friend on the site is heard within 15 s, the next news within 8 s, and with nobody on and nothing going on it is still every half minute", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithClock(browser, "Bob");
+    await befriend(ann.page, bob.page);
+    const bobId = await profileOf(bob.page);
+    const toast = bob.page.getByTestId("account-toast");
+    // (Making friends is something going on: Bob looks every 8 s for three minutes. His clock goes past them; Ann's page is open, so she is on the site.)
+    await bob.page.clock.fastForward(3 * 60_000 + 1000);
+    await expect(async () => {
+      await look(bob.page);
+      await bob.page.getByTestId("menu-friends").click();
+      await expect(bob.page.getByTestId("friend-row")).toContainText("Online", { timeout: 1500 });
+    }).toPass();
+    await bob.page.keyboard.press("Escape");
+
+    // A friend on the site: what she sends is there within 15 s (it was up to half a minute)
+    await look(bob.page); // (a look now: the next is counted from it)
+    await sendTitle(ann.page, bobId, "Alpha Film");
+    await bob.page.clock.fastForward(16_000);
+    await expect(toast).toContainText(`${ann.name} sent you Alpha Film`, { timeout: 4000 });
+
+    // Something went on: the next is there within 8 s, even with Ann no longer shown on the site
+    await chooses(ann.page, { friendsPresence: false });
+    await sendTitle(ann.page, bobId, "Beta Film");
+    await bob.page.clock.fastForward(9000);
+    await expect(toast).toContainText(`${ann.name} sent you Beta Film`, { timeout: 3000 });
+
+    // Three quiet minutes later, with nobody on the site: the usual half minute (nothing is asked more often than it was)
+    await bob.page.clock.fastForward(3 * 60_000 + 1000);
+    await look(bob.page);
+    await sendTitle(ann.page, bobId, "Gamma Film");
+    await bob.page.clock.fastForward(16_000);
+    await bob.page.waitForTimeout(2000);
+    await expect(toast.filter({ hasText: "Gamma Film" })).toHaveCount(0);
+    await bob.page.clock.fastForward(15_000);
+    await expect(toast).toContainText(`${ann.name} sent you Gamma Film`, { timeout: 4000 });
+  });
+});
+
 test.describe("plans to watch together", () => {
   /** A moment `days` from today at `hour`:`minute`, by the clock of this machine (which the pages under test go by too). */
   const inDays = (days: number, hour: number, minute = 0) => {

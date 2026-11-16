@@ -8,11 +8,10 @@ import { t } from "../i18n";
 import { friendsApi } from "./api";
 import { rememberMadeHere } from "./madeHere";
 import { describeNews, isUrgent, known, whatsNew, type Known } from "./news";
+import { chatMark, friendOnline, LIVELY_FOR_MS, lookPace, QUIET_MS, stirring, WAKE_GAP_MS, type ChatMark } from "./pace";
 import { duePlans, inboxToShow, nextPlanMoment, whenText } from "./plans";
 import { withoutOnline } from "./stale";
 
-/** A screen looks at its friends this often while it is on screen. */
-const POLL_MS = 30_000;
 /** The longest a timer can be set for (a plan can be thirty days away; a longer wait is made of several). */
 const LONGEST_WAIT_MS = 2_000_000_000;
 /** Friends were just turned on and the server has not heard of it yet (a setting reaches it with the next exchange): ask it to listen now, and look again after each of these. */
@@ -30,6 +29,8 @@ export interface FriendsValue {
   /** How many things wait for this profile: what is new in the inbox, plans whose time has come, the requests to be friends that are not answered, and the friends who wrote and have not been answered by a look at the chat (what a badge counts). */
   attention: number;
   refresh(): Promise<void>;
+  /** Something just went on between friends on this screen (a message was written): they are looked at often for a few minutes, so that an answer comes in seconds. */
+  stir(): void;
   /** A new code to give to a friend. */
   invite(): Promise<OpenInvite>;
   revoke(code: string): Promise<void>;
@@ -95,9 +96,10 @@ export function useQuickLooks(on: boolean) {
 }
 
 /**
- * The friends of the profile in use, when it has turned them on: looked at every half minute while the screen is open (and when it
- * comes back, or the network does), with a line from the account's message when something is new. Nothing is asked of the server
- * while friends are off.
+ * The friends of the profile in use, when it has turned them on: looked at while the screen is open, at the pace of `pace.ts` (every 8 s for a
+ * few minutes after something went on between friends, 15 s while a friend is on the site, else every half minute), and when it comes back,
+ * its window is focused, or the network comes back; with a line from the account's message when something is new. Nothing is asked of the
+ * server while friends are off.
  */
 export function FriendsProvider({ children }: { children: ReactNode }) {
   const account = useAccount();
@@ -116,39 +118,67 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
   accountRef.current = account;
   /** Looks again now (what the actions below do after they change something). Whatever is looking after the profile in use. */
   const lookRef = useRef<() => Promise<void>>(async () => {});
+  /** Until when the friends are looked at often (see `pace.ts`), and what sets the next look anew from now (`stir`). */
+  const livelyUntil = useRef(0);
+  const planRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     seen.current = null;
     announcedDue.current = new Set();
+    livelyUntil.current = 0;
     setState(null);
     if (!on || !profileId) {
       setStatus("off");
       lookRef.current = async () => {};
+      planRef.current = () => {};
       return;
     }
     const id = profileId;
     let stopped = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let next: ReturnType<typeof setTimeout> | undefined;
     /** Looks that were started, and the newest one whose answer was taken: a slow answer to an older look must not replace a newer one. */
     let asked = 0;
     let taken = 0;
     /** When the server last answered: what is kept of it is only as good as that. */
     let lastAnswer = Date.now();
+    /** When the last look started (a wake right after it does not look again), and what the last answer said of the pace. */
+    let lastStart = 0;
+    let anyoneOn = false;
+    let unreachable = false;
+    let chatSeen: ChatMark = { newest: 0, count: 0 };
     setStatus("loading");
+
+    /** The next look, counted from now (each look sets it when it is answered, so one asked for in between moves it on). Out of sight it asks nothing, and looks when it comes back. */
+    const plan = () => {
+      clearTimeout(next);
+      if (stopped) return;
+      const wait = unreachable ? QUIET_MS : lookPace(Date.now(), livelyUntil.current, anyoneOn);      next = setTimeout(() => (document.visibilityState === "visible" ? void look() : plan()), wait);
+    };
 
     const look = async (attempt = 0): Promise<void> => {
       const mine = ++asked;
+      lastStart = Date.now();
       try {
-        const next = await friendsApi.state(id);
-        if (stopped || mine < taken) return;
+        const answer = await friendsApi.state(id);
+        if (stopped) return;
+        if (mine < taken) return plan();
         taken = mine;
         lastAnswer = Date.now();
-        const news = whatsNew(seen.current, next, Date.now());
+        const first = seen.current === null;
+        const news = whatsNew(seen.current, answer, Date.now());
         const line = describeNews(news, t, (at) => whenText(at, Date.now()));
-        seen.current = known(next);
-        setState(next);
+        const chatNow = chatMark(answer);
+        // (A friend who just did something may well do more in a moment: their next is heard within seconds. The first answer is not news.)
+        if (!first && stirring(news, chatSeen, chatNow)) livelyUntil.current = Date.now() + LIVELY_FOR_MS;
+        chatSeen = chatNow;
+        anyoneOn = friendOnline(answer);
+        unreachable = false;
+        seen.current = known(answer);
+        setState(answer);
         setStatus("ready");
         if (line) accountRef.current.say(line, isUrgent(news) ? "urgent" : "info");
+        plan();
       } catch (error) {
         if (stopped) return;
         const early = error instanceof ApiError && error.code === "friends_off" && attempt < SETTING_WAIT_MS.length;
@@ -164,22 +194,32 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
           setStatus("offline");
           setState((kept) => (kept ? withoutOnline(kept) : kept));
         } else setStatus((now) => (now === "ready" ? now : "offline"));
+        unreachable = true; // (asked again every half minute, not every few seconds, until it answers)
+        plan();
       }
     };
     lookRef.current = () => look();
+    planRef.current = plan;
     void look();
 
-    const every = setInterval(() => document.visibilityState === "visible" && void look(), POLL_MS);
     const wake = () => document.visibilityState === "visible" && void look();
+    // (A PC's window brought back from behind another is only focused. A tab brought back is shown, then focused: one look for both.)
+    const focused = () => {
+      if (Date.now() - lastStart >= WAKE_GAP_MS) wake();
+    };
+    const networkBack = () => void look();
     document.addEventListener("visibilitychange", wake);
-    window.addEventListener("online", wake);
+    window.addEventListener("focus", focused);
+    window.addEventListener("online", networkBack);
     return () => {
       stopped = true;
       lookRef.current = async () => {};
+      planRef.current = () => {};
       clearTimeout(retry);
-      clearInterval(every);
+      clearTimeout(next);
       document.removeEventListener("visibilitychange", wake);
-      window.removeEventListener("online", wake);
+      window.removeEventListener("focus", focused);
+      window.removeEventListener("online", networkBack);
     };
   }, [on, profileId]);
 
@@ -217,6 +257,16 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       await lookRef.current();
       return result;
     };
+    const stir = () => {
+      livelyUntil.current = Date.now() + LIVELY_FOR_MS;
+      planRef.current();
+    };
+    /** Something that a friend may answer soon (a title, an invitation, a plan, a request to be friends): their answer is looked for every few seconds for a while. */
+    const answered = async <T,>(work: Promise<T>): Promise<T> => {
+      const result = await work;
+      stir();
+      return result;
+    };
     return {
       on,
       status,
@@ -224,18 +274,19 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       unread,
       attention: waiting + (state?.requests.length ?? 0) + chatWaiting(state).length,
       refresh: () => lookRef.current(),
+      stir,
       invite: () => then(friendsApi.invite(id())),
       revoke: (code) => then(friendsApi.revoke(id(), code)),
       peek: (code) => friendsApi.peek(id(), code),
       // (A friend made here is no news to this screen's bell: it is remembered before the look that brings them.)
-      accept: async (code) => (await then(friendsApi.accept(id(), code).then(madeHereBy))).friend,
+      accept: async (code) => (await then(answered(friendsApi.accept(id(), code).then(madeHereBy)))).friend,
       peekTag: (text) => friendsApi.tag(id(), text),
-      askByTag: (tag) => then(friendsApi.askFriend(id(), tag).then(madeHereBy)),
-      acceptRequest: async (fromId) => (await then(friendsApi.acceptRequest(id(), fromId).then(madeHereBy))).friend,
+      askByTag: (tag) => then(answered(friendsApi.askFriend(id(), tag).then(madeHereBy))),
+      acceptRequest: async (fromId) => (await then(answered(friendsApi.acceptRequest(id(), fromId).then(madeHereBy)))).friend,
       declineRequest: (fromId) => then(friendsApi.declineRequest(id(), fromId)),
       remove: (friendId) => then(friendsApi.remove(id(), friendId)),
-      send: (to, message) => friendsApi.send(id(), { ...message, to: [...to] }),
-      answerPlan: (itemId, yes) => then(friendsApi.answerPlan(id(), itemId, yes)),
+      send: (to, message) => answered(friendsApi.send(id(), { ...message, to: [...to] })),
+      answerPlan: (itemId, yes) => then(answered(friendsApi.answerPlan(id(), itemId, yes))),
       markRead: () => then(friendsApi.read(id())),
       dismiss: (itemId) => then(friendsApi.dismiss(id(), itemId)),
       lists: (friendId) => friendsApi.lists(id(), friendId),
