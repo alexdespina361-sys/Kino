@@ -684,6 +684,18 @@ export class PlayerEngine {
     this.seek(this.video.currentTime + seconds);
   }
 
+  /**
+   * Whether the page may read the picture's frames (for the ✦ choices, which redraw it): a stream hls.js plays is put together by the page itself, so
+   * always; a file the browser plays by itself only from this site, or asked for with `crossorigin` (through the relay: see `readableFrom`) and begun so.
+   * (enhancer.ts still finds out for sure at its first frame: a browser may say no where this says yes.)
+   */
+  pictureReadable(): boolean {
+    if (this.hls) return true;
+    const src = this.video.currentSrc || this.video.src;
+    if (!src) return false;
+    return readableFrom(src) === "same-origin" || (this.video.crossOrigin === "anonymous" && !this.corsTrial);
+  }
+
   /** A quality picked by hand, or -1 for the player's own choice again: from the next piece on, without a stop (what is downloaded beyond the piece that plays is replaced). */
   setQuality(level: number): void {
     if (!this.hls) return;
@@ -791,6 +803,7 @@ export class PlayerEngine {
         id: index,
         label: formatQualityLabel(lvl.width, lvl.height, lvl.name),
         height: lvl.height,
+        ...(lvl.width ? { width: lvl.width } : {}),
         bitrate: lvl.bitrate,
       };
     });

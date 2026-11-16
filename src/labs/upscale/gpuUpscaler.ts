@@ -141,6 +141,14 @@ export class GpuUpscaler {
     });
   }
 
+  /** Frees what the networks made and the graphics device itself (the player's ✦ 2K makes one for each film). */
+  dispose(): void {
+    for (const thing of this.made) thing.destroy();
+    this.made = [];
+    this.built = "";
+    this.device.destroy();
+  }
+
   /** (Re)makes the networks for this mode, this size of video and this target (Mode A and C change with the target): once, not every frame. */
   private build(mode: AnimeMode, native: Size, out: Size): void {
     const key = `${mode} ${native.width}x${native.height} ${out.width}x${out.height}`;

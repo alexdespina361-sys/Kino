@@ -1018,6 +1018,7 @@ const COMMANDS = (): Array<Record<string, unknown>> => [
   { type: "SKIP", seconds: -10 },
   { type: "STOP" },
   { type: "SET_QUALITY", level: 0 },
+  { type: "SET_ENHANCE", mode: "2k" },
   { type: "SET_SUBTITLE", track: 0 },
   { type: "SET_CAPTION_STYLE", style: { size: "large", font: "serif" } },
   { type: "SET_SPEED", rate: 1.5 },

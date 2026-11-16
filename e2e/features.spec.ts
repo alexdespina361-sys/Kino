@@ -1380,7 +1380,7 @@ test.describe("sources", () => {
     await phone.getByTestId("source-1").click();
     await expect.poll(() => currentSrc(tv)).toContain("mirror=1");
     await expect(tv.getByTestId("tv-source-btn")).toHaveText("Mirror");
-    await expect(tv.getByTestId("tv-quality-btn")).toHaveCount(0); // (the mirror is one file: nothing to pick)
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText("✦ Off"); // (the mirror is one file: no quality to pick, only the screen's ✦ 2K: e2e/enhance.spec.ts)
 
     // Back to the first place, and its qualities are on offer again.
     await tv.getByTestId("tv-source-btn").click();
@@ -1913,7 +1913,7 @@ test.describe("watching together", () => {
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
     await follower.keyboard.press("ArrowDown"); // wakes the bar and lands on its first button, even with the bar faded away
     await expect(follower.locator(".hud-controls button").first()).toBeFocused();
-    for (let i = 0; i < 4 && !(await follower.getByTestId("tv-leave").evaluate((el) => el === document.activeElement)); i++) {
+    for (let i = 0; i < 5 && !(await follower.getByTestId("tv-leave").evaluate((el) => el === document.activeElement)); i++) {
       await follower.keyboard.press("ArrowRight");
     }
     await expect(follower.getByTestId("tv-leave")).toBeFocused();

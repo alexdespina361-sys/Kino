@@ -21,6 +21,7 @@ import {
   tagLabel,
   versionLabel,
   type CaptionStyle,
+  type EnhanceMode,
   type PartyProfile,
   type PartyTv,
   type PhoneTv,
@@ -44,7 +45,7 @@ import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
-import { captionLabel, captionPresetName, captionTitle, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
+import { captionLabel, captionPresetName, captionTitle, enhanceName, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { Rows, Switch } from "./AccountPages";
 import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
@@ -72,23 +73,38 @@ export function SpeedSheet({ player, onPick, onClose }: Close & { player: Player
   );
 }
 
-export function QualitySheet({ player, onPick, onClose }: Close & { player: PlayerState; onPick: (level: number) => void }) {
+/** The qualities the film comes in, and under their own line the ✦ choices the TV offers for it (what that screen adds to the picture: see `PlayerState.enhance`). */
+export function QualitySheet({ player, onPick, onEnhance, onClose }: Close & { player: PlayerState; onPick: (level: number) => void; onEnhance: (mode: EnhanceMode) => void }) {
   useT();
   const quality = player.quality;
   const levels = [...(quality?.levels ?? [])].sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
-  const choices: Choice[] = [
-    ...(quality?.auto === false ? [] : [{ key: -1, label: t("player.auto"), active: quality?.current === -1, testId: "quality--1", pick: () => onPick(-1) }]),
-    ...levels.map((level) => ({
-      key: level.id,
-      label: level.label,
-      active: quality?.current === level.id,
-      testId: `quality-${level.id}`,
-      pick: () => onPick(level.id),
-    })),
-  ];
+  const choices: Choice[] =
+    levels.length > 1
+      ? [
+          ...(quality?.auto === false ? [] : [{ key: -1, label: t("player.auto"), active: quality?.current === -1, testId: "quality--1", pick: () => onPick(-1) }]),
+          ...levels.map((level) => ({
+            key: level.id,
+            label: level.label,
+            active: quality?.current === level.id,
+            testId: `quality-${level.id}`,
+            pick: () => onPick(level.id),
+          })),
+        ]
+      : [];
+  const enhance = player.enhance;
+  const enhanceChoices: Choice[] =
+    enhance && enhance.offers.length > 0
+      ? (["off", ...enhance.offers] as const).map((mode) => ({ key: mode, label: enhanceName(mode), active: enhance.current === mode, testId: `enhance-${mode}`, pick: () => onEnhance(mode) }))
+      : [];
   return (
     <Sheet title={t("player.quality")} onClose={onClose} testId="quality-sheet">
-      <ChoiceList choices={choices} label={t("player.quality")} />
+      {choices.length > 0 && <ChoiceList choices={choices} label={t("player.quality")} />}
+      {enhanceChoices.length > 0 && (
+        <>
+          <h3 className="sheet-section">{t("player.enhanceHeading")}</h3>
+          <ChoiceList choices={enhanceChoices} label={t("player.enhanceHeading")} />
+        </>
+      )}
     </Sheet>
   );
 }

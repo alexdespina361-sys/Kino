@@ -9,6 +9,8 @@ export const PlayerQualityLevelSchema = z.object({
   id: z.number().int(),
   label: z.string().max(100),
   height: z.number().int().optional(),
+  /** (Its width too: a wide film's 2K is 2560 x 1072, which its height alone does not tell. See the ✦ choices, `EnhanceModeSchema`.) */
+  width: z.number().int().optional(),
   bitrate: z.number().optional(),
 });
 export type PlayerQualityLevel = z.infer<typeof PlayerQualityLevelSchema>;
@@ -21,6 +23,19 @@ export const PlayerTrackSchema = z.object({
 export type PlayerTrack = z.infer<typeof PlayerTrackSchema>;
 
 const StartAtSchema = z.number().finite().min(0).max(86_400);
+
+/**
+ * What the screen itself can add to the picture (the "✦" choices of the Quality list, made by the screen's graphics chip, not by the film's host): the
+ * picture redrawn at 2K, at 2K and 60 frames a second, or at 60 frames a second only (a film that is 2K already). "off": the picture as it comes.
+ */
+export const EnhanceModeSchema = z.enum(["off", "2k", "2k60", "60"]);
+export type EnhanceMode = z.infer<typeof EnhanceModeSchema>;
+/** How the screen redraws the picture: Anime4K's network on WebGPU ("anime", the stronger graphics chips), or AMD FSR 1 on WebGL ("sharp"). */
+export const EnhanceTierSchema = z.enum(["anime", "sharp"]);
+export type EnhanceTier = z.infer<typeof EnhanceTierSchema>;
+/** Why a ✦ choice is not (or no longer) on: the film's frames may not be read here, the device is too slow for it, or its graphics failed. */
+export const EnhanceProblemSchema = z.enum(["unreadable", "slow", "failed"]);
+export type EnhanceProblem = z.infer<typeof EnhanceProblemSchema>;
 
 /** The speeds offered on the phone and on the TV. The TV accepts anything from 0.25× to 4×. */
 export const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
@@ -43,6 +58,8 @@ export const CommandSchema = z.discriminatedUnion("type", [
   SkipCommand,
   StopCommand,
   z.object({ type: z.literal("SET_QUALITY"), level: z.number().int() }),
+  /** One of the ✦ choices of the Quality list (see `EnhanceModeSchema`), or "off". The quality the film is downloaded in stays as it is. */
+  z.object({ type: z.literal("SET_ENHANCE"), mode: EnhanceModeSchema }),
   z.object({ type: z.literal("SET_SUBTITLE"), track: z.number().int() }),
   /** Any of the caption look settings; what isn't mentioned stays as it is. */
   z.object({ type: z.literal("SET_CAPTION_STYLE"), style: CaptionStyleSchema.partial() }),
@@ -112,6 +129,20 @@ export const PlayerStateSchema = z.object({
       active: z.number().int().optional(),
       /** False when the player cannot choose by itself (each quality is a file of its own): the pickers then leave "Auto" out. */
       auto: z.boolean().optional(),
+    })
+    .optional(),
+  /**
+   * The ✦ choices this screen offers for this film, and the one that is on (absent: none, or a page of an older build). A field of its own, not more
+   * quality levels: a TV page of an older build and a phone of a newer one (or the other way round, during a deploy) must still understand each other.
+   */
+  enhance: z
+    .object({
+      offers: z.array(EnhanceModeSchema).max(3),
+      current: EnhanceModeSchema,
+      /** How it is made on this screen, while it is on. */
+      tier: EnhanceTierSchema.optional(),
+      /** Why the choice last made is not on: said once, the list shows it until another is made. */
+      problem: EnhanceProblemSchema.optional(),
     })
     .optional(),
   subtitles: z

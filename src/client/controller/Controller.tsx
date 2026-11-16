@@ -762,7 +762,7 @@ export function Controller() {
         <SpeedSheet player={player} onClose={closeSheet} onPick={(rate) => send({ type: "SET_SPEED", rate })} />
       )}
       {sheet === "quality" && (
-        <QualitySheet player={player} onClose={closeSheet} onPick={(level) => send({ type: "SET_QUALITY", level })} />
+        <QualitySheet player={player} onClose={closeSheet} onPick={(level) => send({ type: "SET_QUALITY", level })} onEnhance={(mode) => send({ type: "SET_ENHANCE", mode })} />
       )}
       {sheet === "sources" && (
         <SourcesSheet player={player} onClose={closeSheet} onPick={(index) => send({ type: "SET_SOURCE", index })} />

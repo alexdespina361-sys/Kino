@@ -35,6 +35,11 @@
   object-fit: contain;
   background: #000;
 }
+/* ✦ 2K (enhance/enhancer.ts): the picture redrawn over the video, in the same place and shape. It takes no taps (they go to the video under it), and shows
+   nothing until its first frame is drawn, so the video shows through until then and again the moment it goes. */
+.tv-enhance-layer { position: absolute; inset: 0; pointer-events: none; }
+.tv-enhance { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; pointer-events: none; }
+.tv-enhance:not([data-drawn]) { visibility: hidden; }
 /* The picture takes taps, double taps and holds (gestures.ts) and nothing of it scrolls, so a touch on it is left to the page: the browser starts no pan of its own. */
 .tv-video, .tv-overlay { touch-action: none; -webkit-tap-highlight-color: transparent; }
 /* The controls are the page's own (Hud.tsx). If a browser draws its player's anyway (see nativePlayer.ts), they are kept out of sight; one rule each, as a browser drops a whole rule for a name it does not know. */

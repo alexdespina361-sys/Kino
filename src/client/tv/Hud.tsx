@@ -27,7 +27,7 @@ import {
   VolumeIcon,
 } from "../shared/icons";
 import { Poster } from "../shared/Poster";
-import { friendlyError, hasAudioChoice, qualityName, tracksTitle } from "../shared/words";
+import { friendlyError, hasAudioChoice, hasPictureChoice, pictureName, tracksTitle } from "../shared/words";
 import type { PlayOptions } from "./Browse";
 import { useBack, useDpad } from "./dpad";
 import { PlayerError } from "./engine";
@@ -218,9 +218,12 @@ function TracksButton({ p, player }: { p: HudProps; player: PlayerState }) {
   );
 }
 
-/** The quality, when the video comes in more than one: a guest picks its own too (it is its own picture that is downloaded, whatever the host's). */
+/**
+ * The quality, when the video comes in more than one or this screen offers a ✦ choice for it: a guest picks its own too (it is its own picture that is
+ * downloaded, and drawn, whatever the host's).
+ */
 function QualityButton({ p, player, label }: { p: HudProps; player: PlayerState; label: string }) {
-  if (!player.quality || player.quality.levels.length <= 1) return null;
+  if (!hasPictureChoice(player)) return null;
   return (
     <button className="tv-btn" data-testid="tv-quality-btn" onClick={() => p.onOpenMenu("quality")} title={t("player.quality")}>
       {label}
@@ -472,7 +475,7 @@ export function Hud(p: HudProps) {
   const steers = !follow || follow.admin;
   /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the Up Next card, or the wait for the picture, take its place). */
   const centre = steers && !p.upNext && !busy && (paused || (p.touch && playing));
-  const qualityLabel = qualityName(player.quality);
+  const qualityLabel = pictureName(player);
   const endsAt = formatEndsAt(player.currentTime, duration, player.playbackRate ?? 1, new Date());
   const partyLabel = p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail");
   /** What a screen that watches along is told about the held film: who held it when that is known, else only that it is held (the host's own pause card says nothing: it knows). */
