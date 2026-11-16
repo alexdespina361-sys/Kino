@@ -27,5 +27,11 @@ export function useHost(friendId: string, onClose: () => void) {
     void friends.refresh();
     onClose();
   };
-  return { friend, session, report, receiving: friendChoices(settings).friendsMessages, close };
+  // (A message that went: the friend's answer is looked for every few seconds for a while, so the bell has it soon after the chat is closed.)
+  const send = async (text: string) => {
+    const went = await session.send(text);
+    if (went) friends.stir();
+    return went;
+  };
+  return { friend, session: { ...session, send }, report, receiving: friendChoices(settings).friendsMessages, close };
 }
