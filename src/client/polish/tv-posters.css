@@ -7,6 +7,7 @@
  */
 :root[data-ui="polish"] .tv {
   --poster-w: calc(var(--em) * 9.4); /* an upright title: 2 by 3, nine across a 16 by 9 screen with the next one showing */
+  --landscape-w: calc(var(--em) * 21); /* a wide card of a row of them: 16 by 9, four across with the fifth showing, about as tall as a poster's picture is wide and a half */
   --hero-poster-h: calc(var(--em) * 16);
 }
 
@@ -19,9 +20,14 @@
 :root[data-ui="polish"] .tv-row-tiles > .tv-skeleton { width: var(--poster-w); height: calc(var(--poster-w) * 1.5); }
 :root[data-ui="polish"] .tv-grid .tv-tile-poster { width: auto; }
 :root[data-ui="polish"] .tv-grid-posters > .tv-skeleton { height: auto; aspect-ratio: 2 / 3; }
+/* Some rows of the library are wide cards instead (see shared/shapes.ts): a still of each title, its name on one line under it. */
+:root[data-ui="polish"] .tv-tile-landscape { width: var(--landscape-w); }
+:root[data-ui="polish"] .tv-tile-landscape .tv-tile-art { aspect-ratio: 16 / 9; }
+:root[data-ui="polish"] .tv-row[data-shape="landscape"] .tv-row-tiles > .tv-skeleton { width: var(--landscape-w); height: calc(var(--landscape-w) * 0.5625); }
 /* (The arrows of a row, for a mouse, stand at the middle of its pictures: the arrow is 4 em tall.) */
 @media (hover: hover) and (pointer: fine) {
   :root[data-ui="polish"] .tv-row[data-posters="true"] .tv-row-more { top: calc(var(--poster-w) * 0.75 - var(--em) * 2); }
+  :root[data-ui="polish"] .tv-row[data-shape="landscape"] .tv-row-more { top: calc(var(--landscape-w) * 0.28125 - var(--em) * 2); }
 }
 @media (min-width: 900px) {
   :root[data-ui="polish"] .tv-grid-categories { grid-template-columns: repeat(var(--cols, 4), calc(var(--em) * 19)); }

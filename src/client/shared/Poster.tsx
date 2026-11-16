@@ -30,8 +30,18 @@ export const sharper = (picture: string | undefined) => picture?.replace(/^(http
  */
 export function posterSizes(picture: string | undefined): { srcSet: string; sizes: string } | undefined {
   const match = picture?.match(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500(\/[^\s,]+)$/);
-  if (!match) return undefined;
+  if (!match) return stillSizes(picture);
   return { srcSet: [342, 500, 780].map((width) => `${match[1]}w${width}${match[2]} ${width}w`).join(", "), sizes: "auto, 160px" };
+}
+
+/**
+ * The same for a still (the library's wide pictures are the database's 1280 px ones): a card of a row (a phone's ~250 px, a TV's ~400 px) takes the 780 px
+ * one, a fifth of the bytes, and a 300 px one where it is small. A browser that has no `auto` reads 400 px.
+ */
+function stillSizes(picture: string | undefined): { srcSet: string; sizes: string } | undefined {
+  const match = picture?.match(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w1280(\/[^\s,]+)$/);
+  if (!match) return undefined;
+  return { srcSet: [300, 780, 1280].map((width) => `${match[1]}w${width}${match[2]} ${width}w`).join(", "), sizes: "auto, 400px" };
 }
 
 /** A title's picture, or (when there is none, or it does not load) its first letter on a colour made from its name. `children` sit on top of it. */

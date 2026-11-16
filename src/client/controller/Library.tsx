@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { forChildren, LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection, type PlayHint } from "../../shared";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { forChildren, LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibraryRow, type LibrarySection, type PlayHint } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
@@ -7,11 +7,12 @@ import { useProfileData } from "../account/store";
 import { rowTitle, useT } from "../i18n";
 import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
-import { Poster } from "../shared/Poster";
+import { hueOf, Poster, posterSizes } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
+import { landscapeRows } from "../shared/shapes";
 import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
-import { entryOfItem, type Entry } from "../tv/pages";
+import { CATEGORIES_AFTER, CATEGORY_TILES, entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { RowHead } from "./Rows";
 import { SavedMark, useListToggle, type ListToggle } from "./Round";
@@ -142,6 +143,8 @@ export function Library({
     const inSection = pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows;
     return child ? inSection.map((row) => ({ ...row, items: row.items.filter((item) => forChildren(item, row)) })).filter((row) => row.items.length > 0) : inSection;
   }, [feeding.data, pageSection, child]);
+  // (Some rows are wide cards, by the same rule as on the TV: see shared/shapes.ts.)
+  const wideRows = useMemo(() => landscapeRows(displayedRows), [displayedRows]);
   const because = useMemo(
     () => (child ? liked.map((like) => ({ ...like, items: like.items.filter((item) => forChildren(item)) })).filter((like) => like.items.length > 0) : liked),
     [liked, child],
@@ -397,24 +400,28 @@ export function Library({
                 </Scroller>
               </div>
             ))}
-          {displayedRows.map((row) => (
-            <div className="lib-row" key={row.id} data-testid="library-row">
-              <RowHead
-                title={rowTitle(row)}
-                aside={
-                  onSeeAll && (
-                    <button type="button" className="row-link" data-testid="row-see-all" aria-label={`${t("rows.seeAll")}: ${rowTitle(row)}`} onClick={() => onSeeAll(row.id)}>
-                      {t("rows.seeAll")}
-                    </button>
-                  )
-                }
-              />
-              <Scroller {...(hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
-                {row.items.map((item) => (
-                  <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
-                ))}
-              </Scroller>
-            </div>
+          {displayedRows.map((row, index) => (
+            <Fragment key={row.id}>
+              <div className={`lib-row${wideRows.has(row.id) ? " is-wide is-landscape" : ""}`} data-testid="library-row" data-shape={wideRows.has(row.id) ? "landscape" : undefined}>
+                <RowHead
+                  title={rowTitle(row)}
+                  aside={
+                    onSeeAll && (
+                      <button type="button" className="row-link" data-testid="row-see-all" aria-label={`${t("rows.seeAll")}: ${rowTitle(row)}`} onClick={() => onSeeAll(row.id)}>
+                        {t("rows.seeAll")}
+                      </button>
+                    )
+                  }
+                />
+                <Scroller {...(hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
+                  {row.items.map((item) => (
+                    <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} wide={wideRows.has(row.id)} />
+                  ))}
+                </Scroller>
+              </div>
+              {/* (After the third row, as on the TV: a row of the page's categories, each a card that opens the whole row.) */}
+              {onSeeAll && index === CATEGORIES_AFTER - 1 && displayedRows.length > CATEGORIES_AFTER + 1 && <CategoryRow rows={displayedRows} onOpen={onSeeAll} />}
+            </Fragment>
           ))}
           {/* Under the last row: empty tiles while the rows that come next are on their way, and a line when they could not be had (they are asked for again in a moment). */}
           {pageSection && displayedRows.length === 0 && !loadingShelves(feeding, pageSection) && !failedShelves(feeding, pageSection) && !hasMoreShelves(feeding, pageSection) && (
@@ -472,15 +479,44 @@ function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNea
 }
 
 /**
+ * The row of categories (the TV has it as well): a card for each row of the page, with its name and the posters of its first titles fanned at its end, that
+ * opens the whole row. It is a third shape among the rows, with the posters and the wide cards (the owner, 15 Nov: "Mix the row shapes ... on the phone too").
+ */
+function CategoryRow({ rows, onOpen }: { rows: readonly LibraryRow[]; onOpen: (rowId: string) => void }) {
+  const t = useT();
+  return (
+    <section className="lib-row is-categories" data-testid="library-categories" aria-label={t("tv.byCategory")}>
+      <h3>{t("tv.byCategory")}</h3>
+      <div className="lib-scroller">
+        {rows.slice(0, CATEGORY_TILES).map((row) => {
+          const posters = row.items.flatMap((item) => (item.image ? [item.image] : [])).slice(0, 3);
+          return (
+            <button key={row.id} type="button" className="lib-cat" style={{ "--hue": hueOf(row.id) } as CSSProperties} onClick={() => onOpen(row.id)} data-testid="library-category">
+              <span className="lib-cat-name">{rowTitle(row)}</span>
+              <span className="lib-cat-fan" aria-hidden="true">
+                {posters.map((poster, at) => (
+                  <img key={poster} loading="lazy" {...posterSizes(poster)} src={poster} alt="" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} />
+                ))}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/**
  * A title in a row (or on the page of a whole row): its poster with its name under it, the score this profile gave it (top left) and a tick if it is in a list
  * (top right). There is no button on it for the lists: a hold does that (`toggle.onHold`), and so does the button of the title's page.
  */
-export function Tile({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
+export function Tile({ item, score, toggle, onOpen, wide }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void; wide?: boolean }) {
   const hold = useHold(toggle.onHold);
   return (
     <div className="lib-tile" data-in-list={toggle.inList}>
       <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
-        <Poster className="lib-art" title={item.title} image={item.image ?? item.backdrop} seed={item.id}>
+        {/* (A row of wide cards shows a still of each title: see shared/shapes.ts.) */}
+        <Poster className="lib-art" title={item.title} image={wide ? (item.backdrop ?? item.image) : (item.image ?? item.backdrop)} seed={item.id}>
           {score !== undefined && <ScoreBadge score={score} />}
           {toggle.inList && <SavedMark />}
         </Poster>

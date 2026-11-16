@@ -224,6 +224,31 @@ function posOf(element: Element | null): Pos | null {
   return { zone: element.dataset.zone as Zone, row: Number(element.dataset.row), col: Number(element.dataset.col) };
 }
 
+/**
+ * Where Up or Down lands in a row of titles whose tiles are not the size of the ones of the row it leaves (posters, wide cards, the cards of what is part way
+ * through, the categories, the ranking): on the tile under the one the remote is on, where the eye goes, not on the one with the same number (the ninth
+ * poster stands over the fourth wide card, three screens along it). "Under" is under the middle of its left part, as wide as the narrower of the two
+ * sizes: the first card of a row is over the first poster (its own middle would be over the second), and a poster over a card goes to that card. Rows of
+ * one size keep the number. Null for those.
+ */
+function underMiddle(root: ParentNode, from: Element | null, row: number, length: number): number | null {
+  if (!(from instanceof HTMLElement) || length === 0) return null;
+  const was = from.getBoundingClientRect();
+  const first = find(root, { zone: "rows", row, col: 0 })?.getBoundingClientRect();
+  // (The tile the remote is on is drawn a little larger: anything within a sixth of its width is the same size.)
+  if (!first || was.width === 0 || Math.abs(first.width - was.width) <= was.width / 6) return null;
+  const middle = was.left + Math.min(was.width, first.width) / 2;
+  let under: { col: number; far: number } | null = null;
+  for (let col = 0; col < length; col++) {
+    const box = find(root, { zone: "rows", row, col })?.getBoundingClientRect();
+    if (!box) continue;
+    const far = Math.max(box.left - middle, 0, middle - box.right); // (0 for the tile the middle is over)
+    if (far < (under?.far ?? Infinity)) under = { col, far };
+    else if (box.left > middle) break; // (the tiles are in a line: the rest are further)
+  }
+  return under?.col ?? null;
+}
+
 /** The buttons over a friend's titles: the way back, then the two halves of the page (the button of the one that is shown is where the remote stands). */
 const FRIEND_TABS = ["lists", "ratings"] as const;
 const friendChip = (tab: FriendTab | undefined): number => 1 + Math.max(0, FRIEND_TABS.indexOf(tab ?? "lists"));
@@ -1009,6 +1034,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         return go(action === "left" ? RAIL : action === "up" && now.top?.length ? { zone: "top", row: 0, col: 0 } : null);
       }
       const next = stepFrom(now, at, action);
+      // (On the pages of rows of the library: the profile's places are a grid that wraps, where the number is the place.)
+      if (isRowsPage(page) && at.zone === "rows" && next?.zone === "rows" && next.row !== at.row) {
+        const col = underMiddle(root, document.activeElement, next.row, now.rows?.[next.row] ?? 0);
+        if (col !== null) return go({ ...next, col }, at.zone);
+      }
       // Down from the profile's buttons lands on the place under the button the remote is on, not on the first place (the judge, 16 Nov: from Settings or
       // Feedback, on the right, it went to My ratings at the far left, with History right under them).
       if (page.kind === "profile" && at.zone === "hero" && action === "down" && next?.row === -1) {
@@ -1183,12 +1213,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     return { kind: kept ? "kept" : "add", label: t(kept ? "rows.removeFromList" : "library.addToList", { list: listName(info) }), run: () => profileStore.setInList(listEntryOf(entry), !kept, info.id) };
   };
 
-  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string, listId?: string) => {
+  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string, listId?: string, shape?: HomeRow["shape"]) => {
     const title: Focused = { entry: resumable(entry, progress), label, ...(source ? { source } : {}) };
     // The score this profile gave the title shows on its picture wherever the title is in the library. (Not on a friend's page, where a
     // title's own line already says what that friend gave it, and not on the list of ratings, which is all of them.)
     const score = view.kind !== "ratings" && view.kind !== "friend" ? scoreOf(scores, entry.url) : undefined;
-    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} compact={compact} rank={pos.col + 1} pos={pos} corner={cornerOf(entry, listId)} score={score} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title, pos)} />;
+    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} landscape={shape === "landscape"} compact={compact} rank={pos.col + 1} pos={pos} corner={cornerOf(entry, listId)} score={score} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title, pos)} />;
   };
 
   /** An episode of the show whose page is open. */
@@ -1505,7 +1535,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
             {homeRows.length > 0
               ? drawnRows.map((row, r) => (
-                  <section className="tv-row" key={row.id} data-layout={row.layout} data-posters={row.layout === "wide" && row.entries[0] && isTitle(row.entries[0]) ? "true" : undefined} data-grouped={row.group ? "true" : undefined} aria-label={row.title}>
+                  <section
+                    className="tv-row"
+                    key={row.id}
+                    data-layout={row.layout}
+                    data-shape={row.shape}
+                    data-posters={row.layout === "wide" && !row.shape && row.entries[0] && isTitle(row.entries[0]) ? "true" : undefined}
+                    data-grouped={row.group ? "true" : undefined}
+                    aria-label={row.title}
+                  >
                     {row.group && homeRows[r - 1]?.group !== row.group && (
                       // (Inside the first row of its group, so that the page, which brings a row to its top, brings the heading too.)
                       <h2 className="tv-row-group" data-testid="tv-row-group">
@@ -1526,7 +1564,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                     {/* (The friends' own row has the page's name over it, in the banner: "Your friends" again would be the same words twice.) */}
                     {!(friendsHead && row === peopleRow) && <h2 className="tv-row-title">{row.title}</h2>}
                     <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
-                      {row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}
+                      {row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id), row.shape))}
                     </RowTiles>
                   </section>
                 ))
@@ -2228,14 +2266,16 @@ interface Corner {
 
 /**
  * One title (or category) of a row, in the shape its row asks for. A phone held upright (`compact`) shows an upright poster for every title but the cards of
- * what is part way through, and has no room for the numbers of a ranking behind them: its titles are named like the others.
+ * what is part way through and the rows of wide cards, and has no room for the numbers of a ranking behind them: its titles are named like the others.
  */
-function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArrive, onPress }: { entry: Entry; layout: Layout; compact: boolean; rank: number; pos: Pos; corner: Corner | undefined; score: number | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
+function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, score, onArrive, onPress }: { entry: Entry; layout: Layout; landscape: boolean; compact: boolean; rank: number; pos: Pos; corner: Corner | undefined; score: number | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(entry.id);
   const layout: Layout = compact && asked === "ranked" ? "wide" : asked;
-  // A title is shown by its poster, the picture it is known by; only the card of what is part way through is wide (a still of where it was left).
-  const poster = layout === "wide" && isTitle(entry);
+  // A title is shown by its poster, the picture it is known by; only the card of what is part way through is wide (a still of where it was left), and the
+  // titles of a row of wide cards (`landscape`: a still of each, so that a page is not one size of poster from top to bottom).
+  const wideCard = landscape && layout === "wide" && isTitle(entry);
+  const poster = layout === "wide" && isTitle(entry) && !wideCard;
   const picture = layout === "ranked" || poster ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
   const showPicture = picture && !broken;
   const common = {
@@ -2312,7 +2352,7 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
 
   const under = entry.note ?? entry.year;
   return (
-    <button className={`tv-tile tv-tile-${layout}${poster ? " tv-tile-poster" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? entry.title : undefined} {...common}>
+    <button className={`tv-tile tv-tile-${layout}${poster ? " tv-tile-poster" : ""}${wideCard ? " tv-tile-landscape" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? entry.title : undefined} {...common}>
       {layout === "ranked" && (
         <span className={`tv-rank${rank > 9 ? " tv-rank-wide" : ""}`} aria-hidden="true">
           <b>{rank}</b>
