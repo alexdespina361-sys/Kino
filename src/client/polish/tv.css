@@ -811,6 +811,10 @@
 @media (prefers-reduced-motion: reduce) {
   :root[data-ui="polish"] .tv-code-boxes i[data-caret="true"]::after { animation: none; }
 }
+/* A screen as flat as a phone on its side: Paste beside the boxes (tv.css), not under them. */
+@media (max-height: 520px) {
+  :root[data-ui="polish"] .tv-code-line .tv-code-paste { margin-top: 0; }
+}
 :root[data-ui="polish"] .tv-steps { font-size: var(--fs-4); }
 :root[data-ui="polish"] .tv-step-no { background: var(--accent); color: var(--accent-ink); }
 :root[data-ui="polish"] .tv-party-start p { font-size: var(--fs-3); color: var(--text-2); }

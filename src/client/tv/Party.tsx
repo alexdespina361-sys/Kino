@@ -354,42 +354,45 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
     <Screen testId="tv-party-join-page" compact focus onBack={back} leaving={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("party.join")}</h1>
       <p className="tv-hint">{t("party.joinHint")}</p>
-      <div className="tv-code-entry" data-typing={typing ? "true" : undefined}>
-        <p className="tv-code-boxes" data-testid="tv-party-digits" aria-live="polite">
-          {Array.from({ length: 6 }, (_, i) => (
-            <i key={i} data-filled={i < digits.length} data-caret={typing && i === digits.length ? "true" : undefined}>
-              {digits[i] ?? ""}
-            </i>
-          ))}
-        </p>
-        {/* (Over the boxes, seen through: what a click or a tap puts the cursor in. Not one of the remote's places: the pad is that, and a TV's own keyboard would come up.) */}
-        <input
-          className="tv-code-field"
-          data-testid="tv-party-code-input"
-          type="text"
-          inputMode="numeric"
-          autoComplete="off" // (not "one-time-code": a phone would offer the last code a text message brought, and six digits send at once)
-          autoCorrect="off"
-          spellCheck={false}
-          enterKeyHint="go"
-          aria-label={t("party.codeLabel")}
-          value={digits}
-          onChange={(event) => put(partyCodeIn(event.target.value) ?? event.target.value)}
-          onSelect={(event) => {
-            // (The cursor stays after the last digit, where the boxes show it.)
-            const field = event.currentTarget;
-            const end = field.value.length;
-            if (field.selectionStart !== end || field.selectionEnd !== end) field.setSelectionRange(end, end);
-          }}
-          onFocus={() => setTyping(true)}
-          onBlur={() => setTyping(false)}
-        />
+      {/* (No box of its own, but on a screen as flat as a phone on its side: there Paste goes beside the boxes, and the pad and Back keep the height they need.) */}
+      <div className="tv-code-line">
+        <div className="tv-code-entry" data-typing={typing ? "true" : undefined}>
+          <p className="tv-code-boxes" data-testid="tv-party-digits" aria-live="polite">
+            {Array.from({ length: 6 }, (_, i) => (
+              <i key={i} data-filled={i < digits.length} data-caret={typing && i === digits.length ? "true" : undefined}>
+                {digits[i] ?? ""}
+              </i>
+            ))}
+          </p>
+          {/* (Over the boxes, seen through: what a click or a tap puts the cursor in. Not one of the remote's places: the pad is that, and a TV's own keyboard would come up.) */}
+          <input
+            className="tv-code-field"
+            data-testid="tv-party-code-input"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off" // (not "one-time-code": a phone would offer the last code a text message brought, and six digits send at once)
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            aria-label={t("party.codeLabel")}
+            value={digits}
+            onChange={(event) => put(partyCodeIn(event.target.value) ?? event.target.value)}
+            onSelect={(event) => {
+              // (The cursor stays after the last digit, where the boxes show it.)
+              const field = event.currentTarget;
+              const end = field.value.length;
+              if (field.selectionStart !== end || field.selectionEnd !== end) field.setSelectionRange(end, end);
+            }}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
+          />
+        </div>
+        {pasting && (
+          <button className="tv-action tv-code-paste" onClick={() => void pasteNow()} data-nav data-testid="tv-party-paste">
+            <ClipboardIcon /> {t("party.paste")}
+          </button>
+        )}
       </div>
-      {pasting && (
-        <button className="tv-action tv-code-paste" onClick={() => void pasteNow()} data-nav data-testid="tv-party-paste">
-          <ClipboardIcon /> {t("party.paste")}
-        </button>
-      )}
       <p className={`tv-party-error${shown ? " is-shown" : ""}${!error && note ? " is-note" : ""}`} role="alert" data-testid="tv-party-error">
         {shown ?? ""}
       </p>

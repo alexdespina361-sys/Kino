@@ -2231,6 +2231,19 @@ test.describe("a watch party started on a TV", () => {
     const boxes = guest.getByTestId("tv-party-digits");
     const filled = boxes.locator('[data-filled="true"]');
 
+    // A TV with a keyboard and no mouse: the remote's place is on the pad, a digit typed goes in, and Backspace takes a mistyped one off (the page stays).
+    await guest.keyboard.type("9");
+    await expect(filled).toHaveCount(1);
+    await guest.keyboard.press("Backspace");
+    await expect(filled).toHaveCount(0);
+    await expect(guest.getByTestId("tv-party-join-page")).toBeVisible();
+    // The remote walks up from the pad to Paste and back down to it.
+    await guest.getByTestId("pad-2").focus();
+    await guest.keyboard.press("ArrowUp");
+    await expect(guest.getByTestId("tv-party-paste")).toBeFocused();
+    await guest.keyboard.press("ArrowDown");
+    await expect(guest.getByTestId("pad-2")).toBeFocused();
+
     // (A click on the boxes lands on the field that lies over them, seen through: it is what the pointer meets there.)
     const box = await boxes.boundingBox();
     expect(await guest.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("data-testid"), { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 })).toBe("tv-party-code-input");
@@ -2296,6 +2309,29 @@ test.describe("a watch party started on a TV", () => {
       await expect(guest.getByTestId("tv-party-error")).toHaveClass(/is-note/);
       await guest.context().close();
     }
+  });
+
+  test("on a phone on its side, Paste is beside the boxes and the whole pad and Back are on the screen", async ({ browser }) => {
+    const guest = await openDevice(browser, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }, { "kino.lang": "ro" }); // (the longest words)
+    await guest.goto("/tv");
+    await expect(guest.getByTestId("tv-browse")).toBeVisible();
+    await pressMenuLine(guest, "rail-party");
+    await guest.getByTestId("tv-party-join").click();
+    await expect(guest.getByTestId("tv-party-paste")).toBeVisible();
+    const seen = await guest.evaluate(() => {
+      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const boxes = box('[data-testid="tv-party-digits"]');
+      const paste = box('[data-testid="tv-party-paste"]');
+      return {
+        beside: paste.left >= boxes.right && paste.top < boxes.bottom && paste.bottom > boxes.top,
+        middle: Math.abs((boxes.left + boxes.right) / 2 - innerWidth / 2),
+        lowest: Math.max(...[...document.querySelectorAll(".tv-pad .tv-key, [data-testid='tv-party-join-back']")].map((key) => key.getBoundingClientRect().bottom)),
+        height: innerHeight,
+      };
+    });
+    expect(seen.beside, "Paste on the boxes' line, to their right").toBe(true);
+    expect(seen.middle, "the boxes still in the middle").toBeLessThan(2);
+    expect(seen.lowest, "the pad's last row and Back on the screen").toBeLessThanOrEqual(seen.height);
   });
 
   test("Ctrl+V of the code as the host's screen shows it joins at once", async ({ browser, baseURL }) => {

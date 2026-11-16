@@ -66,6 +66,25 @@ test.describe("the Back button of a phone", () => {
     await left(phone);
   });
 
+  test("a phone on its side: the wordmark tapped on a title's page goes home, and the next Back neither opens the title again nor leaves the site", async ({ browser }) => {
+    const phone = await openDevice(browser, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }, {}, withFilms);
+    await phone.goto(BEFORE);
+    await phone.goto("/tv");
+    const address = phone.url();
+    await phone.getByTestId("tv-browse-tile").first().tap();
+    await expect(phone.getByTestId("tv-detail")).toBeVisible();
+    const mark = (await phone.getByTestId("tv-logo-home").boundingBox())!;
+    await phone.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
+    await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(phone.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
+    await expect.poll(() => layers(phone)).toBe(0); // (the title's entry in the history went with it)
+
+    await phone.goBack();
+    await expect(hint(phone)).toHaveText(en["exit.press"]); // the library's door, asked about: not the title again
+    await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
+    expect(phone.url()).toBe(address);
+  });
+
   test("a question that nobody answered is over after a moment, and so is it at the next touch: the next Back asks again instead of leaving", async ({ browser }) => {
     const phone = await library(browser);
     const address = phone.url();
