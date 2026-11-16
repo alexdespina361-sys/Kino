@@ -8,7 +8,7 @@ import { GoogleMark } from "../account/GoogleButton";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
-import { ago } from "../account/time";
+import { ago } from "../account/time";
 import { COMMON_LANGUAGES, keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, moveLanguage } from "../account/subtitleLanguages";
 import { CHAT_FACTS } from "../chat/state";
 import { friendsApi } from "../friends/api";
@@ -266,6 +266,7 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
   const { settings, set } = useSettings();
   const account = useAccount();
   const [linkBox, setLinkBox] = useLinkBox();
+  const child = settings.child === true;
   return (
     <div className="page-stack" data-testid="settings-page">
       {/* (The groups of the TV's settings, in its order: the language and the colour are one card, as there.) */}
@@ -302,13 +303,28 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
         </Rows>
       </Group>
       <SubtitleLanguages />
+      {/* A child's profile: only cartoons for children, no friends and no watch party, wherever the profile is used (see the TV's Browse). Sent at once: the server turns the friends off. */}
+      <Group title={t("settings.childGroup")} help={t("settings.childHelp")}>
+        <Rows>
+          <Switch
+            label={t("settings.child")}
+            checked={child}
+            onChange={(on) => {
+              set("child", on ? true : undefined);
+              account.syncNow();
+            }}
+            testId="child-profile"
+          />
+        </Rows>
+      </Group>
       <FriendsGroup onOpen={onOpenFriends} />
       {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
       <Group title={t("settings.labs")} help={t("settings.labsHelp")}>
         <Rows>
           <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
           <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
-          <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
+          {/* (A child's profile has no box for links: see the Home of the remote.) */}
+          {!child && <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />}
         </Rows>
       </Group>
       {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}

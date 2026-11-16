@@ -935,6 +935,8 @@
 /* switches on the same surface: no surface of their own */
 :root[data-ui="polish"] .tv-group-body .tv-switch-row { max-width: none; padding: calc(var(--em) * 0.9) calc(var(--em) * 1); background: transparent; font-size: var(--fs-2); line-height: 1.3; }
 :root[data-ui="polish"] .tv-group-body .tv-switch-row:hover { background: var(--fill-1); }
+/* a short line under a switch (the child's profile): in line with the switch's own words */
+:root[data-ui="polish"] .tv-group-body > .tv-set-note { padding: 0 calc(var(--em) * 1) calc(var(--em) * 0.4); }
 :root[data-ui="polish"] .tv-group-body .tv-switch-row:focus-visible { z-index: 2; background: #fff; }
 :root[data-ui="polish"] .tv-set-hint { display: flex; align-items: flex-start; gap: calc(var(--em) * 0.8); margin: 0; padding: 0 calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-1); line-height: 1.4; }
 :root[data-ui="polish"] .tv-set-hint svg { flex: none; margin-top: 0.15em; }

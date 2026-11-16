@@ -1,4 +1,4 @@
-import { CLOSEST_MAX, itemsOf, normalizeQuery, rankByQuery, searchItems, sectionOf, type LibraryItem, type LibraryRow, type LibrarySection, type TitleIndex } from "../../shared";
+import { CLOSEST_MAX, forChildren, itemsOf, normalizeQuery, rankByQuery, searchItems, sectionOf, type LibraryItem, type LibraryRow, type LibrarySection, type TitleIndex } from "../../shared";
 
 /** What a search found: the titles, the first `exact` of which have every word that was typed and the rest are the closest others (some of the words, or a letter off). */
 export interface Answers {
@@ -53,10 +53,16 @@ export function mergeAnswers(first: Answers, more: Answers, query: string): Answ
 
 /** Only the titles of one section of an answer (Movies, Series, Cartoons or Anime; the closest others stay the closest). */
 export function onlySection(answers: Answers, section: LibrarySection | "all"): Answers {
-  if (section === "all") return answers;
-  const keep = (items: readonly LibraryItem[]) => items.filter((item) => sectionOf(item) === section);
-  const exact = keep(answers.items.slice(0, answers.exact));
-  return { items: [...exact, ...keep(answers.items.slice(answers.exact))], exact: exact.length };
+  return section === "all" ? answers : keepAnswers(answers, (item) => sectionOf(item) === section);
+}
+
+/** What a search found that a child's profile may see (`forChildren`: the `child` setting). */
+export const onlyForChildren = (answers: Answers): Answers => keepAnswers(answers, (item) => forChildren(item));
+
+/** The titles found that `keep` keeps, the exact ones still first. */
+function keepAnswers(answers: Answers, keep: (item: LibraryItem) => boolean): Answers {
+  const exact = answers.items.slice(0, answers.exact).filter(keep);
+  return { items: [...exact, ...answers.items.slice(answers.exact).filter(keep)], exact: exact.length };
 }
 
 /** The letters, then the digits: six keys to a row, which is what the TV's keyboard is laid out in. */

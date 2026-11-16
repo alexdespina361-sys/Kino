@@ -1,14 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection, type PlayHint } from "../../shared";
+import { forChildren, LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection, type PlayHint } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
+import { useProfileData } from "../account/store";
 import { rowTitle, useT } from "../i18n";
+import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { Poster } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
-import { keepMatching, matchLocal, mergeAnswers, type Answers } from "../tv/librarySearch";
+import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { RowHead } from "./Rows";
@@ -129,12 +131,22 @@ export function Library({
   // The library as it has grown: its first rows, the ones brought after them as the page is scrolled, and more of each row (see the feed).
   const feeding = useFeed();
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
-  const because = useBecause();
-  const pageSection = searchPage || filter === "all" ? undefined : FILTER_SECTION[filter];
+  const liked = useBecause();
+  /** A child's profile (see the TV's Browse): the Cartoons for children are all it has, on Home and in the search, and it has no filters. */
+  const { settings } = useProfileData();
+  const child = settings.child === true;
+  const holding = useProfileHold();
+  const pageSection = child ? "cartoon" : searchPage || filter === "all" ? undefined : FILTER_SECTION[filter];
   const displayedRows = useMemo(() => {
     const rows = pageRows(feeding.data, pageSection);
-    return pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows;
-  }, [feeding.data, pageSection]);
+    const inSection = pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows;
+    return child ? inSection.map((row) => ({ ...row, items: row.items.filter((item) => forChildren(item, row)) })).filter((row) => row.items.length > 0) : inSection;
+  }, [feeding.data, pageSection, child]);
+  const because = useMemo(
+    () => (child ? liked.map((like) => ({ ...like, items: like.items.filter((item) => forChildren(item)) })).filter((like) => like.items.length > 0) : liked),
+    [liked, child],
+  );
+  const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);
 
   useEffect(() => {
     kept.filter = filter;
@@ -252,7 +264,8 @@ export function Library({
     if (paging && root.current && endIsNear(root.current)) feed.loadShelves(pageSection);
   }, [feeding, paging, pageSection, displayedRows.length]);
 
-  if (status === "loading") {
+  // (While the profile's settings are not known yet, the library is still loading: see `useProfileHold`.)
+  if (status === "loading" || holding) {
     return (
       <p className="muted small" data-testid="library-loading">
         <span className="spinner" /> {t("library.loading")}
@@ -316,7 +329,7 @@ export function Library({
         </div>
       )}
 
-      {!searchPage && answers === null && (
+      {!searchPage && !child && answers === null && (
         <div className="lib-pills" role="group" aria-label={t("library.filter")}>
           {(["all", "movies", "series", "cartoons", "anime"] as const).map((each) => (
             <button key={each} type="button" className="lib-pill" aria-pressed={filter === each} onClick={() => setFilter(each)} data-testid={`filter-${each}`}>
@@ -326,11 +339,11 @@ export function Library({
         </div>
       )}
 
-      {answers !== null ? (
+      {shownAnswers !== null ? (
         <div className="lib-row" data-testid="library-search-results">
           <h3>
-            {answers.items.length > 0
-              ? (answers.exact > 0 ? t("library.resultsFor", { query: query.trim() }) : t("tv.closestOnly", { query: query.trim() })) + (searchFailed ? t("tv.searchOffline") : "")
+            {shownAnswers.items.length > 0
+              ? (shownAnswers.exact > 0 ? t("library.resultsFor", { query: query.trim() }) : t("tv.closestOnly", { query: query.trim() })) + (searchFailed ? t("tv.searchOffline") : "")
               : searching
                 ? t("tv.looking")
                 : searchFailed
@@ -338,11 +351,11 @@ export function Library({
                   : t("library.noMatches", { query: query.trim() })}
             {searching && <span className="spinner" style={{ marginLeft: 8 }} />}
           </h3>
-          {answers.items.length > 0 && (
+          {shownAnswers.items.length > 0 && (
             <ul className="poster-grid">
-              {answers.items.map((item, at) => (
+              {shownAnswers.items.map((item, at) => (
                 <Fragment key={item.id}>
-                  {at === answers.exact && at > 0 && (
+                  {at === shownAnswers.exact && at > 0 && (
                     <li className="lib-closest-row">
                       <h4 className="lib-closest" data-testid="library-closest">
                         {t("tv.closest")}
@@ -373,7 +386,7 @@ export function Library({
       ) : (
         <>
           {heroItem && <Hero item={heroItem} toggle={toggleOf(heroItem)} onOpen={onOpen} {...(onPlay ? { onPlay } : {})} />}
-          {filter === "all" &&
+          {(filter === "all" || child) &&
             because.map((like) => (
               <div className="lib-row" key={`because:${like.key}`} data-testid="library-because">
                 <h3>{t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title })}</h3>

@@ -16,6 +16,7 @@ import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "../shared/backButton";
+import { useChildCards } from "../shared/childGate";
 import { FriendPage, FriendsPage, YourTag } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";
@@ -132,7 +133,9 @@ export function AccountScreen({
   const feedback = useFeedbackEntry();
   /** An account that has no Google account yet is offered to connect one, here on its profile and not only on the Security page. */
   const canConnectGoogle = useCanConnectGoogle();
-  const { ratings, settings } = useProfileData();
+  const { settings } = useProfileData();
+  // (A child's profile lists only the ratings of titles for children: see childGate.ts.)
+  const { ratings } = useChildCards();
   const ratingsOn = ratingsShown(settings);
   /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
   const [ratingsOpen, setRatingsOpen] = useState(false);

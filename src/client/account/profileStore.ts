@@ -66,6 +66,11 @@ export interface Snapshot {
   /** What the profile rated: titles and seasons, the one changed last first. */
   ratings: LiveRating[];
   settings: Settings;
+  /**
+   * A profile this screen has never kept a copy of, opened just now: its settings are the defaults until the server's first answer,
+   * which is not the same as having chosen them (a child's profile is not one until that answer says so).
+   */
+  waiting: boolean;
 }
 
 /** A title that can go in a list: what a library tile has. */
@@ -104,6 +109,8 @@ interface Saved {
   rev: number;
   /** What was changed here (as "list:key") and has not been confirmed by the server yet. */
   dirty: string[];
+  /** The server has answered for this copy at least once (see `Snapshot.waiting`). A copy kept before this was known counts as answered when its `rev` is past 0. */
+  answered?: boolean;
 }
 
 const live = <T extends SyncItem>(items: readonly T[]) => items.filter((item) => !item.deleted) as Array<Exclude<T, { deleted: true }>>;
@@ -120,6 +127,8 @@ export class ProfileStore {
   private data: ProfileData = emptyData();
   private revision = 0;
   private dirty = new Set<string>();
+  /** Whether the server has answered for this copy yet (see `Snapshot.waiting`): kept with it, since a copy is written long before the first answer may come. */
+  private answered = true;
   private snapshot: Snapshot | undefined;
   private readonly listeners = new Set<() => void>();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -154,6 +163,7 @@ export class ProfileStore {
         list: byNewest(live(this.data.list)).filter((item) => known.has(listOf(item))),
         ratings: byNewest(live(this.data.ratings)),
         settings: resolveSettings(this.data.settings),
+        waiting: !this.answered,
       };
     }
     return this.snapshot;
@@ -178,7 +188,7 @@ export class ProfileStore {
       const raw = this.storage?.getItem(KEY_PREFIX + scope);
       const saved = raw ? (JSON.parse(raw) as Partial<Saved>) : undefined;
       if (saved?.v !== 1 || !saved.data) return undefined;
-      return { v: 1, data: { ...emptyData(), ...saved.data }, rev: saved.rev ?? 0, dirty: saved.dirty ?? [] };
+      return { v: 1, data: { ...emptyData(), ...saved.data }, rev: saved.rev ?? 0, dirty: saved.dirty ?? [], answered: saved.answered ?? (saved.rev ?? 0) > 0 };
     } catch {
       return undefined;
     }
@@ -201,7 +211,7 @@ export class ProfileStore {
   flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = undefined;
-    this.write(this.scopeName, { v: 1, data: this.data, rev: this.revision, dirty: [...this.dirty] });
+    this.write(this.scopeName, { v: 1, data: this.data, rev: this.revision, dirty: [...this.dirty], answered: this.answered });
   }
 
   /** Start working with the copy kept for this place: the browser's own (`GUEST`), or one profile's. */
@@ -211,6 +221,8 @@ export class ProfileStore {
     this.opened = true;
     this.scopeName = scope;
     const saved = this.read(scope);
+    // (The browser's own copy has no server to wait for.)
+    this.answered = scope === GUEST || saved?.answered === true;
     if (saved) {
       this.data = saved.data;
       this.revision = saved.rev;
@@ -250,6 +262,7 @@ export class ProfileStore {
       this.data = emptyData();
       this.revision = 0;
       this.dirty = new Set();
+      this.answered = scope === GUEST;
       if (this.saveTimer) clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
       this.snapshot = undefined;
@@ -509,6 +522,9 @@ export class ProfileStore {
     }
     // The server lost what it had: it needs all of it again.
     if (response.reset) this.markAllDirty();
-    this.changed(different);
+    // (The first answer for a profile new to this screen is news even when it brings nothing: the settings are now the profile's own.)
+    const first = !this.answered;
+    this.answered = true;
+    this.changed(different || first);
   }
 }

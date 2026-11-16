@@ -39,8 +39,20 @@ export const LibraryItemSchema = z.object({
   url: z.string().max(2048),
   /** Whether a Romanian dubbed audio track or Romanian dubbed stream is available. */
   hasRoDub: z.boolean().optional(),
+  /**
+   * Animation that the movie database files under Family or Kids: what a child profile may see (`forChildren`). Said only when it is so; an animated
+   * title without it (Family Guy, South Park, Rick and Morty) is a cartoon by its section and still not for a child.
+   */
+  kids: z.literal(true).optional(),
 });
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
+
+/**
+ * Whether a child profile may see and play a title (the owner, 15 Nov 2026: "Child account": only cartoons, no friends): a cartoon, by the title or else its
+ * row, that the movie database files under Family or Kids. Anything not known to be one is not (a title of a pasted link, an anime, a film).
+ */
+export const forChildren = (item: { section?: LibrarySection | undefined; kids?: true | undefined }, row?: { section?: LibrarySection | undefined }): boolean =>
+  (item.section ?? row?.section) === "cartoon" && item.kids === true;
 
 /** What the library's search and "like this" answer with. A search also says how many of the first titles have all the words typed: the rest are the closest others. */
 export const LibraryItemsSchema = z.object({ items: z.array(LibraryItemSchema), exact: z.number().int().min(0).optional() });

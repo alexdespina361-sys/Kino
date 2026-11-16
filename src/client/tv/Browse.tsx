@@ -1,5 +1,5 @@
 import { Fragment, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, tagLabel, titleLink, type Library, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, tagLabel, titleLink, type Library, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -33,6 +33,8 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
 import { takeStrayAddress } from "../shared/strayAddress";
+import { ownTitles, useChildGate } from "../shared/childGate";
+import { useProfileHold } from "../shared/profileHold";
 import { addressOf, dropLink, pendingLink, showTitle } from "../shared/titleAddress";
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
@@ -41,7 +43,7 @@ import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
+import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyForChildren, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter } from "../account/ratingFilter";
 import { useCardSections } from "./cardSections";
@@ -322,6 +324,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const bell = useBell();
   const showCat = useCatWanted(); // (the cat's button in the corner: only on a screen that has a cat)
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
+  /** The library is shown (and a title's link opened) once the profile's settings are known, a child's profile's in particular (see `useProfileHold`). */
+  const holding = useProfileHold();
+  /**
+   * A child's profile (the `child` setting): only cartoons for children (`forChildren`), on every page and in the search, title pages and links; the Cartoons are its
+   * only section, and it has no friends and no watch party (the owner, 15 Nov 2026).
+   */
+  const child = settings.child === true;
+  const childRef = useRef(child);
+  childRef.current = child;
   const ratingsOn = ratingsShown(settings);
   /** Whether this profile is told what friends watch (off until it is turned on: the friends' pages say so while it is). */
   const iGet = friendChoices(settings).friendsGet;
@@ -337,7 +348,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const wide = usePageWidth();
   const resultColumns = narrowColumns || columnsFor(wide, RESULT_COLUMNS, PITCH_EM.poster);
   const [library, setLibrary] = useState<Library | null>(remembered.library);
-  const [status, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
+  const [libraryStatus, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
+  // (While the profile's settings are held, the library is still loading as far as the page is concerned.)
+  const status = holding ? "loading" : libraryStatus;
   const [attempt, setAttempt] = useState(0);
   const [view, setViewState] = useState<View>(remembered.view);
   const [box, setBox] = useState<SearchBox>(() => ({ text: remembered.query, caret: remembered.query.length }));
@@ -366,7 +379,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const series = useSeriesPage(detail?.entry, progress, watched, remembered.detail?.season);
   /** What the movie database knows of that title (genres, the people, the age rating) and the rows of titles it lists under the episodes: the other parts of its collection, titles like it. Asked when the page opens, for that title only. */
   const about = useAbout(detail && !detail.entry.opens && detail.entry.url ? detail.entry.url : undefined);
-  const aboutList = aboutRows(about);
+  const aboutList = aboutRows(about)
+    .map((row) => (child ? { ...row, items: row.items.filter((item) => forChildren(item)) } : row))
+    .filter((row) => row.items.length > 0);
   /** The remote is on a row below the first, so the banner makes room for the rows. */
   const [deep, setDeep] = useState(false);
   /** The page over the library, when there is one. */
@@ -406,18 +421,23 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const hasTiles = status === "ready" && rows.length > 0;
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
   const because = useBecause();
-  /** What section the rows of this page are in: Home has all of them. */
-  const pageSection = isRowsPage(view) ? sectionOfPage(view.kind) : undefined;
+  /** What section the rows of this page are in: Home has all of them (a child's profile has the Cartoons on every page of rows: see `child`). */
+  const pageSection = isRowsPage(view) ? (child ? "cartoon" : sectionOfPage(view.kind)) : undefined;
   const pageLibraryRows = useMemo(() => pageRows(feeding.data, pageSection), [feeding.data, pageSection]);
   /** The rows of this page that the library can add titles to as they are scrolled (the ranking of ten, which is not scrolled, is not one). */
   const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
   // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
   const everyRow = useMemo(() => allRows(feeding.data), [feeding.data]);
   // (...and those of titles the rows do not list, by asking the server once: see cardSections.ts.)
-  const looked = useCardSections(progress, everyRow, pageSection !== undefined);
+  const looked = useCardSections(progress, everyRow, pageSection !== undefined && !child); // (a child's profile's cards are judged by its gate, below)
+  // (A child's profile shows of its own cards, saved titles and ratings only those known to be for children: see childGate.ts.)
+  const childEntries = useMemo(() => (child ? ownTitles(progress, list, ratings) : []), [child, progress, list, ratings]);
+  const childGate = useChildGate(childEntries, everyRow, child);
+  const shownRatings = useMemo(() => (childGate ? ratings.filter((rating) => childGate.allows({ id: rating.key, url: rating.url, kind: rating.kind })) : ratings), [childGate, ratings]);
+  const shownProgress = useMemo(() => (childGate ? progress.filter((card) => childGate.allows({ id: card.key, url: card.url })) : progress), [childGate, progress]);
   const data = useMemo<PageData>(
-    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? ratings : [], because, looked }),
-    [pageLibraryRows, everyRow, progress, lists, list, ratings, ratingsOn, because, looked],
+    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], because, looked, child: childGate }),
+    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, because, looked, childGate],
   );
 
   const rowsPage = hasRows(view);
@@ -432,13 +452,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // `language` is not read, but the rows' titles and notes are words in it
   /* eslint-disable react-hooks/exhaustive-deps */
   const homeRows = useMemo<HomeRow[]>(() => {
+    if (holding) return [];
     if (isRowsPage(view)) return rowsOfPage(view.kind, data);
     if (view.kind === "friends") return friendRows(friends.state, Date.now(), iGet);
     if (view.kind !== "profile") return [];
-    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: progress.length, progress });
-  }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress, iGet]);
+    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings: shownRatings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: shownProgress.length, progress: shownProgress });
+  }, [holding, view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, shownRatings, shownProgress, iGet]);
   // (`data` holds this profile's own lists and ratings: what it has in common with the friend comes first on their page.)
-  const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
+  const grid = useMemo(
+    () => (holding ? null : (gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data))),
+    [holding, view, data, language, friends.state, sharedLists, sharedRatings, iGet],
+  );
   /* eslint-enable react-hooks/exhaustive-deps */
   // The ratings' filters: a row of the sections they are in and a row of the scores given (each only with more than one thing to choose; see ratingFilter.ts).
   const ratingSectionOf = useMemo(() => (view.kind === "ratings" ? ratingSectionIn(everyRow) : ownSection), [view.kind, everyRow]);
@@ -463,7 +487,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // (A grid in sections, a friend's lists, has each section start a row of its own, under its heading.)
   const sectionPlace = grid?.sections ? sectionPlaces(grid.sections, gridColumns) : undefined;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
-  const shownAnswers = useMemo(() => onlySection(results, filter), [results, filter]);
+  // (A child's profile has one kind to choose, the Cartoons, chosen: of what is found it sees only what is for children.)
+  const searchFilters: readonly SectionFilter[] = child ? ["cartoon"] : SECTION_FILTERS;
+  const shownAnswers = useMemo(
+    () => (holding ? NO_ANSWERS : child ? onlyForChildren(onlySection(results, "cartoon")) : onlySection(results, filter)),
+    [results, filter, child, holding],
+  );
   const shownResults = shownAnswers.items;
   /** The rows of the results' grid: those of the exact titles, then (a block of their own, under a heading) those of the closest others. */
   const resultRowsOf = (columns: number) => [...gridRows(shownAnswers.exact, columns), ...gridRows(shownResults.length - shownAnswers.exact, columns)];
@@ -525,6 +554,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     setRailOpen(false);
     setPending(CONTENT);
   };
+  // A profile that becomes a child's while the library is open (another profile chosen, or the switch turned on elsewhere) leaves what a child's has not: the page of
+  // another section or of friends, a title's page that is not for children, a page over the library. Its Home is the Cartoons' (see `child`).
+  useEffect(() => {
+    if (!child) return;
+    const opened = detailRef.current;
+    if (opened && !(forChildren(opened.entry) || childGate?.allows(opened.entry))) closeDetail();
+    if ((isRowsPage(view) && view.kind !== "home") || view.kind === "friends" || view.kind === "friend") choose({ kind: "home" });
+    setOverlay(null);
+  }, [child]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Another list on the lists page: the buttons keep the remote, only what is below them changes. */
   const selectList = (id: string) => {
     const next: View = { kind: "list", list: id };
@@ -598,21 +636,24 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const detailRef = useRef(detail);
   detailRef.current = detail;
   useEffect(() => {
-    if (!linked) return;
+    // (Not before the server has said what the profile chose, on a screen new to it: a child's profile opens only some titles.)
+    if (!linked || holding) return;
     let live = true;
     void linked.item.then((item) => {
       if (!live) return; // (drawn again before the answer came: the library drawn now deals with it)
       const wanted = pendingLink() !== null;
       dropLink();
       if (detailRef.current) return; // (a page is open: the address is its own)
-      if (wanted && item) return openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
+      // (A child's profile opens a link only to a title for children: any other says so over its Home.)
+      const mayOpen = item && (!childRef.current || forChildren(item));
+      if (wanted && mayOpen) return openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
       showTitle(null);
-      if (wanted) setOwnNotice(t("notice.noSuchTitle"));
+      if (wanted) setOwnNotice(t(item ? "notice.notForChild" : "notice.noSuchTitle"));
     });
     return () => {
       live = false;
     };
-  }, [linked]);
+  }, [linked, holding]);
 
   /**
    * A click on the empty part of a title's page closes it, as Back does: with a mouse the Close button can be far away, and a click beside the page is the short way off it.
@@ -650,20 +691,23 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const searchLine: RailEntry = { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) };
   const categoriesLine: RailEntry = { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) };
   const listLine: RailEntry = { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) };
+  // (A child's profile has no sections to choose, its Home being the Cartoons', and no watch party.)
   const entries: RailEntry[] = few
     ? [homeLine, searchLine, categoriesLine, listLine]
-    : [
-        searchLine,
-        homeLine,
-        { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
-        { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
-        { id: "cartoons", label: t("tv.cartoons"), icon: <CartoonIcon />, current: view.kind === "cartoons", testId: "rail-cartoons", onPress: () => choose({ kind: "cartoons" }) },
-        { id: "anime", label: t("tv.anime"), icon: <AnimeIcon />, current: view.kind === "anime", testId: "rail-anime", onPress: () => choose({ kind: "anime" }) },
-        categoriesLine,
-        listLine,
-        { ...partyPlace, apart: true },
-        phonePlace,
-      ];
+    : child
+      ? [searchLine, homeLine, categoriesLine, listLine, { ...phonePlace, apart: true }]
+      : [
+          searchLine,
+          homeLine,
+          { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
+          { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
+          { id: "cartoons", label: t("tv.cartoons"), icon: <CartoonIcon />, current: view.kind === "cartoons", testId: "rail-cartoons", onPress: () => choose({ kind: "cartoons" }) },
+          { id: "anime", label: t("tv.anime"), icon: <AnimeIcon />, current: view.kind === "anime", testId: "rail-anime", onPress: () => choose({ kind: "anime" }) },
+          categoriesLine,
+          listLine,
+          { ...partyPlace, apart: true },
+          phonePlace,
+        ];
   const openEntry = entries.findIndex((entry) => entry.current);
   const railIndex = openEntry === -1 ? entries.indexOf(homeLine) : openEntry; // a page the menu has no line for belongs to Home
 
@@ -678,7 +722,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (showCat ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, the cat's, then the full screen one
   const signedIn = Boolean(me && profile);
   /** What a phone's bar has no room for, as buttons after Feedback (none on a screen whose menu has a line for each). */
-  const places = few ? [partyPlace, phonePlace] : [];
+  const places = few ? (child ? [phonePlace] : [partyPlace, phonePlace]) : [];
   /** For an account that has no Google account yet: a button after all the others on the profile's page that goes to Google to connect one. */
   const connectGoogle = canConnectGoogle && signedIn ? () => withGoogle("link") : undefined;
   /** The profile's name#tag, where friends are on: shown under its name, and copied by the last button of all. */
@@ -686,7 +730,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
   const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length + (connectGoogle ? 1 : 0) + (myTag ? 1 : 0) : 0;
   /** A phone's pages of rows have their sections as a row of buttons where the others have a banner. */
-  const sectionButtons = few && isRowsPage(view);
+  const sectionButtons = few && isRowsPage(view) && !child;
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // The page of a section (Movies, Series, Cartoons or Anime) of a library that has titles, none of them of that section: not "nothing yet", which Retry could not
   // mend. (While the rows that come after the first ones may still bring some, it is waiting for them; the library says there are none when it has no more to bring.)
@@ -699,7 +743,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !compact && !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(sectionButtons ? { chips: [SECTION_CHIPS.length] } : {}),
     ...(grid ? { grid: grid.sections ? sectionRows(grid.sections, gridColumns) : gridRows(grid.entries.length, gridColumns) } : {}),
-    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [SECTION_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
+    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [searchFilters.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
     // What was rated: the sections, then the scores, over the titles.
@@ -1837,14 +1881,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           </div>
           <div className="tv-search-main">
             <div className="tv-filters" role="radiogroup" aria-label={t("tv.search")}>
-              {SECTION_FILTERS.map((value, col) => {
+              {searchFilters.map((value, col) => {
                 const pos: Pos = { zone: "chips", row: 0, col };
                 return (
                   <button
                     key={value}
                     className="tv-choice"
                     role="radio"
-                    aria-checked={filter === value}
+                    aria-checked={child || filter === value}
                     data-testid={`filter-${value}`}
                     data-zone={pos.zone}
                     data-row={pos.row}

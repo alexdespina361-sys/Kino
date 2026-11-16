@@ -271,8 +271,14 @@ export const SETTING_SCHEMAS = {
    * `false` kept from before only keeps what is watched from being shared until the profile shares it again (see `friendChoices`).
    */
   friends: z.boolean(),
-  /** Friends are off for this profile, whatever else is set: the one way left to turn them off (for the child profile to come; no switch sets it yet). */
+  /** Friends are off for this profile, whatever else is set (no switch sets it now: a child profile turns them off by being one, see `child`). */
   friendsOff: z.boolean(),
+  /**
+   * A child's profile (the owner, 15 Nov 2026): only cartoons for children are shown and played (`forChildren` in library.ts), on Home, the search, the title
+   * pages and links, and friends and watch parties are off (`friendChoices` in friends.ts). Everything else is as it was. It is a setting of the profile, so it
+   * follows it to every screen it is used on.
+   */
+  child: z.boolean(),
   friendsLists: z.boolean(),
   friendsRatings: z.boolean(),
   friendsGive: z.boolean(),

@@ -36,6 +36,7 @@ import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
 import { FullscreenIcon, UsersIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
+import { useProfileHold } from "../shared/profileHold";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { useSlow, useWaking } from "../shared/useSlow";
@@ -254,6 +255,12 @@ export function Tv() {
   const tapToPause = settings.tapToPause ?? false;
   /** Whether the picture's quality follows the connection (the profile's choice; see `PlayerEngine.setAdaptive`). */
   const adaptiveQuality = settings.adaptiveQuality ?? true;
+  /** A child's profile has no watch party (see Browse's `child`): it joins none, and one it is in ends for it when the profile becomes a child's. */
+  const child = settings.child === true;
+  const childRef = useRef(child);
+  childRef.current = child;
+  /** (A party's link waits until the profile's settings are known: see `useProfileHold`.) */
+  const holding = useProfileHold();
   useEffect(() => {
     // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
     if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
@@ -1148,12 +1155,16 @@ export function Tv() {
 
   const linkTriedRef = useRef(false);
   useEffect(() => {
-    if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
+    if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current || holding) return;
     linkTriedRef.current = true;
     history.replaceState(history.state, "", location.pathname); // (the entry keeps what the back button put on it)
+    if (childRef.current) {
+      setFlash({ id: ++flashIdRef.current, text: t("notice.childNoParty") });
+      return;
+    }
     invitedWithRef.current = linkCode;
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
-  }, [linkCode, unlocked, connection]);
+  }, [linkCode, unlocked, connection, holding]);
 
   // The code that lets others into a party lasts ten minutes. While it is on screen it is renewed; a party nobody came to goes away with it.
   const partyShown = menu === "party" || menu === "partyInvite" || (screen === "party" && player.state === "idle");
@@ -1200,6 +1211,10 @@ export function Tv() {
   }, [together, party, partyEnds]);
   const joinParty = (code: string) => {
     setPartyJoinWith(null); // (an invitation's code is used once: the next time the page asks for a code it starts empty)
+    if (childRef.current) {
+      setPartyError({ id: ++flashIdRef.current, text: t("notice.childNoParty") });
+      return;
+    }
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
   };
   const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
@@ -1248,6 +1263,15 @@ export function Tv() {
     putMedia(null);
     socketRef.current?.send({ type: "TV_UNPAIR" });
   };
+  // A child's profile is in no party: one this screen joined before the profile's settings came (a link opened on a TV new to it, a phone that added it), or before the
+  // profile became a child's, is left (a guest) or ended (the host), and the screen says why.
+  useEffect(() => {
+    if (!child || (!following && party?.role !== "host")) return;
+    if (following) leaveParty();
+    else endParty();
+    if (screenRef.current === "party") setScreen("library");
+    setFlash({ id: ++flashIdRef.current, text: t("notice.childNoParty") });
+  }, [child, following, party?.role]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Stop what plays and go back to the library. A host that does takes the video from its guests too (the server tells them). */
   const stopPlayback = () => {
     putMedia(null);
@@ -1823,7 +1847,7 @@ export function Tv() {
           onDismissUpNext={dismissUpNext}
           onOpenMenu={openMenu}
           partySize={party ? party.guests.length + 1 : 0}
-          onParty={() => openMenu("party")}
+          onParty={child ? null : () => openMenu("party")}
           muted={muted}
           onMute={toggleMute}
           onFullscreen={canFullscreen ? toggleFullscreen : null}

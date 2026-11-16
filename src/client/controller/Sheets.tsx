@@ -523,7 +523,8 @@ export function MenuSheet({
   tvCount: number;
   controlCode?: string;
   controllerCount?: number;
-  onParty: () => void;
+  /** None on a child's profile, which has no watch party. */
+  onParty: (() => void) | null;
   onTvs: () => void;
   onDisconnect: () => void;
 }) {
@@ -534,13 +535,15 @@ export function MenuSheet({
     <Sheet title={tvName} onClose={onClose} testId="menu-sheet">
       <p className="muted">{online ? t("menu.connected") : t("menu.offline")}</p>
       <nav className="menu">
-        <button className="menu-row" data-testid="party-open" onClick={onParty}>
-          <span className="menu-icon">
-            <UsersIcon />
-          </span>
-          <span className="menu-label">{partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}</span>
-          <ChevronIcon />
-        </button>
+        {onParty && (
+          <button className="menu-row" data-testid="party-open" onClick={onParty}>
+            <span className="menu-icon">
+              <UsersIcon />
+            </span>
+            <span className="menu-label">{partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}</span>
+            <ChevronIcon />
+          </button>
+        )}
         <button className="menu-row" data-testid="tvs-open" onClick={onTvs}>
           <span className="menu-icon">
             <TvIcon />

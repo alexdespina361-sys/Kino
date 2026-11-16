@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
+import { forChildren } from "../../../shared";
 import { listEntryOf } from "../../account/cards";
 import type { ListEntry } from "../../account/profileStore";
 import { scoreOf, useScores } from "../../account/ratings";
+import { useProfileData } from "../../account/store";
 import { rowTitle, useT } from "../../i18n";
 import { allRows, failedTitles, feed, GRID_CAP, hasMoreTitles, loadingTitles, nearBottom, useFeed } from "../../shared/feed";
 import { entryOfItem, type Entry } from "../../tv/pages";
@@ -21,7 +23,12 @@ export function RowPage({ rowId, onClose, onOpen, onPick }: { rowId: string; onC
   const toggleFor = useListToggle(onPick);
   const scores = useScores();
   const feeding = useFeed();
-  const row = useMemo(() => allRows(feeding.data, GRID_CAP).find((one) => one.id === rowId), [feeding.data, rowId]);
+  // (A child's profile sees of the row only its titles for children, as on Home.)
+  const child = useProfileData().settings.child === true;
+  const row = useMemo(() => {
+    const found = allRows(feeding.data, GRID_CAP).find((one) => one.id === rowId);
+    return found && child ? { ...found, items: found.items.filter((item) => forChildren(item, found)) } : found;
+  }, [feeding.data, rowId, child]);
   const grid = useRef<HTMLDivElement>(null);
   const count = row?.items.length ?? 0;
   const more = row !== undefined && hasMoreTitles(feeding, rowId, count, GRID_CAP);

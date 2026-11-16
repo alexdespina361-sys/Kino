@@ -501,6 +501,7 @@ export function TvAccountPanel({
   const autoplay = settings.autoplayNext ?? true;
   const tapToPause = settings.tapToPause ?? false;
   const adaptiveQuality = settings.adaptiveQuality ?? true;
+  const child = settings.child === true;
   const several = Boolean(me && me.profiles.length > 1);
   const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
   const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
@@ -610,6 +611,22 @@ export function TvAccountPanel({
           <div className="tv-set-col" data-nav-column>
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
+            </SettingsGroup>
+            {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen.
+                In the column with the most room, with a short line under it: the settings still fit a 720p screen in every language. */}
+            <SettingsGroup title={t("settings.childGroup")} testId="tv-group-child">
+              <SettingsSwitch
+                label={t("settings.child")}
+                on={child}
+                onToggle={() => {
+                  set("child", child ? undefined : true);
+                  account.syncNow(); // (the server turns the friends off at once)
+                }}
+                testId="tv-child"
+              />
+              <p className="tv-hint tv-set-note" data-testid="tv-child-help">
+                {t("settings.childNote")}
+              </p>
             </SettingsGroup>
             {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). The cat is one row, and its switches are on a page
                 of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen. */}
