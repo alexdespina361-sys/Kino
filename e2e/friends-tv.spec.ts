@@ -248,8 +248,7 @@ test.describe("the profile's page, as what is on it changes under the remote", (
   test("the remote is not lost when the place it is on goes: it stands where that was, and OK answers", async ({ browser }) => {
     const ann = await screenWithFriends(browser, "Ann");
     await settingsButton(ann.page).focus(); // (the remote on the page's first button)
-    await ann.page.keyboard.press("ArrowDown"); // (to the cards: Ratings, then along to Friends)
-    await ann.page.keyboard.press("ArrowRight");
+    await ann.page.keyboard.press("ArrowDown"); // (to the card under it: Friends)
     await expect(place(ann.page, "friends")).toBeFocused();
 
     await elsewhere(ann.page, false); // (switched off on a phone, with the remote on Friends)
@@ -264,7 +263,8 @@ test.describe("the profile's page, as what is on it changes under the remote", (
     await ann.page.getByTestId("rail-home").click(); // (signing in leaves the screen on the profile's page: start from Home, as anyone would)
     await openProfilePage(ann.page);
     await expect(ann.page.getByTestId("tv-profile-settings")).toBeFocused(); // (the first button of the page has the remote)
-    await ann.page.keyboard.press("ArrowDown");
+    await ann.page.keyboard.press("ArrowDown"); // (to the card under Settings, then along to the first)
+    await ann.page.keyboard.press("ArrowLeft");
     await expect(place(ann.page, "ratings")).toBeFocused();
     await expect(place(ann.page, "ratings")).toContainText("The titles and seasons you gave a score.");
 

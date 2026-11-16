@@ -49,11 +49,13 @@ test.describe("the profile's page", () => {
     await expect(place(tv, "ratings")).toContainText("2 ratings · average 7.5");
     await expect(place(tv, "history")).toContainText("1 title");
 
-    // A guest came for one thing: the remote starts on the way to sign in; Right of it is Settings, Down from either the places.
+    // A guest came for one thing: the remote starts on the way to sign in; Right of it is Settings, Down from either the place nearest under it.
     await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-profile-settings")).toBeFocused();
-    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown"); // (Settings is on the right: History, not My ratings at the far left)
+    await expect(place(tv, "history")).toBeFocused();
+    await tv.keyboard.press("ArrowLeft");
     await expect(place(tv, "ratings")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(place(tv, "history")).toBeFocused();
@@ -72,6 +74,30 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("tv-page-back")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-account-chip")).toBeFocused();
+  });
+
+  test("Down from any of its top buttons lands on the place under that button, not always on the first (at a TV's 1920 and a laptop's 1366)", async ({ browser }) => {
+    // (The judge, 16 Nov: from Settings or Feedback, on the right, Down went to My ratings at the far left, with History right under them.)
+    for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 768 }]) {
+      const tv = await openLibrary(browser, withLibrary(library), viewport, seed);
+      await openProfilePage(tv);
+      const reached = new Set<string>();
+      for (const id of ["tv-profile-signin", "tv-profile-settings", "tv-profile-feedback"]) {
+        await tv.getByTestId(id).focus();
+        await tv.keyboard.press("ArrowDown");
+        const landed = await tv.evaluate((id) => {
+          const from = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect();
+          const middle = from.left + from.width / 2;
+          const far = (one: Element) => Math.max(one.getBoundingClientRect().left - middle, 0, middle - one.getBoundingClientRect().right); // (0: right under it)
+          const nearest = [...document.querySelectorAll('[data-entry^="profile:"]')].sort((a, b) => far(a) - far(b))[0]!;
+          return { focused: document.activeElement?.getAttribute("data-entry"), nearest: nearest.getAttribute("data-entry") };
+        }, id);
+        expect(landed.focused, `${id} at ${viewport.width}`).toBe(landed.nearest);
+        reached.add(landed.focused!);
+      }
+      expect([...reached].sort(), `at ${viewport.width}`).toEqual(["profile:history", "profile:ratings"]); // (the buttons on the right lead to the place on the right)
+      await tv.context().close();
+    }
   });
 
   test("opens the settings and the way to sign in, and Back from either returns to it with the remote where it was", async ({ browser }) => {

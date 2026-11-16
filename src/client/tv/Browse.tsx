@@ -925,6 +925,20 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         return go(action === "left" ? RAIL : action === "up" && now.top?.length ? { zone: "top", row: 0, col: 0 } : null);
       }
       const next = stepFrom(now, at, action);
+      // Down from the profile's buttons lands on the place under the button the remote is on, not on the first place (the judge, 16 Nov: from Settings or
+      // Feedback, on the right, it went to My ratings at the far left, with History right under them).
+      if (page.kind === "profile" && at.zone === "hero" && action === "down" && next?.row === -1) {
+        const from = (event.target as HTMLElement).getBoundingClientRect();
+        const middle = from.left + from.width / 2;
+        const zone = CONTENT_ZONES.find((one) => (now[one]?.length ?? 0) > 0);
+        let under: { col: number; far: number } | null = null;
+        for (let col = 0; zone && col < (now[zone]?.[0] ?? 0); col++) {
+          const box = find(root, { zone, row: 0, col })?.getBoundingClientRect();
+          const far = box ? Math.max(box.left - middle, 0, middle - box.right) : Infinity; // (0 for the place the button's middle is over)
+          if (far < (under?.far ?? Infinity)) under = { col, far };
+        }
+        if (zone && under) return go({ zone, row: 0, col: under.col }, at.zone);
+      }
       // Up from the titles lands on the button of the list (or the half of a friend's page) that is shown, not on the one above whichever title the remote was on.
       const shownChip = page.kind === "friend" ? friendChip(page.tab) : Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id));
       // (Likewise on a phone's page of rows, where the buttons over the titles are the sections: from the titles, and from the account button over them, the one that is shown.)
