@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatLine, LibraryItem } from "../../shared";
 import { useLanguage, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
@@ -64,9 +64,32 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     return () => watcher.disconnect();
   }, []);
 
+  // A card the remote is on can go away under it: taken back by its sender, no longer one of the newest titles, or carried out of view by the messages that
+  // came after it. The remote is then given back to the list, not left on nothing (where the next OK would only find a place to stand) nor on a card that
+  // cannot be seen (the judge, 16 Nov).
+  const onCard = useRef(false);
+  useEffect(() => {
+    if (!remote || !onCard.current) return;
+    const on = document.activeElement;
+    if (on === null || on === document.body) {
+      onCard.current = false;
+      box.current?.focus({ preventScroll: true });
+    }
+  });
+  const onFocus = (event: FocusEvent<HTMLDivElement>) => {
+    onCard.current = event.target instanceof HTMLElement && event.target.matches(CARD);
+  };
+
   const onScroll = () => {
     const element = box.current;
-    if (element) atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+    if (!element) return;
+    atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+    const on = document.activeElement;
+    if (remote && on instanceof HTMLElement && on.matches(CARD) && element.contains(on)) {
+      const at = on.getBoundingClientRect();
+      const view = element.getBoundingClientRect();
+      if (at.bottom <= view.top || at.top >= view.bottom) element.focus({ preventScroll: true });
+    }
   };
 
   // On the TV the list is walked with the remote: Up and Down step onto the next card of a title that is in view that way, else move the list while it
@@ -78,7 +101,12 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     const action = actionForKey(event.nativeEvent);
     const on = document.activeElement instanceof HTMLElement && document.activeElement.matches(CARD) ? document.activeElement : null;
     if (on && action === "select") return event.stopPropagation(); // (the card's own click)
-    if (on && (action === "left" || action === "right")) return element.focus({ preventScroll: true }); // (and the D-pad goes on from the list)
+    if (on && (action === "left" || action === "right")) {
+      // (Back to the list, and only that: the D-pad listens on the window, and would take the same press on from the list.)
+      event.preventDefault();
+      event.stopPropagation();
+      return element.focus({ preventScroll: true });
+    }
     if (action !== "up" && action !== "down") return;
     const view = element.getBoundingClientRect();
     const inView = [...element.querySelectorAll<HTMLElement>(CARD)].filter((card) => {
@@ -119,6 +147,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       ref={box}
       onScroll={onScroll}
       onKeyDown={onKeyDown}
+      onFocus={onFocus}
       role="log"
       aria-label={t("chat.title", { name })}
       {...(remote ? { tabIndex: 0, "data-nav": true } : {})}

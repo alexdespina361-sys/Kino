@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { checkChatText } from "../../shared";
 import { useProfileData } from "../account/store";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
@@ -19,7 +20,11 @@ function useSendable(): Sendable[] {
   return useMemo(() => sendableTitles(progress, list), [progress, list]);
 }
 
-const send = (session: ChatSession, title: Sendable): Promise<boolean> => session.send(messageOf(title, location.origin));
+/** (As any message: the text as the server will keep it, and nothing that it would refuse.) */
+const send = async (session: ChatSession, title: Sendable): Promise<boolean> => {
+  const checked = checkChatText(messageOf(title, location.origin));
+  return checked.ok ? session.send(checked.text) : false;
+};
 
 /** The phone's: a sheet over the chat, a row a title. It goes as soon as one is pressed (and the sheet with it: the chat shows it sent, or why not). */
 export function TitlePickSheet({ name, session, onClose }: { name: string; session: ChatSession; onClose: () => void }) {
@@ -61,6 +66,13 @@ export function TitlePickSheet({ name, session, onClose }: { name: string; sessi
 export function TitlePickTv({ name, session, onBack }: { name: string; session: ChatSession; onBack: () => void }) {
   const t = useT();
   const titles = useSendable();
+  // (The titles are this profile's, and another screen can change them while the page is open: the remote, left on nothing when the poster it was on
+  // goes, is given the first title, or Back when there is none any more.)
+  useEffect(() => {
+    const on = document.activeElement;
+    if (on !== null && on !== document.body) return;
+    (document.querySelector<HTMLElement>("[data-testid='tv-chat-pick']:not(:disabled)") ?? document.querySelector<HTMLElement>("[data-testid='tv-chat-pick-back']"))?.focus();
+  }, [titles]);
   return (
     <Screen key="pick" testId="tv-chat-picking" compact focus onBack={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("chat.sendTitleTo", { name })}</h1>

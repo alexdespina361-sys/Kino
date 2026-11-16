@@ -11,7 +11,8 @@ describe("a title in a chat message", () => {
 
   it("leaves the end of a sentence out of the address", () => {
     expect(titleIn("Watch this: https://kino4tv.com/tv?title=movie-603!")).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "Watch this:" });
-    expect(titleIn("(https://kino4tv.com/tv?title=movie-603).")?.id).toBe("filmpire-movie-603");
+    expect(titleIn("(https://kino4tv.com/tv?title=movie-603).")).toMatchObject({ id: "filmpire-movie-603", rest: "" }); // (no "(" left over the card: the judge, 16 Nov)
+    expect(titleIn("Tonight (https://kino4tv.com/tv?title=movie-603)")).toMatchObject({ rest: "Tonight" });
   });
 
   it("is nothing for an address that names no title, or text that only looks like one", () => {

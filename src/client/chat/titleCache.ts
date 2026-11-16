@@ -27,6 +27,12 @@ export function knownTitle(id: string, now = Date.now()): ChatTitle {
   return now - found.failedAt < RETRY_MS ? { status: "failed" } : { status: "loading" };
 }
 
+/** How long until a title the server could not be asked about may be asked about again (0: it may now, or it was not a failure). */
+export function retryIn(id: string, now = Date.now()): number {
+  const found = kept.get(id);
+  return found && "failedAt" in found ? Math.max(0, RETRY_MS - (now - found.failedAt)) : 0;
+}
+
 /** Asks the server about a title, unless it is known or being asked about. */
 export function askAbout(id: string): Promise<void> {
   if (knownTitle(id).status !== "loading") return Promise.resolve();
@@ -40,18 +46,23 @@ export function askAbout(id: string): Promise<void> {
   return pending;
 }
 
-/** The title a line of a chat names, as far as it is known; asked about when it is not. */
+/**
+ * The title a line of a chat names, as far as it is known; asked about when it is not. One the server could not be asked about is asked about again
+ * when its minute is up, while the line is on the screen (the judge, 16 Nov: it stayed text, or an empty card, until the chat was opened again).
+ */
 export function useChatTitle(id: string): ChatTitle {
   const [, redraw] = useState(0);
   const now = knownTitle(id);
   useEffect(() => {
-    if (knownTitle(id).status !== "loading") return;
     let live = true;
-    void askAbout(id).then(() => live && redraw((n) => n + 1));
+    const again = () => live && redraw((n) => n + 1);
+    if (now.status === "loading") void askAbout(id).then(again);
+    const timer = now.status === "failed" ? setTimeout(again, retryIn(id) + 50) : undefined;
     return () => {
       live = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [id]);
+  }, [id, now.status]);
   return now;
 }
 

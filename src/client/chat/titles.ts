@@ -34,10 +34,10 @@ export function titleIn(text: string): TitleInText | null {
     const id = titleIdOf(url.searchParams.get(TITLE_PARAM));
     if (!id) continue;
     const at = match.index ?? 0;
-    // (What ended the sentence after the address is not left standing alone: "Watch this: !".)
+    // (What ended the sentence after the address, or opened a bracket around it, is not left standing alone: "Watch this: !", "(" of "(https://...).".)
     const rest = `${text.slice(0, at)} ${text.slice(at + link.length)}`
       .replace(/\s+/g, " ")
-      .replace(/(^|\s)[.,!?;:)\]}'"»]+(?=\s|$)/g, "")
+      .replace(/(^|\s)[([{«.,!?;:)\]}'"»]+(?=\s|$)/g, "")
       .trim();
     return { id, link, rest };
   }

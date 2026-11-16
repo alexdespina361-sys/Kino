@@ -1087,6 +1087,7 @@ test.describe("a title sent in a chat", () => {
     const bob = await screenWithFriends(browser, "Bob");
     for (const screen of [ann, bob]) await knowsTitles(screen.page);
     await meet(ann, bob);
+    await writes(ann.page, bob.page, "Look at this one"); // (a line before the title's: the chat is still there when the title is taken back)
     await saves(ann.page, SAVED);
     await expect(view(ann.page)).toBeVisible();
     await openFriendsView(ann.page);
@@ -1105,14 +1106,14 @@ test.describe("a title sent in a chat", () => {
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("Enter");
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
-    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(tvLines(ann.page)).toHaveCount(2);
     await expect(ann.page.getByTestId("tv-chat-lines").getByTestId("chat-card")).toContainText("The Matrix");
     // Back from the posters sends nothing
     await ann.page.getByTestId("tv-chat-title-btn").click();
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
-    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(tvLines(ann.page)).toHaveCount(2);
 
     await look(bob.page);
     await tile(bob.page, ann.name).click();
@@ -1124,8 +1125,49 @@ test.describe("a title sent in a chat", () => {
     await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
     await bob.page.keyboard.press("ArrowUp");
     await expect(card).toBeFocused();
+    // Left and Right go back to the list, and no further
+    await bob.page.keyboard.press("ArrowLeft");
+    await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
+    await bob.page.keyboard.press("ArrowUp");
+    await expect(card).toBeFocused();
     await bob.page.keyboard.press("Enter");
     await expect(bob.page.getByTestId("tv-chat")).toHaveCount(0);
     await expect(bob.page.getByTestId("tv-detail")).toContainText("The Matrix");
+
+    // back in the chat with the remote on the card, Ann takes the title back: the remote is given the list, not left on nothing
+    await bob.page.keyboard.press("Escape");
+    await expect(bob.page.getByTestId("tv-detail")).toHaveCount(0);
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(card).toHaveCount(1);
+    await bob.page.keyboard.press("ArrowUp");
+    await bob.page.keyboard.press("ArrowUp");
+    await expect(card).toBeFocused();
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-takeback").click();
+    await expect(card).toHaveCount(0, SOON);
+    await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
+  });
+
+  test("a title the server could say nothing about is the text it was sent as, and a card once it is asked about again a minute later, with the chat open all along", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const account = fresh("Bob");
+    const page = await openDevice(browser, PHONE, {}, async (context) => context.clock.install());
+    await page.goto("/");
+    await signUp(page, account);
+    const bob = { page, account, name: nameOf(account) };
+    await befriend(ann.page, bob.page);
+    let asks = 0;
+    await bob.page.route(/\/api\/library\/title\?/, (route) => (++asks === 1 ? route.fulfill({ status: 502, body: "" }) : route.fulfill({ json: { item: MATRIX } })));
+    const text = `The Matrix (1999) ${new URL(bob.page.url()).origin}/tv?title=movie-603`;
+    await writes(ann.page, bob.page, text);
+    await openChat(bob.page);
+    await expect(texts(bob.page)).toHaveText([text]);
+    await expect.poll(() => asks).toBe(1);
+    await expect(bob.page.getByTestId("chat-card")).toHaveCount(0);
+    await bob.page.clock.fastForward(61_000);
+    await expect(bob.page.getByTestId("chat-card")).toContainText("The Matrix");
+    expect(asks).toBe(2);
+    await expect(texts(bob.page)).toHaveText(["The Matrix (1999)"]);
   });
 });

@@ -163,6 +163,14 @@ export function ReadTv({
     }
   };
 
+  // (The last message taken back takes the list with it, and the remote with it if it was there: left on nothing, it is given Write again.)
+  useEffect(() => {
+    if (state.lines.length > 0) return;
+    const on = document.activeElement;
+    if (on !== null && on !== document.body) return;
+    document.querySelector<HTMLElement>("[data-testid='tv-chat'] [data-autofocus]:not(:disabled)")?.focus();
+  }, [state.lines.length]);
+
   // The page opens before it knows whether the friend takes messages, with the remote on Write; when it finds out that they do not (or that the
   // friendship is over) Write goes, and the remote must not be left on nothing: it stands on Back, unless it had already moved on to another button.
   useEffect(() => {
