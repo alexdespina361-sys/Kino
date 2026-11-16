@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ratingsShown, type Profile } from "../../shared";
+import { ratingsShown, tagLabel, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
@@ -16,7 +16,7 @@ import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "../shared/backButton";
-import { FriendPage, FriendsPage } from "./Friends";
+import { FriendPage, FriendsPage, YourTag } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
@@ -307,6 +307,8 @@ export function AccountScreen({
               <p className="muted">{signedInLine(me)}</p>
             </div>
           </section>
+          {/* (Who they are to their friends, to give out: people did not know their own name#tag. Only where friends are on: it is for nothing else.) */}
+          {friends.on && profile.tag !== undefined && <YourTag label={tagLabel(profile.name, profile.tag)} testId="account-tag" help={false} />}
           <div className="menu-groups">
             <nav className="menu">
               {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}

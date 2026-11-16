@@ -1,5 +1,5 @@
 import { Fragment, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, titleLink, type Library, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, tagLabel, titleLink, type Library, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -641,8 +641,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const places = few ? [partyPlace, phonePlace] : [];
   /** For an account that has no Google account yet: a button after all the others on the profile's page that goes to Google to connect one. */
   const connectGoogle = canConnectGoogle && signedIn ? () => withGoogle("link") : undefined;
+  /** The profile's name#tag, where friends are on: shown under its name, and copied by the last button of all. */
+  const myTag = signedIn && friends.on && profile?.tag !== undefined ? tagLabel(profile.name, profile.tag) : undefined;
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
-  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length + (connectGoogle ? 1 : 0) : 0;
+  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length + (connectGoogle ? 1 : 0) + (myTag ? 1 : 0) : 0;
   /** A phone's pages of rows have their sections as a row of buttons where the others have a banner. */
   const sectionButtons = few && isRowsPage(view);
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
@@ -1303,6 +1305,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 onArrive={(col) => (remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col })}
                 places={places}
                 onConnectGoogle={connectGoogle}
+                tag={myTag}
               />
             ) : friendsHead ? (
               <div className="tv-hero-text tv-friends-head" key="friends-head">

@@ -300,6 +300,67 @@ test.describe("finding a friend by tag on the TV", () => {
   });
 });
 
+/* ------------------------------ on the profile's own page ------------------------------ */
+
+// The owner's report of 15 Nov: people did not know their own name#tag. The profile's page says it under the name, with a button that copies it.
+test.describe("a profile's own tag on its page", () => {
+  test("the TV's profile page says it under the name, and its last button copies it: OK from the remote, or a click", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const page = ann.page;
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    const copy = page.getByTestId("tv-profile-tag-copy");
+    await expect(page.getByTestId("tv-profile-tag-text")).toHaveText(tagOf(ann.name));
+    await expect(page.getByTestId("tv-profile-tag")).toBeInViewport({ ratio: 1 });
+    await expect(copy).toBeInViewport({ ratio: 1 });
+    await expect(copy).toHaveText("Copy tag");
+
+    // The remote: Settings is still the first button, the copy the last (Right of it, nothing).
+    await page.getByTestId("tv-profile-settings").focus();
+    for (let step = 0; step < 4 && !(await copy.evaluate((element) => element === document.activeElement)); step++) await page.keyboard.press("ArrowRight");
+    await expect(copy).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(copy).toBeFocused();
+    await page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await page.keyboard.press("Enter");
+    await expect(copy).toHaveText("Tag copied");
+    expect(await clipboard()).toBe(tagOf(ann.name));
+    await expect(copy).toBeFocused(); // (the remote kept its place)
+    await expect(copy).toHaveText("Copy tag"); // (and the button is ready for the next time by itself)
+
+    await page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await copy.click(); // a mouse
+    await expect(copy).toHaveText("Tag copied");
+    expect(await clipboard()).toBe(tagOf(ann.name));
+  });
+
+  test("on a phone that is the screen, the tag and its button are on the screen, the button a row of its own", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await screenWithFriends(browser, "Ann", { viewport: { width: 390, height: 844 } });
+    const page = ann.page;
+    await expect(page.getByTestId("tv-profile-tag-text")).toHaveText(tagOf(ann.name));
+    await expect(page.getByTestId("tv-profile-tag")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("tv-profile-tag-copy")).toBeInViewport({ ratio: 1 });
+    const [copy, settings] = [(await page.getByTestId("tv-profile-tag-copy").boundingBox())!, (await page.getByTestId("tv-profile-settings").boundingBox())!];
+    expect(copy.width).toBeGreaterThan(settings.width * 1.5); // (as wide as the two above it)
+    expect(copy.height).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test("the phone's own profile screen says it under who is signed in, with a button that copies it", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const page = ann.page;
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await expect(page.getByTestId("account-tag-text")).toHaveText(tagOf(ann.name));
+    await page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await page.getByTestId("account-tag-copy").click();
+    await expect(page.getByTestId("account-tag-copy")).toHaveText("Tag copied");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(tagOf(ann.name));
+  });
+});
+
 /* ------------------------------ in a watch party ------------------------------ */
 
 test.describe("asking the profile on a screen of a watch party", () => {

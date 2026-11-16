@@ -13,7 +13,7 @@ type Copying = "idle" | "copied" | "failed";
  * text that was renewed starts over, since what was said was about the one before. Where the browser would not copy, `where` is the
  * text as the page shows it: it is selected instead, ready for the keys or the long press of the device.
  */
-function useCopy(text: string, where: RefObject<HTMLElement | null>): [Copying, () => Promise<void>] {
+export function useCopy(text: string, where: RefObject<HTMLElement | null>): [Copying, () => Promise<void>] {
   const [state, setState] = useState<Copying>("idle");
   useEffect(() => setState("idle"), [text]);
   useEffect(() => {
