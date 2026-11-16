@@ -90,6 +90,48 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD]) {
   });
 }
 
+for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD, { width: 800, height: 600 }]) {
+  test(`with the menu open over it, a click on the wordmark shuts the menu and goes home, by a mouse resting on the menu or with the remote in it: ${viewport.width} wide`, async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library), viewport);
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    const mark = await rect(tv.getByTestId("tv-logo-home"));
+    const middle = { x: mark.left + mark.width / 2, y: mark.top + mark.height / 2 };
+    const menu = tv.getByTestId("tv-rail");
+    const browse = tv.getByTestId("tv-browse");
+    const under = () => tv.evaluate(({ x, y }) => (document.elementFromPoint(x, y)?.closest(".tv-rail") ? "menu" : "page"), middle);
+
+    // A mouse: it opens the menu by resting on it, then goes up to the wordmark (under the open menu) and clicks.
+    await tv.getByTestId("rail-search").click();
+    await expect(browse).toHaveAttribute("data-view", "search");
+    const away = { x: viewport.width - 10, y: viewport.height - 10 };
+    await tv.mouse.move(away.x, away.y); // (off the menu, to come back to it)
+    await expect(menu).toHaveAttribute("data-open", "false");
+    const strip = await rect(menu);
+    await tv.mouse.move(strip.left + 20, viewport.height / 2, { steps: 4 });
+    await expect(menu).toHaveAttribute("data-open", "true");
+    await expect.poll(under, { message: "the menu has opened over the wordmark (it widens over a fifth of a second)" }).toBe("menu");
+    await tv.mouse.move(middle.x, middle.y, { steps: 4 });
+    await expect(menu).toHaveAttribute("data-open", "true");
+    expect(await under(), "the open menu lies over the wordmark").toBe("menu");
+    await tv.mouse.click(middle.x, middle.y);
+    await expect(browse).toHaveAttribute("data-view", "home");
+    await expect(menu).toHaveAttribute("data-open", "false");
+
+    // The remote in the menu, on another page than home (its focus opens it); the mouse clicks the wordmark: home, the menu shut, the remote on the titles.
+    await tv.mouse.move(away.x, away.y);
+    await tv.getByTestId("rail-search").focus();
+    await expect(menu).toHaveAttribute("data-open", "true");
+    await tv.keyboard.press("Enter");
+    await expect(browse).toHaveAttribute("data-view", "search");
+    await tv.getByTestId("rail-search").focus();
+    await expect(menu).toHaveAttribute("data-open", "true");
+    await tv.mouse.click(middle.x, middle.y);
+    await expect(browse).toHaveAttribute("data-view", "home");
+    await expect(menu).toHaveAttribute("data-open", "false");
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+  });
+}
+
 /**
  * The cat's ears on the wordmark (Logo.tsx): a second picture over the plain one, shown while the cat is on (the cat's own setting, as the library's corner
  * button has it), and the wordmark never moves for them. The ginger cat is the flat one, which a headless browser draws without trouble.

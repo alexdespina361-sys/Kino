@@ -65,6 +65,18 @@ export function readPartyCode(search: string): string | null {
   return code.length === 6 ? code : null;
 }
 
+/**
+ * The code of a watch party in something pasted or typed: its link (`…/?party=482731`), the six digits as the host's screen shows them ("482 731"), alone
+ * or among other words ("Code: 482731"), or six digits and nothing else. Null when there is none (or more than one way to read it: other digits only).
+ */
+export function partyCodeIn(text: string): string | null {
+  const linked = /[?&]party=([\d\s-]+)/.exec(text)?.[1]?.replace(/\D/g, "");
+  if (linked?.length === 6) return linked;
+  const shown = /(?:^|\D)(\d{3}[ -]?\d{3})(?!\d)/.exec(text)?.[1]?.replace(/\D/g, "");
+  if (shown) return shown;
+  return null;
+}
+
 /** What the phone page was opened for. Everything is optional and anything odd is ignored. */
 export function readLaunchParams(search: string): LaunchParams {
   const params = new URLSearchParams(search);

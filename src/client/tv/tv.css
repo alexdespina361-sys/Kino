@@ -1895,6 +1895,9 @@
 }
 .tv-code-boxes i[data-filled="true"] { background: rgba(255, 255, 255, 0.18); border-bottom-color: var(--accent); }
 .tv-code-boxes i:nth-child(3) { margin-right: 0.5em; }
+/* The boxes take a click or a tap as a text field does: a field over them, seen through, has the cursor and the keyboard (JoinPage in Party.tsx). */
+.tv-code-entry { position: relative; }
+.tv-code-field { position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: transparent; caret-color: transparent; font-size: 16px; opacity: 0; cursor: text; }
 .tv-party-error { min-height: 1.4em; margin: 0; font-size: 1.6em; font-weight: 600; color: #ffb4b4; visibility: hidden; }
 .tv-party-error.is-shown { visibility: visible; }
 .tv-pad { display: grid; grid-template-columns: repeat(3, 5.6em); gap: 0.5em; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { controlLink, firstLink, linkCodeOf, linkOf, pairLink, partyLink, readLaunchParams, readPartyCode, typedLinkCode } from "./launch";
+import { controlLink, firstLink, linkCodeOf, linkOf, pairLink, partyCodeIn, partyLink, readLaunchParams, readPartyCode, typedLinkCode } from "./launch";
 
 describe("readLaunchParams", () => {
   it("reads a pairing code from the TV's QR code", () => {
@@ -92,6 +92,28 @@ describe("the link of a watch party", () => {
     expect(readPartyCode("?party=48273")).toBeNull();
     expect(readPartyCode("?party=")).toBeNull();
     expect(readPartyCode("")).toBeNull();
+  });
+});
+
+describe("partyCodeIn", () => {
+  it("finds the code in a party's link, even one with other digits in its address", () => {
+    expect(partyCodeIn(partyLink("482731", "https://kino4tv.com"))).toBe("482731");
+    expect(partyCodeIn("Join me! http://192.168.1.5:8885/?party=482731")).toBe("482731");
+  });
+
+  it("finds it as the host's screen shows it, alone or among words", () => {
+    expect(partyCodeIn("482731")).toBe("482731");
+    expect(partyCodeIn(" 482 731\n")).toBe("482731");
+    expect(partyCodeIn("Code: 482-731, see you at 9")).toBe("482731");
+    expect(partyCodeIn("at kino.24-7.ro:8885 the code is 482731")).toBe("482731");
+  });
+
+  it("says there is none rather than guess", () => {
+    expect(partyCodeIn("")).toBeNull();
+    expect(partyCodeIn("hello")).toBeNull();
+    expect(partyCodeIn("48273")).toBeNull();
+    expect(partyCodeIn("1234567")).toBeNull();
+    expect(partyCodeIn("?party=12")).toBeNull();
   });
 });
 

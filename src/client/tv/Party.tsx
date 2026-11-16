@@ -6,8 +6,10 @@ import { useT } from "../i18n";
 import { pressAgain } from "../shared/backButton";
 import { CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
-import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, PlusIcon, UsersIcon } from "../shared/icons";
-import { partyLink } from "../shared/launch";
+import { canPaste, pasteText } from "../shared/clipboard";
+import { BackspaceIcon, CheckIcon, ClipboardIcon, CloseIcon, FullscreenIcon, PlusIcon, UsersIcon } from "../shared/icons";
+import { partyCodeIn, partyLink } from "../shared/launch";
+import { isEditable } from "./keys";
 import { QrCode } from "../shared/QrCode";
 import { FriendPickerTv, useFriendPicker } from "./Friends";
 import { BackButton, Screen } from "./Idle";
@@ -260,7 +262,11 @@ export function PartyPage(p: PageProps) {
 
 const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
-/** Typing the 6-digit code of a party: the digits of the remote or keyboard, or the number pad on screen. The sixth digit sends it. */
+/**
+ * Typing the 6-digit code of a party: the digits of the remote or a keyboard, the number pad on screen, or into the boxes themselves: a click or a tap there
+ * puts the cursor in them (a field over them, a phone's keyboard of digits comes up for it), and a code can be pasted, with Ctrl+V anywhere on the page or
+ * with the Paste button where the browser lets a page read what was copied (the owner, 15 Nov). A link to the party pasted gives its code. The sixth digit sends it.
+ */
 function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"]; /** A code that came with the page: it is sent as the page opens. */ initial?: string; onJoin: (code: string) => void; onBack: () => void }) {
   const t = useT();
   const [digits, setDigits] = useState(initial ?? "");
@@ -269,55 +275,126 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
   latest.current = digits;
   const submit = useRef(onJoin);
   submit.current = onJoin;
+  /** What a paste that found no code says, on the error's line (while there is no error). */
+  const [note, setNote] = useState<string | null>(null);
+  /** Whether the field over the boxes has the keyboard: the box the next digit goes in shows a cursor. */
+  const [typing, setTyping] = useState(false);
+  const [pasting] = useState(canPaste);
   useEffect(() => {
     if (initial?.length === 6) submit.current(initial);
   }, []);
 
-  const add = (digit: string) => {
-    const now = latest.current;
-    if (now.length >= 6) return;
-    const next = now + digit;
-    latest.current = next;
-    setDigits(next);
-    if (next.length === 6) submit.current(next);
+  /** The code as it is now, digits only and six at most: shown in the boxes, and sent once it has all six. */
+  const put = (text: string) => {
+    const code = text.replace(/\D/g, "").slice(0, 6);
+    setNote(null);
+    if (code === latest.current) return;
+    latest.current = code;
+    setDigits(code);
+    if (code.length === 6) submit.current(code);
   };
-  const remove = () => setDigits((now) => now.slice(0, -1));
+  const add = (digit: string) => {
+    if (latest.current.length < 6) put(latest.current + digit);
+  };
+  const remove = () => put(latest.current.slice(0, -1));
+  /** Something pasted or read off the clipboard: its party code, or a word that it had none. */
+  const pasted = (text: string) => {
+    const code = partyCodeIn(text);
+    if (code) put(code);
+    else setNote(t("party.pasteNone"));
+  };
 
   // A code that was refused is used up: start over.
   useEffect(() => {
-    if (error) setDigits("");
+    if (!error) return;
+    latest.current = "";
+    setDigits("");
   }, [error?.id]);
 
+  const putRef = useRef(put);
+  putRef.current = put;
+  const pastedRef = useRef(pasted);
+  pastedRef.current = pasted;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.altKey || event.ctrlKey || event.metaKey || !/^[0-9]$/.test(event.key)) return;
+      // (The field over the boxes types its own digits.)
+      if (event.altKey || event.ctrlKey || event.metaKey || !/^[0-9]$/.test(event.key) || isEditable(event.target)) return;
       event.preventDefault();
-      add(event.key);
+      if (latest.current.length < 6) putRef.current(latest.current + event.key);
+    };
+    // Ctrl+V (or the browser's own Paste) wherever the focus is on this page, the field included: what was copied is read for a code, not typed in. (Not
+    // in what may be open over the page, as the feedback form, which takes a pasted picture.)
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      const page = document.querySelector('[data-testid="tv-party-join-page"]');
+      if (target && target !== document.body && target !== document.documentElement && !page?.contains(target)) return;
+      event.preventDefault();
+      pastedRef.current(event.clipboardData?.getData("text") ?? "");
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("paste", onPaste);
+    };
   }, []);
+
+  const pasteNow = async () => {
+    const text = await pasteText();
+    if (text === null) setNote(t("party.pasteRefused"));
+    else pasted(text);
+  };
 
   // Back takes digits back one at a time and leaves when there are none, the way a PIN screen does.
   const back = () => (latest.current ? remove() : onBack());
+  const shown = error?.text ?? note;
 
   return (
     <Screen testId="tv-party-join-page" compact focus onBack={back} leaving={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("party.join")}</h1>
       <p className="tv-hint">{t("party.joinHint")}</p>
-      <p className="tv-code-boxes" data-testid="tv-party-digits" aria-live="polite">
-        {Array.from({ length: 6 }, (_, i) => (
-          <i key={i} data-filled={i < digits.length}>
-            {digits[i] ?? ""}
-          </i>
-        ))}
-      </p>
-      <p className={`tv-party-error${error ? " is-shown" : ""}`} role="alert" data-testid="tv-party-error">
-        {error?.text ?? ""}
+      <div className="tv-code-entry" data-typing={typing ? "true" : undefined}>
+        <p className="tv-code-boxes" data-testid="tv-party-digits" aria-live="polite">
+          {Array.from({ length: 6 }, (_, i) => (
+            <i key={i} data-filled={i < digits.length} data-caret={typing && i === digits.length ? "true" : undefined}>
+              {digits[i] ?? ""}
+            </i>
+          ))}
+        </p>
+        {/* (Over the boxes, seen through: what a click or a tap puts the cursor in. Not one of the remote's places: the pad is that, and a TV's own keyboard would come up.) */}
+        <input
+          className="tv-code-field"
+          data-testid="tv-party-code-input"
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="go"
+          aria-label={t("party.codeLabel")}
+          value={digits}
+          onChange={(event) => put(partyCodeIn(event.target.value) ?? event.target.value)}
+          onSelect={(event) => {
+            // (The cursor stays after the last digit, where the boxes show it.)
+            const field = event.currentTarget;
+            const end = field.value.length;
+            if (field.selectionStart !== end || field.selectionEnd !== end) field.setSelectionRange(end, end);
+          }}
+          onFocus={() => setTyping(true)}
+          onBlur={() => setTyping(false)}
+        />
+      </div>
+      {pasting && (
+        <button className="tv-action tv-code-paste" onClick={() => void pasteNow()} data-nav data-testid="tv-party-paste">
+          <ClipboardIcon /> {t("party.paste")}
+        </button>
+      )}
+      <p className={`tv-party-error${shown ? " is-shown" : ""}${!error && note ? " is-note" : ""}`} role="alert" data-testid="tv-party-error">
+        {shown ?? ""}
       </p>
       <div className="tv-pad" role="group" aria-label={t("party.keys")}>
         {DIGITS.map((digit) => (
-          <button className="tv-key" key={digit} onClick={() => add(digit)} data-testid={`pad-${digit}`} data-nav>
+          <button className="tv-key" key={digit} onClick={() => add(digit)} data-testid={`pad-${digit}`} data-nav {...(digit === "1" ? { "data-autofocus": true } : {})}>
             {digit}
           </button>
         ))}

@@ -2221,6 +2221,80 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-party-start")).toBeVisible();
   });
 
+  test("the code's boxes take a click and a keyboard, as a text field does: Backspace takes a digit off there, and the remote still starts on the pad", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    const code = await startParty(host);
+    const guest = await screen(browser, baseURL!);
+    await pressMenuLine(guest, "rail-party");
+    await guest.getByTestId("tv-party-join").click();
+    await expect(guest.getByTestId("pad-1")).toBeFocused(); // (the remote's way in is the pad, as before)
+    const boxes = guest.getByTestId("tv-party-digits");
+    const filled = boxes.locator('[data-filled="true"]');
+
+    // (A click on the boxes lands on the field that lies over them, seen through: it is what the pointer meets there.)
+    const box = await boxes.boundingBox();
+    expect(await guest.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("data-testid"), { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 })).toBe("tv-party-code-input");
+    await guest.mouse.click(box!.x + box!.width / 4, box!.y + box!.height / 2);
+    await expect(guest.getByTestId("tv-party-code-input")).toBeFocused();
+    await expect(boxes.locator("i").nth(0)).toHaveAttribute("data-caret", "true");
+    await guest.keyboard.type(code.slice(0, 2));
+    await expect(filled).toHaveCount(2);
+    await expect(boxes.locator("i").nth(2)).toHaveAttribute("data-caret", "true");
+    await guest.keyboard.type("x"); // (a letter is not a digit: nothing)
+    await expect(filled).toHaveCount(2);
+    await guest.keyboard.press("Backspace");
+    await expect(filled).toHaveCount(1);
+    await expect(guest.getByTestId("tv-party-join-page")).toBeVisible(); // (Backspace typed: it did not take the page away)
+    await guest.keyboard.type(code.slice(1));
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+  });
+
+  test("a code is pasted: Ctrl+V on the page, or the Paste button; a link to the party gives its code, and what has no code says so", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    const code = await startParty(host);
+    const guest = await screen(browser, baseURL!);
+    await guest.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseURL! });
+    await pressMenuLine(guest, "rail-party");
+    await guest.getByTestId("tv-party-join").click();
+    const filled = guest.getByTestId("tv-party-digits").locator('[data-filled="true"]');
+    const error = guest.getByTestId("tv-party-error");
+    /** Ctrl+V with this copied, as the browser tells the page (wherever the focus is: here, on the pad). */
+    const ctrlV = (text: string) =>
+      guest.evaluate((copied) => {
+        const data = new DataTransfer();
+        data.setData("text/plain", copied);
+        (document.activeElement ?? document.body).dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      }, text);
+
+    await ctrlV("see you at nine");
+    await expect(error).toHaveText(en["party.pasteNone"]);
+    await expect(filled).toHaveCount(0);
+    await guest.evaluate(() => navigator.clipboard.writeText("no code in here"));
+    await guest.getByTestId("tv-party-paste").click();
+    await expect(error).toHaveText(en["party.pasteNone"]);
+    await guest.getByTestId("pad-4").click();
+    await expect(error).not.toHaveClass(/is-shown/); // (a digit typed: the word goes)
+    await guest.getByTestId("pad-delete").click();
+
+    await guest.evaluate((link) => navigator.clipboard.writeText(`Join me: ${link}`), `${baseURL}/?party=${code}`);
+    await guest.getByTestId("tv-party-paste").click();
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+  });
+
+  test("Ctrl+V of the code as the host's screen shows it joins at once", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    const code = await startParty(host);
+    const guest = await screen(browser, baseURL!);
+    await pressMenuLine(guest, "rail-party");
+    await guest.getByTestId("tv-party-join").click();
+    await guest.evaluate((copied) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", copied);
+      document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    }, `${code.slice(0, 3)} ${code.slice(3)}`);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+  });
+
   test("the party's link joins a screen as soon as it is unlocked, and leaves nothing in the address", async ({ browser, baseURL }) => {
     const host = await screen(browser, baseURL!);
     const code = await startParty(host);
