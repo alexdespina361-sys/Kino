@@ -136,6 +136,8 @@ export function useSkipSegment({
   /** Seconds left of the fill, or null. */
   const [count, setCount] = useState<number | null>(null);
   const lastTimeRef = useRef(time);
+  /** Where the last skip sent the picture: a part that starts there (a "previously on" right before the opening) is played into, not jumped to. */
+  const landedRef = useRef<number | null>(null);
   const [, setTick] = useState(0);
 
   const key = segment && !done.some((each) => each.key === segment.key) ? segment.key : null;
@@ -144,15 +146,19 @@ export function useSkipSegment({
   useEffect(() => {
     const last = lastTimeRef.current;
     lastTimeRef.current = time;
+    const landing = landedRef.current;
+    const landed = landing !== null && time >= landing - 0.5 && time - landing < 3;
+    if (landing !== null && time - landing >= 3) landedRef.current = null; // (passed it; a time before it is the picture not there yet)
     if (!segment) {
       if (entered) setEntered(null);
       if (count !== null) setCount(null);
       return;
     }
     if (entered?.key === segment.key) return;
-    // (Played into: the time went on as a picture plays, or stood still while the times came, at its start. A seek, or a film resumed in the middle of it,
-    // jumped; and so did one whose times came while it was well into the part.)
-    const byPlaying = time >= last && time - last < 3 && time - segment.start < 4;
+    // (Played into: the time went on as a picture plays, or stood still while the times came, at its start; or a skip landed at its start. A seek, or a
+    // film resumed in the middle of it, jumped; and so did one whose times came while it was well into the part.)
+    const byPlaying = ((time >= last && time - last < 3) || landed) && time - segment.start < 4;
+    if (landed) landedRef.current = null;
     setEntered({ key: segment.key, byPlaying, freshUntil: byPlaying ? Date.now() + FRESH_MS : 0 });
     setCount(byPlaying && autoSkip ? AUTO_SKIP_SECONDS : null);
   }, [time, segment?.key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -187,7 +193,9 @@ export function useSkipSegment({
     if (!segment) return;
     setDone((before) => [...before.filter((each) => each.key !== segment.key), { key: segment.key, start: segment.start }]);
     setCount(null);
-    onSkipTo(Math.min(segment.end, Math.max(0, duration - 0.1)));
+    const to = Math.min(segment.end, Math.max(0, duration - 0.1));
+    landedRef.current = to;
+    onSkipTo(to);
   };
   const dismissNow = () => {
     if (!segment) return;

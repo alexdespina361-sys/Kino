@@ -537,8 +537,10 @@ export function Hud(p: HudProps) {
   const follow = p.follow;
   /** Whether the playback is this screen's to move: any screen's own picture, or an admin's, but not that of a guest who only watches. */
   const steers = !follow || follow.admin;
+  /** The end of the episode, with the Next episode button on it: that button is what is offered, not the last frame's pause card and Play. */
+  const nextAtTheEnd = Boolean(p.upNext && player.ended);
   /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the wait for the picture takes its place). */
-  const centre = steers && !busy && (paused || (p.touch && playing));
+  const centre = steers && !busy && !nextAtTheEnd && (paused || (p.touch && playing));
   const qualityLabel = pictureName(player);
   const endsAt = formatEndsAt(player.currentTime, duration, player.playbackRate ?? 1, new Date());
   const partyLabel = p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail");
@@ -649,7 +651,7 @@ export function Hud(p: HudProps) {
       {isBlocked(player) && !follow && <TapToPlay onPlay={p.onToggle} />}
 
       {/* The overlay sits on top of the video, so its empty part is the picture as far as a hand can tell (data-picture: see gestures.ts); the bars' own is the picture to a finger only. */}
-      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={paused || undefined} data-boosting={p.boosting || undefined}>
+      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !nextAtTheEnd) || undefined} data-boosting={p.boosting || undefined}>
         <header className="hud-top" data-picture="bar">
           <div className="hud-titles">
             <h1 className="hud-title" data-testid="tv-title">
@@ -681,8 +683,8 @@ export function Hud(p: HudProps) {
         </header>
 
         <div className="hud-center">
-          {paused && (
-            /* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. (The Next episode button is a small one in the corner now, and stays beside it.) */
+          {paused && !nextAtTheEnd && (
+            /* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. (The Next episode button is a small one in the corner now, and stays beside it; at the very end it is what is offered.) */
             <div className="hud-pause-card" data-testid="tv-pause-card">
               <small>{follow ? t("tv.following", { name: follow.host }) : t("hud.watching")}</small>
               <b>{p.title}</b>

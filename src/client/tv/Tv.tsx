@@ -1564,6 +1564,20 @@ export function Tv() {
 
       const row = controlsRef.current;
       const focused = document.activeElement as HTMLElement | null;
+      // The Skip or Next episode button, when the remote is on it (Up from the picture or from the controls): OK presses what it is on, Left and
+      // Right go between it and its cross, Down to the controls, Back or Up off it.
+      const pill = document.querySelector<HTMLElement>(".tv .hud-skip");
+      if (pill && focused && pill.contains(focused)) {
+        if (action === "select") return; // press the focused button
+        const buttons = [...pill.querySelectorAll<HTMLElement>("button")];
+        if (action === "left" || action === "right") buttons[buttons.indexOf(focused) + (action === "right" ? 1 : -1)]?.focus();
+        else if (action === "down") focusControls();
+        else if (action === "back" || action === "up") focused.blur();
+        if (action === "left" || action === "right" || action === "down" || action === "back" || action === "up") {
+          event.preventDefault();
+          return;
+        }
+      }
       if (row && focused && row.contains(focused)) {
         if (action === "left" || action === "right" || action === "up" || action === "down") {
           // The arrows walk the controls the way they are laid out: along a row, and between rows. Past the edge nothing moves,
@@ -1576,7 +1590,12 @@ export function Tv() {
           if (next && vertical && left && left.to === focused && left.action !== action && buttons.includes(left.from)) next = left.from;
           lastStepRef.current = next && vertical ? { from: focused, to: next, action } : null;
           if (next) next.focus();
-          else if (action === "up") focused.blur();
+          else if (action === "up") {
+            // (Up out of the controls: to the Skip or Next episode button, if one is up.)
+            const pillButton = pill?.querySelector<HTMLElement>("button");
+            if (pillButton) pillButton.focus();
+            else focused.blur();
+          }
           event.preventDefault();
           return;
         }
@@ -1653,7 +1672,11 @@ export function Tv() {
           // Back leaves the video for the library: the first press shows the controls, a second one leaves.
           if (overlayWasVisible) stopPlayback();
           break;
-        default: // "up": nothing to do beyond showing the overlay
+        case "up":
+          // Up from the picture: onto the Skip or Next episode button, if one is up (so a quiet one is pressed with OK too); else it only shows the controls.
+          pill?.querySelector<HTMLElement>("button")?.focus();
+          break;
+        default:
           break;
       }
       event.preventDefault();

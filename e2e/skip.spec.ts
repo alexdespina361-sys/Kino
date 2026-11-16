@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openTv, RawPhone, readPairingCode, test, tvRoot, tvTime } from "./helpers";
+import { guestStorage, openLibrary, openProfilePlace, openTv, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, tvTime } from "./helpers";
 
 /**
  * The Skip button of an opening, a "previously on" and credits, and the Next episode button that came in place of the Up Next card (the owner, 17 Nov).
@@ -67,6 +67,60 @@ test.describe("the Skip button", () => {
     phone.cmd({ type: "SKIP_SEGMENT" });
     await expect(button).toHaveCount(0);
     await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39); // (the button goes at the press; the picture gets there a moment later)
+    phone.close();
+  });
+
+  test("a quiet one is reached with Up, from the picture or from the controls, and pressed with OK", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await start(tv, baseURL!, episode({ skip: { intro: { start: 6, end: 40 } } }), 20);
+    const button = tv.getByTestId("tv-skip");
+    await expect(button).toBeVisible({ timeout: 8_000 });
+    await expect(button).not.toHaveAttribute("data-fresh", /./);
+
+    await tv.keyboard.press("ArrowDown"); // onto the controls
+    await expect.poll(() => tv.evaluate(() => Boolean(document.activeElement?.closest(".hud-controls")))).toBe(true);
+    await tv.keyboard.press("ArrowUp"); // and up out of them, onto it
+    await expect(tv.getByTestId("tv-skip-btn")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-skip-dismiss")).toBeFocused();
+    await tv.keyboard.press("Escape"); // off it, and the film plays on
+    await expect(tv.getByTestId("tv-skip-dismiss")).not.toBeFocused();
+    await expect(button).toBeVisible();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+
+    await tv.keyboard.press("ArrowUp"); // from the picture
+    await expect(tv.getByTestId("tv-skip-btn")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(button).toHaveCount(0);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    phone.close();
+  });
+
+  test("with \"Skip intros and credits\" on, a \"previously on\" and the opening right after it are both skipped", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser, undefined, AUTO_SKIP());
+    const phone = await start(tv, baseURL!, episode({ skip: { recap: { start: 6, end: 30 }, intro: { start: 30, end: 60 } } }), 4);
+    const button = tv.getByTestId("tv-skip");
+    await expect(button).toHaveAttribute("data-kind", "recap", { timeout: 8_000 });
+    await expect(button).toHaveAttribute("data-kind", "intro", { timeout: 10_000 }); // landed at the opening's start: played into, so it fills too
+    await expect(button).toHaveAttribute("data-counting", "true");
+    await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThanOrEqual(59);
+    phone.close();
+  });
+
+  test("the profile's switch is on the TV's settings, off at first, and turns the fill on", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser);
+    await openProfilePlace(tv, "settings");
+    const toggle = tv.getByTestId("tv-autoskip");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await tv.getByTestId("tv-account-back").click(); // (the settings page has no menu: back to the profile's page, which has)
+    await expect(tv.getByTestId("tv-rail")).toBeVisible();
+    await pressMenuLine(tv, "rail-connect");
+    const phone = await start(tv, baseURL!, episode({ skip: { intro: { start: 6, end: 40 } } }), 4);
+    await expect(tv.getByTestId("tv-skip")).toHaveAttribute("data-counting", "true", { timeout: 8_000 });
     phone.close();
   });
 
