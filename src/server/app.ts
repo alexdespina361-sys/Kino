@@ -489,9 +489,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     }
     // One SPA: "/" is the phone, "/tv" is the receiver. Both are index.html.
     app.setNotFoundHandler((request, reply) => {
-      const isPage = request.method === "GET" && !request.url.startsWith("/api") && !request.url.startsWith("/ws");
-      // (Not for what is no page of this site, a file or a place a scanner looks for: see `looksLikePage`.)
-      if (isPage && looksLikePage(request.url) && request.headers.accept?.includes("text/html")) {
+      // (HEAD too: a check that the page is there, as an uptime monitor makes, got a 404 for "/tv" while "/" answered. Node sends no body for it.)
+      const isPage = (request.method === "GET" || request.method === "HEAD") && !request.url.startsWith("/api") && !request.url.startsWith("/ws");
+      // (Not for what is no page of this site, a file or a place a scanner looks for: see `looksLikePage`. The site's own two pages answer whatever the request accepts.)
+      if (isPage && (isOwnPage(request.url) || (looksLikePage(request.url) && request.headers.accept?.includes("text/html")))) {
         // Any other address that looks like a page gets the page too, which says there is no such page and opens the library (client/shared/strayAddress.ts),
         // but with a 404: it is not a page of the site (the judge, 16 Nov).
         if (!isOwnPage(request.url)) reply.code(404);
