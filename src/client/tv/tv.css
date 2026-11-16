@@ -1904,6 +1904,10 @@
 .tv-party-error.is-shown { visibility: visible; }
 .tv-pad { display: grid; grid-template-columns: repeat(3, 5.6em); gap: 0.5em; }
 .tv-pad .tv-key { padding: 0.4em 0; }
+/* The PIN of a child's profile (Pin.tsx): four boxes in one group, dots for digits, and the way to take off a forgotten one under the pad. */
+.tv-pin-boxes i:nth-child(3) { margin-right: 0; }
+.tv-pin-note { max-width: 36em; margin: 0; text-align: center; }
+.tv-pin-help { max-width: 40em; text-align: center; }
 
 /* Over a film: the same, in the panel the other pickers use. */
 .tv-menu[data-kind="party"] { width: min(94vw, 80em); }

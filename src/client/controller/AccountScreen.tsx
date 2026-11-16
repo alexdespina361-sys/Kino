@@ -14,6 +14,7 @@ import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, MessageIcon, PencilIcon, P
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
+import { PinAsk } from "./Pin";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "../shared/backButton";
 import { useChildCards } from "../shared/childGate";
@@ -23,6 +24,9 @@ import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
 /** The pages that are open, the one on top last: a title's page lies over the account's, and Escape goes back from that one only. */
 const pagesOpen: object[] = [];
+
+/** The account's screen that last asked for the PIN of a child's profile: it is the one that shows the PIN's page. */
+let pinAsker: object | null = null;
 
 /**
  * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A `bare` page (a title's, with its picture at the top)
@@ -149,6 +153,23 @@ export function AccountScreen({
   /** The page the settings were opened from (the account's menu, or the friends' page that says what to turn on): Back goes there. */
   const [settingsFrom, setSettingsFrom] = useState<View>("main");
   const back = () => setView("main");
+  // A child's profile is left with the PIN only (see `ChildLock`): the pages it could be left from ask for it first, and this page is the PIN's while it is asked (the one
+  // that asked: the account can be open twice, the "You" tab under the account opened over a page).
+  const { asking, cancel, relock } = account.childLock;
+  const self = useRef({}).current;
+  const grownUp = (action: () => void) => {
+    pinAsker = self;
+    account.childLock.grownUp(action);
+  };
+  const guarded = (next: View) => () => grownUp(() => setView(next));
+  // The account closed (another tab of the phone, a film): a PIN given here counts no more, and nothing waits for one.
+  useEffect(
+    () => () => {
+      cancel();
+      relock();
+    },
+    [cancel, relock],
+  );
   const openFriends = (from: View) => {
     setFriendsFrom(from);
     setView("friends");
@@ -163,6 +184,13 @@ export function AccountScreen({
     if (me && view === "main" && account.choosing) setView("picker");
   }, [me, view, account.choosing]);
 
+  if (asking && pinAsker === self) {
+    return (
+      <Page title={t("pin.title")} onBack={cancel} testId="pin-page">
+        <PinAsk />
+      </Page>
+    );
+  }
   if (view === "approve" && linkCode) {
     return (
       <Page title={t("account.signInTv")} onBack={() => setView("devices")} testId="approve-page">
@@ -174,6 +202,7 @@ export function AccountScreen({
     return (
       <Page title={t("settings.title")} onBack={() => setView(settingsFrom)}>
         <SettingsPage
+          grownUp={grownUp}
           onOpenFriends={() => {
             setSettingsFrom("main"); // (the friends' page leads back here, and from here Back goes to the menu: not round again)
             openFriends("settings");
@@ -242,8 +271,13 @@ export function AccountScreen({
           profiles={me.profiles}
           current={profile?.id}
           onPick={(picked) => {
-            account.choose(picked.id);
-            onClose();
+            const go = () => {
+              account.choose(picked.id);
+              onClose();
+            };
+            // (opened with the PIN: asked again only if that was long ago)
+            if (picked.id === profile?.id) go();
+            else grownUp(go);
           }}
         />
       </Page>
@@ -314,8 +348,8 @@ export function AccountScreen({
           {friends.on && profile.tag !== undefined && <YourTag label={tagLabel(profile.name, profile.tag)} testId="account-tag" help={false} />}
           <div className="menu-groups">
             <nav className="menu">
-              {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
-              <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
+              {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={guarded("picker")} testId="menu-switch" />}
+              <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={guarded("profiles")} testId="menu-profiles" />
             </nav>
             {(friends.on || ratingsOn) && (
               <nav className="menu">
@@ -326,17 +360,19 @@ export function AccountScreen({
             <nav className="menu">
               <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => openSettings("main")} testId="menu-settings" />
               {feedbackRow}
-              <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
-              {canConnectGoogle && <MenuRow icon={<GoogleMark />} label={t("account.googleConnect")} onClick={() => account.withGoogle("link")} testId="menu-google" />}
-              <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
+              <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={guarded("devices")} testId="menu-devices" />
+              {canConnectGoogle && <MenuRow icon={<GoogleMark />} label={t("account.googleConnect")} onClick={() => grownUp(() => account.withGoogle("link"))} testId="menu-google" />}
+              <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={guarded("security")} testId="menu-security" />
             </nav>
           </div>
           <button
             className="btn btn-block"
-            onClick={() => {
-              void account.signOut();
-              onClose();
-            }}
+            onClick={() =>
+              grownUp(() => {
+                void account.signOut();
+                onClose();
+              })
+            }
             data-testid="sign-out"
           >
             <LogoutIcon /> {t("auth.signOut")}

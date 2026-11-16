@@ -17,15 +17,22 @@ import { keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, pickableLanguages
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
-import { CheckIcon, ChevronIcon, InfoIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { handHeld } from "../shared/backButton";
 import { BackButton, Screen } from "./Idle";
+import { TvPinAsk, TvPinSetup } from "./Pin";
 import { TvCode } from "./TvCode";
 
-/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles, and the pages of the settings that open from a row of it (the subtitle languages, the cat). */
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat";
+/**
+ * The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles,
+ * and the pages of the settings that open from a row of it (the subtitle languages, the cat, the PIN of a child's profile).
+ */
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat" | "pin";
+
+/** A page of the settings that Back comes from to the panel: the remote lands on its row again. */
+type SettingsPage = "subtitles" | "cat" | "pin";
 
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
@@ -391,9 +398,15 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
     );
   }
 
+  // (A child's profile is left with the PIN only: see `ChildLock`. These pages were opened with it; it is asked again if that was long ago.)
+  const grownUp = account.childLock.grownUp;
   const pick = (picked: Profile) => {
-    account.choose(picked.id);
-    onDone();
+    const go = () => {
+      account.choose(picked.id);
+      onDone();
+    };
+    if (picked.id === account.profile?.id) go();
+    else grownUp(go);
   };
   const doneManaging = manage ? onBack : () => setManaging(false);
   return (
@@ -415,10 +428,10 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
           </button>
         ) : (
           <>
-            <button className="tv-action" onClick={() => setManaging(true)} data-nav data-testid="tv-profiles-manage">
+            <button className="tv-action" onClick={() => grownUp(() => setManaging(true))} data-nav data-testid="tv-profiles-manage">
               {t("profiles.manage")}
             </button>
-            <button className="tv-action" onClick={() => void account.signOut().then(onDone)} data-nav data-testid="tv-profiles-signout">
+            <button className="tv-action" onClick={() => grownUp(() => void account.signOut().then(onDone))} data-nav data-testid="tv-profiles-signout">
               {t("auth.signOut")}
             </button>
           </>
@@ -481,6 +494,7 @@ export function TvAccountPanel({
   onManage,
   onSubtitles,
   onCat,
+  onPin,
   cameFrom,
 }: {
   onClose: () => void;
@@ -490,8 +504,9 @@ export function TvAccountPanel({
   onManage: () => void;
   onSubtitles: () => void;
   onCat: () => void;
+  onPin: () => void;
   /** The page of the settings Back came from: the remote lands on its row again, not at the top. */
-  cameFrom?: "subtitles" | "cat" | undefined;
+  cameFrom?: SettingsPage | undefined;
 }) {
   const t = useT();
   const language = useLanguage();
@@ -510,6 +525,7 @@ export function TvAccountPanel({
   // (how the row stands, short: the first language chosen and how many more; nothing while the defaults apply)
   const subtitlesValue = chosenSubtitles.length === 0 ? undefined : chosenSubtitles.length === 1 ? subtitleName(chosenSubtitles[0]!) : `${subtitleName(chosenSubtitles[0]!)} +${chosenSubtitles.length - 1}`;
   const top = cameFrom === undefined; // (the first row of the profile lands the remote, unless it came back from a page of the settings)
+  const grownUp = account.childLock.grownUp; // (what leaves a child's profile asks for the PIN first: see `ChildLock`)
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-set">
@@ -542,7 +558,7 @@ export function TvAccountPanel({
                   {several && <SettingsLine icon={<UsersIcon />} label={t("profiles.switch")} onPress={onSwitch} testId="tv-switch-profile" autoFocus={top} />}
                   <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={top && !several} />
                   <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
-                  {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => account.withGoogle("link")} testId="tv-connect-google" />}
+                  {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => grownUp(() => account.withGoogle("link"))} testId="tv-connect-google" />}
                 </>
               ) : (
                 account.status === "ready" && (
@@ -556,7 +572,9 @@ export function TvAccountPanel({
             </SettingsGroup>
             {me && profile && (
               <SettingsGroup testId="tv-group-account">
-                <SettingsLine icon={<LogoutIcon />} label={t("auth.signOut")} onPress={() => void account.signOut().then(onClose)} testId="tv-sign-out" tone="danger" />
+                {/* (The PIN is the account's, asked on a child's profile: set from any of its profiles, and changed or taken off with the one there is.) */}
+                <SettingsLine icon={<LockIcon />} label={t("pin.setting")} value={me.account.childPin ? t("common.on") : t("common.off")} onPress={onPin} testId="tv-pin-setting" autoFocus={cameFrom === "pin"} />
+                <SettingsLine icon={<LogoutIcon />} label={t("auth.signOut")} onPress={() => grownUp(() => void account.signOut().then(onClose))} testId="tv-sign-out" tone="danger" />
               </SettingsGroup>
             )}
           </div>
@@ -619,8 +637,12 @@ export function TvAccountPanel({
                 label={t("settings.child")}
                 on={child}
                 onToggle={() => {
-                  set("child", child ? undefined : true);
-                  account.syncNow(); // (the server turns the friends off at once)
+                  const change = () => {
+                    set("child", child ? undefined : true);
+                    account.syncNow(); // (the server turns the friends off at once)
+                  };
+                  if (child) grownUp(change); // (made an ordinary profile again: with the PIN, if there is one)
+                  else change();
                 }}
                 testId="tv-child"
               />
@@ -815,9 +837,19 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
 
 /** Whichever page of the account is open. `forced`: signed in with nobody chosen yet, which can't be skipped. */
 export function TvAccount({ view, onView, forced }: { view: AccountView; onView: (view: AccountView | null) => void; forced: boolean }) {
+  const account = useAccount();
+  const { asking, grownUp, cancel, relock } = account.childLock;
   const [fromPanel, setFromPanel] = useState(false); // (signing in was opened from the panel: Back goes there, not out to the library)
-  const [cameFrom, setCameFrom] = useState<"subtitles" | "cat" | undefined>(undefined); // (the page of the settings Back came from, for the remote to land on its row)
-  const backFrom = (page: "subtitles" | "cat") => () => {
+  const [cameFrom, setCameFrom] = useState<SettingsPage | undefined>(undefined); // (the page of the settings Back came from, for the remote to land on its row)
+  // The account's pages closed (back to the library, or a film): a PIN given here counts no more, and nothing waits for one.
+  useEffect(
+    () => () => {
+      cancel();
+      relock();
+    },
+    [cancel, relock],
+  );
+  const backFrom = (page: SettingsPage) => () => {
     setCameFrom(page);
     onView("panel");
   };
@@ -825,10 +857,14 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
     setCameFrom(undefined);
     onView(page);
   };
+  /** A page that a child's profile could be left from (another profile chosen, the profiles changed, another screen signed in): the PIN first. */
+  const guarded = (page: AccountView) => () => grownUp(open(page));
+  if (asking) return <TvPinAsk />;
   if (view === "signin") return <TvSignIn onClose={() => onView(null)} onBack={() => onView(fromPanel ? "panel" : null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
   if (view === "subtitles") return <TvSubtitleLanguages onBack={backFrom("subtitles")} />;
   if (view === "cat") return <TvCatSettings onBack={backFrom("cat")} />;
+  if (view === "pin") return <TvPinSetup onBack={backFrom("pin")} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
   return (
     <TvAccountPanel
@@ -837,11 +873,12 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
         setFromPanel(true);
         onView("signin");
       }}
-      onApprove={open("approve")}
-      onSwitch={open("profiles")}
-      onManage={open("manage")}
+      onApprove={guarded("approve")}
+      onSwitch={guarded("profiles")}
+      onManage={guarded("manage")}
       onSubtitles={open("subtitles")}
       onCat={open("cat")}
+      onPin={open("pin")}
       cameFrom={cameFrom}
     />
   );

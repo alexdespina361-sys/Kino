@@ -342,7 +342,7 @@ function slideAlong(element: HTMLElement) {
 export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice, quiet = false }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
-  const { status: accountStatus, me, profile, say, withGoogle } = useAccount();
+  const { status: accountStatus, me, profile, say, withGoogle, childLock } = useAccount();
   /** The profile's page offers to connect Google to an account that has none yet (see `useCanConnectGoogle`). */
   const canConnectGoogle = useCanConnectGoogle();
   const friends = useFriends();
@@ -749,7 +749,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /** What a phone's bar has no room for, as buttons after Feedback (none on a screen whose menu has a line for each). */
   const places = few ? (child ? [phonePlace] : [partyPlace, phonePlace]) : [];
   /** For an account that has no Google account yet: a button after all the others on the profile's page that goes to Google to connect one. */
-  const connectGoogle = canConnectGoogle && signedIn ? () => withGoogle("link") : undefined;
+  // (Not on a child's profile that the PIN keeps: Google is connected from the settings, which ask for it.)
+  const connectGoogle = canConnectGoogle && signedIn && !childLock.locked ? () => withGoogle("link") : undefined;
   /** The profile's name#tag, where friends are on: shown under its name, and copied by the last button of all. */
   const myTag = signedIn && friends.on && profile?.tag !== undefined ? tagLabel(profile.name, profile.tag) : undefined;
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */

@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { COLLECTIONS, MeSchema, type AvatarId, type DeviceKind, type GoogleOutcome, type Me, type Profile, type Registration } from "../../shared";
+import { COLLECTIONS, MeSchema, type AvatarId, type ChildPinChange, type DeviceKind, type GoogleOutcome, type Me, type Profile, type Registration } from "../../shared";
+import { useForAWhile } from "../shared/forAWhile";
 import { readStorage, writeStorage } from "../shared/format";
 import { screenLanguage, setLanguage, t, type Key } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
 import { describeError } from "./errors";
-import { deleteAfterGoogle, googleStartUrl, takeGoogleOutcome, type GooglePurpose } from "./google";
+import { deleteAfterGoogle, googleStartUrl, pinAfterGoogle, takeGoogleOutcome, type GooglePurpose } from "./google";
+import { pinAnswer, type PinAnswer } from "./pin";
 import { applyAccent } from "./theme";
 import "./account.css";
 import { GUEST } from "./profileStore";
@@ -38,6 +40,31 @@ const FINAL_SYNC_MS = 2_500;
 
 /** How much a piece of news from friends matters to a viewer who is in the middle of a film: an invitation to something under way, or anything else (which can wait in the bell). */
 export type NewsLevel = "urgent" | "info";
+
+/** A PIN given on a child's profile lets it be left for this long at most (and only until the profile changes, or the account's pages close: `relock`). */
+const UNLOCK_MS = 10 * 60_000;
+
+/**
+ * The PIN of a child's profile (the owner, 16 Nov 2026; see `CHILD_PIN_LENGTH` in shared/account.ts): while this screen's profile is a child's and the account has a
+ * PIN, the profile is not left until the PIN is given. The screens ask for it (`grownUp`) and show the page for it while `asking`; what they would call here to leave
+ * (`choose`, `signOut`, the profiles' changes, Google) refuses while it is `locked`, so a way out a screen forgot to ask on is a dead button, not a way out.
+ */
+export interface ChildLock {
+  /** The profile is a child's (or its settings are not known yet), the account has a PIN, and the PIN has not been given since the profile was chosen. */
+  locked: boolean;
+  /** A PIN is being asked for: the TV shows its page for it, the phone its sheet. */
+  asking: boolean;
+  /** Do `action` now if the profile may be left, else once the PIN is given (and never if it is not). */
+  grownUp(action: () => void): void;
+  /** The PIN, typed where it was asked: right, and what was waiting is done. */
+  unlock(pin: string): Promise<PinAnswer>;
+  /** The PIN forgotten: the account's password takes it off, and what was waiting is done. (An account made with Google confirms with Google: `withGoogle("pin")`.) */
+  forgot(password: string): Promise<PinAnswer>;
+  /** Not now: what was waiting is dropped. */
+  cancel(): void;
+  /** Ask again from now on (the account's pages were closed). */
+  relock(): void;
+}
 
 /** What the page says when the browser comes back from Google (a sign-in that worked says nothing, and a confirmation is the deleting's own business). */
 const GOOGLE_SAYS: Record<Exclude<GoogleOutcome, "reauth">, Key> = {
@@ -87,6 +114,9 @@ export interface AccountContextValue {
   /** Start an exchange with the server now (the screen is about to stop, or has just paused). */
   syncNow(): void;
   refresh(): Promise<void>;
+  childLock: ChildLock;
+  /** Set the PIN of a child's profile, change it, or take it off. A refusal is thrown (an `ApiError`: `wrong_pin`, `invalid_credentials`, `pin_required`...). */
+  changeChildPin(change: ChildPinChange): Promise<void>;
 }
 
 const AccountContext = createContext<AccountContextValue | null>(null);
@@ -169,7 +199,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
 
   // The language and colour a profile chose follow it onto every screen it uses. One that chose no language leaves the screen in its own (not in the language of the profile
   // or the guest before it, which a shared TV would otherwise keep until the page was loaded again).
-  const { settings } = useProfileData();
+  const { settings, scope: openScope, waiting } = useProfileData();
   popupsRef.current = settings.newsPopups !== false;
   useEffect(() => {
     setLanguage(settings.lang ?? screenLanguage(), false);
@@ -261,10 +291,124 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
     };
   }, [syncing, status, load, say]);
 
+  /* ------------------------------ the PIN of a child's profile ------------------------------ */
+
+  // (See `ChildLock`.) A profile whose settings are not known yet (new to this screen, or the server not asked yet) is held as a child's, for HOLD_MS at most.
+  const child = settings.child === true;
+  const unsure = useForAWhile(me !== null && profile !== null && (status === "loading" || openScope !== profile.id || waiting));
+  const childRef = useRef(child);
+  childRef.current = child;
+  const unsureRef = useRef(unsure);
+  unsureRef.current = unsure;
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const unlockedRef = useRef<{ id: string; at: number } | null>(null);
+  const [unlockedFor, setUnlockedFor] = useState<string | null>(null);
+  const pendingRef = useRef<(() => void) | null>(null);
+  const [asking, setAsking] = useState(false);
+
+  /** Whether leaving the profile waits for the PIN now (`who`: the account as just told, before the page has it). */
+  const lockedNow = useCallback((who: Me | null = meRef.current): boolean => {
+    const current = profileRef.current;
+    if (!who?.account.childPin || !current || !(childRef.current || unsureRef.current)) return false;
+    const unlocked = unlockedRef.current;
+    return !(unlocked && unlocked.id === current.id && Date.now() - unlocked.at < UNLOCK_MS);
+  }, []);
+
+  // Another profile: whatever was given for the one before counts no more, and nothing waits.
+  useEffect(() => {
+    unlockedRef.current = null;
+    setUnlockedFor(null);
+    pendingRef.current = null;
+    setAsking(false);
+  }, [profile?.id]);
+
+  const askPin = useCallback((action: () => void) => {
+    pendingRef.current = action;
+    setAsking(true);
+  }, []);
+  /** The PIN was given (or there is none any more): the profile may be left until it changes, and what waited is done. */
+  const letGo = useCallback(() => {
+    const current = profileRef.current;
+    unlockedRef.current = current ? { id: current.id, at: Date.now() } : null;
+    setUnlockedFor(current?.id ?? null);
+    const action = pendingRef.current;
+    pendingRef.current = null;
+    setAsking(false);
+    action?.();
+  }, []);
+
+  const grownUp = useCallback(
+    (action: () => void) => {
+      if (lockedNow()) return askPin(action);
+      // A screen that has been on for a while may not know that a PIN was set on another one since: a child's profile asks the server once before it is left.
+      if (profileRef.current && childRef.current && !meRef.current?.account.childPin) {
+        void api.session().then(
+          (state) => {
+            setMe(state.me);
+            if (lockedNow(state.me)) askPin(action);
+            else action();
+          },
+          () => action(), // (not reachable: nothing says there is a PIN)
+        );
+        return;
+      }
+      action();
+    },
+    [lockedNow, askPin],
+  );
+
+  const unlock = useCallback(
+    async (pin: string): Promise<PinAnswer> => {
+      try {
+        await api.checkChildPin(pin);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === "no_pin")) return pinAnswer(error);
+        void load(); // (taken off on another screen: there is nothing to ask, and this screen finds out)
+      }
+      letGo();
+      return { ok: true };
+    },
+    [load, letGo],
+  );
+
+  const forgot = useCallback(
+    async (password: string): Promise<PinAnswer> => {
+      try {
+        const updated = await api.changeChildPin({ next: null, password });
+        meRef.current = updated; // (what waits is done at once, before the page has the account as it is now)
+        setMe(updated);
+      } catch (error) {
+        return pinAnswer(error);
+      }
+      say(t("pin.removed"));
+      letGo();
+      return { ok: true };
+    },
+    [say, letGo],
+  );
+
+  const cancelPin = useCallback(() => {
+    pendingRef.current = null;
+    setAsking(false);
+  }, []);
+  const relock = useCallback(() => {
+    unlockedRef.current = null;
+    setUnlockedFor(null);
+  }, []);
+
+  const locked = lockedNow(me);
+  const childLock = useMemo<ChildLock>(
+    () => ({ locked, asking, grownUp, unlock, forgot, cancel: cancelPin, relock }),
+    // (`unlockedFor`, `child` and `unsure` change what `locked` is: it is worked out from them, through the refs above.)
+    [locked, asking, grownUp, unlock, forgot, cancelPin, relock, unlockedFor, child, unsure],
+  );
+
   /* ------------------------------ actions ------------------------------ */
 
   const signOut = useCallback(
     async (options?: { deleted?: boolean }) => {
+      if (!options?.deleted && lockedNow()) return; // (a child's profile is not left without the PIN: see `ChildLock`)
       const leaving = meRef.current;
       // (An account that was just deleted has no session left: a last exchange would only be told so, and take it for a sign-out elsewhere.)
       if (!options?.deleted) {
@@ -285,20 +429,29 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       setMe(null);
       if (options?.deleted) say(t("account.deleted"));
     },
-    [say],
+    [say, lockedNow],
   );
 
   // Back from Google: how it went is said once, as soon as the screen knows who is here. A confirmation that the person went to Google for, to delete the account, deletes it
-  // (the server deletes only for a session that Google has just confirmed; the word in the address alone deletes nothing).
+  // (the server deletes only for a session that Google has just confirmed; the word in the address alone deletes nothing); one to take off a forgotten PIN takes it off.
   const backFromGoogle = useRef(fromGoogle);
   useEffect(() => {
     if (status !== "ready") return;
     const outcome = backFromGoogle.current;
     backFromGoogle.current = null;
     const deleting = deleteAfterGoogle.take();
+    const unpinning = pinAfterGoogle.take();
     if (!outcome) return;
     if (outcome !== "reauth") return say(t(GOOGLE_SAYS[outcome]));
     if (deleting) void api.deleteAccount("").then(() => signOut({ deleted: true }), (error: unknown) => say(describeError(error)));
+    else if (unpinning)
+      void api.changeChildPin({ next: null }).then(
+        (updated) => {
+          setMe(updated);
+          say(t("pin.removed"));
+        },
+        (error: unknown) => say(describeError(error)),
+      );
   }, [status, say, signOut]);
 
   const value = useMemo<AccountContextValue>(
@@ -313,7 +466,9 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       say,
 
       withGoogle(purpose) {
+        if (purpose !== "pin" && lockedNow()) return; // (taking off a forgotten PIN is the one way to Google a locked child's profile has)
         if (purpose === "delete") deleteAfterGoogle.ask();
+        if (purpose === "pin") pinAfterGoogle.ask();
         location.assign(googleStartUrl(device, purpose, location.pathname));
       },
       async signIn(email, password) {
@@ -331,18 +486,22 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         setMe(signedIn);
       },
       choose(id) {
+        if (id !== profileRef.current?.id && lockedNow()) return; // (see `ChildLock`)
         setProfileId(id);
       },
       async addProfile(name, avatar) {
+        if (lockedNow()) return undefined;
         const before = new Set(meRef.current?.profiles.map((candidate) => candidate.id));
         const updated = await api.addProfile(name, avatar);
         setMe(updated);
         return updated.profiles.find((candidate) => !before.has(candidate.id));
       },
       async updateProfile(id, patch) {
+        if (lockedNow()) return;
         setMe(await api.updateProfile(id, patch));
       },
       async deleteProfile(id) {
+        if (lockedNow()) return;
         setMe(await api.deleteProfile(id));
         profileStore.forget(id);
       },
@@ -352,8 +511,12 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       async refresh() {
         await load();
       },
+      childLock,
+      async changeChildPin(change) {
+        setMe(await api.changeChildPin(change));
+      },
     }),
-    [status, me, registration, google, profile, message, say, signOut, device, load],
+    [status, me, registration, google, profile, message, say, signOut, device, load, childLock, lockedNow],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
