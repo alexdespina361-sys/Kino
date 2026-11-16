@@ -124,7 +124,8 @@ test.describe("the profile's page", () => {
       { name: "a small phone held sideways", width: 568, height: 320 },
     ]) {
       test(`its head, its places and what they say fit the screen: ${language.name}, ${screen.name}`, async ({ browser }) => {
-        const tv = await openDevice(browser, { viewport: { width: screen.width, height: screen.height }, locale: language.locale }, seed, withLibrary(library));
+        // (A profile with nothing yet: its places then say what they are for, the longest words they have, two lines.)
+        const tv = await openDevice(browser, { viewport: { width: screen.width, height: screen.height }, locale: language.locale }, guestStorage({}), withLibrary(library));
         await tv.goto("/tv");
         await expect(tv.getByTestId("tv-browse")).toBeVisible();
         // The menu's lines are all on the screen without scrolling it (a click on a line below the edge scrolls the menu to it, which would hide the fault).
@@ -134,7 +135,8 @@ test.describe("the profile's page", () => {
         await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
         await expect(tv.getByTestId("tv-category-tile")).toHaveCount(2);
 
-        // Every word of a tile is inside it (a name or a note that does not fit is cut, and what is cut is not read).
+        // Every word of a tile is inside it (a name or a note that does not fit is cut, and what is cut is not read), the bottom of its letters too: a card of a
+        // fixed height squeezed its name under a note of two lines, and "My ratings" lost the foot of its g (the owner's report of 15 Nov).
         const cut = await tv.getByTestId("tv-category-tile").evaluateAll((all) =>
           all.flatMap((one) => {
             const tile = one.getBoundingClientRect();
@@ -142,7 +144,7 @@ test.describe("the profile's page", () => {
               .filter((text) => {
                 const at = text.getBoundingClientRect();
                 const outside = at.top < tile.top - 0.5 || at.bottom > tile.bottom + 0.5 || at.left < tile.left - 0.5 || at.right > tile.right + 0.5;
-                return outside || text.scrollWidth > text.clientWidth + 1;
+                return outside || text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1;
               })
               .map((text) => `${one.getAttribute("data-entry")}: ${text.textContent}`);
           }),
