@@ -19,7 +19,15 @@ export function noteStrayAddress(): void {
   history.replaceState(history.state, "", `/${location.search}${location.hash}`);
 }
 
-/** Whether this page load came from such an address: once (the library is drawn again after every film, and says it only the first time). */
+/** Whether this page load came from such an address, until that has been said (`forgetStrayAddress`): a page drawn again does not say it again. */
+export const strayAddress = (): boolean => stray;
+
+/** It has been said. */
+export function forgetStrayAddress(): void {
+  stray = false;
+}
+
+/** Whether this page load came from such an address, and it has been said from now on (for a caller that keeps the line itself, as the library does). */
 export function takeStrayAddress(): boolean {
   const was = stray;
   stray = false;

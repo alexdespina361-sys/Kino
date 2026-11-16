@@ -380,12 +380,13 @@
 :root[data-ui="polish"] .tv-view-title { font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-view-meta { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
 /* (A row of buttons right under the line of a page's name had it nearly touching them: "0 titles" over the list's buttons - the judge, 16 Nov.) */
-:root[data-ui="polish"] .tv-view > :is(.tv-view-meta, .tv-view-hint) + .tv-filters { margin-top: 0.3em; }
+:root[data-ui="polish"] .tv-view > .tv-view-meta + .tv-filters,
+:root[data-ui="polish"] .tv-view > .tv-view-hint + .tv-filters { margin-top: 0.3em; }
 :root[data-ui="polish"] .tv-view-hint { font-size: var(--fs-1); font-weight: 500; color: var(--text-3); }
 :root[data-ui="polish"] .tv-view-empty { font-size: var(--fs-4); color: var(--text-3); }
 :root[data-ui="polish"] .tv-welcome p { font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-4); color: var(--text-2); }
 /* (What Kino is, in a line, on the welcome that waits for a press: the judge, 16 Nov, found only "Welcome" and a button.) */
-:root[data-ui="polish"] .tv-welcome p.tv-welcome-about { max-width: 40em; margin-top: calc(var(--em) * -0.4); padding: 0 1em; font-size: var(--fs-2); font-weight: 500; letter-spacing: 0; line-height: 1.4; text-align: center; text-wrap: balance; color: var(--text-3); }
+:root[data-ui="polish"] .tv-welcome p.tv-welcome-about { max-width: 40em; margin-top: calc(var(--em) * -0.4); padding: 0 1em; font-size: var(--fs-2); font-weight: 500; letter-spacing: 0; line-height: 1.4; text-align: center; color: var(--text-3); }
 
 /* ------------------------------ buttons, and everything that is a button for a remote ------------------------------ */
 
@@ -1103,12 +1104,18 @@
 /* ...and what a thumb presses is 44 px high (Apple's; they were 31 to 32, the corner's 32 by 32: the judge, 16 Nov). A title's Play, the lists, Play on TV and Rate, and
    the profile's page's buttons are that high; the banner's and the corner's keep the size they have, as the page has no height to give them and still show a row of
    titles under the banner (handheld.spec.ts), and what a thumb lands on reaches 7 px past them, up and down. */
-:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ :is(.tv-detail, .tv-hero-profile) .tv-hero-button { min-height: 44px; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-detail .tv-hero-button,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero-profile .tv-hero-button { min-height: 44px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero:not(.tv-hero-profile) .tv-hero-button,
-:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top :is(.tv-corner-button, .tv-account-chip, .tv-back) { position: relative; inset: auto; } /* (the chip's own offsets are a TV's, kept out) */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-corner-button,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-account-chip,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-back { position: relative; inset: auto; } /* (the chip's own offsets are a TV's, kept out) */
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero:not(.tv-hero-profile) .tv-hero-button::after,
-:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top :is(.tv-corner-button, .tv-account-chip, .tv-back)::after { content: ""; position: absolute; z-index: 1; inset: -7px 0; }
-:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top :is(.tv-corner-button, .tv-back)::after { inset: -7px -5px; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-corner-button::after,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-account-chip::after,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-back::after { content: ""; position: absolute; z-index: 1; inset: -7px 0; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-corner-button::after,
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-back::after { inset: -7px -5px; }
 
 /* The search field of a page under 900 px wide (Browse.tsx `narrow`: a phone either way up, a small window), whatever the height: one cross that empties
    it, a button a thumb's size in the field's right end, and not the browser's own as well. (A phone on its side had both, the app's at 10 by 14 px and

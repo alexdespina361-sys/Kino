@@ -77,6 +77,8 @@ interface BrowseProps {
   partySize: number;
   /** Said when the title that was just chosen would not play. */
   notice?: string | null;
+  /** The welcome is over the library: the library's own line (see `remembered.notice`) waits to start its time. */
+  quiet?: boolean;
 }
 
 /** What the screen looked like when it was left, so coming back from a film lands on the same title, at once. */
@@ -98,8 +100,11 @@ const remembered = {
   tile: {} as Record<string, string>,
   /** The page of a show that an episode was started from, and the season it was showing: the library comes back to it, to pick the next one (or another, when that one would not play). */
   detail: null as { page: Focused; season: number | undefined } | null,
-  /** The library's own line over Home (a link that leads nowhere), and until when it is shown: a library drawn again meanwhile shows it too, and a film ends it. */
-  notice: null as { text: string; until: number } | null,
+  /**
+   * The library's own line over Home (a link that leads nowhere), and until when it is shown (none yet while the welcome is over the library: its time starts
+   * when the welcome has gone). A library drawn again meanwhile shows it too, and a film ends it.
+   */
+  notice: null as { text: string; until: number | null } | null,
 };
 
 /** How long the library's own line stays (the TV's lines about a film stay as long: Tv.tsx). */
@@ -107,6 +112,8 @@ const NOTICE_MS = 8000;
 
 /** Something else than that show plays: the library comes back to its tile, not to the page. (`link` is the page the video came from.) */
 export function keepPageFor(link: string | undefined) {
+  dropLink(); // (a film started from anywhere - the phone, the party - before a link's answer came: the library after it is not the link's page)
+  remembered.notice = null;
   const kept = remembered.detail;
   if (kept && (!link || titleLink(link) !== titleLink(kept.page.entry.url))) remembered.detail = null;
   // (Nor does the address go on naming a title whose page will not be there: a reload, during the film or after it, comes back to the library, not to that page.)
@@ -305,7 +312,7 @@ function slideAlong(element: HTMLElement) {
  * the menu, OK on a title opens its own page (play it, keep it in a list), and Back steps out: of that page, of the menu, then to
  * the home page, and from there into the menu.
  */
-export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice }: BrowseProps) {
+export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice, quiet = false }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
   const { status: accountStatus, me, profile, say, withGoogle } = useAccount();
@@ -570,21 +577,24 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // and what the address says then is not a link. Nor is it opened over a page the viewer went to meanwhile, or after a film started from one.
   // A link whose title nobody knows (`?title=movie-0`, `?title=x`), or an address that is no page of the site (shared/strayAddress.ts), says so in a line over
   // Home, and the address loses the title: it used to be Home without a word (the judge, 16 Nov).
-  const [linked] = useState(() => pendingLink());
-  const linkPending = () => linked !== null && pendingLink() !== null;
+  const [linked] = useState(() => pendingLink());  const linkPending = () => linked !== null && pendingLink() !== null;
   const [ownNotice, setOwnNoticeState] = useState<string | null>(() => {
-    if (takeStrayAddress()) remembered.notice = { text: t("notice.noSuchPage"), until: Date.now() + NOTICE_MS };
-    return remembered.notice && remembered.notice.until > Date.now() ? remembered.notice.text : null;
+    if (takeStrayAddress()) remembered.notice = { text: t("notice.noSuchPage"), until: null };
+    const kept = remembered.notice;
+    return kept && (kept.until === null || kept.until > Date.now()) ? kept.text : null;
   });
   const setOwnNotice = (text: string | null) => {
-    remembered.notice = text ? { text, until: Date.now() + NOTICE_MS } : null;
+    remembered.notice = text ? { text, until: null } : null;
     setOwnNoticeState(text);
   };
+  // (Its time runs once nothing is over the library: a TV's welcome can wait a long while for its first press.)
   useEffect(() => {
-    if (!ownNotice) return;
-    const timer = setTimeout(() => setOwnNotice(null), Math.max(0, (remembered.notice?.until ?? 0) - Date.now()));
+    const kept = remembered.notice;
+    if (!ownNotice || !kept || quiet) return;
+    kept.until ??= Date.now() + NOTICE_MS;
+    const timer = setTimeout(() => setOwnNotice(null), Math.max(0, kept.until - Date.now()));
     return () => clearTimeout(timer);
-  }, [ownNotice]);
+  }, [ownNotice, quiet]);
   const detailRef = useRef(detail);
   detailRef.current = detail;
   useEffect(() => {

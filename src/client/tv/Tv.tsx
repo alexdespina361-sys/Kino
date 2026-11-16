@@ -205,6 +205,8 @@ export function Tv() {
   screenRef.current = screen;
   /** Said on the library when a title that was just chosen would not play. */
   const [notice, setNotice] = useState<string | null>(null);
+  /** The host whose party this screen was let go from as its page opened, until the library says so (see TV_WELCOME `leftParty`). */
+  const [leftParty, setLeftParty] = useState<string | null>(null);
   /** A line said over the library for a moment ("A phone is connected."). */
   const [flash, setFlash] = useState<{ id: number; text: string } | null>(null);
   const flashIdRef = useRef(0);
@@ -724,8 +726,8 @@ export function Tv() {
             setControl(null);
             setParty(null); // a party this TV is in is sent right after
             setPartyEnds(null);
-            // (Opened again after the host's page had been closed a while: the library, not that party, and a line that says why. See hub.ts `tvHello`.)
-            if (message.leftParty) setNotice(t("party.leftGone", { name: message.leftParty }));
+            // (Opened again after the host's page had been closed a while: the library, not that party, and a line that says why, once the welcome is gone. See hub.ts `tvHello`.)
+            if (message.leftParty) setLeftParty(message.leftParty);
             if (!message.following) {
               const media = currentMediaRef.current;
               // (What it has on goes along, for a server that has forgotten: see `TV_STATE.media`.)
@@ -992,6 +994,12 @@ export function Tv() {
     const timer = setTimeout(() => setNotice(null), 8000);
     return () => clearTimeout(timer);
   }, [notice]);
+  // The party this screen was let go from as it opened (TV_WELCOME `leftParty`) is said once the welcome is off the library: a TV's welcome can wait a while for its first press.
+  useEffect(() => {
+    if (!leftParty || !unlocked || welcoming) return;
+    setNotice(t("party.leftGone", { name: leftParty }));
+    setLeftParty(null);
+  }, [leftParty, unlocked, welcoming]);
 
   // The film's screen gives way once the picture moves (or is there, held where it was left, for a film put back): it fades, and the TV says how long
   // the wait was. A film that was stopped, would not play, or wants a press first has its own card (or the page it was chosen on) at once.
@@ -1722,6 +1730,7 @@ export function Tv() {
           connected={paired}
           partySize={party ? party.guests.length + 1 : 0}
           notice={notice}
+          quiet={welcoming}
         />
       )}
 
