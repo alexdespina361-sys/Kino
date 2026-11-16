@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { currentLookup, newLookup, runLookup, upstreamSummary } from "./lookup";
+import { currentLookup, newLookup, noteExtrasWait, runLookup, upstreamSummary } from "./lookup";
 import { providerFetch } from "./providerFetch";
 import { ResolverRegistry, TOO_LONG } from "./registry";
 import { SafeFetchError } from "./safe-fetch";
@@ -180,6 +180,15 @@ describe("where a look-up spent its time", () => {
     const registry = new ResolverRegistry([], { id: "g", resolve: async () => ok("g") }, log);
     await registry.resolve("https://a.example/1");
     expect(events[0]).not.toHaveProperty("upstream");
+  });
+
+  it("logs how long the film waited for its extras once the stream was known (the waits added up), and nothing when it did not wait", async () => {
+    const waiting: SiteAdapter = { id: "waiting", domains: [], resolve: async () => (noteExtrasWait(120.4), noteExtrasWait(30), ok("waiting")) };
+    await new ResolverRegistry([], waiting, log).resolve("https://a.example/1");
+    expect(events[0]).toMatchObject({ success: true, extrasWaitMs: 150 });
+    await new ResolverRegistry([], { id: "g", resolve: async () => ok("g") }, log).resolve("https://a.example/2");
+    expect(events[1]).not.toHaveProperty("extrasWaitMs");
+    noteExtrasWait(50); // (outside a look-up: nowhere to write it, and no error)
   });
 
   it("ends a question asked through providerFetch when the look-up it is part of ends", async () => {

@@ -176,6 +176,8 @@ export class ResolverRegistry {
         ...(result.status !== "success" && { reason: timedOut ? "TIMEOUT" : result.status.toUpperCase() }),
         ...(isPrefetch && { prefetch: true }),
         durationMs: this.now() - started,
+        // (Of that, the time the film waited for its subtitles and dub once the stream was known: see `noteExtrasWait`.)
+        ...(lookup.extrasWaitMs !== undefined && { extrasWaitMs: Math.round(lookup.extrasWaitMs) }),
         ...(upstream && { upstream }),
       },
       "resolve",

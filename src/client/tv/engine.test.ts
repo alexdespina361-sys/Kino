@@ -235,6 +235,26 @@ describe("a picture that comes through this server", () => {
     return hls;
   };
 
+  it("notes where the load's time went: the list of qualities, then the first piece of picture (its length, size and height), not the sound's", async () => {
+    let now = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const { engine } = newEngine();
+    await engine.load(PROXIED, "hls", undefined, 600); // (a resume)
+    const hls = Object.assign(FakeHls.instances.at(-1)!, { levels });
+    now = 1310;
+    hls.emit("manifestParsed", { levels });
+    now = 1500;
+    hls.emit("fragLoaded", { frag: { type: "audio", duration: 4, level: 0, stats: { loaded: 99_000 } } });
+    now = 2220;
+    hls.emit("fragLoaded", { frag: { type: "main", duration: 6.02, level: 0, stats: { loaded: 860_160 } } });
+    now = 3000;
+    hls.emit("fragLoaded", { frag: { type: "main", duration: 6, level: 2, stats: { loaded: 4_000_000 } } }); // (only the first one is it)
+    expect(engine.startup()).toEqual({ resumed: true, manifestMs: 310, pieceMs: 1220, pieceS: 6, pieceKB: 840, height: 360 });
+    await engine.load(PROXIED, "hls"); // a new film starts a new note
+    expect(engine.startup()).toEqual({});
+    engine.destroy();
+  });
+
   it("leaves the player's own choice of quality to stop at 720p", async () => {
     expect((await parsed(PROXIED)).autoLevelCapping).toBe(1);
   });

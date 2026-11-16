@@ -205,6 +205,21 @@ export function formatQualityLabel(width?: number, height?: number, name?: strin
   return "SD";
 }
 
+/** Where the load of a film spent its time (see `PlayerEngine.startup`), in milliseconds from the start of the load. */
+export interface StartupNote {
+  /** It started further in than the beginning (a resume): its first piece is the one at that place. */
+  resumed?: boolean;
+  /** hls.js: the list of the qualities came. */
+  manifestMs?: number;
+  /** hls.js: the first piece of picture came; how long it plays (seconds), its size (KB) and its picture's height. */
+  pieceMs?: number;
+  pieceS?: number;
+  pieceKB?: number;
+  height?: number;
+  /** The browser knew the film's length and size (for a file, its index came). */
+  metadataMs?: number;
+}
+
 /**
  * Thin wrapper around one <video>. Reports its real state through `onChange` on every media event
  * and once per second while it is moving, so the phone always renders what the TV is actually doing.
@@ -248,6 +263,9 @@ export class PlayerEngine {
   private corsTrial = false;
   /** The aligner has just put another subtitle track on screen: the page says nothing about it (see `quiet`). */
   private quietUntil = 0;
+  /** How the film that is loading came in (see `startup`), and when its load began. */
+  private startupNote: StartupNote = {};
+  private loadBegan = 0;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -256,6 +274,7 @@ export class PlayerEngine {
   ) {
     video.setAttribute?.("referrerpolicy", "no-referrer");
     video.addEventListener("loadedmetadata", () => {
+      if (this.hasSource) this.startupNote.metadataMs ??= this.sinceLoad();
       clearTimeout(this.directTimer);
       this.corsTrial = false;
       this.loading = false;
@@ -294,8 +313,22 @@ export class PlayerEngine {
     this.ticker = setInterval(() => this.hasSource && this.emit(), 1000);
   }
 
+  /**
+   * Where the load of the film that plays spent its time, for the team's record of the wait before a film (TV_STARTED, `playback-started`): numbers only.
+   * Each time is from the start of the load.
+   */
+  startup(): StartupNote {
+    return { ...this.startupNote };
+  }
+
+  private sinceLoad(): number {
+    return Math.max(0, Math.round(performance.now() - this.loadBegan));
+  }
+
   async load(url: string, type: StreamType, subtitles?: SubtitleTrack[], startAt?: number, directUrl?: string): Promise<void> {
     this.teardown();
+    this.loadBegan = performance.now();
+    this.startupNote = startAt && startAt > 0 ? { resumed: true } : {};
     const generation = this.generation;
     this.hasSource = true;
     this.loading = true;
@@ -370,7 +403,18 @@ export class PlayerEngine {
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
       let mediaRecoverAttempts = 0;
       let qualityGiveUps = 0;
-      hls.on(HlsLib.Events.FRAG_LOADED, () => (qualityGiveUps = 0));
+      hls.on(HlsLib.Events.FRAG_LOADED, (_event, data) => {
+        qualityGiveUps = 0;
+        // (The first piece of picture: when it came, how long it plays, its size and its height. The sound's own pieces are not it.)
+        const frag = data?.frag;
+        if (this.startupNote.pieceMs === undefined && frag?.type === "main") {
+          this.startupNote.pieceMs = this.sinceLoad();
+          if (Number.isFinite(frag.duration)) this.startupNote.pieceS = Math.round(frag.duration * 10) / 10;
+          if (frag.stats?.loaded) this.startupNote.pieceKB = Math.round(frag.stats.loaded / 1024);
+          const height = hls.levels?.[frag.level]?.height;
+          if (height) this.startupNote.height = height;
+        }
+      });
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn(describeHlsError(data), {
           type: data.type,
@@ -403,6 +447,7 @@ export class PlayerEngine {
       });
 
       hls.on(HlsLib.Events.MANIFEST_PARSED, (_event, data) => {
+        this.startupNote.manifestMs ??= this.sinceLoad();
         // Not adaptive: the highest quality there is, whatever the connection. (Adaptive leaves the choice to hls.js: see `setAdaptive`.)
         if (!adaptive && data?.levels && data.levels.length > 0) {
           let highestIdx = 0;
