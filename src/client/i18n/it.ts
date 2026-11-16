@@ -173,7 +173,7 @@ export const it: Dictionary = {
   "settings.tapToPause": "Tocca l'immagine per pausa e riproduzione",
   "settings.tapToPauseHelp": "Attivato: un tocco sull'immagine mette in pausa e riprende. Disattivato: mostra solo i comandi.",
   "settings.adaptiveQuality": "Adatta la qualità dell'immagine alla connessione",
-  "settings.adaptiveQualityHelp": "Parte in bassa qualità per iniziare subito, poi va nella migliore che la connessione regge. Disattivato: sempre la più alta.",
+  "settings.adaptiveQualityHelp": "Parte in bassa qualità per iniziare subito, poi va nella migliore che la connessione regge. Disattivato: sempre la più alta (i primi secondi possono essere in 480p, per partire prima).",
   "settings.playbackHelp": "Tocca due volte un lato dell'immagine per saltare; tieni premuto per la velocità doppia.",
   "settings.labs": "Laboratorio",
   "settings.labsHelp": "Extra che stiamo ancora provando. Potrebbero cambiare o sparire.",

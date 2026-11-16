@@ -130,10 +130,12 @@ export const DIRECT_START_MS = 12_000;
 /**
  * With Auto off (every piece in the highest quality), the first piece of a film comes in 480p instead, a quarter of the bytes or less, so that the picture
  * starts sooner; the highest follows from the second piece on, without a stop (the owner's idea, 15 Nov: a first piece in 480p, "only if this can be done
- * for the first 3-5 seconds at most"). So only when that first piece plays for no longer than `LOW_FIRST_MAX_S`: a stream cut into longer pieces starts in
- * the highest, as before. (Auto starts in the lowest quality there is anyway, and follows the connection from there.)
- * Measured on a synthetic 1080p/720p/480p/360p stream (item 9's bench, 16 Nov): with 2 s pieces, from Play to a moving picture took 2.0 s before and 1.0 s
- * after on a 10 Mbps link, 1.05 s and 0.6 s on 25 Mbps; 480p for the first 1.8 s, then 1080p, and no stop to fill at the change. 6 s and 10 s pieces: as before.
+ * for the first 3-5 seconds at most"). So only when that first piece plays for no longer than `LOW_FIRST_MAX_S`: the highest's list comes first, as before,
+ * and says how long the piece is; a stream cut into longer pieces then starts in the highest, request for request as before (0 turns this off).
+ * (Auto starts in the lowest quality there is anyway, and follows the connection from there.)
+ * Measured on a synthetic 1080p/720p/480p/360p stream (item 9's bench, 16 Nov): with 2 s pieces, from Play to a moving picture took 1.98 s before and 1.05 s
+ * after on a 10 Mbps link, 1.05 s and 0.68 s on 25 Mbps; 480p for the first 1.8 s, then 1080p, and no stop to fill at the change. 6 s and 10 s pieces: the
+ * same as before within a few tens of ms (4.05/6.2 s on 10 Mbps, 1.9/2.77 s on 25 Mbps).
  */
 export const LOW_FIRST_MAX_S = 5;
 export const LOW_FIRST_LABEL = "480p";
@@ -141,15 +143,20 @@ export const LOW_FIRST_LABEL = "480p";
 /**
  * The quality the first piece comes in with Auto off (see `LOW_FIRST_MAX_S`): a 480p one, as the menu names them (`formatQualityLabel`, so a wide
  * 854x356 is one), the best of them if there are several; only when the highest is 720p or above. Else -1: a film with no 480p starts in the highest
- * as before (a 360p or 180p first piece is not what a profile that asked for the best quality wants to see).
+ * as before (a 360p or 180p first piece is not what a profile that asked for the best quality wants to see). Only one of the highest's kind of picture
+ * (its `codecSet` and `videoRange`, as hls.js has them): hls.js's own Auto never changes between kinds in a film, and neither does this.
  */
-export function lowFirstLevel(levels: ReadonlyArray<{ width?: number; height?: number; bitrate?: number }>, highest: number): number {
+export function lowFirstLevel(
+  levels: ReadonlyArray<{ width?: number; height?: number; bitrate?: number; codecSet?: string; videoRange?: string }>,
+  highest: number,
+): number {
   const top = levels[highest];
   const topLabel = top ? formatQualityLabel(top.width, top.height) : "";
   if (!top || !(topLabel === "720p" || isHighDefinition(top.width, top.height))) return -1;
   let low = -1;
   levels.forEach((level, index) => {
     if (formatQualityLabel(level.width, level.height) !== LOW_FIRST_LABEL) return;
+    if (level.codecSet !== top.codecSet || level.videoRange !== top.videoRange) return;
     const best = low === -1 ? undefined : levels[low]!;
     if (!best || (level.height ?? 0) > (best.height ?? 0) || ((level.height ?? 0) === (best.height ?? 0) && (level.bitrate ?? 0) > (best.bitrate ?? 0))) low = index;
   });
@@ -292,8 +299,11 @@ export class PlayerEngine {
   private corsTrial = false;
   /** The aligner has just put another subtitle track on screen: the page says nothing about it (see `quiet`). */
   private quietUntil = 0;
-  /** With Auto off, the film's first piece comes in 480p and the rest in `highest` (see `LOW_FIRST_MAX_S`): set until the second piece is asked for. */
-  private lowStart: { low: number; highest: number } | null = null;
+  /**
+   * With Auto off, the film's first piece comes in 480p and the rest in `highest` (see `LOW_FIRST_MAX_S`): set from the list of qualities until the
+   * first picture piece has come; `down` once the highest's list said the first piece is short and 480p was asked for.
+   */
+  private lowStart: { low: number; highest: number; down: boolean } | null = null;
   /** How the film that is loading came in (see `startup`), and when its load began. */
   private startupNote: StartupNote = {};
   private loadBegan = 0;
@@ -438,9 +448,10 @@ export class PlayerEngine {
         qualityGiveUps = 0;
         // (The first piece of picture: when it came, how long it plays, its size and its height. The sound's own pieces are not it.)
         const frag = data?.frag;
-        // (The first piece came in 480p: the next ones are the highest, from the next one asked for, and what came plays out first.)
-        if (this.lowStart && frag?.type === "main" && frag.level === this.lowStart.low) {
-          hls.loadLevel = this.lowStart.highest;
+        // (The first piece came in 480p: the next ones are the highest, from the next one asked for, and what came plays out first. The
+        // highest's list is here already: the second piece does not wait for it.)
+        if (this.lowStart && frag?.type === "main") {
+          if (this.lowStart.down && frag.level === this.lowStart.low) hls.loadLevel = this.lowStart.highest;
           this.lowStart = null;
         }
         if (this.startupNote.pieceMs === undefined && frag?.type === "main") {
@@ -461,7 +472,7 @@ export class PlayerEngine {
         });
         // (The 480p first piece, or its list, does not come at once: the highest then, as before this was done, without waiting out hls.js's tries of it.)
         const pictureLevel = data.frag ? (data.frag.type === "main" ? data.frag.level : undefined) : data.context?.type === "level" ? data.context.level : undefined;
-        if (this.lowStart && !data.fatal && pictureLevel === this.lowStart.low) {
+        if (this.lowStart?.down && !data.fatal && pictureLevel === this.lowStart.low) {
           hls.loadLevel = this.lowStart.highest;
           this.lowStart = null;
           qualityGiveUps = 0;
@@ -491,17 +502,18 @@ export class PlayerEngine {
         }
       });
 
-      // The 480p list came: hls.js asks for the first piece right after this. A first piece longer than `LOW_FIRST_MAX_S` is not worth it
-      // (480p for that long, for a second saved at most): the highest from the first piece then, as before.
+      // The highest's list came, as it always did first with Auto off: hls.js asks for the first piece right after this. A short first piece
+      // comes in 480p (asked for here, so that hls.js asks for that one instead); a first piece longer than `LOW_FIRST_MAX_S` is not worth it
+      // (480p for that long, for a second saved at most) and comes in the highest, as before.
       hls.on(HlsLib.Events.LEVEL_UPDATED, (_event, data) => {
-        if (!this.lowStart || data?.level !== this.lowStart.low) return;
+        if (!this.lowStart || this.lowStart.down || data?.level !== this.lowStart.highest) return;
         const fragments = data.details?.fragments ?? [];
         const at = resumeAt ?? 0;
         const first = fragments.find((fragment) => fragment.start + fragment.duration > at) ?? fragments[0];
-        if (!first || first.duration > LOW_FIRST_MAX_S + 0.05) {
-          hls.loadLevel = this.lowStart.highest;
-          this.lowStart = null;
-        }
+        if (first && first.duration <= LOW_FIRST_MAX_S + 0.05) {
+          this.lowStart.down = true;
+          hls.loadLevel = this.lowStart.low;
+        } else this.lowStart = null;
       });
 
       hls.on(HlsLib.Events.MANIFEST_PARSED, (_event, data) => {
@@ -517,10 +529,10 @@ export class PlayerEngine {
               highestIdx = idx;
             }
           });
-          // (The first piece 480p when that is lower, if the first piece is short: see `LOW_FIRST_MAX_S` and LEVEL_UPDATED below.)
+          hls.currentLevel = highestIdx;
+          // (The first piece 480p when there is one, if the first piece is short: see `LOW_FIRST_MAX_S` and LEVEL_UPDATED.)
           const low = lowFirstLevel(data.levels, highestIdx);
-          if (low >= 0) this.lowStart = { low, highest: highestIdx };
-          hls.currentLevel = low >= 0 ? low : highestIdx;
+          if (low >= 0) this.lowStart = { low, highest: highestIdx, down: false };
         } else if (data?.levels && usesWebsiteProxy(hls.url ?? src)) {
           // Adaptive, through this server: its own choice stops at 720p (a quality picked from the menu still goes higher). See `proxiedQualityCap`.
           hls.autoLevelCapping = proxiedQualityCap(data.levels);
@@ -664,7 +676,8 @@ export class PlayerEngine {
    * the lowest quality, which arrives at once whatever the link, so the picture starts at once; hls.js then asks for every piece in the best
    * quality that the link carries, as it measures it, which a weak or unsteady link brings down (and back up when it recovers). A change
    * applies to the pieces still to be downloaded: what is downloaded already plays out first. Off, every piece is the highest quality
-   * there is, which on a link that cannot carry it is a picture that stops to fill again and again. Either way a quality picked from the
+   * there is (but a short first one, in 480p: see `LOW_FIRST_MAX_S`), which on a link that cannot carry it is a picture that stops to fill
+   * again and again. Either way a quality picked from the
    * menu stays (`setQuality`).
    */
   setAdaptive(adaptive: boolean): void {
