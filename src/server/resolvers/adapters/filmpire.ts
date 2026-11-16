@@ -7,6 +7,7 @@ import type { ResolveResult, SiteAdapter } from "../types";
 import { signedRelayUrl } from "../../streamRelay/links";
 import { streamAddress } from "./streamAddress";
 import { decryptInThread } from "./wasmDecrypt";
+import { getAnimeSkipTimes } from "../../anime/skipTimes";
 import nacl from "tweetnacl";
 import { filterDiverseSubtitles } from "../../subtitles/diversity";
 
@@ -852,12 +853,19 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
               const res = await ahAdapter.resolve(new URL(targetEp.url));
               if (res.status === "success") {
+                const skip = await getAnimeSkipTimes({
+                  title: rawShowTitle || title,
+                  season: targetSeason,
+                  episode: targetEpisode,
+                  fetcher: get,
+                });
                 return {
                   ...res,
                   media: {
                     ...res.media,
                     title,
                     page: url.href,
+                    ...(skip ? { skip } : {}),
                     ...(res.media.series
                       ? {
                           series: {
@@ -970,6 +978,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 : [[], []];
 
               const subList = finalSubtitles([...roSubs, ...hiSubs, ...listed]);
+              const skip = await getAnimeSkipTimes({
+                title: rawShowTitle || title,
+                season: targetSeason,
+                episode: targetEpisode,
+                providerSkip: resolved.stream.skip,
+                fetcher: get,
+              });
 
               const alternates: AlternateSource[] = [];
               if (resolved.altDubStream) {
@@ -994,6 +1009,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                     directUrl: resolved.stream.src,
                   },
                   ...(subList ? { subtitles: subList } : {}),
+                  ...(skip ? { skip } : {}),
                   ...(alternates.length > 0 ? { alternates } : {}),
                   page: url.href,
                   series: {
@@ -1059,6 +1075,16 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         }
 
+        const isAnime = Boolean(animated || originalLang === "ja" || originalLang === "zh");
+        const skip = isAnime
+          ? await getAnimeSkipTimes({
+              title: rawShowTitle || title,
+              season: isTv ? Number(s || "1") : 1,
+              episode: isTv ? Number(e || "1") : 1,
+              fetcher: get,
+            })
+          : undefined;
+
         const proxiedUrl = streamAddress(buzz.streamUrl, buzz.embedUrl, process.env, false);
         const alternates: AlternateSource[] = buzz.alternates.map((alt) => ({
           label: alt.name.slice(0, 60),
@@ -1098,6 +1124,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               directUrl: buzz.streamUrl,
             },
             ...(subList ? { subtitles: subList } : {}),
+            ...(skip ? { skip } : {}),
             ...(cappedAlternates.length > 0 ? { alternates: cappedAlternates } : {}),
             ...(sInfo ? { series: sInfo } : {}),
             page: url.href,
@@ -1138,6 +1165,16 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             },
           };
         }
+
+        const isAnime = Boolean(animated || originalLang === "ja" || originalLang === "zh");
+        const skip = isAnime
+          ? await getAnimeSkipTimes({
+              title: rawShowTitle || title,
+              season: isTv ? Number(s || "1") : 1,
+              episode: isTv ? Number(e || "1") : 1,
+              fetcher: get,
+            })
+          : undefined;
 
         const primary = vl.qualities[0]!;
         const proxiedUrl = streamAddress(primary.url, "none", process.env, false);
@@ -1181,6 +1218,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               directUrl: primary.url,
             },
             ...(subList ? { subtitles: subList } : {}),
+            ...(skip ? { skip } : {}),
             ...(cappedAlternates.length > 0 ? { alternates: cappedAlternates } : {}),
             ...(sInfo ? { series: sInfo } : {}),
             page: url.href,

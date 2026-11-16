@@ -1,4 +1,5 @@
 import type { AlternateSource, SubtitleTrack } from "../../../shared";
+import { getAnimeSkipTimes } from "../../anime/skipTimes";
 import {
   extractZokoStream,
   getHiAnimeEpisodes,
@@ -35,6 +36,12 @@ export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): Si
             lang: s.lang.slice(0, 20),
           }));
 
+          const skip = await getAnimeSkipTimes({
+            episode: 1,
+            providerSkip: stream.skip,
+            fetcher: get,
+          });
+
           return {
             status: "success",
             resolver: "hianime",
@@ -46,6 +53,7 @@ export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): Si
                 directUrl: stream.src,
               },
               ...(subTracks.length > 0 ? { subtitles: subTracks } : {}),
+              ...(skip ? { skip } : {}),
               page: url.href,
             },
           };
@@ -93,6 +101,15 @@ export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): Si
           });
         }
 
+        const animeTitle = slug.replace(/-[0-9]+$/, "").replace(/-/g, " ");
+        const skip = await getAnimeSkipTimes({
+          title: animeTitle,
+          season: 1,
+          episode: requestedEp,
+          providerSkip: resolved.stream.skip,
+          fetcher: get,
+        });
+
         // Fetch episode list for series metadata
         const eps = await getHiAnimeEpisodes(animeId, get);
         const currentIndex = eps.findIndex((ep) => ep.num === requestedEp);
@@ -109,6 +126,7 @@ export function createHiAnimeAdapter(options: { fetch?: typeof fetch } = {}): Si
               directUrl: resolved.stream.src,
             },
             ...(subTracks.length > 0 ? { subtitles: subTracks } : {}),
+            ...(skip ? { skip } : {}),
             ...(alternates.length > 0 ? { alternates } : {}),
             series: {
               season: 1,

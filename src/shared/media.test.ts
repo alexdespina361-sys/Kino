@@ -43,5 +43,28 @@ describe("a film's sources and its qualities", () => {
     expect(NormalizedMediaSchema.safeParse(fitted).success).toBe(true);
     expect(fitted?.quality).toBe("Auto (HLS)");
     expect(fitted?.alternates?.map((alternate) => alternate.quality)).toEqual(["1080p", "720p", undefined]);
+  });
+  it("validates and preserves skip intervals for intro and outro", () => {
+    const withSkip: NormalizedMedia = {
+      ...film,
+      skip: {
+        intro: { start: 45.5, end: 135.5 },
+        outro: { start: 1320, end: 1410 },
+      },
+    };
+    const { media: fitted, unfit } = fitMedia(withSkip);
+    expect(unfit).toEqual([]);
+    expect(fitted?.skip?.intro).toEqual({ start: 45.5, end: 135.5 });
+    expect(fitted?.skip?.outro).toEqual({ start: 1320, end: 1410 });
+  });
+
+  it("marks invalid negative skip intervals as unfit", () => {
+    const invalidSkip = {
+      ...film,
+      skip: { intro: { start: -10, end: 90 } },
+    } as unknown as NormalizedMedia;
+    const { media: fitted, unfit } = fitMedia(invalidSkip);
+    expect(unfit).toContain("skip");
+    expect(fitted?.skip).toBeUndefined();
   });
 });

@@ -414,6 +414,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/library/seasons": { query: () => ({ url: TITLE }) },
   "GET /api/library/unavailable": { query: () => ({ url: TITLE }) },
   "GET /api/resolve": { query: () => ({ url: `${origin}/page.html` }) },
+  "GET /api/anime/skip": { ok: [200] },
   "GET /api/proxy": { query: () => ({ url: `${origin}/video.mp4`, referer: `${origin}/` }) },
   "GET /api/subtitles/ro/:file": { ok: [404] },
   "GET /api/subtitles/fallback/:file": { ok: [404] },

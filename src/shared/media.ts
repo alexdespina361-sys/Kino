@@ -32,6 +32,19 @@ export const NextEpisodeSchema = z.object({
   url: z.string().max(2048),
 });
 export type NextEpisode = z.infer<typeof NextEpisodeSchema>;
+export const SkipIntervalSchema = z.object({
+  start: z.number().min(0),
+  end: z.number().min(0),
+});
+export type SkipInterval = z.infer<typeof SkipIntervalSchema>;
+
+export const SkipTimesSchema = z.object({
+  intro: SkipIntervalSchema.optional(),
+  outro: SkipIntervalSchema.optional(),
+  recap: SkipIntervalSchema.optional(),
+});
+export type SkipTimes = z.infer<typeof SkipTimesSchema>;
+
 
 /** One entry of a series' episode list. Same shape as `next`: a resolver can hand over the whole list. */
 export const EpisodeRefSchema = NextEpisodeSchema;
@@ -81,6 +94,7 @@ export const NormalizedMediaSchema = z.object({
   poster: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
   backdrop: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
   year: z.number().int().min(1800).max(2200).optional(),
+  skip: SkipTimesSchema.optional(),
 });
 export type NormalizedMedia = z.infer<typeof NormalizedMediaSchema>;
 
@@ -171,6 +185,14 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
   const poster = picture(media.poster);
   const backdrop = picture(media.backdrop);
   const year = typeof media.year === "number" && Number.isInteger(media.year) && media.year >= 1800 && media.year <= 2200 ? media.year : undefined;
+  const skip = (value: unknown): SkipTimes | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+    const parsed = SkipTimesSchema.safeParse(value);
+    if (!parsed.success) unfit.push("skip");
+    return parsed.success ? parsed.data : undefined;
+  };
+  const parsedSkip = media.skip ? skip(media.skip) : undefined;
+
 
   const fitted = NormalizedMediaSchema.safeParse({
     stream: main,
@@ -183,6 +205,7 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
     ...(poster ? { poster } : {}),
     ...(backdrop ? { backdrop } : {}),
     ...(year ? { year } : {}),
+    ...(parsedSkip ? { skip: parsedSkip } : {}),
   });
   return { media: fitted.success ? fitted.data : null, unfit };
 }

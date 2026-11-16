@@ -435,6 +435,19 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const result = await resolve(rawUrl);
     return reply.send(result);
   });
+  app.get<{ Querystring: { title?: string; season?: string; episode?: string; malId?: string } }>("/api/anime/skip", async (request, reply) => {
+    const { title, season, episode, malId } = request.query;
+    const { getAnimeSkipTimes } = await import("./anime/skipTimes");
+    const skip = await getAnimeSkipTimes({
+      title,
+      season: season ? Number(season) : undefined,
+      episode: episode ? Number(episode) : undefined,
+      malId: malId ? Number(malId) : undefined,
+    });
+    reply.header("Cache-Control", "public, max-age=86400");
+    reply.header("Access-Control-Allow-Origin", "*");
+    return reply.code(200).send({ skip: skip ?? null });
+  });
   app.get<{ Params: { file: string } }>("/api/subtitles/ro/:file", async (request, reply) => {
     const file = request.params.file || "";
     const subId = file.replace(/\.vtt$/i, "");
