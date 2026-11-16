@@ -132,6 +132,25 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD, { width: 800,
   });
 }
 
+test("on a touch screen, with the menu open over it, a tap on the wordmark shuts the menu and goes home at the first tap", async ({ browser }) => {
+  const tv = await openDevice(browser, { viewport: HD, hasTouch: true }, {}, withLibrary(library));
+  await tv.goto("/tv");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  const browse = tv.getByTestId("tv-browse");
+  const menu = tv.getByTestId("tv-rail");
+  await tv.getByTestId("rail-search").focus(); // (the remote, or a keyboard, in the menu: open over the wordmark)
+  await tv.keyboard.press("Enter");
+  await expect(browse).toHaveAttribute("data-view", "search");
+  await tv.getByTestId("rail-search").focus();
+  await expect(menu).toHaveAttribute("data-open", "true");
+  const mark = await rect(tv.getByTestId("tv-logo-home"));
+  const middle = { x: mark.left + mark.width / 2, y: mark.top + mark.height / 2 };
+  await expect.poll(() => tv.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest(".tv-rail"), middle)).toBe(true);
+  await tv.touchscreen.tap(middle.x, middle.y);
+  await expect(browse).toHaveAttribute("data-view", "home");
+  await expect(menu).toHaveAttribute("data-open", "false");
+});
+
 /**
  * The cat's ears on the wordmark (Logo.tsx): a second picture over the plain one, shown while the cat is on (the cat's own setting, as the library's corner
  * button has it), and the wordmark never moves for them. The ginger cat is the flat one, which a headless browser draws without trouble.

@@ -2281,6 +2281,23 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-following")).toBeVisible();
   });
 
+  test("a clipboard the page may not read says what to do instead: Ctrl+V where there is a keyboard, typing where there is only a finger", async ({ browser }) => {
+    for (const [options, said] of [
+      [{ viewport: { width: 1280, height: 720 } }, en["party.pasteRefused"]],
+      [{ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }, en["party.pasteRefusedTouch"]],
+    ] as const) {
+      const guest = await openDevice(browser, options); // (no permission to read the clipboard: the browser refuses)
+      await guest.goto("/tv");
+      await expect(guest.getByTestId("tv-browse")).toBeVisible();
+      await pressMenuLine(guest, "rail-party");
+      await guest.getByTestId("tv-party-join").click();
+      await guest.getByTestId("tv-party-paste").click();
+      await expect(guest.getByTestId("tv-party-error")).toHaveText(said);
+      await expect(guest.getByTestId("tv-party-error")).toHaveClass(/is-note/);
+      await guest.context().close();
+    }
+  });
+
   test("Ctrl+V of the code as the host's screen shows it joins at once", async ({ browser, baseURL }) => {
     const host = await screen(browser, baseURL!);
     const code = await startParty(host);

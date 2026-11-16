@@ -66,6 +66,8 @@ export function StartingFilm({ starting, stuck, onCancel }: Props) {
       data-phase={starting.leaving ? "done" : finding ? "finding" : "loading"}
       data-art={art ? true : undefined}
       data-testid={finding ? "tv-resolving" : "tv-starting"}
+      // (Drawn from the press of Play at once; heard once the server has said it is looking. Only from then is a wait counted.)
+      data-heard={starting.heard ? "true" : undefined}
       aria-busy={!starting.leaving}
     >
       {art && <img className="tv-starting-art" src={art} alt="" decoding="async" onError={() => setBroken(art)} />}

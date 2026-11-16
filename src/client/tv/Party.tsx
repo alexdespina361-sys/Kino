@@ -341,7 +341,8 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
 
   const pasteNow = async () => {
     const text = await pasteText();
-    if (text === null) setNote(t("party.pasteRefused"));
+    // (A screen worked only by a finger has no Ctrl+V to offer instead.)
+    if (text === null) setNote(t(window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ? "party.pasteRefusedTouch" : "party.pasteRefused"));
     else pasted(text);
   };
 
@@ -367,7 +368,7 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
           data-testid="tv-party-code-input"
           type="text"
           inputMode="numeric"
-          autoComplete="one-time-code"
+          autoComplete="off" // (not "one-time-code": a phone would offer the last code a text message brought, and six digits send at once)
           autoCorrect="off"
           spellCheck={false}
           enterKeyHint="go"

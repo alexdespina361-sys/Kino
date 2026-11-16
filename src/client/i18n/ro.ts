@@ -821,6 +821,7 @@ export const ro: Dictionary = {
   "party.paste": "Lipește",
   "party.pasteNone": "Nu e niciun cod de lipit.",
   "party.pasteRefused": "Clipboardul nu poate fi citit aici: apasă Ctrl+V sau scrie codul.",
+  "party.pasteRefusedTouch": "Clipboardul nu poate fi citit aici: scrie codul.",
   "party.overlayLead": "Începe o vizionare comună și ceilalți se pot uita cu tine, fiecare pe ecranul lui.",
   "party.ended": "Nu mai faci parte din vizionarea comună.",
   "party.leftGone": "{name} este deconectat de ceva vreme, așa că acest ecran a ieșit din vizionarea comună.",

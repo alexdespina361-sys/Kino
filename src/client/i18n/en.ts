@@ -818,6 +818,7 @@ export const en = {
   "party.paste": "Paste",
   "party.pasteNone": "There's no party code to paste.",
   "party.pasteRefused": "The clipboard can't be read here: press Ctrl+V or type the code.",
+  "party.pasteRefusedTouch": "The clipboard can't be read here: type the code.",
   "party.overlayLead": "Start a party and others can watch this with you, each on their own screen.",
   "party.ended": "You are no longer in the party.",
   "party.leftGone": "{name} has been offline for a while, so this screen left their watch party.",

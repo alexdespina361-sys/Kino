@@ -51,9 +51,13 @@ export function Rail({
   const t = useT();
   const [resting, setResting] = useState(false);
   const wide = !bar && (open || resting);
-  /** Whether a click on the menu's own ground (not one of its lines) fell where the page's wordmark is, under it (the owner, 15 Nov: "clicking it should close the menu and go to Home"). */
+  /**
+   * Whether a click on the menu's own ground (not one of its lines) fell where the page's wordmark is, under it (the owner, 15 Nov: "clicking it should close the
+   * menu and go to Home"). Not asked whether the menu is open: a finger's tap there takes the focus out of the menu first, which shuts it before the click comes
+   * (it is still over the wordmark while it closes), and a shut menu is not over the wordmark at all.
+   */
   const onWordmark = (event: MouseEvent<HTMLElement>): boolean => {
-    if (bar || !wide || (event.target as Element).closest("button")) return false;
+    if (bar || (event.target as Element).closest("button")) return false;
     const mark = document.querySelector('[data-testid="tv-logo-home"]')?.getBoundingClientRect();
     return !!mark && mark.width > 0 && event.clientX >= mark.left && event.clientX <= mark.right && event.clientY >= mark.top && event.clientY <= mark.bottom;
   };
