@@ -8,13 +8,17 @@ export const chatRo: ChatDictionary = {
 
   /* conversația */
   "chat.empty": "Niciun mesaj încă. Spune-i salut lui {name}.",
-  "chat.privacy": "Doar text simplu; linkurile nu se pot apăsa. Se păstrează doar ultimele {messages} de mesaje, cel mult {days} de zile, și sunt stocate pe server fără criptare: nu trimite nimic privat.",
+  "chat.privacy": "Doar text simplu; linkurile nu se pot apăsa (un titlu trimis din Kino apare cu posterul lui). Se păstrează doar ultimele {messages} de mesaje, cel mult {days} de zile, și sunt stocate pe server fără criptare: nu trimite nimic privat.",
   "chat.you": "Tu",
   "chat.messageLabel": "Mesaj",
   "chat.placeholder": "Scrie un mesaj",
   "chat.compose": "Scrie un mesaj",
   "chat.writeTitle": "Mesaj pentru {name}",
   "chat.send": "Trimite",
+  "chat.sendTitle": "Trimite un titlu",
+  "chat.sendTitleTo": "Trimite un titlu către {name}",
+  "chat.sendTitleHelp": "Ce ai văzut și ce ai salvat. Apasă pe unul ca să-l trimiți.",
+  "chat.noTitles": "Încă nu ai ce trimite: aici apar titlurile pe care le vezi sau le salvezi.",
   "chat.takeBack": "Retrage",
   "chat.takeBackLast": "Retrage ultimul mesaj",
   "chat.mute": "Dă pe mut",

@@ -507,7 +507,7 @@ export function Controller() {
           onOpenChat={setChatWith}
         />
       )}
-      {chatWith && !showAccount && !approveCode && <PhoneChat key={chatWith} friendId={chatWith} onClose={() => setChatWith(null)} />}
+      {chatWith && !showAccount && !approveCode && <PhoneChat key={chatWith} friendId={chatWith} onClose={() => setChatWith(null)} onOpenTitle={setTitle} />}
       {friendCode && !showAccount && !approveCode && !account.choosing && (
         <FriendInvite
           code={friendCode}

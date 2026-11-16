@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX, type AvatarId } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, FilmIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
@@ -10,6 +10,7 @@ import { NameKeys } from "../tv/NameKeys";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
+import { TitlePickTv } from "./TitlePick";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
 import "./chat.css";
@@ -33,6 +34,8 @@ export interface ChatTvProps {
   narrow?: boolean;
   /** Back from the chat itself. */
   onClose: () => void;
+  /** A title a message names was pressed (see titles.ts). */
+  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
   /** The time that "today" is measured against (tests give theirs). */
   now?: number;
 }
@@ -44,12 +47,15 @@ export interface ChatTvProps {
  * rating is) and sent with the button. The Back of the remote goes back a page at a time: from the ⋯, a report or the writing to the chat, from the
  * chat to the friend. A report shows what would be sent, and the remote lands on Back there, not on Send.
  */
-export function ChatTv({ name, avatar, online = false, desk = false, session, report, receiving = true, narrow = false, onClose, now = Date.now() }: ChatTvProps) {
+export function ChatTv({ name, avatar, online = false, desk = false, session, report, receiving = true, narrow = false, onClose, onOpenTitle, now = Date.now() }: ChatTvProps) {
   const [writing, setWriting] = useState(false);
+  /** The page of titles to send is open (see TitlePick.tsx). */
+  const [picking, setPicking] = useState(false);
   /** What has been typed and not sent stays while the chat is open: Back from the writing does not lose it. */
   const [draft, setDraft] = useState("");
 
   if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} />;
+  if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
   if (writing) {
     return (
       <WriteTv
@@ -79,7 +85,9 @@ export function ChatTv({ name, avatar, online = false, desk = false, session, re
       receiving={receiving}
       now={now}
       onWrite={() => setWriting(true)}
+      onPickTitle={() => setPicking(true)}
       onClose={onClose}
+      onOpenTitle={onOpenTitle}
     />
   );
 }
@@ -96,7 +104,9 @@ export function ReadTv({
   receiving,
   now,
   onWrite,
+  onPickTitle,
   onClose,
+  onOpenTitle,
 }: {
   name: string;
   avatar?: AvatarId | undefined;
@@ -109,7 +119,10 @@ export function ReadTv({
   receiving: boolean;
   now: number;
   onWrite: () => void;
+  /** The button beside the box that sends a title instead (none: no such button). */
+  onPickTitle?: (() => void) | undefined;
   onClose: () => void;
+  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
 }) {
   const t = useT();
   const { state } = session;
@@ -149,6 +162,14 @@ export function ReadTv({
       box.current?.focus(); // (the next message is typed at once, as in any chat on a computer)
     }
   };
+
+  // (The last message taken back takes the list with it, and the remote with it if it was there: left on nothing, it is given Write again.)
+  useEffect(() => {
+    if (state.lines.length > 0) return;
+    const on = document.activeElement;
+    if (on !== null && on !== document.body) return;
+    document.querySelector<HTMLElement>("[data-testid='tv-chat'] [data-autofocus]:not(:disabled)")?.focus();
+  }, [state.lines.length]);
 
   // The page opens before it knows whether the friend takes messages, with the remote on Write; when it finds out that they do not (or that the
   // friendship is over) Write goes, and the remote must not be left on nothing: it stands on Back, unless it had already moved on to another button.
@@ -218,7 +239,7 @@ export function ReadTv({
             </p>
           </div>
         ) : (
-          <ChatLines lines={state.lines} name={name} now={now} remote testId="tv-chat-lines" />
+          <ChatLines lines={state.lines} name={name} now={now} remote onOpenTitle={onOpenTitle} testId="tv-chat-lines" />
         )}
         <div className="tv-chat-foot">
           <ChatNotices name={name} session={session} receiving={receiving} prefix="tv-chat" />
@@ -226,37 +247,46 @@ export function ReadTv({
             <p className="chat-closed" data-testid={blocked === "ended" ? "tv-chat-ended" : "tv-chat-closed"}>
               {blocked === "ended" && session.ended ? problemText(t, session.ended, name) : t("chat.closed", { name })}
             </p>
-          ) : desk ? (
-            // A computer: the box itself, Enter sends.
-            <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
-              <input
-                ref={box}
-                className="tv-chat-box"
-                type="text"
-                value={draft}
-                maxLength={CHAT_TEXT_MAX}
-                autoComplete="off"
-                autoCapitalize="sentences"
-                enterKeyHint="send"
-                aria-label={t("chat.messageLabel")}
-                placeholder={t("chat.placeholder")}
-                onChange={(event) => type(event.target.value)}
-                data-nav
-                data-autofocus
-                data-testid="tv-chat-box"
-              />
-              <button type="submit" className="tv-chat-send-round" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} title={t("chat.send")} data-nav data-testid="tv-chat-box-send">
-                <SendIcon />
-              </button>
-            </form>
           ) : (
-            // A TV: what looks like the box, and OK on it opens the page that writes (with what was typed and not sent, if anything was).
-            <button type="button" className="tv-chat-composer tv-chat-fakebox" onClick={onWrite} data-nav data-autofocus data-testid="tv-chat-write">
-              <span className={`tv-chat-fakebox-text${draft ? "" : " is-empty"}`}>{draft || t("chat.placeholder")}</span>
-              <span className="tv-chat-send-round" aria-hidden="true">
-                <SendIcon />
-              </span>
-            </button>
+            <div className="tv-chat-compose-row">
+              {onPickTitle && (
+                <button type="button" className="tv-chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-nav data-testid="tv-chat-title-btn">
+                  <FilmIcon />
+                </button>
+              )}
+              {desk ? (
+                // A computer: the box itself, Enter sends.
+                <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
+                  <input
+                    ref={box}
+                    className="tv-chat-box"
+                    type="text"
+                    value={draft}
+                    maxLength={CHAT_TEXT_MAX}
+                    autoComplete="off"
+                    autoCapitalize="sentences"
+                    enterKeyHint="send"
+                    aria-label={t("chat.messageLabel")}
+                    placeholder={t("chat.placeholder")}
+                    onChange={(event) => type(event.target.value)}
+                    data-nav
+                    data-autofocus
+                    data-testid="tv-chat-box"
+                  />
+                  <button type="submit" className="tv-chat-send-round" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} title={t("chat.send")} data-nav data-testid="tv-chat-box-send">
+                    <SendIcon />
+                  </button>
+                </form>
+              ) : (
+                // A TV: what looks like the box, and OK on it opens the page that writes (with what was typed and not sent, if anything was).
+                <button type="button" className="tv-chat-composer tv-chat-fakebox" onClick={onWrite} data-nav data-autofocus data-testid="tv-chat-write">
+                  <span className={`tv-chat-fakebox-text${draft ? "" : " is-empty"}`}>{draft || t("chat.placeholder")}</span>
+                  <span className="tv-chat-send-round" aria-hidden="true">
+                    <SendIcon />
+                  </span>
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

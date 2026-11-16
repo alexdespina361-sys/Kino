@@ -1024,3 +1024,150 @@ test.describe("the chat on the TV", () => {
     });
   }
 });
+
+/* ------------------------------ a title sent in a chat ------------------------------ */
+
+const MATRIX = { id: "filmpire-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "/fixtures/sample.mp4?n=1" };
+/** Two titles that can be sent (the newest first), and one that can't: a link pasted on the phone has no address on the site. */
+const SAVED = [
+  { id: MATRIX.id, title: MATRIX.title, year: MATRIX.year, url: MATRIX.url },
+  { id: "filmpire-tv-1399", title: "A Long Show", year: 2011, url: "/fixtures/sample.mp4?n=2" },
+  { id: "pasted", title: "Something pasted", url: "https://example.com/film.mp4" },
+];
+
+/** The server's answer about the title a message names: it knows The Matrix, and nothing else (no test asks the real library). */
+async function knowsTitles(page: Page) {
+  await page.route(/\/api\/library\/title\?/, (route) => {
+    const id = new URL(route.request().url()).searchParams.get("id");
+    return route.fulfill({ json: { item: id === MATRIX.id ? MATRIX : null } });
+  });
+}
+
+/** Titles saved in the profile's first list, as a screen saves them; the page is loaded anew to have them (a phone starts at its home screen, a screen at its library). */
+async function saves(page: Page, titles: typeof SAVED) {
+  const now = Date.now();
+  const list = titles.map((title, at) => ({ key: `saved-${title.id}`, at: now - at * 1000, ...title }));
+  expect((await page.request.post(`/api/profiles/${await profileOf(page)}/sync`, { data: { since: 0, list } })).ok()).toBe(true);
+  await page.reload();
+}
+
+test.describe("a title sent in a chat", () => {
+  test("on the phone: the film button beside the box lists what was saved (nothing without an address on the site), a press sends it and keeps what was being typed, and the friend's card opens the title's page", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    for (const page of [ann.page, bob.page]) await knowsTitles(page);
+    await saves(ann.page, SAVED);
+    await expect.poll(() => atHome(ann.page)).toBe(true);
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-input").fill("half typed");
+    await ann.page.getByTestId("chat-title-btn").click();
+    const picks = ann.page.getByTestId("chat-pick");
+    await expect(picks).toHaveCount(2);
+    await expect(picks.first()).toContainText("The Matrix");
+    await expect(picks.nth(1)).toContainText("A Long Show");
+    await picks.first().click();
+    await expect(ann.page.getByTestId("chat-pick-sheet")).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(1);
+    await expect(ann.page.getByTestId("chat-card")).toContainText("The Matrix");
+    await expect(texts(ann.page)).toHaveText(["The Matrix (1999)"]); // (the address is the card's)
+    await expect(ann.page.getByTestId("chat-input")).toHaveValue("half typed");
+
+    await openChat(bob.page);
+    const card = bob.page.getByTestId("chat-card");
+    await expect(card).toContainText("The Matrix");
+    await card.click();
+    await expect(bob.page.getByTestId("chat")).toHaveCount(0);
+    await expect(bob.page.getByTestId("title-sheet")).toBeVisible();
+    await expect(bob.page.getByTestId("title-name")).toHaveText("The Matrix");
+  });
+
+  test("on the TV: the remote goes from the box to the film button and the posters, OK sends one; the friend's remote steps from the box onto the list and the card, and OK opens the title's page", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    for (const screen of [ann, bob]) await knowsTitles(screen.page);
+    await meet(ann, bob);
+    await writes(ann.page, bob.page, "Look at this one"); // (a line before the title's: the chat is still there when the title is taken back)
+    await saves(ann.page, SAVED);
+    await expect(view(ann.page)).toBeVisible();
+    await openFriendsView(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
+    await ann.page.keyboard.press("ArrowLeft");
+    await expect(ann.page.getByTestId("tv-chat-title-btn")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    const picks = ann.page.getByTestId("tv-chat-pick");
+    await expect(picks).toHaveCount(2);
+    await expect(picks.first()).toBeFocused();
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(picks.nth(1)).toBeFocused();
+    await ann.page.keyboard.press("ArrowLeft");
+    await expect(picks.first()).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    await expect(ann.page.getByTestId("tv-chat-lines").getByTestId("chat-card")).toContainText("The Matrix");
+    // Back from the posters sends nothing
+    await ann.page.getByTestId("tv-chat-title-btn").click();
+    await expect(picks.first()).toBeFocused();
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    const card = bob.page.getByTestId("tv-chat-lines").getByTestId("chat-card");
+    await expect(card).toContainText("The Matrix");
+    await expect(bob.page.getByTestId("tv-chat-write")).toBeFocused();
+    await bob.page.keyboard.press("ArrowUp");
+    await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
+    await bob.page.keyboard.press("ArrowUp");
+    await expect(card).toBeFocused();
+    // Left and Right go back to the list, and no further
+    await bob.page.keyboard.press("ArrowLeft");
+    await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
+    await bob.page.keyboard.press("ArrowUp");
+    await expect(card).toBeFocused();
+    await bob.page.keyboard.press("Enter");
+    await expect(bob.page.getByTestId("tv-chat")).toHaveCount(0);
+    await expect(bob.page.getByTestId("tv-detail")).toContainText("The Matrix");
+
+    // back in the chat with the remote on the card, Ann takes the title back: the remote is given the list, not left on nothing
+    await bob.page.keyboard.press("Escape");
+    await expect(bob.page.getByTestId("tv-detail")).toHaveCount(0);
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(card).toHaveCount(1);
+    await bob.page.keyboard.press("ArrowUp");
+    await bob.page.keyboard.press("ArrowUp");
+    await expect(card).toBeFocused();
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-takeback").click();
+    await expect(card).toHaveCount(0, SOON);
+    await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
+  });
+
+  test("a title the server could say nothing about is the text it was sent as, and a card once it is asked about again a minute later, with the chat open all along", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const account = fresh("Bob");
+    const page = await openDevice(browser, PHONE, {}, async (context) => context.clock.install());
+    await page.goto("/");
+    await signUp(page, account);
+    const bob = { page, account, name: nameOf(account) };
+    await befriend(ann.page, bob.page);
+    let asks = 0;
+    await bob.page.route(/\/api\/library\/title\?/, (route) => (++asks === 1 ? route.fulfill({ status: 502, body: "" }) : route.fulfill({ json: { item: MATRIX } })));
+    const text = `The Matrix (1999) ${new URL(bob.page.url()).origin}/tv?title=movie-603`;
+    await writes(ann.page, bob.page, text);
+    await openChat(bob.page);
+    await expect(texts(bob.page)).toHaveText([text]);
+    await expect.poll(() => asks).toBe(1);
+    await expect(bob.page.getByTestId("chat-card")).toHaveCount(0);
+    await bob.page.clock.fastForward(61_000);
+    await expect(bob.page.getByTestId("chat-card")).toContainText("The Matrix");
+    expect(asks).toBe(2);
+    await expect(texts(bob.page)).toHaveText(["The Matrix (1999)"]);
+  });
+});

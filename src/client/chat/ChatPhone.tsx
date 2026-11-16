@@ -1,11 +1,12 @@
 import { useRef, useState, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
-import { SendIcon, ShieldIcon } from "../shared/icons";
+import { FilmIcon, SendIcon, ShieldIcon } from "../shared/icons";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS } from "./state";
+import { TitlePickSheet } from "./TitlePick";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
 import "./chat.css";
@@ -18,6 +19,8 @@ export interface ChatPhoneProps {
   /** Whether this profile takes messages from friends (the setting "Friends can message me"). When it does not, the friend can't answer, and the page says so. */
   receiving?: boolean;
   onClose: () => void;
+  /** A title a message names was pressed (see titles.ts). */
+  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
   /** The time that "today" is measured against (tests give theirs). */
   now?: number;
 }
@@ -26,10 +29,12 @@ export interface ChatPhoneProps {
  * The chat with one friend, on the phone: a sheet over the friend's page. The messages, with a line for who they are from and when; a box to write
  * in; Mute and Report on top. A message of one's own can be pressed, and taken back. The sheet closes with the phone's Back, like the others.
  */
-export function ChatPhone({ name, session, report, receiving = true, onClose, now = Date.now() }: ChatPhoneProps) {
+export function ChatPhone({ name, session, report, receiving = true, onClose, onOpenTitle, now = Date.now() }: ChatPhoneProps) {
   const t = useT();
   const { state } = session;
   const [picked, setPicked] = useState<number | null>(null);
+  /** The sheet of titles to send is open. */
+  const [picking, setPicking] = useState(false);
   const blocked = whyNotWrite(session);
 
   return (
@@ -67,6 +72,7 @@ export function ChatPhone({ name, session, report, receiving = true, onClose, no
                 setPicked(null);
                 void session.takeBack(id);
               }}
+              onOpenTitle={onOpenTitle}
             />
           )}
 
@@ -77,17 +83,18 @@ export function ChatPhone({ name, session, report, receiving = true, onClose, no
               {blocked === "ended" && session.ended ? problemText(t, session.ended, name) : t("chat.closed", { name })}
             </p>
           ) : (
-            <Composer session={session} />
+            <Composer session={session} onPickTitle={() => setPicking(true)} />
           )}
         </div>
       </Sheet>
+      {picking && !blocked && <TitlePickSheet name={name} session={session} onClose={() => setPicking(false)} />}
       {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} />}
     </>
   );
 }
 
-/** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. */
-function Composer({ session }: { session: ChatSession }) {
+/** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. Beside the box, the button that sends a title instead (see TitlePick.tsx). */
+function Composer({ session, onPickTitle }: { session: ChatSession; onPickTitle: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -104,6 +111,9 @@ function Composer({ session }: { session: ChatSession }) {
 
   return (
     <form className="chat-compose" onSubmit={(event) => void submit(event)} noValidate data-testid="chat-compose">
+      <button type="button" className="chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-testid="chat-title-btn">
+        <FilmIcon />
+      </button>
       <input
         ref={input}
         className="chat-input"
