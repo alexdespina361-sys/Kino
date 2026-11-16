@@ -310,6 +310,40 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-pick:disabled { opacity: 0.5; }
 /* (The way back, which the stylesheet puts in the top corner on every page that fills the screen, as before.) */
 
+/*
+ * GIFs (gifs.ts, GifPick.tsx). In the chat a GIF is the picture, without the bubble around it, at one height for all (the list does not move while it
+ * comes; only its width settles), shown whole. The grid that sends one: KLIPY's order, each GIF whole in a square, "Search KLIPY" over it and "Powered by
+ * KLIPY" under it, as KLIPY asks.
+ */
+.chat-bubble.chat-bubble-gif, .chat-mine .chat-bubble.chat-bubble-gif { padding: 0; background: transparent; color: var(--muted); }
+.chat-gif-picture { display: block; width: auto; max-width: min(100%, 260px); min-width: 90px; height: 150px; border-radius: 12px; background: var(--surface-2); object-fit: contain; }
+.chat-gif-gone { display: block; padding: 8px 12px; border-radius: 16px; background: var(--surface-2); color: var(--muted); font-style: italic; }
+.tv .chat-gif-picture { max-width: 100%; height: 9em; border-radius: 0.6em; background: #2a2a31; }
+.tv .chat-gif-gone { padding: 0.4em 0.8em; border-radius: 0.8em; background: #2a2a31; }
+.chat-gif-pane { display: flex; flex-direction: column; gap: 10px; }
+.chat-gif-search { width: 100%; padding: 11px 14px; border: 1.5px solid transparent; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; }
+.chat-gif-search:focus { border-color: var(--accent); outline: none; }
+.chat-gifs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
+.chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.chat-gif img, .tv-chat-gif img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.chat-gif:active { opacity: 0.8; }
+.chat-gif-note { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; color: var(--muted); text-align: center; }
+.chat-gif-note p { margin: 0; }
+.chat-gif-retry { padding: 8px 16px; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; }
+.chat-gif-more { align-self: center; }
+.chat-gif-powered { margin: 0; color: var(--muted); font-size: 0.75rem; text-align: center; }
+.tv-chat-gif-search { width: min(100%, 40em); padding: 0.7em 1.1em; border: none; border-radius: 999px; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 1.3em; }
+.tv-chat-gif-search:focus { outline: none; box-shadow: inset 0 0 0 0.1em var(--accent); }
+.tv-chat-gifs { display: grid; grid-template-columns: repeat(auto-fill, minmax(10em, 1fr)); gap: 0.8em; width: min(100%, 74em); max-height: 52vh; padding: 0.5em; overflow-y: auto; scrollbar-width: none; }
+.tv-chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 0.7em; overflow: hidden; background: #222227; }
+.tv-chat-gif:hover { box-shadow: 0 0 0 0.12em rgba(255, 255, 255, 0.35); }
+.tv-chat-gif:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
+.tv-chat-gif-more, .tv-chat-gif-retry { padding: 0.5em 1.2em; border-radius: 999px; background: #222227; color: #fff; font: inherit; font-size: 1.1em; }
+.tv-chat-gif-more:focus-visible, .tv-chat-gif-retry:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff; }
+.tv-chat-gif-note { display: flex; flex-direction: column; align-items: center; gap: 0.6em; margin: 0; color: rgba(255, 255, 255, 0.7); font-size: 1.2em; text-align: center; }
+.tv-chat-gif-note p { margin: 0; }
+.tv-chat-gif-powered { margin: 0; }
+
 /* A hand-held screen: the list takes the width, and stacks above the buttons. */
 @media (max-width: 899px) {
   .tv-chat-window { width: 100%; height: auto; max-height: none; }
@@ -321,6 +355,9 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
   .tv-chat-lead, .tv .chat-privacy { font-size: 1.2em; }
+  .tv-chat-gif-search { font-size: 16px; } /* (16px: as the box of the chat) */
+  .tv-chat-gifs { grid-template-columns: repeat(auto-fill, minmax(7em, 1fr)); max-height: 56vh; }
+  .tv-chat-gif-note { font-size: 1.3em; }
 
   /*
    * The chat itself on a hand-held screen is the whole screen, as in any messenger (the owner, 16 Nov): the friend at the top with the arrow back, the

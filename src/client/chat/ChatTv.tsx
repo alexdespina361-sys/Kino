@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from "re
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
@@ -11,7 +11,10 @@ import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
+import { gifOf } from "./gifs";
+import { GifPickTv } from "./GifPick";
 import { keepTheBox, MessageBox } from "./MessageBox";
+import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
@@ -56,11 +59,16 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   const [writing, setWriting] = useState(false);
   /** The page of titles to send is open (see TitlePick.tsx). */
   const [picking, setPicking] = useState(false);
+  /** The page of GIFs is open (see GifPick.tsx): only where the screen types (a computer, a hand-held screen), and only when the site has a KLIPY key. */
+  const [gifPicking, setGifPicking] = useState(false);
+  const gifKey = useGifKey();
+  const gifs = (desk || narrow) && gifKey ? gifKey : null;
   /** What has been typed and not sent stays while the chat is open: Back from the writing does not lose it. */
   const [draft, setDraft] = useState("");
 
   if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} />;
   if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
+  if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
   if (writing) {
     return (
       <WriteTv
@@ -93,6 +101,7 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       now={now}
       onWrite={() => setWriting(true)}
       onPickTitle={() => setPicking(true)}
+      {...(gifs ? { onPickGif: () => setGifPicking(true) } : {})}
       onClose={onClose}
       onOpenTitle={onOpenTitle}
     />
@@ -114,6 +123,7 @@ export function ReadTv({
   now,
   onWrite,
   onPickTitle,
+  onPickGif,
   onClose,
   onOpenTitle,
 }: {
@@ -133,6 +143,8 @@ export function ReadTv({
   onWrite: () => void;
   /** The button beside the box that sends a title instead (none: no such button). */
   onPickTitle?: (() => void) | undefined;
+  /** The button beside it that sends a GIF (none: the site has no KLIPY key, or the screen only has a remote). */
+  onPickGif?: (() => void) | undefined;
   onClose: () => void;
   onOpenTitle?: ((item: LibraryItem) => void) | undefined;
 }) {
@@ -277,6 +289,11 @@ export function ReadTv({
                   <FilmIcon />
                 </button>
               )}
+              {onPickGif && (
+                <button type="button" className="tv-chat-title-btn tv-chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-nav data-testid="tv-chat-gif-btn">
+                  <GifIcon />
+                </button>
+              )}
               {desk || narrow ? (
                 // A computer or a hand-held screen: the box itself, Enter sends.
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
@@ -379,7 +396,7 @@ export function WriteTv({
       <h1 className="tv-headline tv-headline-small">{t("chat.writeTitle", { name })}</h1>
       {last && (
         <p className="tv-chat-quote" data-testid="tv-chat-quote">
-          <b>{last.mine ? t("chat.you") : name}</b> {last.text}
+          <b>{last.mine ? t("chat.you") : name}</b> {gifOf(last.text) ? t("chat.gifAlt") : last.text}
         </p>
       )}
       <form className="profile-editor profile-editor-tv list-editor-tv chat-editor-tv" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-form">

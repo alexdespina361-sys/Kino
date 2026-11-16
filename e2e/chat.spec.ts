@@ -1300,3 +1300,157 @@ test.describe("the chat on a hand-held screen that shows the TV's pages", () => 
     await expect(tvLines(bob.page).first().getByTestId("chat-text")).toHaveText("Hello from the phone");
   });
 });
+
+/* ------------------------------ GIFs (KLIPY, faked: nothing here asks the real one) ------------------------------ */
+
+const KLIPY_TEST_KEY = "TestKey_0123456789";
+/** A picture of one pixel: what every GIF of the fake KLIPY is. */
+const PIXEL = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+const gifAddress = (id: string) => `https://static.klipy.com/ii/test/${id}-sm.webp`;
+const GONE_GIF = "https://static.klipy.com/ii/gone/x-sm.webp";
+const klipyEntry = (id: string) => ({
+  id,
+  slug: `gif-${id}`,
+  title: `Gif ${id}`,
+  type: "gif",
+  file: { sm: { webp: { url: gifAddress(id), width: 220, height: 160, size: 900 } }, xs: { webp: { url: `https://static.klipy.com/ii/test/${id}-xs.webp`, width: 90, height: 65, size: 300 } } },
+});
+
+/**
+ * KLIPY as this page's browser would find it, answered here: Trending is t1..t3 and then t4, t5 on a second page, "cat" finds c1, anything else nothing; every
+ * picture is a pixel, except the one KLIPY has "taken away". With `key`, the site says it has a KLIPY key (the e2e server has none). The asks are kept, to be looked at.
+ */
+async function fakeKlipy(page: Page, { key = true } = {}): Promise<URL[]> {
+  const asked: URL[] = [];
+  if (key) await page.route("**/api/features", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ cat: false, gifs: KLIPY_TEST_KEY }) }));
+  await page.route(/^https:\/\/api\.klipy\.com\//, async (route) => {
+    const address = new URL(route.request().url());
+    asked.push(address);
+    const words = address.searchParams.get("q") ?? "";
+    const at = Number(address.searchParams.get("page") ?? "1");
+    const ids = words === "" ? (at === 1 ? ["t1", "t2", "t3"] : ["t4", "t5"]) : words === "cat" ? ["c1"] : [];
+    await route.fulfill({
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify({ result: true, data: { data: ids.map(klipyEntry), current_page: at, per_page: 24, has_next: words === "" && at === 1 } }),
+    });
+  });
+  await page.route(/^https:\/\/static\d?\.klipy\.com\//, (route) => (route.request().url().includes("/gone/") ? route.fulfill({ status: 404, body: "" }) : route.fulfill({ contentType: "image/gif", body: PIXEL })));
+  return asked;
+}
+
+const srcs = (pictures: ReturnType<Page["getByTestId"]>) => pictures.locator("img").evaluateAll((all) => all.map((picture) => (picture as HTMLImageElement).src));
+
+test.describe("GIFs in a chat", () => {
+  test("on the phone: the GIF button opens KLIPY's Trending in its order, more of it, a search once typing stops; a press sends one, and the friend sees the picture (one KLIPY took away says so), with no button where the site has no key", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    const asked = await fakeKlipy(ann.page);
+    await fakeKlipy(bob.page, { key: false }); // (Bob's site has no key: no button, and a GIF he is sent is shown all the same)
+    await openChat(ann.page);
+    await expect(ann.page.getByTestId("chat-gif-btn")).toBeVisible();
+    expect(asked, "nothing is asked of KLIPY before the grid is open").toHaveLength(0);
+
+    await ann.page.getByTestId("chat-gif-btn").click();
+    const sheet = ann.page.getByTestId("chat-gif-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(ann.page.getByTestId("chat-gif-search")).toHaveAttribute("placeholder", "Search KLIPY");
+    await expect(ann.page.getByTestId("chat-gif-powered")).toHaveText("Powered by KLIPY");
+    const picks = ann.page.getByTestId("chat-gif-pick");
+    await expect(picks).toHaveCount(3);
+    expect(await srcs(picks)).toEqual(["t1", "t2", "t3"].map(gifAddress));
+    await ann.page.getByTestId("chat-gif-more").click();
+    await expect(picks).toHaveCount(5);
+    expect(await srcs(picks)).toEqual(["t1", "t2", "t3", "t4", "t5"].map(gifAddress));
+    await expect(ann.page.getByTestId("chat-gif-more")).toHaveCount(0);
+
+    // a search waits for the typing to stop, and asks once
+    await ann.page.getByTestId("chat-gif-search").pressSequentially("cat", { delay: 60 });
+    await expect(picks).toHaveCount(1);
+    expect(await srcs(picks)).toEqual([gifAddress("c1")]);
+    expect(asked.filter((address) => address.pathname.endsWith("/search"))).toHaveLength(1);
+    await ann.page.getByTestId("chat-gif-search").fill("zzz");
+    await expect(ann.page.getByTestId("chat-gif-none")).toHaveText(say(en["chat.gifNone"], { query: "zzz" }));
+    await ann.page.getByTestId("chat-gif-search").fill("");
+    await expect(picks).toHaveCount(3);
+    // what was asked: by this browser, with the site's key, KLIPY's own filter, a number of this browser's (the same each time) and nothing of the profile
+    const profile = (await profileOf(ann.page))!;
+    expect(new Set(asked.map((address) => address.searchParams.get("customer_id"))).size).toBe(1);
+    for (const address of asked) {
+      expect(address.pathname.startsWith(`/api/v1/${KLIPY_TEST_KEY}/gifs/`), address.pathname).toBe(true);
+      expect(address.searchParams.get("content_filter")).toBe("medium");
+      expect(address.searchParams.get("per_page")).toBe("24");
+      expect(address.toString()).not.toContain(profile);
+    }
+
+    // Back shuts the grid and sends nothing
+    await ann.page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat")).toBeVisible();
+    await expect(lines(ann.page)).toHaveCount(0);
+
+    // a press sends it: the grid shuts, the chat has the picture
+    await ann.page.getByTestId("chat-gif-btn").click();
+    await expect(picks).toHaveCount(3);
+    await picks.nth(1).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(1);
+    const mine = lines(ann.page).first().getByTestId("chat-gif");
+    await expect(mine).toHaveAttribute("src", gifAddress("t2"));
+    await expect.poll(() => mine.evaluate((picture) => (picture as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+
+    // Bob: no button, and Ann's GIF is the picture
+    await openChat(bob.page);
+    await expect(bob.page.getByTestId("chat-gif-btn")).toHaveCount(0);
+    await expect(bob.page.getByTestId("chat-title-btn")).toBeVisible();
+    await expect(lines(bob.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t2"));
+    // one KLIPY has taken away says so; words with an address in them stay words
+    await write(ann.page, GONE_GIF);
+    await expect(lines(bob.page)).toHaveCount(2, SOON);
+    await expect(lines(bob.page).nth(1).getByTestId("chat-gif-gone")).toHaveText(en["chat.gifGone"]);
+    await write(ann.page, `look ${gifAddress("t3")}`);
+    await expect(lines(bob.page)).toHaveCount(3, SOON);
+    await expect(lines(bob.page).nth(2).getByTestId("chat-text")).toHaveText(`look ${gifAddress("t3")}`);
+    await expect(lines(bob.page).nth(2).getByTestId("chat-gif")).toHaveCount(0);
+  });
+
+  test("on a hand-held screen showing the TV's pages: the GIF button beside the box opens a page of them, a press sends one and goes back to the chat, all on the narrowest screen; a TV with only a remote has no button, and shows the picture", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ann = await screenWithFriends(browser, "Ann", { viewport: { width: 320, height: 640 } });
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await fakeKlipy(ann.page);
+    await fakeKlipy(bob.page); // (the key too: a TV that is only a remote still has no button)
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    const button = ann.page.getByTestId("tv-chat-gif-btn");
+    await expect(button).toBeVisible();
+    expect(await outsideTheScreen(ann.page, "tv-chat", false)).toEqual([]);
+    const box = await where(ann.page.getByTestId("tv-chat-box"));
+    expect(box.width, "the box keeps room to type in").toBeGreaterThan(90);
+
+    await button.click();
+    await expect(ann.page.getByTestId("tv-chat-gifs-page")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-gif-search")).toHaveAttribute("placeholder", "Search KLIPY");
+    await expect(ann.page.getByTestId("tv-chat-gif-search")).not.toBeFocused(); // (its keyboard would come up over the grid)
+    await expect(ann.page.getByTestId("chat-gif-pick")).toHaveCount(3);
+    await expect(ann.page.getByTestId("tv-chat-gif-powered")).toHaveText("Powered by KLIPY");
+    expect(await outsideTheScreen(ann.page, "tv-chat-gifs-page", false)).toEqual([]);
+    // Back goes back to the chat, sending nothing
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page)).toHaveCount(0);
+    await button.click();
+    await ann.page.getByTestId("chat-gif-pick").first().click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t1"));
+
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t1"));
+    await expect.poll(() => tvLines(bob.page).first().getByTestId("chat-gif").evaluate((picture) => (picture as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await expect(bob.page.getByTestId("tv-chat-gif-btn")).toHaveCount(0);
+  });
+});

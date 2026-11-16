@@ -315,6 +315,14 @@ export const FilmIcon = (props: Props) => (
   </Icon>
 );
 
+/** A label that says GIF: the chat's button that sends one (chat/GifPick.tsx). */
+export const GifIcon = (props: Props) => (
+  <Icon {...props}>
+    <rect x="2" y="5" width="20" height="14" rx="3" />
+    <path d="M9.6 9.5H7.6a1.5 1.5 0 0 0-1.5 1.5v2a1.5 1.5 0 0 0 1.5 1.5h2v-2.2H8.3M12.4 9.5v5M15.2 14.5v-5h3M15.2 12h2.4" />
+  </Icon>
+);
+
 /** A face with a wide grin: cartoons. */
 export const CartoonIcon = (props: Props) => (
   <Icon {...props}>
