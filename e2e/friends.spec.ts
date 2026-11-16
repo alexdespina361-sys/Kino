@@ -801,15 +801,50 @@ test.describe("what a friend can see", () => {
     await expect(row.locator(".friend-pic")).toHaveAttribute("data-online", "true");
     await row.click();
     await expect(bob.page.getByTestId("friend-page")).toContainText("Online");
+    await expect(bob.page.getByTestId("friend-now")).toHaveText("Online");
     await bob.page.keyboard.press("Escape");
+
+    // Ann's screen has been shut for five minutes, as the server tells it (its clock is not one a test can move): no dot, and the row and her page say when she was last online
+    let away = true;
+    await bob.page.route(/\/api\/profiles\/[^/]+\/friends$/, async (route) => {
+      if (!away || route.request().method() !== "GET") return route.continue();
+      try {
+        const answer = await route.fetch();
+        const state = await answer.json();
+        for (const friend of state.friends ?? []) {
+          delete friend.online;
+          friend.lastOnline = Date.now() - 5 * 60_000;
+        }
+        await route.fulfill({ response: answer, json: state });
+      } catch {
+        // (the page gave up on this look for a newer one)
+      }
+    });
+    await expect(async () => {
+      await look(bob.page);
+      await expect(row).toContainText("Last online 5 minutes ago", { timeout: 1500 });
+    }).toPass();
+    await expect(row.locator(".friend-pic")).toHaveAttribute("data-online", "false");
+    await row.click();
+    await expect(bob.page.getByTestId("friend-now")).toHaveText("Last online 5 minutes ago");
+    await expect(bob.page.getByTestId("friend-status")).toContainText("Friends since");
+    // (and the chat with her says it under its title)
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(bob.page.getByTestId("chat-presence")).toHaveText("Last online 5 minutes ago");
+    await expect(bob.page.getByTestId("chat-presence")).toHaveAttribute("data-online", "false");
+    await bob.page.keyboard.press("Escape"); // (the chat)
+    await expect(bob.page.getByTestId("chat-sheet")).toHaveCount(0);
+    await bob.page.keyboard.press("Escape");
+    away = false;
 
     // Ann turns it off (a choice that has no switch any more, so it is sent the way a screen would): Bob does not see her online any more
     await chooses(ann.page, { friendsPresence: false });
     await expect(async () => {
       await look(bob.page);
       await expect(row.locator(".friend-pic")).toHaveAttribute("data-online", "false", { timeout: 1500 });
+      await expect(row).not.toContainText("Online", { timeout: 1500 });
+      await expect(row).not.toContainText("Last online", { timeout: 1500 }); // (nor when she last was: the one switch hides both)
     }).toPass();
-    await expect(row).not.toContainText("Online");
   });
 });
 

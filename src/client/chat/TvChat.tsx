@@ -1,3 +1,4 @@
+import { presenceLine } from "../friends/entries";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { ChatTv } from "./ChatTv";
 import { useHost } from "./useHost";
@@ -20,6 +21,7 @@ export function TvChat({ friendId, narrow, onClose, onOpenTitle }: { friendId: s
       name={host.friend.name}
       avatar={host.friend.avatar}
       online={host.friend.on && host.friend.online}
+      presence={presenceLine(host.friend, Date.now())}
       session={host.session}
       report={host.report}
       receiving={host.receiving}

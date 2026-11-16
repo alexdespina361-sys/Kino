@@ -9,7 +9,7 @@ import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
 import { waitingFrom } from "../chat/notices";
 import { PhoneChat } from "../chat/PhoneChat";
-import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, myScoreFor, nameOf, progressFor, progressNote, ratedBy, recommendationOf, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
+import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendHeadline, friendLine, listsOf, myScoreFor, nameOf, progressFor, progressNote, ratedBy, recommendationOf, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends, useQuickLooks } from "../friends/FriendsProvider";
 import { friendOrder, watchedLately } from "../friends/pages";
 import { dateValue, defaultPlan, duePlans, inboxToShow, momentOf, planLines, planMoment, planStatus, timeValue, whenLabel } from "../friends/plans";
@@ -843,7 +843,13 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         <FriendPic friend={friend} size="big" />
         <div className="account-who">
           <h1 data-testid="friend-name">{friend.name}</h1>
-          <p className="muted" data-testid="friend-status">{[friend.on ? friendLine(friend, friends.state?.activity ?? [], Date.now()) : "", t("friends.since", { day: formatDay(friend.since, language) })].filter(Boolean).join(" · ")}</p>
+          {/* (What they are doing and whether they are online, or when they last were, on a line of its own: since when they are friends under it.) */}
+          {friend.on && friendHeadline(friend, friends.state?.activity ?? [], Date.now()) && (
+            <p className="friend-now" data-online={friend.online === true} data-testid="friend-now">
+              {friendHeadline(friend, friends.state?.activity ?? [], Date.now())}
+            </p>
+          )}
+          <p className="muted" data-testid="friend-status">{t("friends.since", { day: formatDay(friend.since, language) })}</p>
         </div>
       </section>
       {!friend.on && <p className="banner" data-testid="friend-off">{t("friends.theirsOff", { name: friend.name })}</p>}

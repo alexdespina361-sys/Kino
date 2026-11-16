@@ -76,6 +76,10 @@ describe("the rows of the friends page", () => {
     expect(people(sam)?.online).toBeUndefined();
     expect(people({ ...sam, online: true })).toMatchObject({ avatar: "fox", online: true, note: t("friends.online") });
     expect(people({ ...sam, on: false, online: true })?.online).toBeUndefined();
+    // (and when they last were, once they are not: no dot, and the line says it before since when they are friends would)
+    const seen = people({ ...sam, lastOnline: NOW - 5 * 60_000 });
+    expect(seen).toMatchObject({ note: t("friends.lastOnline", { when: "5 minutes ago" }) });
+    expect(seen?.online).toBeUndefined();
   });
 
   it("show an invitation to a party that is on as a tile that joins it, with the code to read and who invited", () => {
@@ -421,6 +425,11 @@ describe("a friend's page", () => {
 
   it("says that the friend is online, and puts how far they got on the titles they kept and rated", () => {
     expect(friendGrid(view, state({ friends: [{ ...sam, online: true }] }), { data: lists() }, null)?.meta).toBe(`${t("friends.online")}  ·  ${since(sam)}`);
+    const seen = { ...sam, lastOnline: NOW - 5 * 60_000 };
+    expect(friendGrid(view, state({ friends: [seen] }), { data: lists() }, null, true, NOW)?.meta).toBe(`${t("friends.lastOnline", { when: "5 minutes ago" })}  ·  ${since(sam)}`);
+    expect(friendGrid(view, { ...state({ friends: [seen] }), activity: [watched("pro_sam", "k")] }, { data: lists() }, null, true, NOW)?.meta).toBe(
+      `${t("friends.line.watching", { title: "Alien" })}  ·  ${t("friends.lastOnline", { when: "5 minutes ago" })}  ·  ${since(sam)}`,
+    );
     const progress = [{ link: titleLink("https://x.example/alien"), season: 2, episode: 5, percent: 63 }];
     const kept = friendGrid(view, state(), { data: { ...lists(), progress } }, null);
     expect(kept?.entries[0]).toMatchObject({ title: "Alien", progress: 0.63, note: "S2:E5 · 63%" });

@@ -25,6 +25,8 @@ export interface ChatTvProps {
   /** Their picture, and whether they are online now: the top of the chat, as on their page. */
   avatar?: AvatarId | undefined;
   online?: boolean;
+  /** What the top of the chat says under their name: "Online", else when they last were ("Last online 5 minutes ago", see `presenceLine`); empty: that it is a chat. */
+  presence?: string | undefined;
   /** A computer (`data-fit="desk"`): it has a keyboard, so the chat has a box to type in under the messages, and Enter sends. */
   desk?: boolean;
   session: ChatSession;
@@ -49,7 +51,7 @@ export interface ChatTvProps {
  * (the way the note of a rating is) and sent with the button. The Back of the remote goes back a page at a time: from the ⋯, a report or the writing to the
  * chat, from the chat to the friend. A report shows what would be sent, and the remote lands on Back there, not on Send.
  */
-export function ChatTv({ name, avatar, online = false, desk = false, session, report, receiving = true, narrow = false, onClose, onOpenTitle, now = Date.now() }: ChatTvProps) {
+export function ChatTv({ name, avatar, online = false, presence, desk = false, session, report, receiving = true, narrow = false, onClose, onOpenTitle, now = Date.now() }: ChatTvProps) {
   const [writing, setWriting] = useState(false);
   /** The page of titles to send is open (see TitlePick.tsx). */
   const [picking, setPicking] = useState(false);
@@ -79,6 +81,7 @@ export function ChatTv({ name, avatar, online = false, desk = false, session, re
       name={name}
       avatar={avatar}
       online={online}
+      presence={presence}
       desk={desk}
       narrow={narrow}
       draft={draft}
@@ -99,6 +102,7 @@ export function ReadTv({
   name,
   avatar,
   online = false,
+  presence,
   desk = false,
   narrow = false,
   draft = "",
@@ -115,6 +119,7 @@ export function ReadTv({
   name: string;
   avatar?: AvatarId | undefined;
   online?: boolean;
+  presence?: string | undefined;
   desk?: boolean;
   /** A hand-held screen: it types in the box itself as a computer does, with its own keyboard, which does not come up by itself as the chat opens (it would cover the messages before they are read). */
   narrow?: boolean;
@@ -209,7 +214,7 @@ export function ReadTv({
               {name}
             </h1>
             <p className="tv-chat-status" data-testid="tv-chat-status">
-              {[online ? t("friends.online") : t("chat.open"), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ")}
+              {[presence || (online ? t("friends.online") : t("chat.open")), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ")}
             </p>
           </div>
           <div className="tv-chat-more-wrap" onBlur={leaving}>

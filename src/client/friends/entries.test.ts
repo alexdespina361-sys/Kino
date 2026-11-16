@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_LIST, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings } from "../../shared";
+import { formatDay } from "../account/time";
 import { t } from "../i18n";
 import type { Entry } from "../tv/pages";
-import { entriesOfList, entriesOfRatings, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type Recommendation } from "./entries";
+import { entriesOfList, entriesOfRatings, entryOfActivity, entryOfRecommendation, friendHeadline, friendLine, presenceLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type Recommendation } from "./entries";
 
 const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
@@ -39,6 +40,32 @@ describe("the line under a friend's name", () => {
     expect(friendLine({ ...sam, online: true }, [], NOW)).toBe(t("friends.online"));
     expect(friendLine({ ...sam, online: true }, [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" })); // (what they watch says more)
     expect(friendLine({ ...sam, on: false, online: true }, [], NOW)).toBe(t("friends.paused"));
+  });
+
+  it("is when they were last online once they are not: a moment, minutes, hours and days ago, and the day itself past a week; never a time to come", () => {
+    const seen = (before: number): Friend => ({ ...sam, lastOnline: NOW - before });
+    expect(friendLine(seen(20_000), [], NOW)).toBe(t("friends.lastOnlineNow"));
+    expect(friendLine(seen(5 * 60_000), [], NOW)).toBe(t("friends.lastOnline", { when: "5 minutes ago" }));
+    expect(friendLine(seen(3 * 3_600_000), [], NOW)).toBe(t("friends.lastOnline", { when: "3 hours ago" }));
+    expect(friendLine(seen(26 * 3_600_000), [], NOW)).toBe(t("friends.lastOnline", { when: "yesterday" }));
+    expect(friendLine(seen(10 * 86_400_000), [], NOW)).toBe(t("friends.lastOnlineDay", { day: formatDay(NOW - 10 * 86_400_000, "en") }));
+    expect(friendLine(seen(-5 * 60_000), [], NOW)).toBe(t("friends.lastOnlineNow")); // (a clock here behind the server's)
+    expect(friendLine({ ...seen(5 * 60_000), online: true }, [], NOW)).toBe(t("friends.online")); // (told while they are online too)
+    expect(friendLine(seen(5 * 60_000), [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" }));
+    expect(friendLine({ ...seen(5 * 60_000), on: false }, [], NOW)).toBe(t("friends.paused"));
+    expect(presenceLine({ ...seen(5 * 60_000), on: false }, NOW)).toBe("");
+  });
+});
+
+describe("what a friend's own page says under their name", () => {
+  it("is what they watch and whether they are online, or when they last were, both", () => {
+    const seen: Friend = { ...sam, lastOnline: NOW - 5 * 60_000 };
+    const last = t("friends.lastOnline", { when: "5 minutes ago" });
+    expect(friendHeadline(seen, [watched("pro_sam", "k")], NOW)).toBe(`${t("friends.line.watching", { title: "Alien" })}  ·  ${last}`);
+    expect(friendHeadline(seen, [], NOW)).toBe(last);
+    expect(friendHeadline({ ...seen, online: true }, [], NOW)).toBe(t("friends.online"));
+    expect(friendHeadline(sam, [], NOW)).toBe("");
+    expect(friendHeadline({ ...seen, on: false }, [], NOW)).toBe(t("friends.paused"));
   });
 });
 
