@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Cadence, HELD_FRAMES, VideoClock, boostDelay, boostPhase, refreshRate, type HeldFrame } from "./boostTiming";
+import { Cadence, HELD_FRAMES, VideoClock, boostDelay, boostPhase, gridJobs, gridMoment, gridRate, refreshRate, type HeldFrame } from "./boostTiming";
 
 /**
  * A video of `fps` frames a second played on a screen of `hz`: each frame comes at the first refresh at or after its moment (as a browser shows them), and
@@ -114,6 +114,25 @@ describe("the frame boost's timing", () => {
   it("holds the newer frame when the next one is late (a stall, or a pause)", () => {
     const phase = boostPhase([{ mediaTime: 1, arrived: 0 }, { mediaTime: 1 + 1 / 24, arrived: 42 }], 1.5, 60);
     expect(phase).toEqual({ from: 0, to: 1, t: 1, between: true });
+  });
+
+  it("gives RIFE the moments between two frames on its grid: 24 to 60 is 2 or 3 a pair (one of them the frame itself), 24 to 30 is 1", () => {
+    const at = (m: number, t: number) => ({ m, t: expect.closeTo(t, 6) as unknown as number });
+    // 24 fps frames 0 and 1/24 on a grid of 60: 0 (the frame itself), 1/60 (t 0.4), 2/60 (0.8).
+    expect(gridJobs(0, 1 / 24, 60)).toEqual([at(1, 0.4), at(2, 0.8)]);
+    // the next pair: 3/60 (t 0.2), 4/60 (0.6); 5/60 is the frame 2/24 itself
+    expect(gridJobs(1 / 24, 2 / 24, 60)).toEqual([at(3, 0.2), at(4, 0.6)]);
+    // 24 to 30: four frames between every four of the video's (one per pair, but for the pair that starts on the grid)
+    const jobs = [0, 1, 2, 3].flatMap((index) => gridJobs(index / 24, (index + 1) / 24, 30));
+    expect(jobs.map((each) => each.m)).toEqual([1, 2, 3, 4]);
+    expect(jobs.map((each) => Math.round(each.t * 10) / 10)).toEqual([0.8, 0.6, 0.4, 0.2]);
+    // nothing across a seek, and the moments for a 57 Hz screen
+    expect(gridJobs(10, 12, 60)).toEqual([]);
+    expect(gridRate(60, 57)).toBe(57);
+    expect(gridRate(60, 60)).toBe(60);
+    expect(gridRate(30, 60)).toBe(30);
+    expect(gridRate(60, 0)).toBe(60);
+    expect(gridMoment(1 / 60 + 0.004, 60)).toBe(1);
   });
 
   it("knows the screen's refresh rate, leaving pauses out", () => {

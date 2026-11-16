@@ -139,6 +139,33 @@ export function refreshRate(gaps: readonly number[]): number {
 }
 
 /**
+ * RIFE's frames are made ahead, for fixed moments of the video: every 1/rate of a second, `rate` being the boost's frames a second, or the screen's
+ * refresh rate if it shows fewer (60 on a 57 Hz screen: 57).
+ */
+export const gridRate = (fps: number, hz: number): number => (hz > 0 && hz < fps * 0.99 ? hz : fps);
+
+/** How far ahead of the screen RIFE starts on a pair of frames (s): RIFE takes 40-50 ms a frame on an RTX 3090 at 480p, two or three of them per pair at 60. */
+export const RIFE_LEAD = 0.15;
+
+/**
+ * The moments RIFE has to make between the video's frames at `a` and `b` (s), on the grid of `rate` a second: grid number `m` (the moment m / rate) and
+ * where it falls between them (`t`). A moment within 2% of a frame is that frame (made by nobody); a pair further apart than LONGEST_STEP gets none.
+ */
+export function gridJobs(a: number, b: number, rate: number): { m: number; t: number }[] {
+  const step = b - a;
+  if (!(step > 0 && step <= LONGEST_STEP) || !(rate > 0)) return [];
+  const jobs: { m: number; t: number }[] = [];
+  for (let m = Math.ceil(a * rate - 1e-9); m / rate < b; m++) {
+    const t = (m / rate - a) / step;
+    if (t > 0.02 && t < 0.98) jobs.push({ m, t });
+  }
+  return jobs;
+}
+
+/** The grid number of the moment `shown` (s): the screen shows the grid's moments, each on the refresh nearest it. */
+export const gridMoment = (shown: number, rate: number): number => Math.round(shown * rate);
+
+/**
  * Which refreshes of the screen get a new frame, for `fps` frames a second on a screen of `hz`: every one when the screen is not faster than that, else one
  * in every hz/fps, as evenly as the screen allows (60 fps on a 144 Hz screen is 2, 3, 2, 3, 2 refreshes). The slots are counted from the first refresh,
  * which sits a quarter into its slot, so that no refresh falls right on the edge of one (where a microsecond of jitter would skip a frame or show one

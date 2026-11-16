@@ -146,8 +146,10 @@ test.describe("Kino Labs: the upscaler test page", () => {
     await expect(page.getByTestId("upscale-test-one")).toBeEnabled();
   });
 
-  test("the frame boost makes the frame between two: Motion draws a moving square where it is at that moment, Blend shows it faintly in both places", async ({ page }) => {
-    await openSample(page);
+  test("the frame boost makes the frame between two: RIFE draws a moving square where it is at that moment, Blend shows it faintly in both places", async ({ page, baseURL }) => {
+    test.setTimeout(120_000); // (RIFE on the processor here: a few seconds a frame)
+    // (`rifeEp=wasm`: RIFE on the processor, as the browser of these tests may have no WebGPU; the same network and the same answer, only slower.)
+    const asked = await openSample(page, "/labs/upscale/?rifeEp=wasm");
     const seen = await page.evaluate(async () => {
       const lab = (window as unknown as { kinoUpscaleLab: { interpolate: (a: string, b: string, t: number, how: string) => Promise<string> } }).kinoUpscaleLab;
       // Pictures of a white square moved to the right, on a background of grey blocks that stands still.
@@ -187,14 +189,14 @@ test.describe("Kino Labs: the upscaler test page", () => {
       const small = [picture(80, 24), picture(120, 24)];
       const smallAt = [92, 112, 132];
       return {
-        bigHalf: await at(big, 0.5, "motion", bigAt),
-        bigQuarter: await at(big, 0.25, "motion", bigAt),
+        bigHalf: await at(big, 0.5, "rife", bigAt),
+        bigQuarter: await at(big, 0.25, "rife", bigAt),
         blendHalf: await at(big, 0.5, "blend", bigAt),
-        ends: await at(big, 1, "motion", bigAt),
-        smallHalf: await at(small, 0.5, "motion", smallAt),
+        ends: await at(big, 1, "rife", bigAt),
+        smallHalf: await at(small, 0.5, "rife", smallAt),
       };
     });
-    // Motion: the square is where it is at that moment (92 to 140 half way, 86 to 134 a quarter of the way); the background shows where it left.
+    // RIFE: the square is where it is at that moment (92 to 140 half way, 86 to 134 a quarter of the way); the background shows where it left.
     expect(seen.bigHalf[0]).toBeLessThan(120);
     expect(seen.bigHalf[1]).toBeGreaterThan(220);
     expect(seen.bigHalf[2]).toBeGreaterThan(220);
@@ -211,35 +213,48 @@ test.describe("Kino Labs: the upscaler test page", () => {
     expect(seen.blendHalf[1]).toBeGreaterThan(220);
     // At 1, the second picture as it is.
     expect(seen.ends[3]).toBe(255);
+    // The network is the site's own file (MIT, its hash in the README next to it), and ONNX Runtime comes with the page: nothing from elsewhere.
+    expect(asked.filter((url) => url.endsWith(".onnx"))).toEqual([`${baseURL}/labs/upscale/rife/rife-v4.25-lite.onnx`]);
+    const elsewhere = asked.filter((url) => !url.startsWith(baseURL!) && !url.startsWith("blob:") && !url.startsWith("data:"));
+    expect(elsewhere).toEqual([]);
+    const network = await (await page.request.get("/labs/upscale/rife/rife-v4.25-lite.onnx")).body();
+    const { createHash } = await import("node:crypto");
+    expect(createHash("sha256").update(network).digest("hex")).toBe("702802d0862ab78f2d72133c6bc3768e7e89b81756f7cd51d1055a2fe3d06577");
   });
 
   test("with the frame boost at 60, plays on the screen's rhythm, says what it does, and is timed against 60 frames a second", async ({ page }) => {
     await openSample(page, "/labs/upscale/?seconds=2");
+    // (Blend: the browser of these tests may have no WebGPU for RIFE; RIFE's live boost is checked by hand on a graphics card.)
+    await page.getByTestId("upscale-boost-how").selectOption("blend");
     await page.getByTestId("upscale-boost").selectOption("60");
     await expect(page.getByTestId("upscale-boost-info")).toBeVisible();
     await page.getByRole("button", { name: "Play", exact: true }).click();
-    await expect(page.getByTestId("upscale-boost-info")).toContainText("frames a second made into 60, by Motion", { timeout: 10_000 });
+    await expect(page.getByTestId("upscale-boost-info")).toContainText("frames a second made into 60, by Blend", { timeout: 10_000 });
     await expect(page.getByTestId("upscale-boost-info")).toContainText(/Now: \d+ new frames a second/);
     await expect(page.locator(".stage.boosted")).toHaveCount(1); // (the left side is the video's own frame of the moment shown)
     await page.getByRole("button", { name: "Pause", exact: true }).click();
     await page.getByTestId("upscale-test-one").click();
-    const row = page.getByTestId("upscale-result-sharp-60-motion");
+    const row = page.getByTestId("upscale-result-sharp-60-blend");
     await expect(row).toBeVisible({ timeout: 60_000 });
-    await expect(row).toContainText("Sharp (FSR 1) + 60 fps (Motion)");
+    await expect(row).toContainText("Sharp (FSR 1) + 60 fps (Blend)");
     await expect(row).toContainText(/frames shown in time, at [\d.]+ new frames a second \(screen: \d+ Hz\)|not played: too slow to try/);
-    await expect(page.getByTestId("upscale-verdict-sharp-60-motion")).toHaveText(/^(Smooth|Tight|Too slow)$/);
+    await expect(page.getByTestId("upscale-verdict-sharp-60-blend")).toHaveText(/^(Smooth|Tight|Too slow)$/);
     // Off again: the video as it is, on the left too.
     await page.getByTestId("upscale-boost").selectOption("0");
     await expect(page.getByTestId("upscale-boost-info")).toBeHidden();
     await expect(page.locator(".stage.boosted")).toHaveCount(0);
   });
 
-  test("where the browser has no WebGPU, says so, keeps the Anime modes off, and tests the others", async ({ page }) => {
+  test("where the browser has no WebGPU, says so, keeps the Anime modes and RIFE off, and tests the others", async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "gpu", { get: () => undefined, configurable: true }));
     await openSample(page, "/labs/upscale/?seconds=1");
     await expect(page.getByTestId("upscale-gpu")).toContainText("No. This browser has no WebGPU");
     for (const mode of ["anime-fast", "anime-quality"]) await expect(page.getByTestId(`upscale-mode-${mode}`)).toBeDisabled();
     expect(await probe(page, "anime-fast")).toEqual({ problem: "This browser has no WebGPU (recent Chrome or Edge on a computer have it)." });
+    // The frame boost's frames are made by Blend then: RIFE says why it is not there.
+    await expect(page.getByTestId("upscale-boost-how")).toHaveValue("blend");
+    expect(await page.locator("#boost-how option[value='rife']").evaluate((option: HTMLOptionElement) => option.disabled)).toBe(true); // (toBeDisabled does not read an option's)
+    await expect(page.locator("#boost-how option[value='rife']")).toContainText("(not here:");
 
     await page.getByTestId("upscale-test-all").click();
     await expect(page.getByTestId("upscale-status")).toHaveText("Done.", { timeout: 60_000 });
