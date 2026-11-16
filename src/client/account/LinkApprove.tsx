@@ -70,6 +70,14 @@ export function LinkApprove({ code, onClose }: { code: string; onClose: () => vo
   const account = useAccount();
   const self = useRef({}).current;
   const { signedIn, view, body, problem, outcome, busy, decide } = useLinkApproval(code, self);
+  const { cancel } = account.childLock;
+  // Closed while it asked for the PIN: nothing waits for it any more (as the account's screens do).
+  useEffect(
+    () => () => {
+      if (pinAsker.is(self)) cancel();
+    },
+    [cancel, self],
+  );
 
   if (account.childLock.asking && pinAsker.is(self)) return <PinAsk />; // (approving was asked on a child's profile)
   if (!signedIn) {

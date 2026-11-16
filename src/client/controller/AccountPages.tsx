@@ -322,7 +322,8 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           />
         </Rows>
       </Group>
-      {account.me && account.profile && <PinSetting />}
+      {/* (Set from a grown-up's profile only; one that is there is changed or taken off with it, or the password, from any.) */}
+      {account.me && account.profile && (!child || account.me.account.childPin) && <PinSetting />}
       <FriendsGroup onOpen={onOpenFriends} />
       {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
       <Group title={t("settings.labs")} help={t("settings.labsHelp")}>

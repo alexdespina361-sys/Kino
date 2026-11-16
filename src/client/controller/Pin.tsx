@@ -19,9 +19,11 @@ function PinField({ label, busy, onPin, testId, problem }: { label: string; busy
   return (
     <label className="auth-field pin-field">
       <span>{label}</span>
+      {/* (Text with its digits drawn as dots, not a password field: a browser would offer to keep the four digits as the site's password.) */}
       <input
         ref={field}
-        type="password"
+        type="text"
+        className="pin-masked"
         inputMode="numeric"
         pattern="[0-9]*"
         autoComplete="off"

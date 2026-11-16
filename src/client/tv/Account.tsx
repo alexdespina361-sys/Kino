@@ -572,8 +572,10 @@ export function TvAccountPanel({
             </SettingsGroup>
             {me && profile && (
               <SettingsGroup testId="tv-group-account">
-                {/* (The PIN is the account's, asked on a child's profile: set from any of its profiles, and changed or taken off with the one there is.) */}
-                <SettingsLine icon={<LockIcon />} label={t("pin.setting")} value={me.account.childPin ? t("common.on") : t("common.off")} onPress={onPin} testId="tv-pin-setting" autoFocus={cameFrom === "pin"} />
+                {/* (The PIN is the account's, asked on a child's profile: set from a grown-up's profile, and changed or taken off with the one there is, from any.) */}
+                {(!child || me.account.childPin) && (
+                  <SettingsLine icon={<LockIcon />} label={t("pin.setting")} value={me.account.childPin ? t("common.on") : t("common.off")} onPress={onPin} testId="tv-pin-setting" autoFocus={cameFrom === "pin"} />
+                )}
                 <SettingsLine icon={<LogoutIcon />} label={t("auth.signOut")} onPress={() => grownUp(() => void account.signOut().then(onClose))} testId="tv-sign-out" tone="danger" />
               </SettingsGroup>
             )}

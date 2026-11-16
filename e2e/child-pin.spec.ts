@@ -105,6 +105,12 @@ test.describe("the PIN of a child's profile", () => {
     await tv.goto("/tv");
     await tv.getByTestId(`profile-${first}`).click();
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    // (No PIN to set from a child's profile: a child could lock the family's screens with one.)
+    await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "true");
+    await expect(tv.getByTestId("tv-pin-setting")).toHaveCount(0);
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-account")).toHaveCount(0);
     // A PIN is set on another screen; this one still has the account without one, and cannot reach the server.
     expect((await tv.context().request.post("/api/me/child-pin", { data: { next: PIN } })).ok()).toBe(true);
     await tv.route("**/api/me", (route) => route.abort("internetdisconnected"));

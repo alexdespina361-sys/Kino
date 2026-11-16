@@ -344,7 +344,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       if (lockedNow()) return askPin(action);
       // A screen that has been on for a while may not know that a PIN was set on another one since: a child's profile asks the server once before it is left, and is not
       // left when the server cannot be asked (it may have a PIN this screen has not heard of).
-      if (profileRef.current && childRef.current && !meRef.current?.account.childPin) {
+      if (meRef.current && profileRef.current && childRef.current && !meRef.current.account.childPin) {
         void api.session().then(
           (state) => {
             setMe(state.me);
@@ -515,6 +515,9 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       },
       childLock,
       async changeChildPin(change) {
+        // (A PIN is set from a grown-up's profile: on a child's, a child could lock the family's screens with one nobody else knows. Changing or taking off one that
+        // is there takes it, or the password, anywhere.)
+        if (change.next !== null && !meRef.current?.account.childPin && (childRef.current || unsureRef.current)) throw new ApiError(403, "child_profile");
         setMe(await api.changeChildPin(change));
       },
     }),
