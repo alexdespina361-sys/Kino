@@ -532,7 +532,7 @@ export const en = {
   "player.syncMode": "Sync mode",
   "player.syncFull": "Thorough",
   "player.syncLight": "Light",
-  "player.syncModeHelp": "Thorough listens to all of the sound. Light, once the timing is sure, listens to one part in three: less work for the device, lines a little less exact.",
+  "player.syncModeHelp": "Thorough listens to all of the sound. Light, once the timing is sure, listens to one part in three: less work for the device, lines a little less exact. Weaker devices start in Light.",
   "player.syncSyncing": "Checking the timing…",
   "player.syncDone": "In sync",
   "player.syncRight": "In sync · it was right",

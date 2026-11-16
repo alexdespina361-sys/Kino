@@ -43,6 +43,27 @@ export function parsePrefs(raw: string | undefined): Prefs {
 
 export const serializePrefs = (prefs: Prefs) => JSON.stringify(prefs);
 
+/** At or below these, a screen counts as a weaker one (see `defaultSyncMode`). */
+export const WEAK_DEVICE = { cores: 4, memoryGb: 4 } as const;
+
+/**
+ * How a screen times subtitles until its viewer picks a way: Light on a weaker device, Thorough on the others (the owner's yes, 16 Nov evening).
+ * Weaker means it says it has 4 processor threads or fewer, or 4 GB of memory or less. Chrome rounds its memory figure down, and other
+ * browsers don't give one at all; then the threads decide. The whole-sound way costs about 0.75 of a core while a film plays, and Light about 0.65,
+ * with the recogniser busy about 20 s instead of about 50 s per 4 minutes. On 4 threads that difference is felt; on 16 it is not.
+ */
+export function defaultSyncMode(device: { cores?: number | undefined; memoryGb?: number | undefined }): "full" | "light" {
+  const weak = (device.cores !== undefined && device.cores > 0 && device.cores <= WEAK_DEVICE.cores) || (device.memoryGb !== undefined && device.memoryGb <= WEAK_DEVICE.memoryGb);
+  return weak ? "light" : "full";
+}
+
+/** This screen's own figures, for `defaultSyncMode`. */
+export function thisDevice(): { cores?: number; memoryGb?: number } {
+  if (typeof navigator === "undefined") return {};
+  const memoryGb = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return { ...(navigator.hardwareConcurrency ? { cores: navigator.hardwareConcurrency } : {}), ...(typeof memoryGb === "number" ? { memoryGb } : {}) };
+}
+
 /** Remember a track the viewer picked. Language is stored normalised so "eng" and "en" are the same wish. */
 export function describeTrack(track: PlayerTrack): ChosenTrack {
   const lang = normalizeLang(track.lang);

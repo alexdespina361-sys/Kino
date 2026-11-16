@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { describeTrack, parsePrefs, pickBaseSubtitleTrack, pickTrack, serializePrefs } from "./prefs";
+import { defaultSyncMode, describeTrack, parsePrefs, pickBaseSubtitleTrack, pickTrack, serializePrefs } from "./prefs";
+
+describe("defaultSyncMode", () => {
+  it("is Light on a weaker screen: 4 threads or fewer, or 4 GB or less", () => {
+    expect(defaultSyncMode({ cores: 4 })).toBe("light");
+    expect(defaultSyncMode({ cores: 2, memoryGb: 8 })).toBe("light");
+    expect(defaultSyncMode({ cores: 8, memoryGb: 4 })).toBe("light");
+    expect(defaultSyncMode({ cores: 16, memoryGb: 2 })).toBe("light");
+    expect(defaultSyncMode({ memoryGb: 1 })).toBe("light");
+  });
+  it("is Thorough on the others, and when the browser says nothing", () => {
+    expect(defaultSyncMode({ cores: 8, memoryGb: 8 })).toBe("full");
+    expect(defaultSyncMode({ cores: 6 })).toBe("full"); // (no memory figure: Firefox, Safari)
+    expect(defaultSyncMode({ cores: 0 })).toBe("full"); // (a browser that hides it)
+    expect(defaultSyncMode({})).toBe("full");
+  });
+  it("a viewer's own pick is kept in the prefs and comes before it", () => {
+    expect(parsePrefs(serializePrefs({ subtitleSyncMode: "full" })).subtitleSyncMode).toBe("full");
+  });
+});
 
 const tracks = [
   { id: 0, label: "English", lang: "eng" },

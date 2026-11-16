@@ -4,7 +4,19 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
-import { loadOnTv, openPairedPhone, openTv, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+import { loadOnTv, openLibrary, openPairedPhone, openTv, pressMenuLine, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+
+/** A TV whose browser says it has this many processor threads (and no memory figure, as Firefox): it decides the way of timing a screen starts with. */
+async function openTvWithThreads(browser: Parameters<typeof openTv>[0], threads: number): Promise<Page> {
+  const tv = await openLibrary(browser, (context) =>
+    context.addInitScript((n) => {
+      Object.defineProperty(Navigator.prototype, "hardwareConcurrency", { get: () => n, configurable: true });
+      Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true });
+    }, threads),
+  );
+  await pressMenuLine(tv, "rail-connect");
+  return tv;
+}
 
 /**
  * The subtitle aligner (src/client/subsync) in a real browser. The film is a tiny HLS stream with sound (fixtures/hls-sound: a test pattern and a
@@ -249,8 +261,29 @@ test.describe("the subtitle aligner", () => {
     await expect(phone.getByTestId("subtitle-sync")).toHaveAttribute("aria-checked", "false");
   });
 
+  test("a weaker screen (4 threads or fewer) starts in Light without saving it, and the viewer's Thorough is kept", async ({ browser }) => {
+    const tv = await openTvWithThreads(browser, 2);
+    const phone = await openPairedPhone(browser, tv);
+    await loadOnTv(phone, film("Tone"));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+    await phone.getByTestId("chip-tracks").click();
+    await phone.getByTestId("subtitle-0").click(); // English
+    await expect(phone.getByTestId("subtitle-sync-light")).toHaveAttribute("aria-selected", "true");
+    expect((await prefs(tv)).subtitleSyncMode).toBeUndefined(); // (a default, not a choice: a stronger screen later would start in Thorough)
+    await phone.getByTestId("subtitle-sync-full").click();
+    await expect.poll(async () => (await prefs(tv)).subtitleSyncMode).toBe("full");
+    // The page again (still paired: the phone finds it by itself), and another film: the pick wins over the default.
+    await tv.reload();
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await loadOnTv(phone, film("Another tone", "?again=1"));
+    await expect(phone.getByTestId("media-title")).toContainText("Another tone");
+    await phone.getByTestId("chip-tracks").click();
+    await phone.getByTestId("subtitle-0").click();
+    await expect(phone.getByTestId("subtitle-sync-full")).toHaveAttribute("aria-selected", "true");
+  });
+
   test("the way it times them is chosen from the phone or the TV's menu (Thorough, or Light), and kept; with it off there is nothing to choose", async ({ browser }) => {
-    const tv = await openTv(browser);
+    const tv = await openTvWithThreads(browser, 16); // (a stronger screen starts in Thorough: see the test above for a weaker one)
     const phone = await openPairedPhone(browser, tv);
     await loadOnTv(phone, film("Tone"));
     await expect(phone.getByTestId("media-title")).toBeVisible();

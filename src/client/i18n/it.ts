@@ -529,7 +529,7 @@ export const it: Dictionary = {
   "player.syncMode": "Modalità di sincronizzazione",
   "player.syncFull": "Accurata",
   "player.syncLight": "Leggera",
-  "player.syncModeHelp": "Accurata ascolta tutto l'audio. Leggera, quando la sincronizzazione è sicura, ne ascolta una parte su tre: meno lavoro per il dispositivo, battute un po' meno precise.",
+  "player.syncModeHelp": "Accurata ascolta tutto l'audio. Leggera, quando la sincronizzazione è sicura, ne ascolta una parte su tre: meno lavoro per il dispositivo, battute un po' meno precise. I dispositivi meno potenti partono in Leggera.",
   "player.syncSyncing": "Verifica della sincronia…",
   "player.syncDone": "Sincronizzati",
   "player.syncRight": "Sincronizzati · erano giusti",

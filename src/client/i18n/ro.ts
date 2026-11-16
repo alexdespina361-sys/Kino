@@ -532,7 +532,7 @@ export const ro: Dictionary = {
   "player.syncMode": "Mod de sincronizare",
   "player.syncFull": "Amănunțit",
   "player.syncLight": "Ușor",
-  "player.syncModeHelp": "Amănunțit ascultă tot sunetul. Ușor, după ce potrivirea e sigură, ascultă o parte din trei: mai puțin efort pentru dispozitiv, replici puțin mai puțin exacte.",
+  "player.syncModeHelp": "Amănunțit ascultă tot sunetul. Ușor, după ce potrivirea e sigură, ascultă o parte din trei: mai puțin efort pentru dispozitiv, replici puțin mai puțin exacte. Dispozitivele mai slabe pornesc în Ușor.",
   "player.syncSyncing": "Se verifică sincronizarea…",
   "player.syncDone": "Sincronizate",
   "player.syncRight": "Sincronizate · erau corecte",
