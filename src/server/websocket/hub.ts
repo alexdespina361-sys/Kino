@@ -348,7 +348,7 @@ export class Hub {
    * A TV says how long the film it asked for took to start: the look-up after the press, and the picture after the look-up. One line per film (a TV that
    * says it twice for the same stream is not written down twice), with the title's site and the kind of stream, never a link.
    */
-  private noteStarted(device: Device, lookupMs: number | undefined, loadMs: number): void {
+  private noteStarted(device: Device, { lookupMs, loadMs, resumed, manifestMs, pieceMs, pieceS, pieceKB, height, metadataMs }: Omit<Extract<ClientMessage, { type: "TV_STARTED" }>, "type">): void {
     const link = this.lastLookup.get(device.id);
     const stream = device.media?.stream;
     if (!link || !stream || this.startedFilm.get(device.id) === stream.url) return;
@@ -359,7 +359,9 @@ export class Hub {
     } catch {
       /* (the look-up said no to it already) */
     }
-    this.log?.info({ domain, type: stream.type, ...(stream.directUrl && { direct: true }), ...(lookupMs !== undefined && { lookupMs }), loadMs }, "playback-started");
+    // (Then, when the TV said them, where the load's own time went: see TV_STARTED.)
+    const load = Object.fromEntries(Object.entries({ resumed, manifestMs, pieceMs, pieceS, pieceKB, height, metadataMs }).filter(([, value]) => value !== undefined));
+    this.log?.info({ domain, type: stream.type, ...(stream.directUrl && { direct: true }), ...(lookupMs !== undefined && { lookupMs }), loadMs, ...load }, "playback-started");
   }
 
   /**
@@ -528,7 +530,7 @@ export class Hub {
       if (device.leaderId) return; // a TV that watches along has no say in what plays; it can leave the party
       this.cancelLoad(device);
     } else if (message.type === "TV_STARTED") {
-      this.noteStarted(device, message.lookupMs, message.loadMs);
+      this.noteStarted(device, message);
     } else if (message.type === "TV_UNPAIR") {
       const leader = this.registry.leaderOf(device);
       if (leader) {

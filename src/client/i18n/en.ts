@@ -175,7 +175,7 @@ export const en = {
   "settings.tapToPause": "Tap or click the picture to pause and play",
   "settings.tapToPauseHelp": "On: a tap on the picture pauses and plays. Off: it only shows the controls.",
   "settings.adaptiveQuality": "Match the picture quality to the connection",
-  "settings.adaptiveQualityHelp": "Starts in low quality so it begins at once, then plays the best your connection carries. Off: always the highest.",
+  "settings.adaptiveQualityHelp": "Starts in low quality so it begins at once, then plays the best your connection carries. Off: always the highest (the first few seconds may be 480p, to start sooner).",
   "settings.playbackHelp": "Double-tap a side of the picture to skip; hold it for 2× speed.",
   "settings.labs": "Labs",
   "settings.labsHelp": "Extras we are still trying out. They may change or go away.",

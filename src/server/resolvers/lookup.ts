@@ -13,6 +13,8 @@ export interface Lookup {
   signal: AbortSignal;
   prefetch: boolean;
   upstream: { requests: number; ms: number; timeouts: number; hosts: Map<string, HostSeen> };
+  /** How long the film waited, once its stream was known, for what is found beside it (subtitles, a dub): see `noteExtrasWait`. */
+  extrasWaitMs?: number;
 }
 
 /** What has been seen of one host over a look-up: how long its connections took to make, how long it took to begin answering, and how often it never did. */
@@ -90,6 +92,15 @@ export function noteUpstream(host: string, ms: number, note: UpstreamNote = {}):
   if (note.timedOut === "body") seen.stalled = { status: note.status, length: note.length, bytes: note.bytes };
   if (note.address) seen.address = note.address;
   upstream.hosts.set(host, seen);
+}
+
+/**
+ * Writes down that the look-up under way held its film back for `ms` after the stream was known, waiting for the extras (an adapter's subtitle sites and
+ * dub): the part of a slow look-up that is not the stream's. Several waits add up. (None under way: nothing is written.)
+ */
+export function noteExtrasWait(ms: number): void {
+  const lookup = storage.getStore();
+  if (lookup) lookup.extrasWaitMs = (lookup.extrasWaitMs ?? 0) + ms;
 }
 
 /** The questions of `lookup` in a few numbers, or undefined when none was asked. */

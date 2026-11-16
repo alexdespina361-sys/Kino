@@ -1442,6 +1442,23 @@ describe("a film on its way to the TV", () => {
     expect(JSON.stringify(written)).not.toContain("secret");
   });
 
+  it("where the load's own time went is written beside it when the TV says so (numbers only, nothing it was not asked)", async () => {
+    const written: Array<[Record<string, unknown>, string]> = [];
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { log: { info: (object, message) => void written.push([object, message]) } } });
+    await app.ready();
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/watch/1" });
+    await tv.nextWhere("TV_CMD", played);
+    const detail = { resumed: true, manifestMs: 310, pieceMs: 1220, pieceS: 6, pieceKB: 840, height: 360, metadataMs: 1290 };
+    tv.send({ type: "TV_STARTED", lookupMs: 900, loadMs: 1500, ...detail, link: "https://cdn.example/x?token=secret" } as { type: string });
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 30 } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing");
+    expect(written.filter(([, message]) => message === "playback-started")).toEqual([[{ domain: "s.example", type: "mp4", lookupMs: 900, loadMs: 1500, ...detail }, "playback-started"]]);
+    expect(JSON.stringify(written)).not.toContain("secret");
+  });
+
   it("a film a phone handed to the TV itself (no look-up) is not written down: there is no site to say", async () => {
     const written: Array<[Record<string, unknown>, string]> = [];
     await app.close();

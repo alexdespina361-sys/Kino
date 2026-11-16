@@ -1,6 +1,7 @@
 import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
+import { noteExtrasWait } from "../lookup";
 import { providerFetch } from "../providerFetch";
 import type { ResolveResult, SiteAdapter } from "../types";
 import { signedRelayUrl } from "../../streamRelay/links";
@@ -523,10 +524,12 @@ async function extrasByThen(extras: Extras, graceMs: number): Promise<[SubtitleT
     timer = setTimeout(done, graceMs);
   });
   const byThen = <T>(value: Promise<T>, fallback: T): Promise<T> => Promise.race([value.catch(() => fallback), over.then(() => fallback)]);
+  const began = performance.now();
   try {
     return await Promise.all([byThen(extras.listed, []), byThen(extras.romanian, []), byThen(extras.dub, undefined)]);
   } finally {
     clearTimeout(timer);
+    noteExtrasWait(performance.now() - began); // (the part of a slow look-up that is the extras' and not the stream's, on its `resolve` line)
   }
 }
 

@@ -173,7 +173,7 @@ export const ro: Dictionary = {
   "settings.tapToPause": "Atinge imaginea pentru pauză și redare",
   "settings.tapToPauseHelp": "Activat: o atingere pe imagine pune pauză și reia. Dezactivat: doar arată butoanele.",
   "settings.adaptiveQuality": "Adaptează calitatea imaginii la conexiune",
-  "settings.adaptiveQualityHelp": "Pornește într-o calitate joasă ca să înceapă imediat, apoi rulează în cea mai bună pe care o duce conexiunea. Dezactivat: mereu cea mai înaltă.",
+  "settings.adaptiveQualityHelp": "Pornește într-o calitate joasă ca să înceapă imediat, apoi rulează în cea mai bună pe care o duce conexiunea. Dezactivat: mereu cea mai înaltă (primele câteva secunde pot fi în 480p, ca să pornească mai repede).",
   "settings.playbackHelp": "Atinge de două ori o parte a imaginii ca să sari; ține apăsat pentru viteză dublă.",
   "settings.labs": "Laborator",
   "settings.labsHelp": "Extra pe care încă le încercăm. Se pot schimba sau pot dispărea.",

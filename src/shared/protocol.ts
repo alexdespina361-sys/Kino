@@ -271,7 +271,22 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
    * A film this TV asked for is playing: how long the look-up took from the press (when the TV saw the press or the look-up start) and how long the
    * picture took after it. Written down for the team (`playback-started`), once per film, to see where the wait before a film goes.
    */
-  z.object({ type: z.literal("TV_STARTED"), lookupMs: z.number().int().min(0).max(600_000).optional(), loadMs: z.number().int().min(0).max(600_000) }),
+  z.object({
+    type: z.literal("TV_STARTED"),
+    lookupMs: z.number().int().min(0).max(600_000).optional(),
+    loadMs: z.number().int().min(0).max(600_000),
+    /**
+     * Where the load's own time went (see `StartupNote` in engine.ts), each from the start of the load: the film started further in (a resume); the list of
+     * qualities came; the first piece of picture came, how long it plays, its size and its picture's height; a file's index came. All numbers, no links.
+     */
+    resumed: z.boolean().optional(),
+    manifestMs: z.number().int().min(0).max(600_000).optional(),
+    pieceMs: z.number().int().min(0).max(600_000).optional(),
+    pieceS: z.number().min(0).max(600).optional(),
+    pieceKB: z.number().int().min(0).max(1_000_000).optional(),
+    height: z.number().int().min(0).max(10_000).optional(),
+    metadataMs: z.number().int().min(0).max(600_000).optional(),
+  }),
   /** What this screen is called on the others' lists: the profile in use, or nothing for the TV's own name. */
   z.object({ type: z.literal("TV_NAME"), name: z.string().max(60) }),
   /** Whose screen this is: the proof (from `POST /api/profiles/:id/screen`, which only that profile's signed-in account gets) for the profile in use here, or none when nobody is. */

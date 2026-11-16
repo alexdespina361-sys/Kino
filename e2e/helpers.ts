@@ -60,6 +60,28 @@ export const twoSizes = (context: BrowserContext) =>
     }),
   );
 
+/**
+ * ...and at three sizes with a 480p between, as /fixtures/hls/three.m3u8 (for the first piece of a film with Auto off: see `lowFirstLevel`);
+ * `broken480`: its 480p's list is not there (a 404).
+ */
+export const threeSizes = (context: BrowserContext, broken480 = false) =>
+  context.route("**/fixtures/hls/three.m3u8", (route) =>
+    route.fulfill({
+      contentType: "application/vnd.apple.mpegurl",
+      body: [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        '#EXT-X-STREAM-INF:BANDWIDTH=453168,RESOLUTION=1280x720,CODECS="vp09.00.11.08"',
+        "stream.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=253168,RESOLUTION=854x480,CODECS="vp09.00.11.08"',
+        broken480 ? "not-there-480.m3u8" : "stream.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=153168,RESOLUTION=320x180,CODECS="vp09.00.11.08"',
+        "stream.m3u8",
+        "",
+      ].join("\n"),
+    }),
+  );
+
 /** A device that has never opened the page: nothing kept, so a screen goes full screen at its first press (the config's pages start as if it had been left). */
 export const FIRST_VISIT = { cookies: [], origins: [] };
 /** ...one that has nothing kept but the choice of being the remote (which a phone has that was one before, or came by the TV's QR code). */

@@ -1017,7 +1017,8 @@ export function Tv() {
     if (player.state === "playing" || player.state === "paused") {
       if (player.state === "playing" && !followingRef.current) {
         const ms = (from: number) => Math.min(600_000, Math.round(Math.max(0, from)));
-        socketRef.current?.send({ type: "TV_STARTED", ...(now.since !== null ? { lookupMs: ms(now.loadedAt - now.since) } : {}), loadMs: ms(performance.now() - now.loadedAt) });
+        // (With where the load's own time went, as the player saw it: see `StartupNote`.)
+        socketRef.current?.send({ type: "TV_STARTED", ...(now.since !== null ? { lookupMs: ms(now.loadedAt - now.since) } : {}), loadMs: ms(performance.now() - now.loadedAt), ...engineRef.current?.startup() });
       }
       setStarting({ ...now, leaving: true });
     } else setStarting(null);
