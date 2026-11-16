@@ -48,6 +48,7 @@ import { PlayLink, ResolveLine } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
 import { LINE_EVENT } from "./Round";
 import { RatingsSheet } from "./RatingsSheet";
+import { useChildCards } from "../shared/childGate";
 import { ContinueRow } from "./Rows";
 import { MiniRemote } from "./shell/MiniRemote";
 import { MyLists } from "./shell/MyLists";
@@ -108,8 +109,15 @@ export function Controller() {
   /** Whether the home screen has the box for pasting a link (turned on and off in the settings: see linkBox.ts). */
   const [linkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
-  const { progress, watched, lists, list, ratings, settings } = useProfileData();
+  const { watched, lists, settings } = useProfileData();
   const ratingsOn = ratingsShown(settings);
+  /**
+   * A child's profile (see the TV's Browse): only cartoons for children (its own cards too: see childGate.ts), no watch party, and no link played that is not a
+   * title of the library.
+   */
+  const { child, progress, list, ratings } = useChildCards();
+  const childRef = useRef(child);
+  childRef.current = child;
   /** The page that lists everything this profile rated. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
   /** The row of the library that "See all" opened on a page of its own (by its id). */
@@ -216,7 +224,8 @@ export function Controller() {
             } else if (launch.url && message.tv) {
               // Shared a link to this app: play it as soon as there is a TV to play it on.
               launchRef.current = { ...launch, url: undefined };
-              playLink(launch.url);
+              if (childRef.current) setError(t("notice.childNoLinks"));
+              else playLink(launch.url);
             }
             break;
           }
@@ -251,7 +260,14 @@ export function Controller() {
           case "ERROR":
             // The code was a watch party's, which a screen joins, not a remote: this phone becomes one, as the party's own link would make it.
             if (message.code === "PARTY_CODE" && sentCodeRef.current) {
-              location.assign(partyLink(sentCodeRef.current));
+              if (!childRef.current) {
+                location.assign(partyLink(sentCodeRef.current));
+                break;
+              }
+              // (A child's profile joins no party: the code is said to be one, and is of no use here.)
+              setError(t("notice.childNoParty"));
+              setCode("");
+              setPairing(false);
               break;
             }
             // "Invalid message" means the server is older than this page (started before an update, never restarted); see socketError.
@@ -594,10 +610,10 @@ export function Controller() {
   const home = (
     <section className="home" data-testid="home-panel">
       <h2 className="sr-only">{t("phone.homeTitle")}</h2>
-      {linkBox && <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />}
+      {linkBox && !child && <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />}
       <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
-      <Library onOpen={setTitle} onPlay={playLink} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />} />
+      <Library onOpen={setTitle} onPlay={playLink} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox || child ? undefined : <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />} />
     </section>
   );
   const search = (
@@ -707,7 +723,7 @@ export function Controller() {
           tvCount={tvs.length}
           controlCode={tv.controlCode}
           controllerCount={tv.controllerCount}
-          onParty={() => setSheet("party")}
+          onParty={child ? null : () => setSheet("party")}
           onTvs={() => setSheet("tvs")}
           onClose={closeSheet}
           onDisconnect={disconnect}
@@ -734,7 +750,7 @@ export function Controller() {
       {other && (
         <OtherTvSheet
           tvName={tv.name}
-          canAdd={!other.control}
+          canAdd={!other.control && !child}
           onClose={() => setOther(null)}
           onAdd={() => {
             setError(null);

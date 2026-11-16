@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { PlayHint } from "../../shared";
+import { forChildren, type PlayHint } from "../../shared";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useRatingsOn, useScores } from "../account/ratings";
@@ -38,14 +38,18 @@ interface TitleSheetProps {
  */
 export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose }: TitleSheetProps) {
   const t = useT();
-  const { progress, watched, lists } = useProfileData();
+  const { progress, watched, lists, settings } = useProfileData();
   const ratings = useRatingsOn();
   const scores = useScores();
   const toggleFor = useListToggle(onPick);
   const entry = resumable(given, progress);
   const series = useSeriesPage(given, progress, watched);
   const about = useAbout(!entry.opens && entry.url !== "" ? entry.url : undefined);
-  const related = aboutRows(about);
+  // (A child's profile is shown, of the titles that go with this one, only those for children.)
+  const child = settings.child === true;
+  const related = aboutRows(about)
+    .map((row) => (child ? { ...row, items: row.items.filter((item) => forChildren(item)) } : row))
+    .filter((row) => row.items.length > 0);
   const hint = hintOf(entry);
   const play = onPlay ? (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint) : undefined;
 

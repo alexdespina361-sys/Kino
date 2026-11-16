@@ -501,6 +501,7 @@ export function TvAccountPanel({
   const autoplay = settings.autoplayNext ?? true;
   const tapToPause = settings.tapToPause ?? false;
   const adaptiveQuality = settings.adaptiveQuality ?? true;
+  const child = settings.child === true;
   const several = Boolean(me && me.profiles.length > 1);
   const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
   const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
@@ -605,6 +606,22 @@ export function TvAccountPanel({
             </SettingsGroup>
 
             {/* (Ratings and friends had a group of two switches here: they are on for everybody since 15 Nov 2026, and what a friend may see is chosen on the friends' page.) */}
+
+            {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen. */}
+            <SettingsGroup title={t("settings.childGroup")} testId="tv-group-child">
+              <SettingsSwitch
+                label={t("settings.child")}
+                on={child}
+                onToggle={() => {
+                  set("child", child ? undefined : true);
+                  account.syncNow(); // (the server turns the friends off at once)
+                }}
+                testId="tv-child"
+              />
+              <p className="tv-hint tv-set-note" data-testid="tv-child-help">
+                {t("settings.childHelp")}
+              </p>
+            </SettingsGroup>
           </div>
 
           <div className="tv-set-col" data-nav-column>

@@ -66,6 +66,11 @@ export interface Snapshot {
   /** What the profile rated: titles and seasons, the one changed last first. */
   ratings: LiveRating[];
   settings: Settings;
+  /**
+   * A profile this screen has never kept a copy of, opened just now: its settings are the defaults until the server's first answer,
+   * which is not the same as having chosen them (a child's profile is not one until that answer says so).
+   */
+  waiting: boolean;
 }
 
 /** A title that can go in a list: what a library tile has. */
@@ -120,6 +125,8 @@ export class ProfileStore {
   private data: ProfileData = emptyData();
   private revision = 0;
   private dirty = new Set<string>();
+  /** See `Snapshot.waiting`. */
+  private fresh = false;
   private snapshot: Snapshot | undefined;
   private readonly listeners = new Set<() => void>();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -154,6 +161,7 @@ export class ProfileStore {
         list: byNewest(live(this.data.list)).filter((item) => known.has(listOf(item))),
         ratings: byNewest(live(this.data.ratings)),
         settings: resolveSettings(this.data.settings),
+        waiting: this.fresh,
       };
     }
     return this.snapshot;
@@ -211,6 +219,7 @@ export class ProfileStore {
     this.opened = true;
     this.scopeName = scope;
     const saved = this.read(scope);
+    this.fresh = scope !== GUEST && !saved;
     if (saved) {
       this.data = saved.data;
       this.revision = saved.rev;
@@ -250,6 +259,7 @@ export class ProfileStore {
       this.data = emptyData();
       this.revision = 0;
       this.dirty = new Set();
+      this.fresh = scope !== GUEST;
       if (this.saveTimer) clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
       this.snapshot = undefined;
@@ -509,6 +519,9 @@ export class ProfileStore {
     }
     // The server lost what it had: it needs all of it again.
     if (response.reset) this.markAllDirty();
-    this.changed(different);
+    // (The first answer for a profile new to this screen is news even when it brings nothing: the settings are now the profile's own.)
+    const first = this.fresh;
+    this.fresh = false;
+    this.changed(different || first);
   }
 }

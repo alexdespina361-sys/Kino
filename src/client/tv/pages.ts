@@ -1,8 +1,9 @@
-import { DEFAULT_LIST, fractionOf, listOf, resumeAt, sectionOf, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
+import { DEFAULT_LIST, forChildren, fractionOf, listOf, resumeAt, sectionOf, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
 import { filterRatings, ownSection, type SectionOfRating } from "../account/ratingFilter";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
+import type { ChildGate } from "../shared/childGate";
 import type { Because } from "../shared/recommend";
 import { addressOf } from "../shared/titleAddress";
 import type { GridSection } from "./browseNav";
@@ -121,6 +122,8 @@ export interface Entry {
   kind?: LibraryKind;
   /** A cartoon or an anime, when the library says so: kept with a rating, which the ratings are filtered by. */
   section?: "cartoon" | "anime";
+  /** For children, when the library says so (`LibraryItem.kids`): what a child's profile may open (see `forChildren`). */
+  kids?: true;
   /** A category: opening it shows that page instead of playing. */
   opens?: View;
   /** Where a category's titles come from. */
@@ -192,7 +195,19 @@ export interface PageData {
   because: readonly Because[];
   /** The sections the server gave for titles of "Continue watching" the rows do not list, by the title's address (`tv-46260`; see cardSections.ts). */
   looked?: ReadonlyMap<string, LibrarySection>;
+  /**
+   * A child's profile (the `child` setting): what it may see of its own cards (see childGate.ts). Its pages of rows are the Cartoons' (it has no other section),
+   * with only the titles for children (`forChildren`), and its lists, History, ratings and categories show those only.
+   */
+  child?: ChildGate | undefined;
 }
+
+/** A title of this profile's own (a card, a saved title, a rating) as the child gate names it. */
+const ownTitle = (card: { key: string; url: string; id?: string; kind?: LibraryKind | undefined }, show?: boolean) => ({ id: card.id ?? card.key, url: card.url, ...(show !== undefined ? { kind: show ? "series" : "movie" } : card.kind ? { kind: card.kind } : {}) });
+
+/** The rows as a child's profile sees them: their titles for children only, and none of the rows left with nothing in them. Any other profile's are as they are. */
+const rowsFor = (rows: readonly LibraryRow[], child: ChildGate | undefined): readonly LibraryRow[] =>
+  child ? rows.map((row) => ({ ...row, items: row.items.filter((item) => forChildren(item, row)) })).filter((row) => row.items.length > 0) : rows;
 
 export const entryOfItem = (item: LibraryItem): Entry => ({
   id: item.id,
@@ -205,6 +220,7 @@ export const entryOfItem = (item: LibraryItem): Entry => ({
   ...(item.kind ? { kind: item.kind } : {}),
   ...(item.section === "cartoon" || item.section === "anime" ? { section: item.section } : {}),
   ...(item.hasRoDub !== undefined ? { hasRoDub: item.hasRoDub } : {}),
+  ...(item.kids ? { kids: true as const } : {}),
 });
 
 export function entryOfProgress(card: LiveProgress): Entry {
@@ -509,12 +525,14 @@ export function cardsToLookUp(progress: readonly LiveProgress[], rows: readonly 
  * rows of their section, and what is part way through of it.
  */
 export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
-  const section = sectionOfPage(page);
+  const { child } = data;
+  // (A child's profile has the Cartoons on every page of rows, Home too: it has no other section.)
+  const section = child ? "cartoon" : sectionOfPage(page);
   const out: HomeRow[] = [];
 
   // (Only the page of a section has to tell the cards apart.)
   const places: CardPlaces | undefined = section ? { known: sectionsByLink(data.all), hosts: sectionsByHost(data.all), looked: data.looked } : undefined;
-  const going = unfinished(data.progress).filter((card) => !places || sectionOfCard(card, places) === section);
+  const going = unfinished(data.progress).filter((card) => (!places || sectionOfCard(card, places) === section) && (!child || child.allows(ownTitle(card, isShowCard(card)))));
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
   if (!section) {
     for (const like of data.because) {
@@ -528,7 +546,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
     }
   }
 
-  const library = section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows;
+  const library = rowsFor(section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows, child);
   library.forEach((row, index) => {
     out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: rowTitle(row), ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, section));
@@ -538,31 +556,35 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 
 /** The pages that are one grid. Null for the others, and for a category the library no longer has. */
 export function gridOf(view: View, data: PageData): GridPage | null {
+  const { child } = data;
+  // (A child's profile sees only what is for children of what it saved, watched and rated, and of the library only the Cartoons: see `PageData.child`.)
+  const progress = child ? data.progress.filter((card) => child.allows(ownTitle(card, isShowCard(card)))) : data.progress;
+  const all = rowsFor(child ? data.all.filter((row) => sectionOf(row) === "cartoon") : data.all, child);
   switch (view.kind) {
     case "list": {
       const info = shownList(view, data.lists);
-      const saved = data.list.filter((item) => listOf(item) === info.id);
+      const saved = data.list.filter((item) => listOf(item) === info.id && (!child || child.allows(ownTitle(item))));
       return { title: listName(info), meta: t("tv.titles", { count: saved.length }), layout: "wide", entries: saved.map(entryOfSaved), empty: t("tv.listEmpty") };
     }
     case "history":
-      return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
+      return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
     case "ratings": {
       // (What the filter keeps: the line under the title is about those, the count and the average of what is shown.)
-      const shown = filterRatings(data.ratings, view, ratingSectionIn(data.all));
+      const shown = filterRatings(child ? data.ratings.filter((rating) => child.allows(ownTitle(rating))) : data.ratings, view, ratingSectionIn(data.all));
       return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), shown) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(shown, "new").map(entryOfRating), empty: t("rating.empty") };
     }
     case "category": {
-      const row = data.all.find((candidate) => candidate.id === view.rowId);
+      const row = all.find((candidate) => candidate.id === view.rowId);
       // (Under its name, the section it is in, as its tile says it: not the catalog's name, "Filmpire" - the judge, 16 Nov.)
-      return row ? { title: rowTitle(row), meta: categoryEntry(row, data.all, true).note ?? "", layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      return row ? { title: rowTitle(row), meta: categoryEntry(row, all, true).note ?? "", layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
-      const rows = data.all.filter((row) => !view.of || sectionOf(row) === view.of);
-      const title =
-        view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : view.of === "cartoon" ? t("tv.cartoonCategories") : view.of === "anime" ? t("tv.animeCategories") : t("tv.allCategories");
-      const ordered = view.of ? rows : SECTION_ORDER.flatMap((section) => rows.filter((row) => sectionOf(row) === section));
+      const of = child ? "cartoon" : view.of;
+      const rows = all.filter((row) => !of || sectionOf(row) === of);
+      const title = of === "movie" ? t("tv.movieCategories") : of === "series" ? t("tv.seriesCategories") : of === "cartoon" ? t("tv.cartoonCategories") : of === "anime" ? t("tv.animeCategories") : t("tv.allCategories");
+      const ordered = of ? rows : SECTION_ORDER.flatMap((section) => rows.filter((row) => sectionOf(row) === section));
       const used = new Set<string>();
-      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.all, !view.of, used)), empty: "" };
+      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, all, !of, used)), empty: "" };
     }
     default:
       return null;

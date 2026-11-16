@@ -96,7 +96,8 @@ export interface HudProps {
   onOpenMenu: (kind: MenuKind) => void;
   /** How many screens are in the watch party this TV hosts (itself included), 0 when there is none; and the button that opens it. */
   partySize: number;
-  onParty: () => void;
+  /** None on a child's profile, which has no watch party (see Browse's `child`). */
+  onParty: (() => void) | null;
   /** This screen's own sound is off (the volume stays the device's; this is only the switch). */
   muted: boolean;
   onMute: () => void;
@@ -237,7 +238,7 @@ function PartyButton({ p, partyLabel }: { p: HudProps; partyLabel: string }) {
       className={`tv-btn ${p.partySize > 1 ? "tv-btn-on" : ""}`}
       data-testid="tv-party-btn"
       data-fold="party"
-      onClick={p.onParty}
+      onClick={p.onParty ?? undefined}
       title={t("party.rail")}
       aria-label={partyLabel}
     >
@@ -369,7 +370,7 @@ function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: Buttons
           {player.playbackRate ?? 1}×
         </button>
         <QualityButton p={p} player={player} label={qualityLabel} />
-        <PartyButton p={p} partyLabel={partyLabel} />
+        {p.onParty && <PartyButton p={p} partyLabel={partyLabel} />}
         <MuteButton p={p} />
         <FullscreenButton p={p} />
         <button
@@ -448,7 +449,7 @@ function FollowButtons({ p, follow, player, playing, partyLabel, qualityLabel }:
       <div className="hud-group">
         <TracksButton p={p} player={player} />
         <QualityButton p={p} player={player} label={qualityLabel} />
-        <PartyButton p={p} partyLabel={partyLabel} />
+        {p.onParty && <PartyButton p={p} partyLabel={partyLabel} />}
         <MuteButton p={p} />
         <FullscreenButton p={p} />
         {/* Folds with the Episodes label, which a screen that watches along has none of. */}
