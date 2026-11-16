@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Cadence, HELD_FRAMES, VideoClock, boostDelay, boostPhase, gridJobs, gridMoment, gridRate, refreshRate, type HeldFrame } from "./boostTiming";
+import { Cadence, HELD_FRAMES, SteadyGrid, VideoClock, boostDelay, boostPhase, gridJobs, gridMoment, gridRate, refreshRate, type HeldFrame } from "./boostTiming";
 
 /**
  * A video of `fps` frames a second played on a screen of `hz`: each frame comes at the first refresh at or after its moment (as a browser shows them), and
@@ -133,6 +133,19 @@ describe("the frame boost's timing", () => {
     expect(gridRate(30, 60)).toBe(30);
     expect(gridRate(60, 0)).toBe(60);
     expect(gridMoment(1 / 60 + 0.004, 60)).toBe(1);
+  });
+
+  it("keeps the grid's rate steady through the wobble of the measured refresh rate, and follows a real change", () => {
+    const grid = new SteadyGrid();
+    expect(grid.at(60, 57.1)).toBe(57.1);
+    // (56.8 and 57.5: the same 57 Hz window, measured from a different 120 refreshes)
+    expect(grid.at(60, 56.8)).toBe(57.1);
+    expect(grid.at(60, 57.5)).toBe(57.1);
+    expect(grid.at(60, 0)).toBe(60); // (not known any more: the boost's own)
+    expect(grid.at(60, 59.5)).toBe(60); // (a 60 Hz screen measured a little short: 60, as gridRate says)
+    expect(grid.at(30, 59.5)).toBe(30); // (the boost changed)
+    grid.reset();
+    expect(grid.at(60, 50)).toBe(50);
   });
 
   it("knows the screen's refresh rate, leaving pauses out", () => {

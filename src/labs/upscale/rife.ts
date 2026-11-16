@@ -31,6 +31,29 @@ export interface Picture {
   height: number;
 }
 
+/** Two pictures and the moment between them RIFE is asked for (0 < t < 1). */
+export interface Pair {
+  a: Picture;
+  b: Picture;
+  t: number;
+}
+
+/** The name of the one answer of the RIFE file cut before its last step (public/labs/upscale/rife/README.md). */
+export const MOTION_OUTPUT = "flowmask";
+
+/**
+ * What the cut RIFE file answers for two pictures of `width` x `height` (padded to `padWidth` x `padHeight`): five planes one after another, each of the
+ * padded size: how far to look in the first picture (x, then y, in its pixels), the same for the second, then how much of the first to take (0..1). The
+ * frame between is `first(p + motion0) * take + second(p + motion1) * (1 - take)`, as RIFE's own last step makes it.
+ */
+export interface Motion {
+  data: Float32Array;
+  width: number;
+  height: number;
+  padWidth: number;
+  padHeight: number;
+}
+
 /** The size padded up to a multiple of `step`. */
 export const padded = (size: number, step: number): number => Math.ceil(size / step) * step;
 
@@ -113,16 +136,24 @@ export class Rife {
     return { executionProviders: [wanted.get("rifeEp") === "wasm" ? "wasm" : "webgpu"], graphOptimizationLevel: "all", freeDimensionOverrides: overrides, logSeverityLevel: 3 };
   }
 
-  /** The session for pictures of `width` x `height` (padded): the sizes that vary in the file (one, then the height and width of each picture) fixed. */
-  private sessionFor(width: number, height: number): Promise<Ort.InferenceSession> {
-    const key = `${width}x${height}`;
+  /** Whether the file makes several moments in one run (its batch size is named, not fixed at 1): the cut file's is. */
+  get batches(): boolean {
+    return this.inputs.length > 0 && this.inputs.every((input) => typeof input.shape[0] === "string");
+  }
+
+  /**
+   * The session for `batch` pairs of pictures of `width` x `height` (padded): the sizes that vary in the file (the batch, then the height and width of
+   * each picture) fixed.
+   */
+  private sessionFor(width: number, height: number, batch: number): Promise<Ort.InferenceSession> {
+    const key = `${width}x${height}x${batch}`;
     let session = this.sized.get(key);
     if (!session) {
       const overrides: Record<string, number> = {};
       if (wanted.get("rifeFixed") !== "0") {
         for (const input of this.inputs) {
           input.shape.forEach((dim, index) => {
-            if (typeof dim === "string") overrides[dim] = index === 0 ? 1 : index === 2 ? height : index === 3 ? width : 1;
+            if (typeof dim === "string") overrides[dim] = index === 0 ? batch : index === 2 ? height : index === 3 ? width : 1;
           });
         }
       }
@@ -132,47 +163,96 @@ export class Rife {
     return session;
   }
 
-  /** Where the last `make` spent its time (ms): packing the pictures, the network, bringing its answer back, unpacking it. */
+  /** Where the last `make` or `motion` spent its time (ms): packing the pictures, the network, bringing its answer back, unpacking it. */
   times = { pack: 0, run: 0, download: 0, unpack: 0 };
 
+  /** Whether this file is RIFE without its last step (see `motion`): its answer is the motion, not the frame. */
+  get givesMotion(): boolean {
+    return this.output === MOTION_OUTPUT;
+  }
+
+  /** The frame between `a` and `b`, `t` of the way (a file that gives the frame: the stock one). */
   async make(a: Picture, b: Picture, t: number): Promise<Uint8ClampedArray<ArrayBuffer>> {
+    if (this.givesMotion) throw new Error("This RIFE file gives the motion, not the frame");
+    const answer = await this.run([{ a, b, t }]);
     const started = performance.now();
-    const [width, height] = [padded(a.width, this.step), padded(a.height, this.step)];
+    const picture = readPlanes(answer.data as Float32Array | Uint16Array, a.width, a.height, answer.padWidth, answer.padHeight);
+    this.times.unpack = performance.now() - started;
+    return picture;
+  }
+
+  /**
+   * How each part moves from `a` and `b` to the moment `t` between them, and how much of each to take (a file cut before RIFE's last step: see the
+   * README next to it). The pictures can be smaller than the frames they stand for: the warp (frameBoost.ts `warp`) moves the full-size frames.
+   */
+  async motion(a: Picture, b: Picture, t: number): Promise<Motion> {
+    return (await this.motions([{ a, b, t }]))[0]!;
+  }
+
+  /**
+   * `motion` for several moments in one run (a file whose batch size is named, see `batches`): much faster a moment than one at a time on small
+   * pictures, where the graphics card's time goes on starting each of the network's few hundred steps more than on the pixels. All of one size.
+   */
+  async motions(items: readonly Pair[]): Promise<Motion[]> {
+    if (!this.givesMotion) throw new Error("This RIFE file gives the frame, not the motion");
+    const { data, padWidth, padHeight } = await this.run(items);
+    if (!(data instanceof Float32Array)) throw new Error("RIFE's motion did not come as 32-bit numbers");
+    const each = 5 * padWidth * padHeight;
+    const { width, height } = items[0]!.a;
+    return items.map((_, index) => ({ data: data.subarray(index * each, (index + 1) * each), width, height, padWidth, padHeight }));
+  }
+
+  /** Runs the network on pairs of pictures (padded to its step) and their moments; its answer as it comes (planes of the padded size, pair after pair). */
+  private async run(items: readonly Pair[]): Promise<{ data: Float32Array | Uint16Array; padWidth: number; padHeight: number }> {
+    const started = performance.now();
+    const n = items.length;
+    const { width: pictureWidth, height: pictureHeight } = items[0]!.a;
+    if (items.some((item) => [item.a, item.b].some((picture) => picture.width !== pictureWidth || picture.height !== pictureHeight))) throw new Error("RIFE's pictures are not of one size");
+    if (n > 1 && !this.batches) throw new Error("This RIFE file makes one moment a run");
+    const [width, height] = [padded(pictureWidth, this.step), padded(pictureHeight, this.step)];
     const plane = width * height;
     const feeds: Record<string, Ort.Tensor> = {};
     const layout = this.layout;
-    const moment = (which: Moment): Ort.Tensor =>
-      which.shape === "plane"
-        ? new this.ort.Tensor("float32", new Float32Array(plane).fill(t), [1, 1, height, width])
-        : new this.ort.Tensor("float32", new Float32Array([t]), which.shape === "four" ? [1, 1, 1, 1] : [1]);
+    const moment = (which: Moment): Ort.Tensor => {
+      if (which.shape === "plane") {
+        const planes = new Float32Array(n * plane);
+        items.forEach((item, index) => planes.fill(item.t, index * plane, (index + 1) * plane));
+        return new this.ort.Tensor("float32", planes, [n, 1, height, width]);
+      }
+      if (which.shape === "one" && n > 1) throw new Error("This RIFE file takes one moment a run");
+      return new this.ort.Tensor("float32", Float32Array.from(items, (item) => item.t), which.shape === "four" ? [n, 1, 1, 1] : [n]);
+    };
     if (layout.kind === "seven" || layout.kind === "six") {
       const channels = layout.kind === "seven" ? 7 : 6;
-      const planes = new Float32Array(channels * plane);
-      writePlanes(a, planes, 0, width, height);
-      writePlanes(b, planes, 3, width, height);
-      if (layout.kind === "seven") planes.fill(t, 6 * plane, 7 * plane);
-      else feeds[layout.moment.name] = moment(layout.moment);
-      feeds[layout.input] = new this.ort.Tensor("float32", planes, [1, channels, height, width]);
+      const planes = new Float32Array(n * channels * plane);
+      items.forEach((item, index) => {
+        writePlanes(item.a, planes, index * channels, width, height);
+        writePlanes(item.b, planes, index * channels + 3, width, height);
+        if (layout.kind === "seven") planes.fill(item.t, (index * channels + 6) * plane, (index * channels + 7) * plane);
+      });
+      if (layout.kind === "six") feeds[layout.moment.name] = moment(layout.moment);
+      feeds[layout.input] = new this.ort.Tensor("float32", planes, [n, channels, height, width]);
     } else {
-      const first = new Float32Array(3 * plane);
-      const second = new Float32Array(3 * plane);
-      writePlanes(a, first, 0, width, height);
-      writePlanes(b, second, 0, width, height);
-      feeds[layout.first] = new this.ort.Tensor("float32", first, [1, 3, height, width]);
-      feeds[layout.second] = new this.ort.Tensor("float32", second, [1, 3, height, width]);
+      const first = new Float32Array(n * 3 * plane);
+      const second = new Float32Array(n * 3 * plane);
+      items.forEach((item, index) => {
+        writePlanes(item.a, first, index * 3, width, height);
+        writePlanes(item.b, second, index * 3, width, height);
+      });
+      feeds[layout.first] = new this.ort.Tensor("float32", first, [n, 3, height, width]);
+      feeds[layout.second] = new this.ort.Tensor("float32", second, [n, 3, height, width]);
       feeds[layout.moment.name] = moment(layout.moment);
     }
-    const session = await this.sessionFor(width, height);
+    const session = await this.sessionFor(width, height, n);
     const packed = performance.now();
     const results = await session.run(feeds);
     const ran = performance.now();
     const out = results[this.output]!;
     try {
+      // (A fresh array of the page's, which stays when the tensor is let go: ONNX Runtime Web copies its answers out of its own memory.)
       const data = (await out.getData()) as Float32Array | Uint16Array;
-      const read = performance.now();
-      const picture = readPlanes(data, a.width, a.height, width, height);
-      this.times = { pack: packed - started, run: ran - packed, download: read - ran, unpack: performance.now() - read };
-      return picture;
+      this.times = { pack: packed - started, run: ran - packed, download: performance.now() - ran, unpack: 0 };
+      return { data, padWidth: width, padHeight: height };
     } finally {
       out.dispose();
       for (const tensor of Object.values(feeds)) tensor.dispose();

@@ -151,7 +151,7 @@ test.describe("Kino Labs: the upscaler test page", () => {
     // (`rifeEp=wasm`: RIFE on the processor, as the browser of these tests may have no WebGPU; the same network and the same answer, only slower.)
     const asked = await openSample(page, "/labs/upscale/?rifeEp=wasm");
     const seen = await page.evaluate(async () => {
-      const lab = (window as unknown as { kinoUpscaleLab: { interpolate: (a: string, b: string, t: number, how: string) => Promise<string> } }).kinoUpscaleLab;
+      const lab = (window as unknown as { kinoUpscaleLab: { interpolate: (a: string, b: string, t: number, how: string, motion?: number) => Promise<string> } }).kinoUpscaleLab;
       // Pictures of a white square moved to the right, on a background of grey blocks that stands still.
       const picture = (x: number, side: number): string => {
         const canvas = document.createElement("canvas");
@@ -178,8 +178,8 @@ test.describe("Kino Labs: the upscaler test page", () => {
         context.drawImage(image, 0, 0);
         return (x, y) => context.getImageData(x, y, 1, 1).data[0]!;
       };
-      const at = async (pair: string[], t: number, how: string, xs: number[]): Promise<number[]> => {
-        const made = await read(await lab.interpolate(pair[0]!, pair[1]!, t, how));
+      const at = async (pair: string[], t: number, how: string, xs: number[], motion?: number): Promise<number[]> => {
+        const made = await read(await lab.interpolate(pair[0]!, pair[1]!, t, how, motion));
         return xs.map((x) => made(x, 90));
       };
       // A big square (48 pixels) moved 24 pixels: it overlaps itself. Seen at x = 80 (where only the first had it), 112 (both), 128 and 144 (the second only).
@@ -194,6 +194,10 @@ test.describe("Kino Labs: the upscaler test page", () => {
         blendHalf: await at(big, 0.5, "blend", bigAt),
         ends: await at(big, 1, "rife", bigAt),
         smallHalf: await at(small, 0.5, "rife", smallAt),
+        // As the live boost makes them: RIFE's motion (the cut file) and the page's own warp, at the full size and found on pictures half as big.
+        bigHalfWarped: await at(big, 0.5, "rife", bigAt, 1),
+        bigHalfFromHalf: await at(big, 0.5, "rife", bigAt, 0.5),
+        smallHalfFromHalf: await at(small, 0.5, "rife", smallAt, 0.5),
       };
     });
     // RIFE: the square is where it is at that moment (92 to 140 half way, 86 to 134 a quarter of the way); the background shows where it left.
@@ -213,13 +217,24 @@ test.describe("Kino Labs: the upscaler test page", () => {
     expect(seen.blendHalf[1]).toBeGreaterThan(220);
     // At 1, the second picture as it is.
     expect(seen.ends[3]).toBe(255);
-    // The network is the site's own file (MIT, its hash in the README next to it), and ONNX Runtime comes with the page: nothing from elsewhere.
-    expect(asked.filter((url) => url.endsWith(".onnx"))).toEqual([`${baseURL}/labs/upscale/rife/rife-v4.25-lite.onnx`]);
+    // The cut network and the page's warp: the stock network's own frame at the full size (to rounding), and the square where it should be from motion
+    // found at half the size.
+    for (const where of [0, 1, 2, 3]) expect(Math.abs(seen.bigHalfWarped[where]! - seen.bigHalf[where]!)).toBeLessThanOrEqual(3);
+    expect(seen.bigHalfFromHalf[0]).toBeLessThan(120);
+    expect(seen.bigHalfFromHalf[1]).toBeGreaterThan(220);
+    expect(seen.bigHalfFromHalf[2]).toBeGreaterThan(220);
+    expect(seen.bigHalfFromHalf[3]).toBeLessThan(120);
+    expect(seen.smallHalfFromHalf[0]).toBeLessThan(120);
+    expect(seen.smallHalfFromHalf[1]).toBeGreaterThan(220);
+    expect(seen.smallHalfFromHalf[2]).toBeLessThan(120);
+    // The networks are the site's own files (MIT, their hashes in the README next to them), and ONNX Runtime comes with the page: nothing from elsewhere.
+    expect(asked.filter((url) => url.endsWith(".onnx"))).toEqual([`${baseURL}/labs/upscale/rife/rife-v4.25-lite.onnx`, `${baseURL}/labs/upscale/rife/rife-v4.25-lite-motion.onnx`]);
     const elsewhere = asked.filter((url) => !url.startsWith(baseURL!) && !url.startsWith("blob:") && !url.startsWith("data:"));
     expect(elsewhere).toEqual([]);
-    const network = await (await page.request.get("/labs/upscale/rife/rife-v4.25-lite.onnx")).body();
     const { createHash } = await import("node:crypto");
-    expect(createHash("sha256").update(network).digest("hex")).toBe("702802d0862ab78f2d72133c6bc3768e7e89b81756f7cd51d1055a2fe3d06577");
+    const hashOf = async (file: string): Promise<string> => createHash("sha256").update(await (await page.request.get(`/labs/upscale/rife/${file}`)).body()).digest("hex");
+    expect(await hashOf("rife-v4.25-lite.onnx")).toBe("702802d0862ab78f2d72133c6bc3768e7e89b81756f7cd51d1055a2fe3d06577");
+    expect(await hashOf("rife-v4.25-lite-motion.onnx")).toBe("35d382a2c07e3aad241c74c3557062bfd5a337b16bd03a34ef7575488b4cd4d4");
   });
 
   test("with the frame boost at 60, plays on the screen's rhythm, says what it does, and is timed against 60 frames a second", async ({ page }) => {

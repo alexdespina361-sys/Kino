@@ -144,6 +144,26 @@ export function refreshRate(gaps: readonly number[]): number {
  */
 export const gridRate = (fps: number, hz: number): number => (hz > 0 && hz < fps * 0.99 ? hz : fps);
 
+/**
+ * The grid's rate, kept steady: RIFE's moments are made ahead and found again by their grid number, so a grid that followed every wobble of the measured
+ * refresh rate (56.8, 57.1, 57.5 Hz in turn on this PC's window) would lose what was made for it at each one. Found on the RTX 3090: with the rate
+ * followed as measured, 1 frame in 8 at 60 fps was the video's own again although RIFE had time to spare. It moves only when the rate it should be is
+ * more than 2% away, or the boost's own frames a second change.
+ */
+export class SteadyGrid {
+  private rate = 0;
+
+  at(fps: number, hz: number): number {
+    const wanted = gridRate(fps, hz);
+    if (!(this.rate > 0) || Math.abs(wanted - this.rate) > this.rate * 0.02) this.rate = wanted;
+    return this.rate;
+  }
+
+  reset(): void {
+    this.rate = 0;
+  }
+}
+
 /** How far ahead of the screen RIFE starts on a pair of frames (s): RIFE takes 40-50 ms a frame on an RTX 3090 at 480p, two or three of them per pair at 60. */
 export const RIFE_LEAD = 0.15;
 

@@ -40,6 +40,7 @@ export class GlUpscaler {
   private readonly films = new Map<FilmMode, FilmNet>();
   private composite: Program | undefined;
   private boost: FrameBoost | undefined;
+  private rife: FrameBoost | undefined;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: "high-performance" });
@@ -83,6 +84,15 @@ export class GlUpscaler {
   frameBoost(): FrameBoost {
     this.boost ??= new FrameBoost(this.gl);
     return this.boost;
+  }
+
+  /**
+   * The frame boost RIFE's frames are warped in (main.ts): it holds `held` frames, as many as RIFE may still need (it works ahead of the screen, so on
+   * frames older than the last two or three). Its textures are made on its first frame only, so it costs nothing while Blend is used.
+   */
+  rifeBoost(held: number): FrameBoost {
+    this.rife ??= new FrameBoost(this.gl, held);
+    return this.rife;
   }
 
   /** A second frame boost, for a check by hand that must not disturb the one the video plays through (see main.ts `interpolate`). */

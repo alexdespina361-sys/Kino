@@ -8,6 +8,7 @@
  */
 
 import { FULLSCREEN_VERTEX } from "./fsrShaders";
+import type { Motion } from "./rife";
 
 /** How the frames between are made: by RIFE (an existing neural network), or by mixing the two. */
 export type BoostHow = "rife" | "blend";
@@ -35,9 +36,45 @@ void main() {
   color = vec4(mix(texture(frameA, uv).rgb, texture(frameB, uv).rgb, t), 1.0);
 }`;
 
+/**
+ * RIFE's last step, at the frames' full size: each pixel taken from the first frame and from the second where RIFE's motion says, and mixed as its mask
+ * says (Practical-RIFE `warplayer.warp`: grid_sample, bilinear, the border repeated, align_corners). The motion may have been found on smaller pictures:
+ * it is then read where this pixel is in them (bilinear, centres matched) and made as much bigger as they were smaller.
+ *
+ * `motion` holds RIFE's five planes one under another (x and y for the first frame, x and y for the second, the mask), each of the padded size, in one
+ * single-channel float texture: one upload of the network's answer as it comes, no reordering.
+ */
+const WARP_FRAGMENT = `#version 300 es
+precision highp float;
+out vec4 color;
+uniform sampler2D frameA;
+uniform sampler2D frameB;
+uniform sampler2D motion;
+uniform vec2 size;
+uniform vec2 small;
+uniform vec2 padded;
+float plane(float index, vec2 at) {
+  return texture(motion, vec2((at.x + 0.5) / padded.x, (index * padded.y + at.y + 0.5) / (5.0 * padded.y))).r;
+}
+void main() {
+  vec2 pixel = gl_FragCoord.xy - 0.5;
+  vec2 at = clamp((pixel + 0.5) * (small / size) - 0.5, vec2(0.0), small - 1.0);
+  vec2 grow = size / small;
+  vec2 first = clamp(pixel + vec2(plane(0.0, at), plane(1.0, at)) * grow, vec2(0.0), size - 1.0);
+  vec2 second = clamp(pixel + vec2(plane(2.0, at), plane(3.0, at)) * grow, vec2(0.0), size - 1.0);
+  float take = plane(4.0, at);
+  vec3 a = texture(frameA, (first + 0.5) / size).rgb;
+  vec3 b = texture(frameB, (second + 0.5) / size).rgb;
+  color = vec4(a * take + b * (1.0 - take), 1.0);
+}`;
+
 /** Holds the last few frames of the video (as `HELD_FRAMES` in boostTiming.ts says) and draws frames between two of them. */
 export class FrameBoost {
   private readonly blend: { program: WebGLProgram; uniform: (name: string) => WebGLUniformLocation | null };
+  private warper: { program: WebGLProgram; uniform: (name: string) => WebGLUniformLocation | null } | undefined;
+  /** RIFE's motion as a texture (see WARP_FRAGMENT), and its size. */
+  private motionTexture: WebGLTexture | undefined;
+  private motionSize: Size = { width: 0, height: 0 };
   private readonly slots: { serial: number; color: Target }[] = [];
   private size: Size = { width: 0, height: 0 };
   private pushed = 0;
@@ -90,6 +127,54 @@ export class FrameBoost {
     gl.uniform1i(this.blend.uniform("frameB"), 1);
     gl.uniform2f(this.blend.uniform("size"), this.size.width, this.size.height);
     gl.uniform1f(this.blend.uniform("t"), t);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.activeTexture(gl.TEXTURE0);
+    return { texture: this.out.texture, size: this.size };
+  }
+
+  /**
+   * The frame between frames `from` and `to` that RIFE's `motion` describes (rife.ts `Rife.motion`, found at the frames' size or a smaller one), made at
+   * the frames' full size, as a texture. Throws when one of them is no longer held.
+   */
+  warp(from: number, to: number, motion: Motion): { texture: WebGLTexture; size: Size } {
+    if (!this.holds(from) || !this.holds(to)) throw new Error("The frame boost no longer holds that frame");
+    const gl = this.gl;
+    this.warper ??= this.link(WARP_FRAGMENT);
+    const rows = 5 * motion.padHeight;
+    if (motion.data.length !== motion.padWidth * rows) throw new Error("RIFE's motion is not of the size it says");
+    // (The target first: making a texture binds it where the motion is about to be, and drawing into a texture that is read is refused.)
+    this.out ??= this.target(this.size);
+    this.motionTexture ??= gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.motionTexture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    // (16-bit floats: filtered by every WebGL 2, and exact enough for a motion of a few hundred pixels.)
+    if (this.motionSize.width !== motion.padWidth || this.motionSize.height !== rows) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, motion.padWidth, rows, 0, gl.RED, gl.FLOAT, motion.data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.motionSize = { width: motion.padWidth, height: rows };
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, motion.padWidth, rows, gl.RED, gl.FLOAT, motion.data);
+    }
+    const a = this.slots[from % this.held]!;
+    const b = this.slots[to % this.held]!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.out.framebuffer);
+    gl.viewport(0, 0, this.size.width, this.size.height);
+    gl.useProgram(this.warper.program);
+    gl.uniform1i(this.warper.uniform("motion"), 2);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, a.color.texture);
+    gl.uniform1i(this.warper.uniform("frameA"), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, b.color.texture);
+    gl.uniform1i(this.warper.uniform("frameB"), 1);
+    gl.uniform2f(this.warper.uniform("size"), this.size.width, this.size.height);
+    gl.uniform2f(this.warper.uniform("small"), motion.width, motion.height);
+    gl.uniform2f(this.warper.uniform("padded"), motion.padWidth, motion.padHeight);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.activeTexture(gl.TEXTURE0);
     return { texture: this.out.texture, size: this.size };
@@ -166,5 +251,8 @@ export class FrameBoost {
     this.out = undefined;
     this.made = undefined;
     this.size = { width: 0, height: 0 };
+    if (this.motionTexture) gl.deleteTexture(this.motionTexture);
+    this.motionTexture = undefined;
+    this.motionSize = { width: 0, height: 0 };
   }
 }

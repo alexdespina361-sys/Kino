@@ -109,6 +109,16 @@
                 <option value="blend">Blend (mixes two frames: cheap, ghostly)</option>
               </select>
             </label>
+            <label>RIFE finds the motion at
+              <select id="rife-size" data-testid="upscale-rife-size">
+                <option value="auto" selected>Auto (pictures of about 320 x 180 at 60, bigger at 30: the frame is still made at the full size)</option>
+                <option value="1">The full size (slowest)</option>
+                <option value="0.75">Three quarters</option>
+                <option value="0.5">Half the size</option>
+                <option value="0.33">A third</option>
+                <option value="0.25">A quarter</option>
+              </select>
+            </label>
             <label>Shown
               <select id="view">
                 <option value="fit" selected>To fit the page</option>
