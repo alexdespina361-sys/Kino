@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX, type AvatarId } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
 import { BellIcon, BellOffIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
@@ -33,6 +33,8 @@ export interface ChatTvProps {
   narrow?: boolean;
   /** Back from the chat itself. */
   onClose: () => void;
+  /** A title a message names was pressed (see titles.ts). */
+  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
   /** The time that "today" is measured against (tests give theirs). */
   now?: number;
 }
@@ -44,7 +46,7 @@ export interface ChatTvProps {
  * rating is) and sent with the button. The Back of the remote goes back a page at a time: from the ⋯, a report or the writing to the chat, from the
  * chat to the friend. A report shows what would be sent, and the remote lands on Back there, not on Send.
  */
-export function ChatTv({ name, avatar, online = false, desk = false, session, report, receiving = true, narrow = false, onClose, now = Date.now() }: ChatTvProps) {
+export function ChatTv({ name, avatar, online = false, desk = false, session, report, receiving = true, narrow = false, onClose, onOpenTitle, now = Date.now() }: ChatTvProps) {
   const [writing, setWriting] = useState(false);
   /** What has been typed and not sent stays while the chat is open: Back from the writing does not lose it. */
   const [draft, setDraft] = useState("");
@@ -80,6 +82,7 @@ export function ChatTv({ name, avatar, online = false, desk = false, session, re
       now={now}
       onWrite={() => setWriting(true)}
       onClose={onClose}
+      onOpenTitle={onOpenTitle}
     />
   );
 }
@@ -97,6 +100,7 @@ export function ReadTv({
   now,
   onWrite,
   onClose,
+  onOpenTitle,
 }: {
   name: string;
   avatar?: AvatarId | undefined;
@@ -110,6 +114,7 @@ export function ReadTv({
   now: number;
   onWrite: () => void;
   onClose: () => void;
+  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
 }) {
   const t = useT();
   const { state } = session;
@@ -218,7 +223,7 @@ export function ReadTv({
             </p>
           </div>
         ) : (
-          <ChatLines lines={state.lines} name={name} now={now} remote testId="tv-chat-lines" />
+          <ChatLines lines={state.lines} name={name} now={now} remote onOpenTitle={onOpenTitle} testId="tv-chat-lines" />
         )}
         <div className="tv-chat-foot">
           <ChatNotices name={name} session={session} receiving={receiving} prefix="tv-chat" />

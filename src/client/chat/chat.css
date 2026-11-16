@@ -51,6 +51,36 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
   font-size: 0.8rem;
   font-weight: 600;
 }
+/* A title a message names (titles.ts): its poster and name under the bubble. The same size while the server is asked as after, so the list does not move. */
+.chat-card {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  width: min(260px, 82%);
+  height: 84px;
+  margin-top: 4px;
+  padding: 6px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+}
+button.chat-card { cursor: pointer; }
+button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.chat-card-art { position: relative; display: grid; flex: none; place-items: center; width: 48px; height: 72px; border-radius: 6px; background: var(--surface-3, rgba(255, 255, 255, 0.08)); overflow: hidden; }
+.chat-card-art img { width: 100%; height: 100%; object-fit: cover; }
+.chat-card-art .poster-initial { font-size: 1.3rem; font-weight: 700; color: rgba(255, 255, 255, 0.85); }
+.chat-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chat-card-name { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
+.chat-card-text small { color: var(--muted); font-size: 0.78em; }
+.chat-card-open { color: var(--accent); font-size: 0.8em; font-weight: 700; }
+.chat-card-loading .chat-card-art { animation: chat-card-wait 1.2s ease-in-out infinite alternate; }
+@keyframes chat-card-wait { from { opacity: 0.45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chat-card-loading .chat-card-art { animation: none; } }
 /* The list in a report is the whole of what would be sent, so it has room, and scrolls inside the sheet. */
 .sheet-body > .chat-lines { flex: none; max-height: 42vh; }
 
@@ -117,6 +147,10 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 .tv .chat-theirs .chat-bubble { border-bottom-left-radius: 0.25em; }
 .tv .chat-time { font-size: 0.6em; }
 .tv .chat-writer { font-size: 0.65em; }
+.tv .chat-card { gap: 0.5em; width: min(14em, 78%); height: 4.6em; margin-top: 0.2em; padding: 0.3em; border-radius: 0.5em; }
+.tv .chat-card-art { width: 2.6em; height: 3.9em; border-radius: 0.3em; }
+.tv .chat-card-text small, .tv .chat-card-open { font-size: 0.65em; }
+.tv .chat-lines-remote .chat-card:focus { outline: 0.12em solid var(--accent); outline-offset: 0.08em; transform: scale(1.03); }
 
 .tv .chat-note, .tv .chat-problem, .tv .chat-closed { max-width: 46em; font-size: 1.5em; text-align: center; }
 .tv .chat-closed { padding: 0.5em 1em; border-radius: 0.5em; }

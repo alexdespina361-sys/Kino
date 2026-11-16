@@ -856,7 +856,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         <MessageIcon /> {t("chat.open")}
         {unread > 0 && <small data-testid="friend-chat-unread">{t("chat.unreadShort", { count: unread })}</small>}
       </button>
-      {chatting && <PhoneChat friendId={friend.id} onClose={() => setChatting(false)} />}
+      {chatting && <PhoneChat friendId={friend.id} onClose={() => setChatting(false)} onOpenTitle={onOpenTitle} />}
       {canAskTogether(friend) && (
         <>
           <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">

@@ -2099,7 +2099,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         />
       )}
       {overlay?.kind === "planPick" && <PlanPickerTv friendId={overlay.friend} onClose={closeOverlay} />}
-      {overlay?.kind === "chat" && <TvChat key={overlay.friend} friendId={overlay.friend} narrow={narrow} onClose={closeOverlay} />}
+      {overlay?.kind === "chat" && (
+        <TvChat
+          key={overlay.friend}
+          friendId={overlay.friend}
+          narrow={narrow}
+          onClose={closeOverlay}
+          onOpenTitle={(entry) => openDetail({ entry, label: t(entry.kind === "series" ? "tv.series" : "tv.movies") })}
+        />
+      )}
       {overlay?.kind === "bell" && (
         <NotificationsTv
           onPress={(entry) => {
