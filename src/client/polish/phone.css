@@ -425,7 +425,9 @@
   :root[data-ui="polish"] .phone-ui .account-hub { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto auto 1fr; gap: 12px 32px; align-items: start; max-width: none; }
   :root[data-ui="polish"] .phone-ui .account-hub > .account-card { grid-column: 1; grid-row: 1; }
   :root[data-ui="polish"] .phone-ui .account-hub > .menu-groups { grid-column: 2; grid-row: 1 / span 3; }
-  :root[data-ui="polish"] .phone-ui .account-hub > .btn { grid-column: 1; grid-row: 2; }
+  /* (the profile's tag, where friends are on, and the button under who it is, in the order they come: the rows are found by themselves) */
+  :root[data-ui="polish"] .phone-ui .account-hub > .your-tag,
+  :root[data-ui="polish"] .phone-ui .account-hub > .btn { grid-column: 1; }
   :root[data-ui="polish"] .phone-ui .menu-row { min-height: 44px; padding-block: 10px; }
   /* (the same for someone who is not signed in: what the account is for on one side, the way in on the other) */
   :root[data-ui="polish"] .phone-ui .account-guest { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 32px; align-items: start; max-width: none; }

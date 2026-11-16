@@ -37,6 +37,8 @@ test.describe("the profile's page", () => {
     expect(await places(tv)).toEqual(["profile:ratings", "profile:history"]);
     await expect(tv.locator('.tv-row[data-layout="categories"]').getByTestId("tv-tile-corner")).toHaveCount(0); // (a place is no title to keep)
     await expect(tv.getByTestId("tv-profile-name")).toHaveText("Guest");
+    await expect(tv.getByTestId("tv-profile-tag")).toHaveCount(0); // (a guest has no tag: friends are for a profile)
+    await expect(tv.getByTestId("tv-profile-tag-copy")).toHaveCount(0);
     // Under the places, a look at what was watched last and what was liked best (the highest first).
     const recent = tv.locator('section.tv-row[aria-label="Recently watched"]');
     const best = tv.locator('section.tv-row[aria-label="Your highest rated"]');

@@ -197,20 +197,23 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   );
 }
 
-/** This profile's own tag, with the button that copies it: what a friend types to find them. */
-function YourTag({ label }: { label: string }) {
+/**
+ * This profile's own tag, with the button that copies it: what a friend types to find them (on the page for adding friends, and on the profile's own; `testId`
+ * tells them apart). `help`: the line on what it is for (the profile's screen leaves it out: held sideways, its column then fits the screen).
+ */
+export function YourTag({ label, testId = "friend-your-tag", help = true }: { label: string; testId?: string; help?: boolean }) {
   const t = useT();
   const shown = useRef<HTMLElement>(null);
   return (
-    <div className="your-tag" data-testid="friend-your-tag">
+    <div className="your-tag" data-testid={testId}>
       <span className="your-tag-line">
         <span className="muted small">{t("friends.yourTag")}</span>
-        <b className="copy-code-text" ref={shown} data-testid="friend-your-tag-text">
+        <b className="copy-code-text" ref={shown} data-testid={`${testId}-text`}>
           {label}
         </b>
       </span>
-      <CopyCode code={label} shown={shown} testId="friend-your-tag-copy" buttonClass="btn" words="tag" />
-      <p className="muted small">{t("friends.yourTagHelp")}</p>
+      <CopyCode code={label} shown={shown} testId={`${testId}-copy`} buttonClass="btn" words="tag" />
+      {help && <p className="muted small">{t("friends.yourTagHelp")}</p>}
     </div>
   );
 }
