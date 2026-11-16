@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
+import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { backOf, cardOf, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, ofSection, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { backOf, cardOf, cardsToLookUp, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, ofSection, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3, section?: "cartoon" | "anime"): LibraryRow => ({
@@ -239,6 +239,33 @@ describe("rowsOfPage: the four sections", () => {
     expect(going("movies")).toEqual(["Card lost-film", "Card r0-0"]);
     expect(going("series")).toEqual(["Card lost-show", "Card r1-1"]);
     expect(going("home")).toHaveLength(8);
+  });
+
+  it("puts a card the rows do not list where the server said its title is, or where the one place it plays from has all its titles (anime was in Series: the owner's report of 15 Nov)", () => {
+    const naruto = card("naruto", { season: 1, episode: 3, url: "https://filmpire.sc/watch/46260?s=1&e=3" });
+    const unknown = card("mystery", { season: 1, episode: 1, url: "https://filmpire.sc/watch/999?s=1&e=1" });
+    const heaven = card("heaven", { season: 1, episode: 2, url: "https://anime.example/watch/abc?ep=2" });
+    const listed = card("listed", { url: "https://filmpire.sc/watch/555" });
+    const animePlace: LibraryRow = { ...row("ah", "series", 1, "anime"), items: [item("ah-0", "series", { url: "https://anime.example/watch/zzz" })] };
+    const films: LibraryRow = { ...row("fp", "movie", 1), items: [item("filmpire-movie-555", "movie", { url: "https://filmpire.sc/watch/555" })] };
+    const rows = [...everything, animePlace, films];
+    const progress = [naruto, unknown, heaven, listed];
+    const looked = new Map<string, LibrarySection>([["tv-46260", "anime"]]);
+    const going = (page: Parameters<typeof rowsOfPage>[0], over: Partial<PageData> = {}) => {
+      const first = rowsOfPage(page, data({ rows, progress, ...over }))[0]!;
+      return first.id === "continue" ? first.entries.map((e) => e.title).sort() : [];
+    };
+    // Before the server is asked: a show nobody lists is in Series (as it was), but one from a place of anime only is in Anime.
+    expect(going("series")).toEqual(["Card mystery", "Card naruto"]);
+    expect(going("anime")).toEqual(["Card heaven"]);
+    expect(going("movies")).toEqual(["Card listed"]);
+    // What the server said of it puts it where it belongs.
+    expect(going("series", { looked })).toEqual(["Card mystery"]);
+    expect(going("anime", { looked })).toEqual(["Card heaven", "Card naruto"]);
+    // Only the titles nothing places yet are asked about, by their address, once.
+    expect(cardsToLookUp(progress, rows, new Map())).toEqual(["tv-46260", "tv-999"]);
+    expect(cardsToLookUp(progress, rows, looked)).toEqual(["tv-999"]);
+    expect(cardsToLookUp([{ ...naruto, done: true }], rows, new Map())).toEqual([]); // (a finished one is in no row of the page)
   });
 
   it("has no list or because rows of its own, as Movies and Series have none: those are on Home", () => {

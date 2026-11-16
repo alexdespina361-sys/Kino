@@ -242,6 +242,8 @@ const TmdbItemSchema = z.object({
   vote_count: z.number().optional(),
   /** What tells a cartoon or an anime from a film or a show: its genres, and where it was made. */
   genre_ids: z.array(z.number()).optional(),
+  /** (A title's own page at TMDB, `/tv/1399`, says its genres this way instead of `genre_ids`.) */
+  genres: z.array(z.object({ id: z.number().optional() }).passthrough()).optional().catch(undefined),
   original_language: z.string().optional(),
   origin_country: z.array(z.string()).optional(),
 });
@@ -251,7 +253,8 @@ const TmdbItemSchema = z.object({
  * else is a film or a show. Said by `LibraryItem.section` only when it is a Cartoon or an Anime.
  */
 function animationOf(doc: z.infer<typeof TmdbItemSchema>): Extract<LibrarySection, "cartoon" | "anime"> | undefined {
-  if (!doc.genre_ids?.includes(ANIMATION_GENRE)) return undefined;
+  const animated = doc.genre_ids?.includes(ANIMATION_GENRE) || doc.genres?.some((genre) => genre.id === ANIMATION_GENRE);
+  if (!animated) return undefined;
   return doc.original_language === "ja" || doc.origin_country?.includes("JP") ? "anime" : "cartoon";
 }
 

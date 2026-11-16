@@ -43,6 +43,7 @@ import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter } from "../account/ratingFilter";
+import { useCardSections } from "./cardSections";
 import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, ratingSectionIn, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
@@ -395,7 +396,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
   // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
   const everyRow = useMemo(() => allRows(feeding.data), [feeding.data]);
-  const data = useMemo<PageData>(() => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? ratings : [], because }), [pageLibraryRows, everyRow, progress, lists, list, ratings, ratingsOn, because]);
+  // (...and those of titles the rows do not list, by asking the server once: see cardSections.ts.)
+  const looked = useCardSections(progress, everyRow, pageSection !== undefined);
+  const data = useMemo<PageData>(
+    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? ratings : [], because, looked }),
+    [pageLibraryRows, everyRow, progress, lists, list, ratings, ratingsOn, because, looked],
+  );
 
   const rowsPage = hasRows(view);
   // A friend's page shows what they share, asked of the server while the page is open: the lists they keep, or what they rated.

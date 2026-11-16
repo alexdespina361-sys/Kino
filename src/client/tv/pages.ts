@@ -4,6 +4,7 @@ import { filterRatings, ownSection, type SectionOfRating } from "../account/rati
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
 import type { Because } from "../shared/recommend";
+import { addressOf } from "../shared/titleAddress";
 import type { GridSection } from "./browseNav";
 
 /**
@@ -189,6 +190,8 @@ export interface PageData {
   ratings: readonly LiveRating[];
   /** "Because you watched ..." and "Because you loved ...": a title, and the titles like it. */
   because: readonly Because[];
+  /** The sections the server gave for titles of "Continue watching" the rows do not list, by the title's address (`tv-46260`; see cardSections.ts). */
+  looked?: ReadonlyMap<string, LibrarySection>;
 }
 
 export const entryOfItem = (item: LibraryItem): Entry => ({
@@ -383,12 +386,15 @@ function linkKey(link: string, isShow: boolean): string | undefined {
   }
 }
 
-/** Where each title the library has listed is browsed, by its link (see `linkKey`): the section it says, else its row's, else its kind's. */
+/** Where a title of a row is browsed: the cartoon or anime it or its row says it is, else its kind, else its row's. */
+const placeOf = (item: LibraryItem, row: LibraryRow): LibrarySection | undefined => item.section ?? row.section ?? item.kind ?? row.kind;
+
+/** Where each title the library has listed is browsed, by its link (see `linkKey` and `placeOf`). */
 function sectionsByLink(rows: readonly LibraryRow[]): Map<string, LibrarySection> {
   const out = new Map<string, LibrarySection>();
   for (const row of rows) {
     for (const item of row.items) {
-      const section = sectionOf(item) ?? sectionOf(row);
+      const section = placeOf(item, row);
       const key = linkKey(item.url, (item.kind ?? row.kind) === "series");
       if (section && key && !out.has(key)) out.set(key, section);
     }
@@ -414,14 +420,78 @@ export function ratingSectionIn(rows: readonly LibraryRow[]): SectionOfRating {
 }
 
 /**
- * The section a card of "Continue watching" belongs to: where the library lists its title, else its kind's (a card says only whether it is of a show,
- * so a title that was not listed here — one that was found by a search, long ago — is in Movies or Series).
+ * The places whose titles are all cartoons, or all anime, by the place's address (a place of anime only): a title of theirs that no row lists is one too.
+ * (Only those two: that every film listed so far comes from a place says nothing of what else it has.)
  */
-const sectionOfCard = (card: LiveProgress, known: ReadonlyMap<string, LibrarySection>): LibrarySection => {
+function sectionsByHost(rows: readonly LibraryRow[]): Map<string, LibrarySection | null> {
+  const out = new Map<string, LibrarySection | null>();
+  for (const row of rows) {
+    for (const item of row.items) {
+      const section = placeOf(item, row);
+      const host = hostOf(item.url);
+      if (!host || !section) continue;
+      const had = out.get(host);
+      out.set(host, (had === undefined || had === section) && (section === "cartoon" || section === "anime") ? section : null);
+    }
+  }
+  return out;
+}
+
+function hostOf(link: string): string | undefined {
+  try {
+    return new URL(link).host;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The address a card's title is asked for by (`tv-46260`), when its link is one the server knows titles by. */
+export const addressOfCard = (card: LiveProgress): string | null => addressOf({ id: card.key, url: card.url, ...(isShowCard(card) ? { kind: "series" } : {}) });
+
+interface CardPlaces {
+  /** Where the rows list each title, by its link. */
+  known: ReadonlyMap<string, LibrarySection>;
+  /** The section of a place whose titles are all in one. */
+  hosts: ReadonlyMap<string, LibrarySection | null>;
+  /** What the server said of the titles the rows did not list. */
+  looked: ReadonlyMap<string, LibrarySection> | undefined;
+}
+
+/**
+ * The section a card of "Continue watching" belongs to: where the library lists its title; else what the server said of it (asked once: see
+ * cardSections.ts); else the one section of the place it plays from; else its kind's. (A card says only whether it is of a show: an anime the rows
+ * loaded so far did not list used to be put in Series - the owner's report of 15 Nov.)
+ */
+const sectionOfCard = (card: LiveProgress, places: CardPlaces): LibrarySection => {
   const show = isShowCard(card);
   const key = linkKey(card.url, show);
-  return (key && known.get(key)) || (show ? "series" : "movie");
+  const listed = key ? places.known.get(key) : undefined;
+  if (listed) return listed;
+  const address = addressOfCard(card);
+  const looked = address ? places.looked?.get(address) : undefined;
+  if (looked) return looked;
+  const host = hostOf(card.url);
+  return (host && places.hosts.get(host)) || (show ? "series" : "movie");
 };
+
+/**
+ * The addresses of the cards of "Continue watching" whose section is not known from the rows, nor from what was asked before, nor from the place they
+ * play from: the ones to ask the server about.
+ */
+export function cardsToLookUp(progress: readonly LiveProgress[], rows: readonly LibraryRow[], looked: ReadonlyMap<string, LibrarySection>): string[] {
+  const known = sectionsByLink(rows);
+  const hosts = sectionsByHost(rows);
+  const out = new Set<string>();
+  for (const card of unfinished(progress)) {
+    const key = linkKey(card.url, isShowCard(card));
+    if (key && known.has(key)) continue;
+    const host = hostOf(card.url);
+    if (host && hosts.get(host)) continue;
+    const address = addressOfCard(card);
+    if (address && !looked.has(address)) out.add(address);
+  }
+  return [...out];
+}
 
 /**
  * The rows under the banner. Home has what this profile is part way through, titles like the ones it watched last or loved, a row for each of
@@ -432,8 +502,9 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   const section = sectionOfPage(page);
   const out: HomeRow[] = [];
 
-  const known = section ? sectionsByLink(data.all) : undefined; // (only the page of a section has to tell the cards apart)
-  const going = unfinished(data.progress).filter((card) => !known || sectionOfCard(card, known) === section);
+  // (Only the page of a section has to tell the cards apart.)
+  const places: CardPlaces | undefined = section ? { known: sectionsByLink(data.all), hosts: sectionsByHost(data.all), looked: data.looked } : undefined;
+  const going = unfinished(data.progress).filter((card) => !places || sectionOfCard(card, places) === section);
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
   if (!section) {
     for (const like of data.because) {
