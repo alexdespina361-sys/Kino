@@ -36,6 +36,7 @@ import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
 import { FullscreenIcon, UsersIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
+import { useProfileHold } from "../shared/profileHold";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { useSlow, useWaking } from "../shared/useSlow";
@@ -258,6 +259,8 @@ export function Tv() {
   const child = settings.child === true;
   const childRef = useRef(child);
   childRef.current = child;
+  /** (A party's link waits until the profile's settings are known: see `useProfileHold`.) */
+  const holding = useProfileHold();
   useEffect(() => {
     // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
     if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
@@ -1152,7 +1155,7 @@ export function Tv() {
 
   const linkTriedRef = useRef(false);
   useEffect(() => {
-    if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
+    if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current || holding) return;
     linkTriedRef.current = true;
     history.replaceState(history.state, "", location.pathname); // (the entry keeps what the back button put on it)
     if (childRef.current) {
@@ -1161,7 +1164,7 @@ export function Tv() {
     }
     invitedWithRef.current = linkCode;
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
-  }, [linkCode, unlocked, connection]);
+  }, [linkCode, unlocked, connection, holding]);
 
   // The code that lets others into a party lasts ten minutes. While it is on screen it is renewed; a party nobody came to goes away with it.
   const partyShown = menu === "party" || menu === "partyInvite" || (screen === "party" && player.state === "idle");

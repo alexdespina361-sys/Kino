@@ -164,6 +164,21 @@ describe("friends are on for everybody, and off only where `friendsOff` says so"
     expect((await alex.friends()).statusCode).toBe(200);
   });
 
+  it("turns friends off for a child's profile, keeps the friendship, and gives it back when the profile is not a child's any more", async () => {
+    // (The owner, 15 Nov 2026: a child's profile has only cartoons, and friends are off for it.)
+    const { alex, sam } = await friends();
+    await alex.choose({ child: true });
+    const refused = await alex.friends();
+    expect(refused.statusCode).toBe(403);
+    expect(refused.data).toEqual({ error: "friends_off" });
+    expect((await alex.client.post(mine(alex, "/invites"))).statusCode).toBe(403);
+    // (Their friend still has them, as off: nothing of theirs is shown, and nothing can be sent to them.)
+    expect((await sam.state()).friends).toMatchObject([{ id: alex.id, on: false, activity: false, lists: false, ratings: false }]);
+    await alex.choose({ child: false });
+    expect((await alex.friends()).statusCode).toBe(200);
+    expect((await sam.state()).friends).toMatchObject([{ id: alex.id, on: true }]);
+  });
+
   it("keeps what a profile chose before as it was, and does not share what it watches or its ratings until it says so", async () => {
     const { alex, sam, store } = await friends();
     // (Alex had friends turned off, with sharing on from before that, and ratings turned off: the friendship was kept.)

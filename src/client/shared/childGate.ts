@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { forChildren, type LibraryRow, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { useProfileData } from "../account/store";
 import { allRows, useFeed } from "./feed";
-import { addressOf, fetchTitle, titleIdOf } from "./titleAddress";
+import { addressOf, askTitle, titleIdOf } from "./titleAddress";
 
 /**
  * What a child's profile may see (the `child` setting; the rule is `forChildren` in shared/library.ts) of the titles that do not carry a word of it: the cards
@@ -14,8 +14,14 @@ import { addressOf, fetchTitle, titleIdOf } from "./titleAddress";
 const STORE = "kino.childTitles";
 /** How many titles this device remembers as for children (the newest). */
 const KEEP = 600;
-/** How many titles one look asks the server about at most. */
-const PER_LOOK = 12;
+/**
+ * How many titles one look asks the server about at most, and how long the next look waits after it: an address may ask 120 questions about titles a minute (the
+ * server's `fetchLimits`), the whole household's screens together, and a title's own page needs some of them. This is 60 a minute at most.
+ */
+const PER_LOOK = 4;
+const LOOK_GAP_MS = 4_000;
+/** How many times a title the server would not answer for (too many asks, a place that could not be reached) is asked about, in one page load. */
+const TRIES = 2;
 
 /** A title as a card of the profile's has it: its id (or the card's key), its link, and whether it is a film or a show when the card says. */
 export interface OwnTitle {
@@ -62,17 +68,25 @@ const subscribeKnown = (listener: () => void) => {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 };
-function looked(found: readonly string[]): void {
-  const before = currentKnown();
-  let yes = before.yes;
+const tell = () => listeners.forEach((listener) => listener());
+/** A look has ended: its yes answers count at once, the titles it got no answer for may be asked again, and the next look starts after a pause (see `LOOK_GAP_MS`). */
+function looked(found: readonly string[], unanswered: readonly string[]): void {
   if (found.length > 0) {
-    const next = new Set([...rememberedYes(), ...before.yes, ...found]);
-    keepYes(next);
-    yes = next;
+    const before = currentKnown();
+    const yes = new Set([...rememberedYes(), ...before.yes, ...found]);
+    keepYes(yes);
+    known = { ...before, yes };
+    tell();
   }
-  known = { yes, looks: before.looks + 1 };
-  listeners.forEach((listener) => listener());
+  setTimeout(() => {
+    for (const address of unanswered) if ((tries.get(address) ?? 0) < TRIES) asked.delete(address);
+    looking = false;
+    known = { ...currentKnown(), looks: currentKnown().looks + 1 };
+    tell();
+  }, LOOK_GAP_MS);
 }
+/** A look is under way, or its pause is not over: one at a time, for every screen of the page. */
+let looking = false;
 
 /** What the rows loaded so far say of their titles, by address (a title that one row shows as a cartoon is one, whatever a row that does not say its section shows). */
 export function childTitlesOfRows(rows: readonly LibraryRow[]): Map<string, boolean> {
@@ -86,26 +100,9 @@ export function childTitlesOfRows(rows: readonly LibraryRow[]): Map<string, bool
   return out;
 }
 
-/** The titles asked about since the page loaded (one the server said no to, or did not answer for, is asked again on the next load). */
+/** The titles asked about since the page loaded (one the server said no to is asked again on the next load), and how many times each was. */
 const asked = new Set<string>();
-
-/** How long a screen waits for the first word on a profile it has never kept (see `Snapshot.waiting`) before it shows what it has: the server may be slow, or down. */
-export const HOLD_MS = 5_000;
-
-/**
- * Whether the screen should still hold what depends on the profile's settings (the rows, a title's page asked for by a link): while the profile is new to
- * this screen and the server has not answered yet, for `HOLD_MS` at most. A child's profile is not known to be one before that answer.
- */
-export function useHoldForSettings(waiting: boolean): boolean {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    setLate(false);
-    if (!waiting) return;
-    const timer = setTimeout(() => setLate(true), HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [waiting]);
-  return waiting && !late;
-}
+const tries = new Map<string, number>();
 
 /** The titles of a profile's own cards, as the gate judges them: Continue watching, the lists, the ratings. */
 export const ownTitles = (progress: readonly LiveProgress[], list: readonly LiveListItem[], ratings: readonly LiveRating[]): OwnTitle[] => [
@@ -129,21 +126,32 @@ export function useChildGate(entries: readonly OwnTitle[], rows: readonly Librar
       if (address && !fromRows.has(address) && !yes.has(address) && !asked.has(address)) out.add(address);
     }
     return [...out].slice(0, PER_LOOK);
-  }, [on, entries, fromRows, yes, looks]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [on, entries, fromRows, looks]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = wanted.join(" ");
+  // (Looked at again when the titles wanted change, and when a look's pause is over: `looks`.)
   useEffect(() => {
+    if (looking) return;
     // (Another screen of the page may have asked about these in the same moment.)
     const fresh = wanted.filter((address) => !asked.has(address));
     if (fresh.length === 0) return;
-    for (const address of fresh) asked.add(address);
+    looking = true;
+    for (const address of fresh) {
+      asked.add(address);
+      tries.set(address, (tries.get(address) ?? 0) + 1);
+    }
     void Promise.all(
       fresh.map(async (address) => {
         const id = titleIdOf(address);
-        const item = id ? await fetchTitle(id).catch(() => null) : null;
-        return [address, item ? forChildren(item) : false] as const;
+        const item = id ? await askTitle(id) : null;
+        return [address, item === undefined ? undefined : item !== null && forChildren(item)] as const;
       }),
-    ).then((answers) => looked(answers.filter(([, may]) => may).map(([address]) => address)));
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+    ).then((answers) =>
+      looked(
+        answers.filter(([, may]) => may === true).map(([address]) => address),
+        answers.filter(([, may]) => may === undefined).map(([address]) => address),
+      ),
+    );
+  }, [key, looks]); // eslint-disable-line react-hooks/exhaustive-deps
   return useMemo(
     () =>
       on

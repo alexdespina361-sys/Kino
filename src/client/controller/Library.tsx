@@ -5,7 +5,7 @@ import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
 import { useProfileData } from "../account/store";
 import { rowTitle, useT } from "../i18n";
-import { useHoldForSettings } from "../shared/childGate";
+import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { Poster } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
@@ -133,9 +133,9 @@ export function Library({
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
   const liked = useBecause();
   /** A child's profile (see the TV's Browse): the Cartoons for children are all it has, on Home and in the search, and it has no filters. */
-  const { settings, waiting } = useProfileData();
+  const { settings } = useProfileData();
   const child = settings.child === true;
-  const holding = useHoldForSettings(waiting);
+  const holding = useProfileHold();
   const pageSection = child ? "cartoon" : searchPage || filter === "all" ? undefined : FILTER_SECTION[filter];
   const displayedRows = useMemo(() => {
     const rows = pageRows(feeding.data, pageSection);
@@ -264,7 +264,7 @@ export function Library({
     if (paging && root.current && endIsNear(root.current)) feed.loadShelves(pageSection);
   }, [feeding, paging, pageSection, displayedRows.length]);
 
-  // (While the profile's settings are held on a phone new to it, the library is still loading: see `useHoldForSettings`.)
+  // (While the profile's settings are not known yet, the library is still loading: see `useProfileHold`.)
   if (status === "loading" || holding) {
     return (
       <p className="muted small" data-testid="library-loading">

@@ -532,7 +532,8 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 
   // (Only the page of a section has to tell the cards apart.)
   const places: CardPlaces | undefined = section ? { known: sectionsByLink(data.all), hosts: sectionsByHost(data.all), looked: data.looked } : undefined;
-  const going = unfinished(data.progress).filter((card) => (!places || sectionOfCard(card, places) === section) && (!child || child.allows(ownTitle(card, isShowCard(card)))));
+  // (A child's profile's cards are its gate's to say: what it lets through is a cartoon for children, wherever the library lists it.)
+  const going = unfinished(data.progress).filter((card) => (child ? child.allows(ownTitle(card, isShowCard(card))) : !places || sectionOfCard(card, places) === section));
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
   if (!section) {
     for (const like of data.because) {

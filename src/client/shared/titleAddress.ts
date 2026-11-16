@@ -92,14 +92,17 @@ export function showTitle(address: string | null): void {
 
 const TitleAnswerSchema = z.object({ item: LibraryItemSchema.nullable() });
 
-/** The title of a link, from the server: none when nobody knows it, it would not play, or the server could not be asked. */
-export async function fetchTitle(id: string): Promise<LibraryItem | null> {
+/** A title by its id, from the server: none (`null`) when nobody knows it or it would not play, and no answer (`undefined`) when the server could not be asked or would not say (too many asks, a place that could not be reached). */
+export async function askTitle(id: string): Promise<LibraryItem | null | undefined> {
   try {
     const res = await fetch(`/api/library/title?id=${encodeURIComponent(id)}`);
-    if (!res.ok) return null;
+    if (!res.ok) return res.status === 400 ? null : undefined;
     const parsed = TitleAnswerSchema.safeParse(await res.json());
-    return parsed.success ? parsed.data.item : null;
+    return parsed.success ? parsed.data.item : undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
+
+/** The title of a link, from the server: none when nobody knows it, it would not play, or the server could not be asked. */
+export const fetchTitle = async (id: string): Promise<LibraryItem | null> => (await askTitle(id)) ?? null;

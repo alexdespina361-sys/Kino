@@ -122,6 +122,14 @@ export function Controller() {
   const [ratingsOpen, setRatingsOpen] = useState(false);
   /** The row of the library that "See all" opened on a page of its own (by its id). */
   const [seeAll, setSeeAll] = useState<string | null>(null);
+  // The profile became a child's (here, or on another screen: the next exchange brings it): what was open of the rest of the library is closed, as on the TV.
+  useEffect(() => {
+    if (!child) return;
+    setTitle(null);
+    setSeeAll(null);
+    setRatingsOpen(false);
+    setSheet((open) => (open === "party" ? null : open));
+  }, [child]);
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));

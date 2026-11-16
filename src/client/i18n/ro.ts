@@ -608,6 +608,7 @@ export const ro: Dictionary = {
   "settings.childGroup": "Copii",
   "settings.child": "Profil de copil",
   "settings.childHelp": "Doar desene animate pentru copii, pe fiecare ecran pe care e folosit acest profil, fără prieteni sau vizionări în grup.",
+  "settings.childNote": "Doar desene pentru copii, fără prieteni sau grupuri.",
   "caption.size": "Mărime",
   "caption.font": "Font",
   "caption.color": "Culoarea textului",

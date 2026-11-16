@@ -664,3 +664,58 @@ describe("staying in step with the server", () => {
     expect(other.store.getSnapshot().progress.map((card) => card.title)).toEqual(["Film 1"]);
   });
 });
+
+describe("a profile new to this screen (`waiting`)", () => {
+  const world = async () => {
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => Date.now() });
+    const created = accounts.createAccount("w@example.com", "hash");
+    if (!created.ok) throw new Error("no account");
+    const profile = accounts.profilesOf(created.value.id)[0]!;
+    const sync = (d: ReturnType<typeof device>) => {
+      const { request, sent } = d.store.pending();
+      d.store.accept(accounts.sync(profile.id, request)!, sent);
+    };
+    return { accounts, profile, sync };
+  };
+
+  it("waits until the server's first answer, even when its copy was written before that answer came, and not after it", async () => {
+    const { profile, sync } = await world();
+    const tv = device(1_000_000);
+    expect(tv.store.getSnapshot().waiting).toBe(false); // (the browser's own copy has no server to wait for)
+    tv.store.openScope(profile.id);
+    expect(tv.store.getSnapshot().waiting).toBe(true);
+    tv.store.flush(); // (written as the page goes away, before any answer)
+
+    const reopened = device(1_000_000, tv.storage);
+    reopened.store.openScope(profile.id);
+    expect(reopened.store.getSnapshot().waiting).toBe(true);
+
+    let told = 0;
+    reopened.store.subscribe(() => told++);
+    sync(reopened); // (an answer with nothing new in it is news all the same)
+    expect(reopened.store.getSnapshot().waiting).toBe(false);
+    expect(told).toBeGreaterThan(0);
+    reopened.store.flush();
+
+    const later = device(1_000_000, tv.storage);
+    later.store.openScope(profile.id);
+    expect(later.store.getSnapshot().waiting).toBe(false);
+  });
+
+  it("takes a copy kept before this was known for answered when the server had counted it, and waits again for one that was forgotten", async () => {
+    const { profile } = await world();
+    const storage = new MemoryStorage();
+    storage.setItem(`kino.data.${profile.id}`, JSON.stringify({ v: 1, data: {}, rev: 3, dirty: [] }));
+    storage.setItem("kino.data.pro_never", JSON.stringify({ v: 1, data: {}, rev: 0, dirty: [] }));
+    const d = device(1_000_000, storage);
+    d.store.openScope(profile.id);
+    expect(d.store.getSnapshot().waiting).toBe(false);
+    d.store.openScope("pro_never");
+    expect(d.store.getSnapshot().waiting).toBe(true);
+    d.store.openScope(profile.id);
+    d.store.forget(profile.id);
+    expect(d.store.getSnapshot().waiting).toBe(true);
+    d.store.openScope(GUEST);
+    expect(d.store.getSnapshot().waiting).toBe(false);
+  });
+});

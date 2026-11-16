@@ -606,8 +606,14 @@ export function TvAccountPanel({
             </SettingsGroup>
 
             {/* (Ratings and friends had a group of two switches here: they are on for everybody since 15 Nov 2026, and what a friend may see is chosen on the friends' page.) */}
+          </div>
 
-            {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen. */}
+          <div className="tv-set-col" data-nav-column>
+            <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
+              <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
+            </SettingsGroup>
+            {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen.
+                In the column with the most room, with a short line under it: the settings still fit a 720p screen in every language. */}
             <SettingsGroup title={t("settings.childGroup")} testId="tv-group-child">
               <SettingsSwitch
                 label={t("settings.child")}
@@ -619,14 +625,8 @@ export function TvAccountPanel({
                 testId="tv-child"
               />
               <p className="tv-hint tv-set-note" data-testid="tv-child-help">
-                {t("settings.childHelp")}
+                {t("settings.childNote")}
               </p>
-            </SettingsGroup>
-          </div>
-
-          <div className="tv-set-col" data-nav-column>
-            <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
-              <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
             </SettingsGroup>
             {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). The cat is one row, and its switches are on a page
                 of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen. */}

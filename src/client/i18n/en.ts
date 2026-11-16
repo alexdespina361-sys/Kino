@@ -608,6 +608,7 @@ export const en = {
   "settings.childGroup": "Children",
   "settings.child": "Child profile",
   "settings.childHelp": "Only cartoons for children, on every screen this profile is used on, and no friends or watch parties.",
+  "settings.childNote": "Only cartoons for children, no friends or parties.",
   "caption.size": "Size",
   "caption.font": "Font",
   "caption.color": "Text color",

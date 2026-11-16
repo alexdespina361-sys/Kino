@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { backOf, cardOf, cardsToLookUp, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, ofSection, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { backOf, cardOf, cardsToLookUp, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, ofSection, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
+import type { ChildGate } from "../shared/childGate";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3, section?: "cartoon" | "anime"): LibraryRow => ({
@@ -617,5 +618,45 @@ describe("ofSection", () => {
   });
   it("has a filter for each", () => {
     expect(SECTION_FILTERS).toEqual(["all", "movie", "series", "cartoon", "anime"]);
+  });
+});
+
+describe("a child's profile (`PageData.child`)", () => {
+  const gate = (allowed: readonly string[]): ChildGate => ({ allows: (entry) => allowed.includes(entry.id) });
+  const cartoons: LibraryRow = { id: "c1", title: "Row c1", source: "Test", section: "cartoon", items: [item("kid", "movie", { section: "cartoon", kids: true }), item("grown", "movie", { section: "cartoon" })] };
+  const anime: LibraryRow = { id: "a1", title: "Row a1", source: "Test", section: "anime", items: [item("anime-kid", "series", { section: "anime", kids: true })] };
+  const grownOnly: LibraryRow = { id: "c2", title: "Row c2", source: "Test", section: "cartoon", items: [item("grown-2", "series", { section: "cartoon" })] };
+  const movies = row("m1", "movie");
+  const shelves = [movies, cartoons, anime, grownOnly];
+  const ids = (rows: HomeRow[]) => rows.flatMap((each) => each.entries.map((entry) => entry.id));
+
+  it("has the cartoons for children on every page of rows, Home too, and drops a row left with nothing", () => {
+    for (const page of ["home", "movies", "series", "cartoons", "anime"] as const) {
+      const rows = rowsOfPage(page, data({ rows: shelves, child: gate([]) }));
+      expect(ids(rows), page).toEqual(["kid"]);
+    }
+    // (Any other profile is as it was.)
+    expect(ids(rowsOfPage("home", data({ rows: shelves })))).toContain("grown");
+  });
+
+  it("shows of its own cards, saved titles, history and ratings only what its gate lets through", () => {
+    const progress = [card("kid-card"), card("grown-card")];
+    const allowed = gate(["kid-card", "kid-saved", "rate:kid-rated"]);
+    const home = rowsOfPage("home", data({ rows: shelves, progress, child: allowed }));
+    expect(home.find((each) => each.id === "continue")?.entries.map((entry) => entry.title)).toEqual(["Card kid-card"]);
+    const all = { rows: shelves, all: shelves, progress, list: [saved("kid-saved"), saved("grown-saved")], ratings: [rated("kid-rated", 8, 2), rated("grown-rated", 9, 3)], child: allowed };
+    expect(gridOf({ kind: "list" }, data(all))?.entries.map((entry) => entry.title)).toEqual(["Saved kid-saved"]);
+    expect(gridOf({ kind: "history" }, data(all))?.entries.map((entry) => entry.title)).toEqual(["Card kid-card"]);
+    expect(gridOf({ kind: "ratings" }, data(all))?.entries.map((entry) => entry.title)).toEqual(["Rated kid-rated"]);
+  });
+
+  it("has the Cartoons' categories only, and no other category however it is reached", () => {
+    const all = data({ rows: shelves, all: shelves, child: gate([]) });
+    const categories = gridOf({ kind: "categories", of: "movie" }, all);
+    expect(categories?.title).toBe(t("tv.cartoonCategories"));
+    expect(categories?.entries.map((entry) => entry.opens)).toEqual([{ kind: "category", rowId: "c1" }]);
+    expect(gridOf({ kind: "category", rowId: "m1" }, all)).toBeNull();
+    expect(gridOf({ kind: "category", rowId: "c2" }, all)).toBeNull(); // (a row of cartoons with none for children)
+    expect(gridOf({ kind: "category", rowId: "c1" }, all)?.entries.map((entry) => entry.id)).toEqual(["kid"]);
   });
 });

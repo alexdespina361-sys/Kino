@@ -605,6 +605,7 @@ export const it: Dictionary = {
   "settings.childGroup": "Bambini",
   "settings.child": "Profilo per bambini",
   "settings.childHelp": "Solo cartoni animati per bambini, su ogni schermo in cui si usa questo profilo, senza amici né visioni di gruppo.",
+  "settings.childNote": "Solo cartoni per bambini, niente amici né gruppi.",
   "caption.size": "Dimensione",
   "caption.font": "Carattere",
   "caption.color": "Colore del testo",

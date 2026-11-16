@@ -33,7 +33,8 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
 import { takeStrayAddress } from "../shared/strayAddress";
-import { ownTitles, useChildGate, useHoldForSettings } from "../shared/childGate";
+import { ownTitles, useChildGate } from "../shared/childGate";
+import { useProfileHold } from "../shared/profileHold";
 import { addressOf, dropLink, pendingLink, showTitle } from "../shared/titleAddress";
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
@@ -322,9 +323,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const friends = useFriends();
   const bell = useBell();
   const showCat = useCatWanted(); // (the cat's button in the corner: only on a screen that has a cat)
-  const { progress, watched, lists, list, ratings, settings, waiting } = useProfileData();
-  /** A profile this screen has never kept, opened just now: the library is shown (and a title's link opened) once the server has said what the profile chose, a child's profile in particular (see `useHoldForSettings`). */
-  const holding = useHoldForSettings(waiting);
+  const { progress, watched, lists, list, ratings, settings } = useProfileData();
+  /** The library is shown (and a title's link opened) once the profile's settings are known, a child's profile's in particular (see `useProfileHold`). */
+  const holding = useProfileHold();
   /**
    * A child's profile (the `child` setting): only cartoons for children (`forChildren`), on every page and in the search, title pages and links; the Cartoons are its
    * only section, and it has no friends and no watch party (the owner, 15 Nov 2026).
@@ -428,7 +429,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
   const everyRow = useMemo(() => allRows(feeding.data), [feeding.data]);
   // (...and those of titles the rows do not list, by asking the server once: see cardSections.ts.)
-  const looked = useCardSections(progress, everyRow, pageSection !== undefined);
+  const looked = useCardSections(progress, everyRow, pageSection !== undefined && !child); // (a child's profile's cards are judged by its gate, below)
   // (A child's profile shows of its own cards, saved titles and ratings only those known to be for children: see childGate.ts.)
   const childEntries = useMemo(() => (child ? ownTitles(progress, list, ratings) : []), [child, progress, list, ratings]);
   const childGate = useChildGate(childEntries, everyRow, child);
