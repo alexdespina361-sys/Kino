@@ -338,17 +338,21 @@ describe("the first piece of a film with Auto off", () => {
     engine.destroy();
   });
 
-  it("takes pieces of up to 5 seconds that way; a film cut into longer ones starts in the highest, request for request as before", async () => {
-    const five = await started();
-    highestList(five.hls, 5.005, 5.005);
-    expect(five.hls.loadLevelWrites).toEqual([1]);
-    five.engine.destroy();
-    const six = await started();
-    highestList(six.hls, 6, 6, 6);
-    six.hls.emit("fragLoaded", main(3));
-    highestList(six.hls, 2, 2); // (later lists of it are not the start)
-    expect(six.hls.loadLevelWrites).toEqual([]);
-    six.engine.destroy();
+  it("takes pieces of up to 6 seconds that way, as hosts cut them (6.006, 6.2); a film cut into longer ones starts in the highest, request for request as before", async () => {
+    for (const seconds of [5.005, 6, 6.006, 6.2]) {
+      const short = await started();
+      highestList(short.hls, seconds, seconds);
+      expect([seconds, short.hls.loadLevelWrites]).toEqual([seconds, [1]]);
+      short.engine.destroy();
+    }
+    for (const seconds of [6.4, 10]) {
+      const long = await started();
+      highestList(long.hls, seconds, seconds, seconds);
+      long.hls.emit("fragLoaded", main(3));
+      highestList(long.hls, 2, 2); // (later lists of it are not the start)
+      expect([seconds, long.hls.loadLevelWrites]).toEqual([seconds, []]);
+      long.engine.destroy();
+    }
   });
 
   it("goes by the piece a resume starts in", async () => {
