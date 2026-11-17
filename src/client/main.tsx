@@ -2,6 +2,7 @@ import "./shared/debug"; // first: with ?debug in the address it shows what the 
 import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountProvider } from "./account/AccountProvider";
+import { GetTheAppStrip } from "./app/GetTheApp";
 import { bootCat } from "./cat/boot";
 import { installDiagnostics } from "./feedback/diagnostics";
 import { FeedbackGate } from "./feedback/FeedbackGate";
@@ -57,6 +58,8 @@ void languageReady.then(() =>
       </FriendsProvider>
       <ExitHint />
       <UpdateHint />
+      {/* (On a phone's browser with Android: the line that says there is an app, until it is put away. See app/GetTheApp.tsx.) */}
+      <GetTheAppStrip />
       <FeedbackGate />
     </AccountProvider>,
   ),

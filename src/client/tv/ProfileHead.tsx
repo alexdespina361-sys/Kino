@@ -1,6 +1,7 @@
 import { useRef, type FocusEvent } from "react";
 import type { AvatarId } from "../../shared";
 import { Avatar } from "../account/Avatar";
+import { GetTheApp, useAppRelease } from "../app/GetTheApp";
 import { GoogleMark } from "../account/GoogleButton";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useT } from "../i18n";
@@ -39,6 +40,8 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
   const feedback = useFeedbackEntry();
   const tagShown = useRef<HTMLElement>(null);
   const [copying, copyTag] = useCopy(tag ?? "", tagShown);
+  /** The Android app, on a phone's browser with Android (app/GetTheApp.tsx): a card under the buttons. Nothing on a TV. */
+  const release = useAppRelease();
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: (event: FocusEvent<HTMLElement>) => onArrive(col, event.currentTarget) });
   const settingsCol = signedIn || !canSignIn ? 0 : 1; // (a guest's Sign in is the button before it)
   const googleCol = settingsCol + 2 + places.length;
@@ -112,6 +115,7 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
           </button>
         )}
       </div>
+      {release && <GetTheApp release={release} className="in-profile-head" />}
     </div>
   );
 }
