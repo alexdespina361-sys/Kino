@@ -40,12 +40,16 @@ describe("the chat on the phone", () => {
     expect(form.slice(0, form.indexOf("</form>"))).not.toMatch(/<(input|textarea)\b/);
   });
 
-  it("is one bar: the buttons that send a title and a sticker are in it, before the box, and Send is beside it", () => {
+  it("is one bar: the one button of what is sent besides words in it, before the box, and Send beside it; the panel is shut until it is pressed", () => {
     const html = render();
     const bar = html.slice(html.indexOf('data-testid="chat-pill"'), html.indexOf('data-testid="chat-send"'));
-    for (const id of ["chat-title-btn", "chat-sticker-btn", "chat-input"]) expect(has(bar, id), id).toBe(true);
-    expect(bar.indexOf('data-testid="chat-sticker-btn"'), "the buttons come before the box").toBeLessThan(bar.indexOf('data-testid="chat-input"'));
-    expect(has(html, "chat-tools"), "nothing typed: no +").toBe(false);
+    for (const id of ["chat-panel-btn", "chat-input"]) expect(has(bar, id), id).toBe(true);
+    expect(bar.indexOf('data-testid="chat-panel-btn"'), "the button comes before the box").toBeLessThan(bar.indexOf('data-testid="chat-input"'));
+    expect(tagOf(html, "chat-panel-btn")).toContain('aria-expanded="false"');
+    expect(tagOf(html, "chat-panel-btn")).toContain('aria-label="Titles, GIFs and stickers"');
+    for (const id of ["chat-title-btn", "chat-gif-btn", "chat-sticker-btn", "chat-tools", "chat-panel"]) expect(has(html, id), id).toBe(false);
+    // (Something typed changes nothing: the one button stays, there is no + to fold into.)
+    expect(count(render({ session: fakeSession({ state: { lines } }) }), "chat-panel-btn")).toBe(1);
   });
 
   it("says that it is loading, not that it is empty, before the first answer", () => {

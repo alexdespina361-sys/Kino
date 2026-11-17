@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type SetStateAction } from "react";
+import { useEffect, useId, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type SetStateAction } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, ImageIcon, MoreIcon, PlusIcon, ReplyIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, HeartIcon, ImageIcon, KeyboardIcon, MoreIcon, ReplyIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { actionForKey } from "../tv/keys";
 import { BackButton, Screen } from "../tv/Idle";
@@ -10,17 +10,15 @@ import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatMediaTv } from "./ChatMedia";
+import { ChatPanel } from "./ChatPanel";
 import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
 import { useShutOnPressBeside } from "./pressBeside";
 import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
-import { TitlePickTv } from "./TitlePick";
-import { GifPickTv } from "./GifPick";
 import { lastTheirs, ReactTv } from "./Reactions";
 import { backLetsAnswerGo, quoteWords, ReplyStrip } from "./Reply";
-import { StickerPickTv } from "./StickerPick";
-import { afterSent, cutTo, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
+import { afterSent, cutTo, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
@@ -65,14 +63,9 @@ export interface ChatTvProps {
  */
 export function ChatTv({ name, avatar, online = false, presence, desk = false, session, report, receiving = true, narrow = false, onClose, onOpenTitle, now = Date.now() }: ChatTvProps) {
   const [writing, setWriting] = useState(false);
-  /** The page of titles to send is open (see TitlePick.tsx). */
-  const [picking, setPicking] = useState(false);
-  /** The page of GIFs is open (see GifPick.tsx): only where the screen types (a computer, a hand-held screen), and only when the site has a KLIPY key. */
-  const [gifPicking, setGifPicking] = useState(false);
+  /** The GIFs of the panel under the box (ChatPanel.tsx): only where the screen types (a computer, a hand-held screen), and only when the site has a KLIPY key. */
   const gifKey = useGifKey();
   const gifs = (desk || narrow) && gifKey ? gifKey : null;
-  /** The page of stickers is open (see StickerPick.tsx): on every screen, a TV that is only a remote too (they are picked, not typed). */
-  const [stickerPicking, setStickerPicking] = useState(false);
   /** The page that puts a reaction on a message is open, for this one (see Reactions.tsx): the remote's way to react. */
   const [reacting, setReacting] = useState<number | null>(null);
   const reactingTo = reacting === null ? undefined : session.state.lines.find((line) => line.id === reacting);
@@ -89,17 +82,13 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   const [showing, setShowing] = useState<{ id: number; seq: number } | null>(null);
   const pointer = desk || narrow;
 
-  // A chat that closes (the friend takes no messages now, or the friendship is over) forgets the pages it had open on it, and a message that goes takes its
-  // page of reactions: when the chat opens again, it is the chat that is shown, not a page coming back by itself with the remote on it (the judge, 17 Nov).
+  // A message that goes takes its page of reactions, and so does a chat that closes (the friend takes no messages now, or the friendship is over): when the
+  // chat opens again, it is the chat that is shown, not a page coming back by itself with the remote on it (the judge, 17 Nov). (Its panel is the chat's own:
+  // ReadTv shuts it.)
   const blocked = whyNotWrite(session) !== null;
   const reactingGone = reacting !== null && !reactingTo;
   useEffect(() => {
-    if (!blocked && !reactingGone) return;
-    setReacting(null);
-    if (!blocked) return;
-    setPicking(false);
-    setGifPicking(false);
-    setStickerPicking(false);
+    if (blocked || reactingGone) setReacting(null);
   }, [blocked, reactingGone]);
 
   if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} personal={personal.lines} />;
@@ -116,9 +105,6 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       />
     );
   }
-  if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
-  if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
-  if (stickerPicking && !whyNotWrite(session)) return <StickerPickTv name={name} session={session} narrow={narrow} pointer={desk || narrow} onBack={() => setStickerPicking(false)} />;
   // (A message taken back while its page is open: the page goes, and the chat is shown.)
   if (reactingTo && !whyNotWrite(session)) return <ReactTv name={name} line={reactingTo} session={session} onBack={() => setReacting(null)} />;
   if (writing) {
@@ -152,9 +138,8 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       receiving={receiving}
       now={now}
       onWrite={() => setWriting(true)}
-      onPickTitle={() => setPicking(true)}
-      {...(gifs ? { onPickGif: () => setGifPicking(true) } : {})}
-      onPickSticker={() => setStickerPicking(true)}
+      withPanel
+      gifKey={gifs}
       onReactTo={setReacting}
       // (A TV that is only a remote writes on a page of its own: the answer is written there, and the page says what it answers.)
       onReplied={desk || narrow ? undefined : () => setWriting(true)}
@@ -180,9 +165,8 @@ export function ReadTv({
   receiving,
   now,
   onWrite,
-  onPickTitle,
-  onPickGif,
-  onPickSticker,
+  withPanel = false,
+  gifKey = null,
   onReactTo,
   onReplied,
   onClose,
@@ -206,12 +190,10 @@ export function ReadTv({
   receiving: boolean;
   now: number;
   onWrite: () => void;
-  /** The button beside the box that sends a title instead (none: no such button). */
-  onPickTitle?: (() => void) | undefined;
-  /** The button beside it that sends a GIF (none: the site has no KLIPY key, or the screen only has a remote). */
-  onPickGif?: (() => void) | undefined;
-  /** The button nearest the box, that sends a sticker (none: no such button). */
-  onPickSticker?: (() => void) | undefined;
+  /** The one button before the box that opens the panel of titles, GIFs and stickers under it (ChatPanel.tsx); false: no such button. */
+  withPanel?: boolean;
+  /** The panel's GIFs: the site's KLIPY key, where the screen can type a search (none: a TV that is only a remote, a site without a key). */
+  gifKey?: string | null;
   /** "React to Sam's last message" behind the ⋯ opens the page that does it, for that message (none: not there). */
   onReactTo?: ((id: number) => void) | undefined;
   /** A message was picked to answer (Reply.tsx): where the answer is written next (none: the box here, which is given the keys). */
@@ -267,7 +249,9 @@ export function ReadTv({
   // selection, a picture shown larger: each Back shuts first); shut, the keys go back to the ⋯ it was opened from.
   const search = useChatSearch(state.lines);
   const searching = search.open && onMedia !== undefined;
-  useBackFirst(searching && picked === null && !menu ? () => searchBack(session, search, "tv-chat-box") : undefined);
+  // (Not stood down while a message is selected or the ⋯ is open: Back's stack - `useBackFirst` - shuts whichever of them came after it first. Stood down, it
+  // would come back on top of a panel opened meanwhile, and shut before it: the judge, 17 Nov.)
+  useBackFirst(searching ? () => searchBack(session, search, "tv-chat-box") : undefined);
   const wasSearching = useRef(false);
   useEffect(() => {
     const was = wasSearching.current;
@@ -315,37 +299,71 @@ export function ReadTv({
   };
   const answering = session.replyTo === null ? undefined : state.lines.find((line) => line.id === session.replyTo);
 
-  // (A hand-held screen, while something is typed: the buttons that send something else are one +, until it is pressed; typing on folds them again.)
-  const [tools, setTools] = useState(false);
-  const folded = narrow && draft !== "" && !tools && (onPickTitle !== undefined || onPickGif !== undefined || onPickSticker !== undefined);
-  useEffect(() => {
-    if (draft === "") setTools(false);
-  }, [draft]);
-  const unfold = useUnfold(tools, () => setTools(true));
   const type = (text: string) => {
     setDraft(cutTo(text, CHAT_TEXT_MAX));
-    setTools(false);
     session.settle();
   };
-  /** The buttons that send something other than words: a title, a GIF, a sticker (the stickers' the nearest the box). */
-  const toolButtons = (
-    <>
-      {onPickTitle && (
-        <button type="button" className="tv-chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-nav data-testid="tv-chat-title-btn">
-          <FilmIcon />
-        </button>
-      )}
-      {onPickGif && (
-        <button type="button" className="tv-chat-title-btn tv-chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-nav data-testid="tv-chat-gif-btn">
-          <GifIcon />
-        </button>
-      )}
-      {onPickSticker && (
-        <button type="button" className="tv-chat-title-btn tv-chat-sticker-btn-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-nav data-testid="tv-chat-sticker-btn">
-          <StickerIcon />
-        </button>
-      )}
-    </>
+
+  // What is sent besides words: one button before the box, and the panel under it (ChatPanel.tsx), as a messenger's keyboard of stickers (the owner, 17 Nov).
+  // It opens with nothing selected and the ⋯ shut, so that Back shuts the panel; on a hand-held screen the keyboard goes down, the panel in its place.
+  const [panel, setPanel] = useState(false);
+  /** The keys go into the panel as it opens: a TV's remote, or the button pressed with a computer's keys; not a click, which leaves them where they were. */
+  const [panelLand, setPanelLand] = useState(false);
+  const panelButton = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const panelOpen = panel && withPanel && !blocked;
+  useEffect(() => {
+    if (blocked) setPanel(false);
+  }, [blocked]);
+  /** Where the keys go once something was sent from it: the box on a computer, Write on a TV; a hand-held screen's keyboard stays down. */
+  const home = () => {
+    if (narrow) return;
+    document.querySelector<HTMLElement>("[data-testid='tv-chat'] .tv-chat-compose-row [data-autofocus]")?.focus({ preventScroll: true });
+  };
+  const togglePanel = (event: MouseEvent<HTMLButtonElement>) => {
+    if (panel) {
+      setPanel(false);
+      // (A screen that types has the box back, the keyboard with it; a TV's remote stays on the button.)
+      if (pointer) (narrow ? area : box).current?.focus({ preventScroll: true });
+      return;
+    }
+    setPicked(null);
+    setMenu(false);
+    if (narrow && document.activeElement === area.current) area.current?.blur();
+    // (`detail` is 0 for a press made with the keys. A computer's click leaves the keys in the box: Enter there still sends what was typed, not the first
+    // sticker the keys would have landed on - the judge, 17 Nov.)
+    setPanelLand(!narrow && (!pointer || event.detail === 0));
+    setPanel(true);
+  };
+  /**
+   * Back: the panel shuts. The keys go back to its button when they were in the panel (or on nothing); typing in the box beside it, they stay there, so that
+   * the next Back lets go of an answer being written before it leaves the chat (the judge, 17 Nov). A hand-held screen is given nothing: its keyboard would
+   * come up.
+   */
+  const shutPanel = () => {
+    const on = document.activeElement;
+    const fromPanel = !on || on === document.body || on.closest("[data-testid='tv-chat-panel']") !== null;
+    setPanel(false);
+    if (!narrow && fromPanel) panelButton.current?.focus({ preventScroll: true });
+  };
+  /** The one button of what is sent besides words: a sticker's face while it is shut; while it is open, on a screen that types, a keyboard's (pressed, the box). */
+  const panelToggle = withPanel && (
+    <button
+      type="button"
+      ref={panelButton}
+      className="tv-chat-title-btn tv-chat-panel-btn"
+      onClick={togglePanel}
+      // (A computer's click leaves the keys where they were, in the box: what is typed goes on, and Enter sends it - the judge, 17 Nov.)
+      {...(pointer && !narrow ? { onMouseDown: keepTheBox } : {})}
+      aria-label={t("chat.panel")}
+      aria-expanded={panelOpen}
+      aria-controls={panelOpen ? panelId : undefined}
+      title={t("chat.panel")}
+      data-nav
+      data-testid="tv-chat-panel-btn"
+    >
+      {panelOpen && pointer ? <KeyboardIcon /> : <StickerIcon />}
+    </button>
   );
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -353,9 +371,16 @@ export function ReadTv({
     const written = draft;
     if (await session.send(checked.text)) {
       setDraft((now) => afterSent(now, written)); // (what was typed while it was on its way is the next message: see `afterSent`)
-      (narrow ? area : box).current?.focus(); // (the next message is typed at once, as in any chat)
+      // (The next message is typed at once, as in any chat; but a panel opened while it was on its way keeps the keys, and stays: the box given them would
+      // shut it on a hand-held screen.)
+      if (!panelNow.current) (narrow ? area : box).current?.focus();
     }
   };
+  /** Whether the panel is open now: what a send that was on its way finds when it is done. */
+  const panelNow = useRef(panelOpen);
+  useEffect(() => {
+    panelNow.current = panelOpen;
+  }, [panelOpen]);
 
   // (The last message taken back takes the list with it, and the remote with it if it was there: left on nothing, it is given Write again.)
   useEffect(() => {
@@ -378,7 +403,7 @@ export function ReadTv({
     // (A hand-held screen lands on nothing as the chat opens: the box would bring the keyboard up over the messages, and the arrow at the top would be one
     // stray Enter from closing the chat. A keyboard's first arrow lands on the first thing, as everywhere.)
     <Screen key="read" testId="tv-chat" compact focus={!narrow} onBack={onClose} {...(narrow ? { className: "tv-chat-screen" } : {})}>
-      <div className="tv-chat-window" role="group" aria-label={t("chat.title", { name })}>
+      <div className="tv-chat-window" role="group" aria-label={t("chat.title", { name })} data-panel={panelOpen ? "true" : undefined}>
         <div className="tv-chat-head" data-searching={searching ? "true" : undefined}>
           {searching ? (
             // (The search, the head's width, as in any messenger: × or Back shuts it, and the friend is at the top again.)
@@ -550,33 +575,15 @@ export function ReadTv({
             )}
             <div className="tv-chat-compose-row">
               {desk || narrow ? (
-                // A computer or a hand-held screen: one bar, the buttons that send something else in it before the box, Send beside it; Enter sends. On a
-                // hand-held screen the bar is the screen's width, so while something is typed the buttons fold into one + (a press of it brings them back),
-                // and the words have the bar to themselves (the owner, 17 Nov: three round buttons left the box a column a few words wide).
+                // A computer or a hand-held screen: one bar, the one button of what is sent besides words in it before the box, Send beside it; Enter
+                // sends (the owner, 17 Nov: three round buttons left the box a column a few words wide, then "it should only be 1 icon").
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
                   <div
                     className="tv-chat-pill"
-                    ref={unfold.bar}
                     onKeyDown={(event) => backLetsAnswerGo(event, session.replyTo !== null, () => session.setReplyTo(null), "tv-chat-box")}
                     data-testid="tv-chat-pill"
                   >
-                    {folded ? (
-                      <button
-                        type="button"
-                        className="tv-chat-title-btn tv-chat-tools-btn"
-                        onClick={unfold.press}
-                        onMouseDown={keepTheBox}
-                        aria-label={t("chat.moreToSend")}
-                        aria-expanded={false}
-                        title={t("chat.moreToSend")}
-                        data-nav
-                        data-testid="tv-chat-tools"
-                      >
-                        <PlusIcon />
-                      </button>
-                    ) : (
-                      toolButtons
-                    )}
+                    {panelToggle}
                     {narrow ? (
                       <MessageBox
                         ref={area}
@@ -589,6 +596,8 @@ export function ReadTv({
                         placeholder={t("chat.placeholder")}
                         extra={{ "data-nav": true }}
                         testId="tv-chat-box"
+                        // (A finger on the box: the keyboard comes, and the panel goes from its place, as a messenger's does.)
+                        onFocused={() => setPanel(false)}
                       />
                     ) : (
                       <input
@@ -623,9 +632,9 @@ export function ReadTv({
                   </button>
                 </form>
               ) : (
-                // A TV: the buttons, then what looks like the box, and OK on it opens the page that writes (with what was typed and not sent, if anything was).
+                // A TV: the button, then what looks like the box, and OK on it opens the page that writes (with what was typed and not sent, if anything was).
                 <>
-                  {toolButtons}
+                  {panelToggle}
                   <button type="button" className="tv-chat-composer tv-chat-fakebox" onClick={onWrite} data-nav data-autofocus data-testid="tv-chat-write">
                     <span className={`tv-chat-fakebox-text${draft ? "" : " is-empty"}`}>{draft || t("chat.placeholder")}</span>
                     <span className="tv-chat-send-round" aria-hidden="true">
@@ -635,6 +644,22 @@ export function ReadTv({
                 </>
               )}
             </div>
+            {panelOpen && (
+              <ChatPanel
+                id={panelId}
+                session={session}
+                tv
+                nav
+                land={panelLand}
+                pointer={pointer}
+                gifKey={gifKey}
+                onClose={shutPanel}
+                onSent={() => {
+                  setPanel(false);
+                  home();
+                }}
+              />
+            )}
             </>
           )}
         </div>

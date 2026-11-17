@@ -194,6 +194,20 @@ async function fromMenu(page: Page, testId: string) {
   await expect(page.getByTestId("chat-menu")).toBeHidden();
 }
 
+/**
+ * The chat's panel of titles, GIFs and stickers (ChatPanel.tsx) opened with a press of its one button (unless it is open) and shown on `tab`: `prefix` is
+ * "chat" on the phone's sheet, "tv-chat" on the TV's pages. Returns the panel.
+ */
+async function openPanel(page: Page, tab: "titles" | "gifs" | "stickers", prefix: "chat" | "tv-chat" = "chat") {
+  const panel = page.getByTestId(`${prefix}-panel`);
+  if ((await panel.count()) === 0) await page.getByTestId(`${prefix}-panel-btn`).click();
+  await expect(panel).toBeVisible();
+  const chosen = panel.locator(`[role='tab'][data-tab='${tab}']`);
+  if ((await chosen.getAttribute("aria-selected")) !== "true") await chosen.click();
+  await expect(panel).toHaveAttribute("data-tab", tab);
+  return panel;
+}
+
 const bell = (page: Page) => page.getByTestId("bell-button");
 const badge = (page: Page) => page.getByTestId("bell-badge");
 const lines = (page: Page) => page.getByTestId("chat-line");
@@ -673,7 +687,9 @@ async function tellsWhatItWatches(giver: Screen, taker: Screen, words: (typeof W
 
 /**
  * Everything under `root` that is a control or says something and does not lie inside the screen. On a narrow screen (under 900 pixels wide,
- * where the pages are one column) a page is allowed to be longer than the screen, since it scrolls: only the sides are held to it.
+ * where the pages are one column) a page is allowed to be longer than the screen, since it scrolls: only the sides are held to it. What lies in a list
+ * that scrolls up and down inside the page (the panel's stickers, say) is reached by scrolling it: that list's top and bottom are held to the screen, not its
+ * every item's.
  */
 const outsideTheScreen = (page: Page, root: string, whole = true) =>
   page.evaluate(
@@ -681,10 +697,18 @@ const outsideTheScreen = (page: Page, root: string, whole = true) =>
       const lost: string[] = [];
       const base = document.querySelector(`[data-testid="${id}"]`);
       if (!base) return [`(nothing is shown as ${id})`];
+      const scroller = (element: Element) => {
+        for (let up = element.parentElement; up && up !== base.parentElement; up = up.parentElement) {
+          const { overflowY } = getComputedStyle(up);
+          if ((overflowY === "auto" || overflowY === "scroll") && up.scrollHeight > up.clientHeight + 1) return up;
+        }
+        return null;
+      };
       for (const element of base.querySelectorAll("button, input, h1, h2, p, svg")) {
         const box = element.getBoundingClientRect();
         if (box.width === 0 && box.height === 0) continue;
-        const outside = box.left < -0.5 || box.right > innerWidth + 0.5 || (wholePage && (box.top < -0.5 || box.bottom > innerHeight + 0.5));
+        const upDown = scroller(element)?.getBoundingClientRect() ?? box;
+        const outside = box.left < -0.5 || box.right > innerWidth + 0.5 || (wholePage && (upDown.top < -0.5 || upDown.bottom > innerHeight + 0.5));
         if (outside) lost.push(element.getAttribute("data-testid") ?? `${element.tagName.toLowerCase()} "${(element.textContent ?? "").trim().slice(0, 30)}"`);
       }
       if (document.documentElement.scrollWidth > innerWidth) lost.push("(the page scrolls sideways)");
@@ -1150,7 +1174,7 @@ async function saves(page: Page, titles: typeof SAVED) {
 }
 
 test.describe("a title sent in a chat", () => {
-  test("on the phone: the film button beside the box lists what was saved (nothing without an address on the site), a press sends it and keeps what was being typed, and the friend's card opens the title's page", async ({ browser }) => {
+  test("on the phone: the panel's Titles lists what was saved (nothing without an address on the site), a press sends it and keeps what was being typed, and the friend's card opens the title's page", async ({ browser }) => {
     test.setTimeout(150_000);
     const { ann, bob } = await twoFriends(browser);
     for (const page of [ann.page, bob.page]) await knowsTitles(page);
@@ -1158,20 +1182,16 @@ test.describe("a title sent in a chat", () => {
     await expect.poll(() => atHome(ann.page)).toBe(true);
     await openChat(ann.page);
     await ann.page.getByTestId("chat-input").fill("half typed");
-    // (with something typed the buttons are folded into one +, so the words have the bar; a press of it brings them back)
-    await expect(ann.page.getByTestId("chat-title-btn")).toHaveCount(0);
-    // (pressed with the keys, the + is gone under them: the first of the buttons it brought back has the focus, not nothing)
-    await ann.page.getByTestId("chat-tools").focus();
-    await ann.page.keyboard.press("Enter");
+    // (one button whatever is typed: there is no + to fold three into)
     await expect(ann.page.getByTestId("chat-tools")).toHaveCount(0);
-    await expect(ann.page.getByTestId("chat-title-btn")).toBeFocused();
-    await ann.page.getByTestId("chat-title-btn").click();
-    const picks = ann.page.getByTestId("chat-pick");
+    const panel = await openPanel(ann.page, "titles");
+    await expect(ann.page.getByTestId("chat-input"), "the keyboard went down: the panel is in its place").not.toBeFocused();
+    const picks = panel.getByTestId("chat-pick");
     await expect(picks).toHaveCount(2);
     await expect(picks.first()).toContainText("The Matrix");
     await expect(picks.nth(1)).toContainText("A Long Show");
     await picks.first().click();
-    await expect(ann.page.getByTestId("chat-pick-sheet")).toHaveCount(0);
+    await expect(panel, "sent: the panel goes with it").toHaveCount(0);
     await expect(lines(ann.page)).toHaveCount(1);
     await expect(ann.page.getByTestId("chat-card")).toContainText("The Matrix");
     await expect(texts(ann.page)).toHaveText(["The Matrix (1999)"]); // (the address is the card's)
@@ -1186,7 +1206,7 @@ test.describe("a title sent in a chat", () => {
     await expect(bob.page.getByTestId("title-name")).toHaveText("The Matrix");
   });
 
-  test("on the TV: the remote goes from the box to the film button and the posters, OK sends one; the friend's remote steps from the box onto the list and the card, and OK opens the title's page", async ({ browser }) => {
+  test("on the TV: the remote goes from the box to the panel's button, along its tabs to the posters, OK sends one; the friend's remote steps from the box onto the list and the card, and OK opens the title's page", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob");
@@ -1200,12 +1220,27 @@ test.describe("a title sent in a chat", () => {
     await ann.page.getByTestId("friend-chat").click();
     await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
     await ann.page.keyboard.press("ArrowLeft");
-    await expect(ann.page.getByTestId("tv-chat-sticker-btn")).toBeFocused(); // (the stickers' button is the nearest the box)
-    await ann.page.keyboard.press("ArrowLeft");
-    await expect(ann.page.getByTestId("tv-chat-title-btn")).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-panel-btn")).toBeFocused(); // (one button before the box)
     await ann.page.keyboard.press("Enter");
+    const panel = ann.page.getByTestId("tv-chat-panel");
+    await expect(panel).toHaveAttribute("data-tab", "stickers"); // (the first time: the stickers)
+    await expect(panel.getByTestId("chat-sticker-pick").first()).toBeFocused();
+    // (down the stickers to the tabs at the panel's foot, along them to Titles; OK shows its posters and leaves the remote on the tab, Up goes into them)
+    const tabs = panel.getByTestId("tv-chat-panel-tab");
+    await expect(tabs).toHaveCount(2); // (Titles and Stickers: a TV that is only a remote has no GIFs, they would be a search typed on the keys of a page)
+    for (let press = 0; press < 12 && !(await tabs.evaluateAll((all) => all.some((one) => one === document.activeElement))); press++) await ann.page.keyboard.press("ArrowDown");
+    // (Down lands on the tab nearest the sticker it left, as the arrows do anywhere: Titles or Stickers. From Stickers, Left is Titles.)
+    if (await panel.locator("[data-tab='stickers'][role='tab']").evaluate((tab) => tab === document.activeElement)) await ann.page.keyboard.press("ArrowLeft");
+    await expect(panel.locator("[data-tab='titles'][role='tab']")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(panel).toHaveAttribute("data-tab", "titles");
+    await expect(panel.locator("[data-tab='titles'][role='tab']")).toBeFocused();
     const picks = ann.page.getByTestId("tv-chat-pick");
     await expect(picks).toHaveCount(2);
+    // (Up lands on the title above the tab, as the arrows do anywhere: the rows of titles are a few to a line, the tabs in the middle under them)
+    await ann.page.keyboard.press("ArrowUp");
+    await expect.poll(() => picks.evaluateAll((all) => all.findIndex((one) => one === document.activeElement))).toBeGreaterThanOrEqual(0);
+    if (await picks.nth(1).evaluate((pick) => pick === document.activeElement)) await ann.page.keyboard.press("ArrowLeft");
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("ArrowRight");
     await expect(picks.nth(1)).toBeFocused();
@@ -1213,13 +1248,19 @@ test.describe("a title sent in a chat", () => {
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("Enter");
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(panel, "sent: the panel goes with it").toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat-write"), "and the remote is back on Write").toBeFocused();
     await expect(tvLines(ann.page)).toHaveCount(2);
     await expect(ann.page.getByTestId("tv-chat-lines").getByTestId("chat-card")).toContainText("The Matrix");
-    // Back from the posters sends nothing
-    await ann.page.getByTestId("tv-chat-title-btn").click();
+    // Back from the posters sends nothing, and the remote is on the button again; the panel opens on the tab used last
+    await ann.page.keyboard.press("ArrowLeft");
+    await ann.page.keyboard.press("Enter");
+    await expect(panel).toHaveAttribute("data-tab", "titles");
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-panel-btn")).toBeFocused();
     await expect(tvLines(ann.page)).toHaveCount(2);
 
     await look(bob.page);
@@ -1370,24 +1411,41 @@ const stickerLoaded = (picture: ReturnType<Page["getByTestId"]>) => picture.eval
 const bubbleOf = (picture: ReturnType<Page["getByTestId"]>) => picture.evaluate((element) => getComputedStyle(element.closest(".chat-bubble")!).backgroundColor);
 
 test.describe("stickers in a chat", () => {
-  test("on the phone: the sticker button opens the whole set, a press sends one and the friend sees the picture; Back sends nothing; an emoji of the set typed alone is a sticker too, one in words stays words", async ({ browser }) => {
+  test("on the phone: the panel opens on the whole set, a press sends one and the friend sees the picture; Back sends nothing; an emoji of the set typed alone is a sticker too, one in words stays words", async ({ browser }) => {
     test.setTimeout(150_000);
     const { ann, bob } = await twoFriends(browser);
     await openChat(ann.page);
-    // Back shuts the grid and sends nothing
-    await ann.page.getByTestId("chat-sticker-btn").click();
-    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    // Back shuts the panel and sends nothing, and the chat stays
+    const button = ann.page.getByTestId("chat-panel-btn");
+    await button.click();
+    const sheet = ann.page.getByTestId("chat-panel");
     await expect(sheet).toBeVisible();
+    await expect(sheet, "the first time: the stickers").toHaveAttribute("data-tab", "stickers");
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await expect(button).toHaveAttribute("aria-label", en["chat.panel"]); // (open, its picture is a keyboard's; its name stays, with aria-expanded)
     const picks = ann.page.getByTestId("chat-sticker-pick");
     await expect(picks).toHaveCount(STICKER_COUNT);
     await expect(picks.first()).toHaveAttribute("data-sticker", "popcorn");
     expect(await gridFaults(picks), "the stickers: squares, none over another").toEqual([]);
+    expect(await outsideTheScreen(ann.page, "chat-sheet", false)).toEqual([]);
     await ann.page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-sheet"), "one Back: the panel, not the chat").toBeVisible();
     await expect(lines(ann.page)).toHaveCount(0);
+    // the keyboard's button: the panel goes, the box has the keyboard back
+    await button.click();
+    await expect(sheet).toBeVisible();
+    await button.click();
+    await expect(sheet).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-input")).toBeFocused();
+    // and a press of the box while it is open: the same
+    await button.click();
+    await expect(sheet).toBeVisible();
+    await ann.page.getByTestId("chat-input").click();
+    await expect(sheet).toHaveCount(0);
 
-    // a press sends it: the grid shuts, the chat has the picture, no bubble around it
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    // a press sends it: the panel shuts, the chat has the picture, no bubble around it
+    await button.click();
     await ann.page.locator('[data-testid="chat-sticker-pick"][data-sticker="heart-eyes"]').click();
     await expect(sheet).toHaveCount(0);
     await expect(lines(ann.page)).toHaveCount(1);
@@ -1427,14 +1485,13 @@ test.describe("stickers in a chat", () => {
     await ann.page.getByTestId("chat-input").fill("Popcorn ready?");
     await ann.page.getByTestId("chat-send").click();
     await expect.poll(() => hold !== undefined).toBe(true);
-    await ann.page.getByTestId("chat-tools").click(); // (the message is still in the box while it goes: the buttons are behind the +)
-    await expect(ann.page.getByTestId("chat-input"), "a finger's press of the + leaves the box the focus, and the keyboard up").toBeFocused();
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers"); // (the message is still in the box while it goes: the one button is there all the same)
     const picks = ann.page.getByTestId("chat-sticker-pick");
     await expect(picks.first()).toBeDisabled();
     hold!();
     await expect(lines(ann.page)).toHaveCount(1);
-    await expect(picks.first()).toBeEnabled();
+    await expect(picks.first(), "the panel opened while it went stays").toBeEnabled();
+    await expect(ann.page.getByTestId("chat-input"), "and the box was not given the keyboard over it").not.toBeFocused();
     hold = undefined;
     await ann.page.unroute(/\/friends\/[^/]+\/chat$/);
     await picks.first().click();
@@ -1447,12 +1504,12 @@ test.describe("stickers in a chat", () => {
     const emoji = lines(bob.page).nth(1).getByTestId("chat-sticker-emoji");
     await expect(emoji).toHaveText("\u{1F37F}");
     expect((await where(emoji)).height, "as big as the picture").toBeGreaterThan(100);
-    await bob.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(bob.page, "stickers");
     await expect(bob.page.getByTestId("chat-sticker-pick").first().locator(".chat-sticker-emoji")).toHaveText("\u{1F37F}");
     await expect(bob.page.getByTestId("chat-sticker-pick").first().locator("img")).toHaveCount(0);
   });
 
-  test("on a TV that is only a remote: the button beside the box opens the set, the remote walks it and OK sends one; the friend on the narrowest hand-held screen sees it and has the set as the whole screen, one list that scrolls", async ({ browser }) => {
+  test("on a TV that is only a remote: the button beside the box opens the panel on the set, the remote walks it and OK sends one; the friend on the narrowest hand-held screen sees it and has the set under the bar, one list that scrolls", async ({ browser }) => {
     test.setTimeout(180_000);
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob", { viewport: { width: 320, height: 640 } });
@@ -1461,19 +1518,24 @@ test.describe("stickers in a chat", () => {
     await ann.page.getByTestId("friend-chat").click();
     await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
     await ann.page.keyboard.press("ArrowLeft");
-    await expect(ann.page.getByTestId("tv-chat-sticker-btn")).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-panel-btn")).toBeFocused();
     await ann.page.keyboard.press("Enter");
-    await expect(ann.page.getByTestId("tv-chat-stickers-page")).toBeVisible();
+    const panel = ann.page.getByTestId("tv-chat-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel).toHaveAttribute("data-tab", "stickers");
     const picks = ann.page.getByTestId("chat-sticker-pick");
     await expect(picks).toHaveCount(STICKER_COUNT);
     await expect(picks.first()).toBeFocused();
     expect(await gridFaults(picks), "the stickers: squares, none over another").toEqual([]);
-    expect(await outsideTheScreen(ann.page, "tv-chat-stickers-page")).toEqual([]);
-    // Back sends nothing
+    expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
+    await expect(ann.page.getByTestId("tv-chat-empty"), "the chat stays in view over the panel").toBeInViewport();
+    // Back sends nothing, and the remote is on the button again
     await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect(ann.page.getByTestId("tv-chat-empty")).toBeVisible();
-    await ann.page.getByTestId("tv-chat-sticker-btn").click();
+    await expect(ann.page.getByTestId("tv-chat-panel-btn")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("ArrowRight");
     await expect(picks.nth(1)).toBeFocused();
@@ -1481,6 +1543,22 @@ test.describe("stickers in a chat", () => {
     await expect(picks.nth(8)).toBeFocused(); // (seven to a row)
     await ann.page.keyboard.press("Enter");
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(panel).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    // (the remote walks down the set, which scrolls under it, past its last row onto the tabs, and up again into the set; Back from there sends nothing)
+    await ann.page.keyboard.press("ArrowLeft");
+    await ann.page.keyboard.press("Enter");
+    await expect(picks.first()).toBeFocused();
+    for (let press = 0; press < 3; press++) await ann.page.keyboard.press("ArrowDown");
+    await expect(picks.nth(21)).toBeFocused(); // (the last row's first)
+    await expect(picks.nth(21)).toBeInViewport();
+    await ann.page.keyboard.press("ArrowDown");
+    await expect(panel.locator("[role='tab']:focus"), "the tabs, at the panel's foot").toHaveCount(1);
+    await ann.page.keyboard.press("ArrowUp");
+    await expect(panel.locator("[data-testid='chat-sticker-pick']:focus"), "back up into the set").toHaveCount(1);
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     await expect(tvLines(ann.page)).toHaveCount(1);
     await expect(tvLines(ann.page).first().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/heart-eyes.webp");
     // the page that writes quotes it in words, for a TV that has no colour emoji
@@ -1496,18 +1574,21 @@ test.describe("stickers in a chat", () => {
     await expect.poll(() => stickerLoaded(theirs)).toBeGreaterThan(0);
     expect(await bubbleOf(theirs), "a friend's sticker has no bubble").toBe("rgba(0, 0, 0, 0)");
     expect(await outsideTheScreen(bob.page, "tv-chat", false)).toEqual([]);
-    expect((await where(bob.page.getByTestId("tv-chat-box"))).width, "the box keeps room to type in, with the three buttons beside it").toBeGreaterThan(90);
-    await bob.page.getByTestId("tv-chat-sticker-btn").click();
-    await expect(bob.page.getByTestId("tv-chat-stickers-page")).toBeVisible();
+    expect((await where(bob.page.getByTestId("tv-chat-box"))).width, "the box has the bar, but for the one button beside it").toBeGreaterThan(170);
+    const theirPanel = await openPanel(bob.page, "stickers", "tv-chat");
+    await expect(bob.page.getByTestId("tv-chat-box"), "a hand-held screen lands on nothing: no keyboard comes over the panel").not.toBeFocused();
     const theirPicks = bob.page.getByTestId("chat-sticker-pick");
     await expect(theirPicks).toHaveCount(STICKER_COUNT);
     expect(await gridFaults(theirPicks), "on the narrowest screen: squares, none over another").toEqual([]);
     expect((await where(theirPicks.first())).width, "five or so to a row, each bigger than a finger").toBeGreaterThan(48);
-    expect(await outsideTheScreen(bob.page, "tv-chat-stickers-page", false)).toEqual([]);
+    expect(await outsideTheScreen(bob.page, "tv-chat", false)).toEqual([]);
     await theirPicks.last().scrollIntoViewIfNeeded();
     await expect(theirPicks.last()).toBeInViewport();
-    await expect(bob.page.getByTestId("tv-chat-sticker-back")).toBeInViewport(); // (the arrow stays at the top)
+    await expect(bob.page.getByTestId("tv-chat-back")).toBeInViewport(); // (the arrow stays at the top, the bar and the panel's tabs at the foot)
+    await expect(theirPanel.locator("[role='tab'][data-tab='stickers']")).toBeInViewport();
+    await expect(tvLines(bob.page).first()).toBeInViewport();
     await theirPicks.last().click();
+    await expect(theirPanel).toHaveCount(0);
     await expect(bob.page.getByTestId("tv-chat")).toBeVisible();
     await expect(tvLines(bob.page)).toHaveCount(2);
     await expect(tvLines(bob.page).last().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/alarm.webp");
@@ -2161,8 +2242,7 @@ test.describe("personal stickers in a chat", () => {
     await meetPhone(dee, ann);
 
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
-    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const sheet = await openPanel(ann.page, "stickers");
     await expect(sheet.getByTestId("chat-sticker-pick")).toHaveCount(STICKER_COUNT);
     expect(await gridFaults(sheet.getByTestId("chat-sticker-pick")), "the phone's stickers: squares, none over another").toEqual([]);
     await expect(sheet.getByTestId("chat-stickers-yours")).toHaveCount(0);
@@ -2172,13 +2252,13 @@ test.describe("personal stickers in a chat", () => {
 
     await tile(dee.page, ann.name).click();
     await dee.page.getByTestId("friend-chat").click();
-    await dee.page.getByTestId("tv-chat-sticker-btn").click();
-    const page = dee.page.getByTestId("tv-chat-stickers-page");
+    await dee.page.getByTestId("tv-chat-panel-btn").click();
+    const page = dee.page.getByTestId("tv-chat-panel");
     const picks = page.getByTestId("chat-sticker-pick");
     await expect(picks).toHaveCount(STICKER_COUNT);
-    await expect(picks.first()).toBeFocused();
+    await expect(dee.page.getByTestId("tv-chat-box"), "a click leaves the keys in the box").toBeFocused();
     expect(await gridFaults(picks), "the computer's stickers: squares, none over another").toEqual([]);
-    expect(await outsideTheScreen(dee.page, "tv-chat-stickers-page")).toEqual([]);
+    expect(await outsideTheScreen(dee.page, "tv-chat")).toEqual([]);
     await expect(page.getByTestId("chat-stickers-yours")).toHaveCount(0);
     await expect(page.locator(".chat-stickers-head, .with-yours")).toHaveCount(0);
     await picks.first().click();
@@ -2191,8 +2271,7 @@ test.describe("personal stickers in a chat", () => {
     test.setTimeout(240_000);
     const { ann, bob } = await twoFriends(browser);
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
-    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const sheet = await openPanel(ann.page, "stickers");
     await expect(sheet.getByTestId("chat-stickers-yours")).toBeVisible();
     await expect(sheet.getByTestId("chat-stickers-none")).toHaveText(en["chat.stickersNone"]);
     await expect(sheet.getByTestId("chat-stickers-edit")).toHaveCount(0); // (nothing to edit)
@@ -2284,8 +2363,8 @@ test.describe("personal stickers in a chat", () => {
     await expect(ann.page.getByTestId("chat-view")).toHaveCount(0);
 
     // it is in Bob's stickers, the same one, and he sends it on
-    await bob.page.getByTestId("chat-sticker-btn").click();
-    const his = bob.page.getByTestId("chat-sticker-sheet").getByTestId("chat-sticker-mine");
+    await openPanel(bob.page, "stickers");
+    const his = bob.page.getByTestId("chat-panel").getByTestId("chat-sticker-mine");
     await expect(his).toHaveCount(1);
     await expect(his).toHaveAttribute("data-personal", id);
     await expect(his).toHaveAttribute("aria-label", en["chat.stickerSavedOne"]);
@@ -2312,7 +2391,7 @@ test.describe("personal stickers in a chat", () => {
     expect([reported.width, colourAt(reported, 96, 96)]).toEqual([192, "red"]);
 
     // Ann lets it go (Edit, then its ×): it is gone from hers, and is still Bob's, so the chat still has it
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await sheet.getByTestId("chat-stickers-edit").click();
     await expect(sheet.getByTestId("chat-sticker-add")).toHaveCount(0); // (while editing, nothing is added)
     await sheet.getByTestId("chat-sticker-remove").click();
@@ -2324,7 +2403,7 @@ test.describe("personal stickers in a chat", () => {
     expect((await ann.page.request.get(address)).status(), "Bob keeps it").toBe(200);
 
     // Bob lets it go too: nobody has it, and it is gone for both, said in a line where the picture was
-    await bob.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(bob.page, "stickers");
     await bob.page.getByTestId("chat-stickers-edit").click();
     await bob.page.getByTestId("chat-sticker-remove").click();
     await expect(his).toHaveCount(0);
@@ -2351,7 +2430,7 @@ test.describe("personal stickers in a chat", () => {
       return { type: blob.type, bytes: [...new Uint8Array(await blob.arrayBuffer())] };
     });
     expect(webp.type).toBe("image/webp");
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await ann.page.getByTestId("chat-sticker-file").setInputFiles({ name: "sticker.webp", mimeType: "image/webp", buffer: Buffer.from(webp.bytes) });
     await expect(mine).toHaveCount(1);
     const fromWebp = await pictureAt(ann.page, (await mine.locator("img").getAttribute("src"))!);
@@ -2362,13 +2441,13 @@ test.describe("personal stickers in a chat", () => {
   test("in the Android app (0.2.0 on): From WhatsApp opens the chooser in WhatsApp's stickers folder, and several chosen at once are each made a sticker; a browser and an app of 0.1.0 have no such button", async ({ browser }) => {
     test.setTimeout(240_000);
     const { ann } = await twoFriends(browser);
-    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const sheet = ann.page.getByTestId("chat-panel");
     const whatsapp = sheet.getByTestId("chat-sticker-whatsapp");
     const mine = sheet.getByTestId("chat-sticker-mine");
 
     // a browser: Add, and nothing of WhatsApp
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible();
     await expect(whatsapp).toHaveCount(0);
 
@@ -2397,7 +2476,7 @@ test.describe("personal stickers in a chat", () => {
     });
     await ann.page.reload();
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible();
     await expect(whatsapp, "an app of 0.1.0 cannot open the folder: no button").toHaveCount(0);
 
@@ -2409,7 +2488,7 @@ test.describe("personal stickers in a chat", () => {
     });
     await ann.page.reload();
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await expect(whatsapp).toHaveText(en["chat.stickerFromWhatsApp"]);
     expect(told, "notifications off: the phone is forgotten, once").toEqual(["DELETE"]);
     expect(await gridFaults(sheet.locator('[data-testid="chat-sticker-add"], [data-testid="chat-sticker-whatsapp"], [data-testid="chat-sticker-pick"]')), "the two buttons are squares of the grid").toEqual([]);
@@ -2449,8 +2528,7 @@ test.describe("personal stickers in a chat", () => {
     test.setTimeout(240_000);
     const { ann, bob } = await twoFriends(browser);
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
-    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const sheet = await openPanel(ann.page, "stickers");
     const mine = sheet.getByTestId("chat-sticker-mine");
     const file = ann.page.getByTestId("chat-sticker-file");
     await expect(sheet.getByTestId("chat-stickers-none")).toBeVisible();
@@ -2496,7 +2574,7 @@ test.describe("personal stickers in a chat", () => {
     expect((await sharp(reported, { animated: true }).metadata()).pages).toBe(3);
 
     // an animated GIF, red for 400 ms and blue for 200: it moves too, as two pictures
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     let had = await ids();
     await file.setInputFiles({ name: "moving.gif", mimeType: "image/gif", buffer: await movingFile("gif", [[220, 30, 30], [30, 30, 220]], [400, 200]) });
     await expect(mine).toHaveCount(2);
@@ -2516,14 +2594,14 @@ test.describe("personal stickers in a chat", () => {
   test("in the Android app with stickers that move on: WhatsApp GIFs opens the chooser in WhatsApp's GIFs folder, and a short video (as WhatsApp keeps a GIF) is made a sticker that moves; with the host's moving off there is no such button, and a picture that moves is made its first picture", async ({ browser }) => {
     test.setTimeout(240_000);
     const { ann } = await twoFriends(browser);
-    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const sheet = ann.page.getByTestId("chat-panel");
     const mine = sheet.getByTestId("chat-sticker-mine");
     const gifs = sheet.getByTestId("chat-sticker-whatsapp-gifs");
     const file = ann.page.getByTestId("chat-sticker-file");
 
     // a browser: no WhatsApp GIFs
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible();
     await expect(gifs).toHaveCount(0);
 
@@ -2546,7 +2624,7 @@ test.describe("personal stickers in a chat", () => {
     });
     await ann.page.reload();
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await expect(gifs).toContainText(en["chat.stickerWhatsAppGifs"]);
     await expect(sheet.getByTestId("chat-sticker-whatsapp")).toBeVisible();
     expect(await gridFaults(sheet.locator('[data-testid="chat-sticker-add"], [data-testid="chat-sticker-whatsapp"], [data-testid="chat-sticker-whatsapp-gifs"], [data-testid="chat-sticker-pick"]')), "the three buttons are squares of the grid").toEqual([]);
@@ -2613,7 +2691,7 @@ test.describe("personal stickers in a chat", () => {
     });
     await ann.page.reload();
     await openChat(ann.page);
-    await ann.page.getByTestId("chat-sticker-btn").click();
+    await openPanel(ann.page, "stickers");
     await expect(sheet.getByTestId("chat-sticker-whatsapp")).toBeVisible();
     await expect(gifs).toHaveCount(0);
     const had = await mine.evaluateAll((all) => all.map((each) => each.getAttribute("data-personal")!));
@@ -2705,8 +2783,7 @@ test.describe("personal stickers in a chat", () => {
     const bob = await phoneWithFriends(browser, "Bob");
     await befriend(page, bob.page);
     await openChat(page);
-    await page.getByTestId("chat-sticker-btn").click();
-    const sheet = page.getByTestId("chat-sticker-sheet");
+    const sheet = await openPanel(page, "stickers");
     await expect(sheet.getByTestId("chat-sticker-pick")).toHaveCount(STICKER_COUNT);
     await expect(sheet.getByTestId("chat-stickers-yours")).toHaveCount(0);
     // the network is back: with the sheet open all along (nothing opened again), the next ask finds them on
@@ -2722,11 +2799,12 @@ test.describe("personal stickers in a chat", () => {
     await meetPhone(ann, bob);
     await tile(ann.page, bob.name).click();
     await ann.page.getByTestId("friend-chat").click();
-    await ann.page.getByTestId("tv-chat-sticker-btn").click();
+    await ann.page.getByTestId("tv-chat-panel-btn").click();
     await expect(ann.page.getByTestId("chat-sticker-pick").first()).toBeFocused();
     await expect(ann.page.getByTestId("chat-stickers-yours")).toHaveCount(0); // (it could not add one: Kino's, as they were)
-    await expect(ann.page.getByTestId("tv-chat-stickers-page").locator("h2")).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat-panel").locator("h2")).toHaveCount(0);
     await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat-panel")).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
 
     // one made on a phone of Ann's (here the way a phone makes it: the TV cannot choose a file) is on the TV the next time the stickers are opened
@@ -2736,9 +2814,9 @@ test.describe("personal stickers in a chat", () => {
     const id = ((await made.json()) as { id: string }).id;
     await ann.page.getByTestId("tv-chat-write").focus();
     await ann.page.keyboard.press("ArrowLeft");
-    await expect(ann.page.getByTestId("tv-chat-sticker-btn")).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-panel-btn")).toBeFocused();
     await ann.page.keyboard.press("Enter");
-    const page = ann.page.getByTestId("tv-chat-stickers-page");
+    const page = ann.page.getByTestId("tv-chat-panel");
     await expect(page).toBeVisible();
     const mine = page.getByTestId("chat-sticker-mine");
     await expect(mine).toHaveCount(1);
@@ -2757,7 +2835,7 @@ test.describe("personal stickers in a chat", () => {
     await expect(mine).toBeInViewport({ ratio: 0.9 });
     await expect.poll(() => stickerLoaded(mine.locator("img"))).toBe(192);
     expect(await outsideTheScreen(ann.page, "chat-stickers-yours")).toEqual([]);
-    await expect(ann.page.getByTestId("tv-chat-sticker-back")).toBeInViewport();
+    await expect(ann.page.getByTestId("tv-chat-panel-btn")).toBeInViewport();
     await ann.page.keyboard.press("Enter");
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect(tvLines(ann.page)).toHaveCount(1);
@@ -2828,17 +2906,19 @@ const gridFaults = (pictures: ReturnType<Page["getByTestId"]>) =>
   });
 
 test.describe("GIFs in a chat", () => {
-  test("on the phone: the GIF button opens KLIPY's Trending in its order, more of it, a search once typing stops; a press sends one, and the friend sees the picture (one KLIPY took away says so), with no button where the site has no key", async ({ browser }) => {
+  test("on the phone: the panel's GIFs are KLIPY's Trending in its order, more of it, a search once typing stops; a press sends one, and the friend sees the picture (one KLIPY took away says so), with no GIFs where the site has no key", async ({ browser }) => {
     test.setTimeout(150_000);
     const { ann, bob } = await twoFriends(browser);
     const asked = await fakeKlipy(ann.page);
-    await fakeKlipy(bob.page, { key: false }); // (Bob's site has no key: no button, and a GIF he is sent is shown all the same)
+    await fakeKlipy(bob.page, { key: false }); // (Bob's site has no key: no GIFs tab, and a GIF he is sent is shown all the same)
     await openChat(ann.page);
-    await expect(ann.page.getByTestId("chat-gif-btn")).toBeVisible();
-    expect(asked, "nothing is asked of KLIPY before the grid is open").toHaveLength(0);
+    await ann.page.getByTestId("chat-panel-btn").click();
+    const sheet = ann.page.getByTestId("chat-panel");
+    await expect(sheet).toHaveAttribute("data-tab", "stickers");
+    await expect(sheet.locator("[role='tab'][data-tab='gifs']")).toBeVisible();
+    expect(asked, "nothing is asked of KLIPY before its tab is shown").toHaveLength(0);
 
-    await ann.page.getByTestId("chat-gif-btn").click();
-    const sheet = ann.page.getByTestId("chat-gif-sheet");
+    await openPanel(ann.page, "gifs");
     await expect(sheet).toBeVisible();
     await expect(ann.page.getByTestId("chat-gif-search")).toHaveAttribute("placeholder", "Search KLIPY");
     await expect(ann.page.getByTestId("chat-gif-powered")).toHaveText("Powered by KLIPY");
@@ -2872,14 +2952,15 @@ test.describe("GIFs in a chat", () => {
       expect(address.toString()).not.toContain(profile);
     }
 
-    // Back shuts the grid and sends nothing
+    // Back (Escape in the search too) shuts the panel and sends nothing
     await ann.page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
     await expect(ann.page.getByTestId("chat")).toBeVisible();
     await expect(lines(ann.page)).toHaveCount(0);
 
-    // a press sends it: the grid shuts, the chat has the picture
-    await ann.page.getByTestId("chat-gif-btn").click();
+    // a press sends it: the panel shuts, the chat has the picture (the panel opened again on the GIFs, the tab used last)
+    await ann.page.getByTestId("chat-panel-btn").click();
+    await expect(sheet).toHaveAttribute("data-tab", "gifs");
     await expect(picks).toHaveCount(3);
     await picks.nth(1).click();
     await expect(sheet).toHaveCount(0);
@@ -2888,11 +2969,13 @@ test.describe("GIFs in a chat", () => {
     await expect(mine).toHaveAttribute("src", gifAddress("t2"));
     await expect.poll(() => mine.evaluate((picture) => (picture as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 
-    // Bob: no button, and Ann's GIF is the picture
+    // Bob: no GIFs tab (Titles and Stickers), and Ann's GIF is the picture
     await openChat(bob.page);
-    await expect(bob.page.getByTestId("chat-gif-btn")).toHaveCount(0);
-    await expect(bob.page.getByTestId("chat-title-btn")).toBeVisible();
     await expect(lines(bob.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t2"));
+    await bob.page.getByTestId("chat-panel-btn").click();
+    await expect(bob.page.getByTestId("chat-panel-tab")).toHaveCount(2);
+    await expect(bob.page.locator("[role='tab'][data-tab='gifs']")).toHaveCount(0);
+    await bob.page.keyboard.press("Escape");
     // one KLIPY has taken away says so; words with an address in them stay words
     await write(ann.page, GONE_GIF);
     await expect(lines(bob.page)).toHaveCount(2, SOON);
@@ -2903,7 +2986,7 @@ test.describe("GIFs in a chat", () => {
     await expect(lines(bob.page).nth(2).getByTestId("chat-gif")).toHaveCount(0);
   });
 
-  test("on a hand-held screen showing the TV's pages: the GIF button beside the box opens a page of them, a press sends one and goes back to the chat, all on the narrowest screen; a TV with only a remote has no button, and shows the picture", async ({ browser }) => {
+  test("on a hand-held screen showing the TV's pages: the panel's GIFs under the bar, a press sends one and the panel goes, all on the narrowest screen; a TV with only a remote has no GIFs tab, and shows the picture", async ({ browser }) => {
     test.setTimeout(180_000);
     const ann = await screenWithFriends(browser, "Ann", { viewport: { width: 320, height: 640 } });
     const bob = await screenWithFriends(browser, "Bob");
@@ -2913,19 +2996,20 @@ test.describe("GIFs in a chat", () => {
     await tile(ann.page, bob.name).click();
     await ann.page.getByTestId("friend-chat").click();
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
-    const button = ann.page.getByTestId("tv-chat-gif-btn");
+    const button = ann.page.getByTestId("tv-chat-panel-btn");
     await expect(button).toBeVisible();
     expect(await outsideTheScreen(ann.page, "tv-chat", false)).toEqual([]);
     const box = await where(ann.page.getByTestId("tv-chat-box"));
-    expect(box.width, "the box keeps room to type in").toBeGreaterThan(90);
+    expect(box.width, "the box has the bar, but for the one button").toBeGreaterThan(170);
 
-    await button.click();
-    await expect(ann.page.getByTestId("tv-chat-gifs-page")).toBeVisible();
+    const panel = await openPanel(ann.page, "gifs", "tv-chat");
     await expect(ann.page.getByTestId("tv-chat-gif-search")).toHaveAttribute("placeholder", "Search KLIPY");
     await expect(ann.page.getByTestId("tv-chat-gif-search")).not.toBeFocused(); // (its keyboard would come up over the grid)
     await expect(ann.page.getByTestId("chat-gif-pick")).toHaveCount(3);
     await expect(ann.page.getByTestId("tv-chat-gif-powered")).toHaveText("Powered by KLIPY");
-    expect(await outsideTheScreen(ann.page, "tv-chat-gifs-page", false)).toEqual([]);
+    expect(await outsideTheScreen(ann.page, "tv-chat", false)).toEqual([]);
+    await expect(ann.page.getByTestId("tv-chat-box"), "the bar stays over the panel").toBeInViewport();
+    await expect(button).toHaveAttribute("aria-label", en["chat.panel"]);
     // a full page of them is one list that scrolls under the search, which stays at the top, and KLIPY's line, which stays at the bottom (the owner's phone, 17 Nov:
     // the grid was squeezed into what the page had left, and the GIFs lay over each other)
     const picks = ann.page.getByTestId("chat-gif-pick");
@@ -2945,17 +3029,22 @@ test.describe("GIFs in a chat", () => {
     expect(await where(ann.page.getByTestId("tv-chat-gif-search")), "the search stays where it was").toEqual(search);
     expect(await where(ann.page.getByTestId("tv-chat-gif-powered")), "KLIPY's line stays where it was").toEqual(powered);
     expect(powered.y + powered.height, "KLIPY's line is on the screen").toBeLessThanOrEqual(640);
-    expect(await outsideTheScreen(ann.page, "tv-chat-gifs-page", false)).toEqual([]);
-    // the arrow at the top goes back to the chat, sending nothing; so does Back
-    await ann.page.getByTestId("tv-chat-gif-back").click();
-    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    expect(await outsideTheScreen(ann.page, "tv-chat", false)).toEqual([]);
+    // the keyboard's button goes back to the box, sending nothing; so does Back, to the chat
     await button.click();
+    await expect(panel).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat-box")).toBeFocused();
+    await button.click();
+    await expect(panel).toHaveAttribute("data-tab", "gifs"); // (the tab used last)
+    await expect(ann.page.getByTestId("tv-chat-box"), "the keyboard went down: the panel is in its place").not.toBeFocused();
     await expect(picks).toHaveCount(3);
     await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect(tvLines(ann.page)).toHaveCount(0);
     await button.click();
     await ann.page.getByTestId("chat-gif-pick").first().click();
+    await expect(panel).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect(tvLines(ann.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t1"));
 
@@ -2964,7 +3053,11 @@ test.describe("GIFs in a chat", () => {
     await bob.page.getByTestId("friend-chat").click();
     await expect(tvLines(bob.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t1"));
     await expect.poll(() => tvLines(bob.page).first().getByTestId("chat-gif").evaluate((picture) => (picture as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-    await expect(bob.page.getByTestId("tv-chat-gif-btn")).toHaveCount(0);
+    await bob.page.getByTestId("tv-chat-panel-btn").click();
+    await expect(bob.page.getByTestId("tv-chat-panel-tab"), "a TV that is only a remote: Titles and Stickers").toHaveCount(2);
+    await expect(bob.page.locator("[role='tab'][data-tab='gifs']")).toHaveCount(0);
+    await bob.page.keyboard.press("Escape");
+    await expect(bob.page.getByTestId("tv-chat-panel")).toHaveCount(0);
 
     // The owner, 17 Nov: a press of the picture shows it larger in the middle of the screen (Back puts it away); held, it is selected, with the reactions
     // under it and Take back at the top beside the ⋯, as in WhatsApp; Back lets the selection go, and only then would leave the chat.
@@ -3301,9 +3394,10 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     const sticker = tvLines(page).filter({ has: page.getByTestId("chat-sticker") });
     await expect(sticker).toHaveAttribute("data-shown", "true");
     await expect.poll(() => seen(sticker)).toBe(true);
-    // (shown that once: the chat back from another page is at its end, as it opens)
-    await page.getByTestId("tv-chat-sticker-btn").click();
-    await page.getByTestId("tv-chat-sticker-back").click();
+    // (shown that once: the chat back from another page - the report's, left at once - is at its end, as it opens)
+    await page.getByTestId("tv-chat-more").click();
+    await page.getByTestId("tv-chat-report").click();
+    await page.getByTestId("tv-chat-report-cancel").click();
     await expect(page.getByTestId("tv-chat")).toBeVisible();
     await expect(sticker).not.toHaveAttribute("data-shown", "true");
 
@@ -3328,5 +3422,160 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     expect(await outsideTheScreen(phone, "tv-chat-media", false)).toEqual([]);
     await phone.getByTestId("tv-chat-media-back").click();
     await expect(phone.getByTestId("tv-chat")).toBeVisible();
+  });
+});
+
+/* ------------------------------ The panel of titles, GIFs and stickers (one button before the box) ------------------------------ */
+
+test.describe("the chat's panel of titles, GIFs and stickers", () => {
+  test("on a computer: the one button opens the panel under the box, a click leaving the keys in the box and the button pressed with the keys putting them in it; a tab shows its pane, the tab used last opens next; Back shuts what was opened last first - the panel, an answer being written, the search", async ({ browser }) => {
+    test.setTimeout(200_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "Popcorn?");
+    const asked = await fakeKlipy(ann.page);
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    const box = ann.page.getByTestId("tv-chat-box");
+    await expect(box).toBeFocused();
+    const button = ann.page.getByTestId("tv-chat-panel-btn");
+    const panel = ann.page.getByTestId("tv-chat-panel");
+
+    // a click: the panel opens, and the keys stay in the box - what is typed goes on, and Enter sends the words, not a sticker
+    await ann.page.keyboard.type("See you");
+    await button.click();
+    await expect(panel).toHaveAttribute("data-tab", "stickers");
+    await expect(box).toBeFocused();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await expect(button).toHaveAttribute("aria-label", en["chat.panel"]);
+    await expect(button).toHaveAttribute("aria-controls", (await panel.getAttribute("id"))!);
+    await expect(panel.getByTestId("tv-chat-panel-tab")).toHaveCount(3);
+    expect(asked, "nothing asked of KLIPY before its tab is shown").toHaveLength(0);
+    expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
+    await expect(ann.page.getByTestId("tv-chat-name"), "the chat's head stays in view over the panel").toBeInViewport();
+    expect(await gridFaults(panel.getByTestId("chat-sticker-pick")), "the stickers: squares, none over another").toEqual([]);
+    await ann.page.keyboard.type(" at nine");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    await expect(tvLines(ann.page).nth(1).getByTestId("chat-text")).toHaveText("See you at nine");
+    await expect(panel, "words sent from the box leave the panel open").toBeVisible();
+
+    // the GIFs' tab: its pane, the keys left on the tab; KLIPY is asked now
+    const gifsTab = panel.locator("[role='tab'][data-tab='gifs']");
+    await gifsTab.click();
+    await expect(panel).toHaveAttribute("data-tab", "gifs");
+    await expect(gifsTab).toBeFocused();
+    await expect(gifsTab).toHaveAttribute("aria-selected", "true");
+    await expect(panel.getByTestId("chat-gif-pick")).toHaveCount(3);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
+    // Back from inside the panel: it shuts, and the keys go to its button
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(button).toBeFocused();
+
+    // the button pressed with the keys: the tab used last opens, the keys in its search; Escape in the search is Back
+    await ann.page.keyboard.press("Enter");
+    await expect(panel).toHaveAttribute("data-tab", "gifs");
+    await expect(ann.page.getByTestId("tv-chat-gif-search")).toBeFocused();
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(button).toBeFocused();
+
+    // the keyboard's button: the panel goes, and the box has the keys
+    await button.click();
+    await expect(panel).toBeVisible();
+    await button.click();
+    await expect(panel).toHaveCount(0);
+    await expect(box).toBeFocused();
+
+    // an answer being written, then the panel: Back shuts the panel and leaves the keys in the box; the next lets the answer go, the words staying; only
+    // then would one leave the chat
+    await tvLines(ann.page).first().getByTestId("chat-bubble").click();
+    await ann.page.getByTestId("chat-reply").click();
+    const strip = ann.page.getByTestId("chat-reply-strip");
+    await expect(strip).toBeVisible();
+    await expect(box).toBeFocused();
+    await button.click();
+    await expect(panel).toBeVisible();
+    await ann.page.keyboard.type("Yes");
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(box).toBeFocused();
+    await expect(strip).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(strip).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(box).toHaveValue("Yes");
+
+    // the search, then a message selected, then the panel (which lets the selection go): Back shuts the panel, then the search, and only then the chat
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-search-open").click();
+    const bar = ann.page.getByTestId("chat-search");
+    await expect(bar).toBeVisible();
+    await tvLines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(ann.page.getByTestId("chat-reply")).toBeVisible();
+    await button.click();
+    await expect(panel).toBeVisible();
+    await expect(ann.page.getByTestId("chat-reply"), "the selection went").toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(bar).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(bar).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+
+    // a sticker sent from it: the panel goes, and the keys are in the box for what comes next
+    await button.click();
+    await panel.locator("[role='tab'][data-tab='stickers']").click();
+    await panel.getByTestId("chat-sticker-pick").first().click();
+    await expect(panel).toHaveCount(0);
+    await expect(tvLines(ann.page)).toHaveCount(3);
+    await expect(box).toBeFocused();
+    await expect(box, "what was typed stays").toHaveValue("Yes");
+  });
+  test("on the phone: a picture shown larger over the open panel is put away first, then the panel, then the chat (one Back each); a message held while it is open is let go first", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await openChat(bob.page);
+    await openPanel(bob.page, "stickers");
+    await bob.page.getByTestId("chat-panel").getByTestId("chat-sticker-pick").first().click();
+    await expect(lines(ann.page)).toHaveCount(1, SOON);
+    await expect(lines(ann.page).first().locator(".chat-bubble-sticker img")).toBeVisible();
+    const panel = await openPanel(ann.page, "stickers");
+    const view = ann.page.getByTestId("chat-view");
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(view).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(view).toHaveCount(0);
+    await expect(panel, "the picture alone was put away").toBeVisible();
+    // (held: selected, with its reactions; Back lets it go, and the panel is still there. The list is let rest first: a press just after it scrolled - here,
+    // Playwright's own bringing of the message into view - holds nothing, ChatLines.tsx `SCROLL_REST_MS`.)
+    await lines(ann.page).first().getByTestId("chat-bubble").scrollIntoViewIfNeeded();
+    await ann.page.waitForTimeout(300);
+    await lines(ann.page).first().getByTestId("chat-bubble").click({ delay: 650 });
+    await expect(ann.page.getByTestId("chat-react-bar")).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-sheet")).toBeVisible();
+    // (a sheet opened over the chat - the gallery, from the ⋮ - takes the panel away: Escape then shuts the sheet, not a panel behind it)
+    await openPanel(ann.page, "stickers");
+    await ann.page.getByTestId("chat-more").click();
+    await ann.page.getByTestId("chat-media-open").click();
+    const gallery = ann.page.getByTestId("chat-media-sheet");
+    await expect(gallery).toBeVisible();
+    await expect(panel).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+    await expect(gallery).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-sheet")).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("chat-sheet")).toHaveCount(0);
   });
 });
