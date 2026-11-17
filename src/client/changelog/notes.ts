@@ -4,6 +4,25 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.5",
+    date: "2026-11-17",
+    en: [
+      "In a chat: answer a message. Pick it and press Reply, or slide it to the right with a finger; your answer shows what it answers.",
+      "In a chat: the + after the six reactions brings sixteen more.",
+      "On a TV: \"Reply to Sam's last message\" is the first thing behind the ⋯.",
+    ],
+    ro: [
+      "În chat: răspunde la un mesaj. Alege-l și apasă Răspunde, sau trage-l spre dreapta cu degetul; răspunsul tău arată la ce răspunde.",
+      "În chat: + de după cele șase reacții mai aduce șaisprezece.",
+      "Pe TV: „Răspunde la ultimul mesaj al lui Sam” e primul lucru din spatele ⋯.",
+    ],
+    it: [
+      "In chat: rispondi a un messaggio. Sceglilo e premi Rispondi, o trascinalo verso destra con il dito; la tua risposta mostra a cosa risponde.",
+      "In chat: il + dopo le sei reazioni ne porta altre sedici.",
+      "Sulla TV: \"Rispondi all'ultimo messaggio di Sam\" è la prima voce dietro il ⋯.",
+    ],
+  },
+  {
     version: "0.4.4",
     date: "2026-11-17",
     en: [

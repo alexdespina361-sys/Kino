@@ -1579,9 +1579,12 @@ test.describe("reactions in a chat", () => {
     await expect(tvLines(ann.page)).toHaveCount(1);
     // the TV's list is walked, not pressed: no message is a button there
     await expect(ann.page.getByTestId("tv-chat-lines").getByTestId("chat-bubble")).toHaveCount(0);
-    // ⋯: the first thing in it is the reaction; OK opens the page, on the first of the six
+    // ⋯: the first thing in it is the answer, then the reaction; OK opens the page, on the first of the six
     await ann.page.getByTestId("tv-chat-more").focus();
     await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat-reply-last")).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-reply-last")).toHaveText(say(en["chat.replyLast"], { name: bob.name }));
+    await ann.page.keyboard.press("ArrowDown");
     await expect(ann.page.getByTestId("tv-chat-react-last")).toBeFocused();
     await expect(ann.page.getByTestId("tv-chat-react-last")).toHaveText(say(en["chat.reactLast"], { name: bob.name }));
     await ann.page.keyboard.press("Enter");
@@ -1716,8 +1719,8 @@ test.describe("reactions in a chat", () => {
     await expect(bubbles.first()).toHaveAttribute("aria-expanded", "false");
     await expect(bar).toHaveCount(0);
 
-    // Ann's own message: Right past the last of the six goes on to Take back at the top of the chat, and Left comes back to the message; Escape lets the
-    // message go, and the keys are on it again, not on nothing (the judge, 17 Nov)
+    // Ann's own message: Right past the last of the six is the +, then Reply at the top of the chat, then Take back; Left from Reply comes back to the
+    // message; Escape lets the message go, and the keys are on it again, not on nothing (the judge, 17 Nov)
     await ann.page.getByTestId("tv-chat-box").click();
     await ann.page.keyboard.type("Mine");
     await ann.page.keyboard.press("Enter");
@@ -1730,13 +1733,20 @@ test.describe("reactions in a chat", () => {
     await expect(bar).toBeVisible();
     for (let step = 0; step < 6; step++) await ann.page.keyboard.press("ArrowRight");
     await expect(six.last()).toBeFocused();
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(bar.getByTestId("chat-react-more")).toBeFocused();
+    const answer = ann.page.getByTestId("chat-reply");
     const take = ann.page.getByTestId("chat-takeback");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(answer).toBeFocused();
     await ann.page.keyboard.press("ArrowRight");
     await expect(take).toBeFocused();
     await ann.page.keyboard.press("ArrowLeft");
+    await expect(answer).toBeFocused();
+    await ann.page.keyboard.press("ArrowLeft");
     await expect(bubbles.last()).toBeFocused();
     await expect(bar).toBeVisible();
-    for (let step = 0; step < 7; step++) await ann.page.keyboard.press("ArrowRight");
+    for (let step = 0; step < 9; step++) await ann.page.keyboard.press("ArrowRight");
     await expect(take).toBeFocused();
     await ann.page.keyboard.press("Escape");
     await expect(take).toHaveCount(0);
@@ -1767,11 +1777,244 @@ test.describe("reactions in a chat", () => {
     await expect(ann.page.getByTestId("tv-chat-react-page")).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
   });
+
+  test("the + after the six brings sixteen more; one of them is put on, both see it, and the message opens with them all shown", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const POPCORN = "\u{1F37F}";
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await openChat(bob.page);
+    await write(bob.page, "Film night?");
+    await expect(lines(ann.page)).toHaveCount(1, SOON);
+
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    const bar = ann.page.getByTestId("chat-react-bar");
+    await expect(bar.getByTestId("chat-react")).toHaveCount(6);
+    await bar.getByTestId("chat-react-more").click();
+    await expect(bar.getByTestId("chat-react")).toHaveCount(22);
+    await expect(bar.getByTestId("chat-react-more")).toHaveCount(0);
+    expect(await outsideTheSides(ann.page, ["chat-react-bar"]), "the bar of all of them, on a phone").toEqual([]);
+    await reactWith(ann.page, POPCORN).click();
+    await expect(bar).toHaveCount(0);
+    await expect.poll(() => reactionsOn(lines(ann.page).first())).toEqual([`mine:${POPCORN}`]);
+    await expect.poll(() => reactionsOn(lines(bob.page).first()), SOON).toEqual([`theirs:${POPCORN}`]);
+    // (pressed again, it opens with them all, the one that is on shown as on)
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(bar.getByTestId("chat-react")).toHaveCount(22);
+    await expect(reactWith(ann.page, POPCORN)).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+test.describe("answering a message", () => {
+  test("on the phone: Reply on a selected message says 'Replying to Bob' over the box; what is sent next answers it, both see the quote, a press on it shows the message, and a message taken back is quoted nowhere", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await openChat(bob.page);
+    await write(bob.page, "Pizza tonight?");
+    await expect(lines(ann.page)).toHaveCount(1, SOON);
+
+    // Ann selects Bob's message; Reply is at the top: the selection goes, the strip says what is answered, and the box has the keys
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await ann.page.getByTestId("chat-reply").click();
+    const strip = ann.page.getByTestId("chat-reply-strip");
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText(say(en["chat.replyingTo"], { name: bob.name }));
+    await expect(strip).toContainText("Pizza tonight?");
+    await expect(ann.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-reply")).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-input")).toBeFocused();
+    expect(await outsideTheSides(ann.page, ["chat-reply-strip", "chat-input", "chat-send"])).toEqual([]);
+    await ann.page.keyboard.type("Yes!");
+    await ann.page.getByTestId("chat-send").click();
+    await expect(lines(ann.page)).toHaveCount(2);
+    await expect(strip).toHaveCount(0);
+    const quote = lines(ann.page).nth(1).getByTestId("chat-quote");
+    await expect(quote).toContainText("Pizza tonight?");
+    await expect(quote).toContainText(bob.name);
+    await expect(quote).toHaveAttribute("data-of", "theirs");
+    // (it sits over the answer's bubble)
+    const over = await where(quote);
+    const under = await where(lines(ann.page).nth(1).getByTestId("chat-bubble"));
+    expect(over.y + over.height, "the quote is over the bubble").toBeLessThanOrEqual(under.y + 1);
+    // what is sent after it answers nothing
+    await write(ann.page, "See you");
+    await expect(lines(ann.page)).toHaveCount(3);
+    await expect(lines(ann.page).nth(2).getByTestId("chat-quote")).toHaveCount(0);
+
+    // Bob sees it as the answer to his message; a press on the quote shows that message, lit, and selects nothing
+    await expect(lines(bob.page)).toHaveCount(3, SOON);
+    const his = lines(bob.page).nth(1).getByTestId("chat-quote");
+    await expect(his).toContainText("Pizza tonight?");
+    await expect(his).toContainText(en["chat.you"]);
+    await expect(his).toHaveAttribute("data-of", "mine");
+    await his.click();
+    await expect(lines(bob.page).first()).toHaveAttribute("data-shown", "true");
+    await expect(bob.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect(lines(bob.page).first()).not.toHaveAttribute("data-shown", "true", { timeout: 4_000 });
+
+    // Bob takes his message back: the answer stays, and quotes nothing, on both screens
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await bob.page.getByTestId("chat-takeback").click();
+    await expect(lines(bob.page)).toHaveCount(2);
+    await expect(bob.page.getByTestId("chat-quote")).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(2, SOON);
+    await expect(ann.page.getByTestId("chat-quote")).toHaveCount(0);
+    await expect(texts(ann.page)).toHaveText(["Yes!", "See you"]);
+  });
+
+  test("on the phone a message drawn to the right with a finger is answered; one drawn up or down is not, and the × leaves it unanswered", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await writes(bob.page, ann.page, "Which one?");
+    await expect(lines(ann.page)).toHaveCount(1, SOON);
+    const bubble = lines(ann.page).first().getByTestId("chat-bubble");
+    const strip = ann.page.getByTestId("chat-reply-strip");
+    const cdp = await ann.page.context().newCDPSession(ann.page);
+    const draw = async (dx: number, dy: number, beforeLifting?: () => Promise<void>) => {
+      const spot = await where(bubble);
+      const from = { x: Math.round(spot.x + Math.min(40, spot.width / 3)), y: Math.round(spot.y + spot.height / 2) };
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+      for (const part of [0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1]) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: Math.round(from.x + dx * part), y: Math.round(from.y + dy * part) }] });
+      }
+      await beforeLifting?.();
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+
+    // up: no answer, nothing drawn
+    await draw(4, -90);
+    await ann.page.waitForTimeout(300);
+    await expect(strip).toHaveCount(0);
+    await expect(lines(ann.page).first()).not.toHaveAttribute("data-swipe");
+    // a little to the right: drawn, and let go before it is far enough: no answer, and it goes back
+    await draw(40, 0);
+    await expect(strip).toHaveCount(0);
+    await expect(lines(ann.page).first()).not.toHaveAttribute("data-swipe");
+    await expect.poll(() => lines(ann.page).first().evaluate((item) => (item as HTMLElement).style.transform)).toBe("");
+    // far enough to the right: it says so as it is drawn, and lifting the finger answers it; nothing is selected
+    await draw(100, 4, async () => {
+      await expect(lines(ann.page).first()).toHaveAttribute("data-swipe", "ready");
+    });
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText(say(en["chat.replyingTo"], { name: bob.name }));
+    await expect(strip).toContainText("Which one?");
+    await expect(lines(ann.page).first()).not.toHaveAttribute("data-swipe");
+    await expect(ann.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    // the × leaves it unanswered: what is sent then answers nothing
+    await ann.page.getByTestId("chat-reply-cancel").click();
+    await expect(strip).toHaveCount(0);
+    await write(ann.page, "The second");
+    await expect(lines(ann.page)).toHaveCount(2);
+    await expect(ann.page.getByTestId("chat-quote")).toHaveCount(0);
+    // (and a plain tap on the message, after all that, still selects it)
+    await bubble.click();
+    await expect(ann.page.getByTestId("chat-react-bar")).toBeVisible();
+  });
+
+  test("on a TV that is only a remote, 'Reply to Bob's last message' is first behind the ⋯ and opens the page that writes, saying what is answered; Back keeps the answer over Write, with an × that lets it go", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "Popcorn?");
+    await writes(ann.page, bob.page, "Maybe");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+
+    await ann.page.getByTestId("tv-chat-more").focus();
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat-reply-last")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    const compose = ann.page.getByTestId("tv-chat-compose");
+    await expect(compose).toBeVisible();
+    // (it is Bob's message that is answered, not the last in the chat, which is Ann's)
+    const quote = ann.page.getByTestId("tv-chat-quote");
+    await expect(quote).toHaveAttribute("data-replying", "true");
+    await expect(quote).toContainText(say(en["chat.replyingTo"], { name: bob.name }));
+    await expect(quote).toContainText("Popcorn?");
+    expect(await outsideTheScreen(ann.page, "tv-chat-compose")).toEqual([]);
+
+    // Back: the chat, with the answer kept over Write; the × lets it go
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    const strip = ann.page.getByTestId("chat-reply-strip");
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText("Popcorn?");
+    await ann.page.getByTestId("chat-reply-cancel").click();
+    await expect(strip).toHaveCount(0);
+
+    // again, and sent: the answer has the quote, over it, and on Bob's screen too
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-reply-last").click();
+    await ann.page.getByTestId("tv-chat-input").fill("Yes, salted");
+    await ann.page.getByTestId("tv-chat-send").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page)).toHaveCount(3);
+    await expect(strip).toHaveCount(0);
+    const answer = tvLines(ann.page).nth(2).getByTestId("chat-quote");
+    await expect(answer).toContainText("Popcorn?");
+    // (the TV's list is walked, not pressed: the quote there is no button)
+    await expect(answer).toHaveAttribute("role", "note");
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page)).toHaveCount(3);
+    await expect(tvLines(bob.page).nth(2).getByTestId("chat-quote")).toContainText(en["chat.you"]);
+
+    // the page of reactions has the + too: it brings them all, and the keys go to the first of the sixteen
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-react-last").click();
+    const reacts = ann.page.getByTestId("tv-chat-react");
+    await expect(reacts).toHaveCount(6);
+    for (let step = 0; step < 6; step++) await ann.page.keyboard.press("ArrowRight");
+    await expect(ann.page.getByTestId("tv-chat-react-more")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(reacts).toHaveCount(22);
+    await expect(reacts.nth(6)).toBeFocused();
+    expect(await outsideTheScreen(ann.page, "tv-chat-react-page")).toEqual([]);
+  });
+
+  test("on a computer Reply at the top puts the keys in the box, with the strip over it; what is sent answers the message", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob", { desk: true });
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "Sunday?");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+
+    await tvLines(ann.page).first().getByTestId("chat-bubble").click();
+    const answer = ann.page.getByTestId("chat-reply");
+    await expect(answer).toBeVisible();
+    // (it is at the top of the chat, beside the ⋯)
+    const head = await where(ann.page.locator(".tv-chat-head"));
+    const at = await where(answer);
+    expect(at.y >= head.y && at.y + at.height <= head.y + head.height, "Reply is in the top of the chat").toBe(true);
+    await answer.click();
+    await expect(ann.page.getByTestId("tv-chat-box")).toBeFocused();
+    await expect(ann.page.getByTestId("chat-reply-strip")).toContainText("Sunday?");
+    await expect(ann.page.getByTestId("chat-reply-cancel")).toHaveAttribute("data-nav", "true");
+    await ann.page.keyboard.type("Sunday it is");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    await expect(ann.page.getByTestId("chat-reply-strip")).toHaveCount(0);
+    await expect(tvLines(ann.page).nth(1).getByTestId("chat-quote")).toContainText("Sunday?");
+    // (what the server keeps: the number of the message answered)
+    const said = (await openFriendsChatOf(bob.page, ann.page)).lines;
+    expect(said).toHaveLength(2);
+    expect(said[1]!.replyTo).toBe(said[0]!.id);
+  });
 });
 
 /** Where `from`'s chat with `to` is asked for, and what it holds as `from` sees it. */
 const chatAddress = async (from: Page, to: Page) => `/api/profiles/${await profileOf(from)}/friends/${await profileOf(to)}/chat`;
-async function openFriendsChatOf(from: Page, to: Page): Promise<{ lines: Array<{ id: number; theirReaction?: string }> }> {
+async function openFriendsChatOf(from: Page, to: Page): Promise<{ lines: Array<{ id: number; theirReaction?: string; replyTo?: number }> }> {
   const response = await from.request.get(await chatAddress(from, to));
   expect(response.ok()).toBe(true);
   return response.json();
