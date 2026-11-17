@@ -362,7 +362,12 @@ function ageIn(country: string, doc: z.infer<typeof TmdbAboutSchema>, type: "mov
   return (releases.find((one) => one.certification && one.type === 3) ?? releases.find((one) => one.certification))?.certification?.trim();
 }
 
-function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem | null {
+/**
+ * A tile of one of TMDB's titles. `listed` (a row, a search, the titles like another) also leaves out a show that is talk, news or a soap (hidden
+ * for now: the owner, 17 Nov, undecided) and a stub nobody voted on; one title looked up by its id is never left out for those, so that a card
+ * saved or sent in a chat, or a link to it, still opens (the judge, 17 Nov).
+ */
+function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv", listed = true): LibraryItem | null {
   const parsed = TmdbItemSchema.safeParse(raw);
   if (!parsed.success) return null;
   const doc = parsed.data;
@@ -372,11 +377,11 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   if (!title) return null;
 
   const isTv = doc.media_type ? doc.media_type === "tv" : (defaultType ? defaultType === "tv" : Boolean(doc.first_air_date));
-  if (isTv && isUnscriptedTv(doc)) return null;
+  if (listed && isTv && isUnscriptedTv(doc)) return null;
   if (isTv) knownTvIds.add(doc.id);
   const rawDate = doc.release_date || doc.first_air_date;
   if (rawDate && rawDate.slice(0, 10) > today()) return null; // not out yet: nothing to play
-  if (doc.vote_count === 0 && (!rawDate || rawDate.slice(0, 10) > today() || (!doc.overview || doc.overview.trim().length < 20))) {
+  if (listed && doc.vote_count === 0 && (!rawDate || (!doc.overview || doc.overview.trim().length < 20))) {
     return null;
   }
   const year = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
@@ -687,7 +692,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const res = await get(`${BASE_URL}/${type}/${match[2]}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`title: HTTP ${res.status}`);
-      return toLibraryItem(await res.json(), type);
+      return toLibraryItem(await res.json(), type, false);
     },
     async about(link: string): Promise<TitleAbout | null> {
       let title = parseWatchLink(link);

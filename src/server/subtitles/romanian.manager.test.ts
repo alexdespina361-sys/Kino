@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isListedFile, siteFetch, trimKept } from "./romanian";
+import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isEnglishFile, isListedFile, siteFetch, trimKept } from "./romanian";
 
 /*
  * The manager asks the Romanian subtitle sites, which send whole archives. These tests are about how it asks: the archives of a site at once rather than one
@@ -56,6 +56,44 @@ function sitesOf(archiveMs: number) {
   }) as typeof globalThis.fetch;
   return { fetch, asked, mostUnderway: () => mostUnderway };
 }
+
+describe("a title with no IMDb id, matched by its name (the judge, 17 Nov)", () => {
+  it("takes the Subs.ro addresses that begin or end with the title's words, accents or not, and every Subtitrari-Noi entry of its name, not only the first", async () => {
+    const asked: string[] = [];
+    const fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      asked.push(url);
+      if (url === "https://subs.ro/cautare") return new Response('<input name="antispam" value="x">', { headers: { "set-cookie": "s=1" } });
+      if (url === "https://subs.ro/ajax/search")
+        return new Response(
+          ["amelie-2001/21", "le-fabuleux-destin-amelie-2001/22", "amelie-goes-home-2001/23", "amelie-1980/24"].map((slug) => `<a href="https://subs.ro/subtitrare/${slug}">x</a>`).join(""),
+        );
+      if (url.startsWith("https://subs.ro/subtitrare/descarca/")) return new Response(new Uint8Array(zipOf(`${url.split("/").at(-2)}.srt`, srt(`Bonjour ${url.split("/").at(-1)}`))));
+      if (url === "https://www.subtitrari-noi.ro/paginare_filme.php")
+        return new Response(
+          `<a href='index.php?id=1'>Home</a><div id="content-main"><p class="t"><a href='film.php?id=5'>Amélie (2001)</a></p><a href="https://subtitrari-noi.ro/Arhive/x.zip">zip</a></div>` +
+            `<div class="next"><p class="t"><a href='film.php?id=6'>Amelie (2001)</a></p><a href="5-https://subtitrari-noi.ro/Arhive/y.zip">zip</a></div>` +
+            `<div class="next"><p class="t"><a href='film.php?id=7'>Amelie Goes Home (2001)</a></p><a href="https://subtitrari-noi.ro/Arhive/z.zip">zip</a></div>`,
+        );
+      if (/subtitrari-noi\.ro\/Arhive\/[xyz]\.zip$/.test(url)) return new Response(new Uint8Array(zipOf(`${url.slice(-5, -4)}.srt`, srt(`Salut ${url.slice(-5, -4)}`))));
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+    const subs = await new RomanianSubtitleManager(undefined, fetch).getSubtitles({ title: "Amélie", year: 2001 });
+    expect(subs.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · amelie-2001", "Romanian (Subs.ro) · le-fabuleux-destin-amelie-2001", "Romanian (Retail / Subtitrari-Noi) · x", "Romanian (Retail / Subtitrari-Noi) · y"]);
+    expect(asked.filter((url) => url.includes("/descarca/amelie-goes-home") || url.includes("/descarca/amelie-1980") || url.endsWith("z.zip"))).toEqual([]);
+  });
+
+  it("tells an English file of an archive by its words, and keeps Thrones and Bros", () => {
+    expect(isEnglishFile("Show.S01E01.English.srt")).toBe(true);
+    expect(isEnglishFile("Show.S01E01.eng.srt")).toBe(true);
+    expect(isEnglishFile("Show.S01E01.en.srt")).toBe(true);
+    expect(isEnglishFile("Show.S01E01.English.ro.srt")).toBe(false);
+    expect(isEnglishFile("Game.of.Thrones.S01E01.English.srt")).toBe(true); // (it was let through as Romanian: "thRONes")
+    expect(isEnglishFile("Game.of.Thrones.S01E01.srt")).toBe(false);
+    expect(isEnglishFile("Super.Mario.Bros.2023.srt")).toBe(false);
+    expect(isEnglishFile("Engagement.2020.srt")).toBe(false);
+  });
+});
 
 describe("RomanianSubtitleManager", () => {
   it("fetches the archives of both sites at once, and lists Subs.ro's first", async () => {

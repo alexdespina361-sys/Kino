@@ -717,6 +717,13 @@ describe("filmpireSource title", () => {
     expect(asked[1]).toContain("/tv/1399?");
   });
 
+  it("makes a tile of a soap, a talk show or a title nobody voted on when it is asked for by its id, though the lists leave them out: a card saved or sent still opens (the judge, 17 Nov)", async () => {
+    const soap = { id: 103, name: "Binnelanders Daily", first_air_date: "2005-10-13", genres: [{ id: 10766, name: "Soap" }], genre_ids: [10766], poster_path: "/soap.jpg", vote_count: 0, overview: "" };
+    const { source } = sourceWith((url) => json(url.includes("/search/") ? { results: [{ ...soap, media_type: "tv" }] } : soap));
+    expect(await source.title!("filmpire-tv-103")).toMatchObject({ id: "filmpire-tv-103", title: "Binnelanders Daily", kind: "series" });
+    expect(await source.search!("binnelanders")).toEqual([]);
+  });
+
   it("knows nothing of an id that is not one of its own, and says so without asking anyone; a title TMDB does not know is none, and one it could not answer throws", async () => {
     const { source, asked } = sourceWith((url) => json({}, url.includes("/movie/1?") ? 404 : 503));
     expect(await source.title!("archive-movie-603")).toBeNull();

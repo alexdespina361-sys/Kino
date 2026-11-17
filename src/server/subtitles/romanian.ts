@@ -257,6 +257,21 @@ export function extractSrtFromZip(zipBuf: Buffer): Array<{ name: string; content
 /**
  * Checks if a filename matches the requested season and episode.
  */
+/** A title's words as a site's address writes them: lower case, without accents, only letters and digits ("Amélie" is `amelie`). */
+export const wordsOf = (text: string): string[] =>
+  text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/** A file of an archive that its name says is English and not Romanian too ("Thrones" and "Bros" say neither: the judge, 17 Nov). */
+export const isEnglishFile = (name: string): boolean => {
+  const words = wordsOf(name);
+  return words.some((word) => word === "english" || word === "eng" || word === "en") && !words.some((word) => ["ro", "rom", "romana", "romanian", "romaneste"].includes(word));
+};
+
 export function matchesEpisode(fileName: string, season: number, episode: number): boolean {
   const base = fileName.toLowerCase();
   const sep = "[\\s._-]*";
@@ -435,19 +450,23 @@ export class RomanianSubtitleManager {
 
     const matches = [...text.matchAll(/href="https:\/\/subs\.ro\/subtitrare\/([^\/]+)\/(\d+)"/g)];
     const targetYear = params.year ? Number(params.year) : undefined;
-    const targetNorm = params.title ? params.title.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+    const target = params.title ? wordsOf(params.title) : [];
 
     const filteredMatches = matches.filter((m) => {
       // If we searched with external_id (imdbId), Subs.ro already strictly matched the title
       if (imdbId) return true;
-      if (!targetNorm) return true;
+      if (target.length === 0) return true;
       const slug = m[1]!;
       const yMatch = slug.match(/-(\d{4})$/);
       const slugYear = yMatch ? Number(yMatch[1]) : undefined;
       if (targetYear && slugYear && Math.abs(slugYear - targetYear) > 1) return false;
       const slugBase = yMatch ? slug.slice(0, yMatch.index) : slug;
-      const normSlug = slugBase.toLowerCase().replace(/[^a-z0-9]/g, "");
-      return normSlug === targetNorm || normSlug.startsWith(`${targetNorm}-`) || normSlug.endsWith(`-${targetNorm}`);
+      // (The title's words, accents or not, at the end of the address, or at its start with nothing after them but a season: "amelie" is
+      // Amélie, "the-office-sezonul-2" is The Office, "amelie-goes-home" is another film. The judge, 17 Nov.)
+      const words = wordsOf(slugBase);
+      const from = (at: number) => at >= 0 && target.every((word, n) => words[at + n] === word);
+      const after = words[target.length];
+      return (from(0) && (after === undefined || /^(sezon|sezonul|season|seria|s\d+)$/.test(after))) || from(words.length - target.length);
     });
     const chosenMatches = (filteredMatches.length > 0 ? filteredMatches : (imdbId ? matches : [])).slice(0, 3);
 
@@ -523,9 +542,11 @@ export class RomanianSubtitleManager {
     const html = (await pageText(res)) ?? "";
 
     // Match entries to strictly verify title and year
-    const entryMatches = [...html.matchAll(/<div id="content-main"><p[^>]*><a[^>]*href='[^']*id=(\d+)'[^>]*>([^<]+)<\/a>[\s\S]*?href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)];
+    // (Each entry: the link of its title, then its archive before the link of the next. The page has its `content-main` once, so the entries are
+    // not looked for only right after it: the judge, 17 Nov.)
+    const entryMatches = [...html.matchAll(/<a[^>]*href='[^']*id=(\d+)'[^>]*>([^<]+)<\/a>(?:(?!href='[^']*id=\d)[\s\S])*?href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)];
     const targetYear = params.year ? Number(params.year) : undefined;
-    const targetNorm = params.title ? params.title.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+    const targetNorm = params.title ? wordsOf(params.title).join("") : "";
 
     const validZips: string[] = [];
     for (const em of entryMatches) {
@@ -533,7 +554,7 @@ export class RomanianSubtitleManager {
       const zipUrl = em[3]!;
       const yMatch = entryTitle.match(/\((\d{4})\)/);
       const entryYear = yMatch ? Number(yMatch[1]) : undefined;
-      const cleanTitle = entryTitle.replace(/\(\d{4}\)/, "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      const cleanTitle = wordsOf(entryTitle.replace(/\(\d{4}\)/, "")).join("");
 
       if (targetNorm && cleanTitle !== targetNorm) continue;
       if (targetYear && entryYear && Math.abs(entryYear - targetYear) > 1) continue;
@@ -621,7 +642,7 @@ export class RomanianSubtitleManager {
           const items = await extractSubtitlesFromArchive(buf);
           for (const item of items) {
             if (season && episode && !matchesEpisode(item.name, season, episode)) continue;
-            if (/english|eng\.srt/i.test(item.name) && !/romanian|ro/i.test(item.name)) continue;
+            if (isEnglishFile(item.name)) continue;
             const baseName = item.name.split("/").pop()?.replace(/\.(srt|vtt)$/i, "") || item.name;
             found.push({
               id: `titrari_${subId}_${found.length + 1}`,
