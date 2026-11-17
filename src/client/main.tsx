@@ -14,7 +14,7 @@ import { setUpFullscreen } from "./shared/fullscreen";
 import { ScreenGate } from "./shared/ScreenGate";
 import { noteStrayAddress } from "./shared/strayAddress";
 import { watchForUpdates } from "./shared/update";
-import { UpdateHint } from "./shared/UpdateHint";
+import { installUpdateKeys, UpdateHint } from "./shared/UpdateHint";
 import "./styles.css";
 import "./polish/base.css";
 
@@ -24,6 +24,8 @@ const loadController = () => import("./controller/Controller").then((module) => 
 const Tv = lazy(loadTv);
 const Controller = lazy(loadController);
 
+// The keys that answer "A new Kino is out" on a TV are heard before any other key listener of the page's (see shared/UpdateHint.tsx): first of all.
+installUpdateKeys();
 // One app, two screens, chosen for this device: the TV player or the phone's remote (see role.ts). "/tv" is always the player.
 const role = roleOfThisPage();
 // An address that is no page of the site opens as "/" does, and says so (see shared/strayAddress.ts).

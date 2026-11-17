@@ -82,23 +82,55 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     await asks(tv, "index-e2eNew1");
     await tv.clock.fastForward(5_000);
     await expect(hint(tv)).toHaveCount(0); // (the remote was pressed a moment ago)
+    // (The keys are the question's before any other listener of the page's, one there before the question came too - a menu's Back, the feedback form's -
+    // which a listener added as the question came would come after: the judge, 17 Nov.)
+    await tv.evaluate(() => window.addEventListener("keydown", () => ((window as unknown as { heard: boolean }).heard = true), true));
     await tv.clock.fastForward(60_000);
     await expect(hint(tv)).toBeVisible();
-    await expect(tv.getByTestId("update-reload")).toBeFocused();
-
+    // (The remote is on Later: a press meant for the page reloads nothing, the judge, 17 Nov.)
+    await expect(tv.getByTestId("update-later")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
-    await expect(tv.getByTestId("update-later")).toBeFocused();
-    await tv.keyboard.press("ArrowDown"); // (the page under it does not move)
-    await expect(tv.getByTestId("update-later")).toBeFocused();
-    await tv.keyboard.press("ArrowLeft");
     await expect(tv.getByTestId("update-reload")).toBeFocused();
+    await tv.keyboard.press("ArrowDown"); // (the page under it does not move)
+    await expect(tv.getByTestId("update-reload")).toBeFocused();
+    await tv.keyboard.press("ArrowLeft");
+    await expect(tv.getByTestId("update-later")).toBeFocused();
+    expect(await tv.evaluate(() => (window as unknown as { heard?: boolean }).heard)).toBeUndefined();
     await tv.keyboard.press("Escape");
     await expect(hint(tv)).toHaveCount(0);
     expect(await tv.evaluate(() => document.activeElement?.outerHTML.slice(0, 200) ?? "")).toBe(before);
 
-    // (The next one: OK on Reload reloads.)
+    // (The next one waits while something is typed, and while a window is open on the page.)
     await asks(tv, "index-e2eNew2");
+    await tv.evaluate(() => {
+      const box = document.createElement("input");
+      box.id = "e2e-box";
+      document.body.append(box);
+      box.focus();
+    });
     await tv.clock.fastForward(61_000);
+    await tv.waitForTimeout(300);
+    await expect(hint(tv)).toHaveCount(0);
+    await tv.evaluate(() => {
+      document.getElementById("e2e-box")?.remove();
+      const open = document.createElement("div");
+      open.id = "e2e-window";
+      open.setAttribute("aria-modal", "true");
+      document.body.append(open);
+    });
+    await tv.clock.fastForward(3_000);
+    await tv.waitForTimeout(300);
+    await expect(hint(tv)).toHaveCount(0);
+    await tv.evaluate(() => document.getElementById("e2e-window")?.remove());
+    await tv.clock.fastForward(3_000);
+    await expect(hint(tv)).toBeVisible();
+
+    // (OK as it comes answers nothing; a second later, OK on Reload reloads.)
+    await expect(tv.getByTestId("update-later")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(hint(tv)).toBeVisible();
+    await tv.clock.fastForward(1_500);
+    await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("update-reload")).toBeFocused();
     const reloaded = tv.waitForEvent("load");
     await tv.keyboard.press("Enter");
