@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { forgetRelease, loadRelease, megabytes, wantsTheApp } from "./GetTheApp";
+import { forgetRelease, loadRelease, mayComeIn, megabytes, STRIP_QUIET_MS, wantsTheApp } from "./GetTheApp";
 
 const PIXEL = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
@@ -20,6 +20,29 @@ describe("whether the Android app is offered", () => {
     expect(wantsTheApp({ userAgent: FIRE_TV, handHeld: true, inApp: false })).toBe(false);
     expect(wantsTheApp({ userAgent: WINDOWS, handHeld: false, inApp: false })).toBe(false);
     expect(wantsTheApp({ userAgent: PIXEL, handHeld: false, inApp: false })).toBe(false); // (an Android box with a mouse)
+  });
+
+  it("is not offered in the app before its bridge is there (its user agent says so), nor in another app's window onto the web", () => {
+    expect(wantsTheApp({ userAgent: `${PIXEL} KinoApp/0.2.0`, handHeld: true, inApp: false })).toBe(false);
+    expect(wantsTheApp({ userAgent: PIXEL.replace("Pixel 8)", "Pixel 8; wv)"), handHeld: true, inApp: false })).toBe(false);
+  });
+});
+
+describe("when the line comes in", () => {
+  const quiet = { now: 10_000, lastTouched: 0, held: false, busy: false };
+
+  it("comes with the page's first drawing, before anything was touched", () => {
+    expect(mayComeIn(quiet)).toBe(true);
+  });
+
+  it("waits while a finger is down, while the page was touched lately, and while something it must not come under is up", () => {
+    expect(mayComeIn({ ...quiet, held: true })).toBe(false);
+    expect(mayComeIn({ ...quiet, lastTouched: quiet.now - STRIP_QUIET_MS + 1 })).toBe(false);
+    expect(mayComeIn({ ...quiet, busy: true })).toBe(false);
+  });
+
+  it("comes once the page has been left alone for a moment", () => {
+    expect(mayComeIn({ ...quiet, lastTouched: quiet.now - STRIP_QUIET_MS })).toBe(true);
   });
 });
 

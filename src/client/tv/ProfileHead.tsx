@@ -46,7 +46,7 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
   const settingsCol = signedIn || !canSignIn ? 0 : 1; // (a guest's Sign in is the button before it)
   const googleCol = settingsCol + 2 + places.length;
   return (
-    <div className="tv-profile-head">
+    <div className={release ? "tv-profile-head with-app" : "tv-profile-head"}>
       {signedIn && avatar ? (
         <Avatar id={avatar} className="tv-profile-avatar" />
       ) : (

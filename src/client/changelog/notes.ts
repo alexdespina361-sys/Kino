@@ -4,6 +4,22 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.6",
+    date: "2026-11-17",
+    en: [
+      "On an Android phone: download Kino's Android app from your profile.",
+      "On an Android phone's browser, a line at the top of the pages says there is an app, until you close it.",
+    ],
+    ro: [
+      "Pe un telefon cu Android: descarcă aplicația Kino pentru Android din profilul tău.",
+      "În browserul unui telefon cu Android, un rând sus pe pagini spune că există aplicația, până îl închizi.",
+    ],
+    it: [
+      "Su un telefono Android: scarica l'app Kino per Android dal tuo profilo.",
+      "Nel browser di un telefono Android, una riga in cima alle pagine dice che c'è l'app, finché non la chiudi.",
+    ],
+  },
+  {
     version: "0.4.5",
     date: "2026-11-17",
     en: [

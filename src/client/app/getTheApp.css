@@ -1,4 +1,4 @@
-/* The Android app, offered on a phone's browser (app/GetTheApp.tsx): the card on the profile's page, and the site's line at the top. */
+/* The Android app, offered on a phone's browser (app/GetTheApp.tsx): the card on the profile's page, and the line under the top of the other pages. */
 .get-app {
   display: flex;
   align-items: flex-start;
@@ -35,34 +35,32 @@
 }
 .get-app-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* On the TV's pages held in the hand (the profile's page of a phone that is the screen): under the head, as wide as it. */
-.tv .tv-profile-head:has(> .get-app) { flex-wrap: wrap; }
+/* On the TV's pages held in the hand (the profile's page of a phone that is the screen): under the head, as wide as it. (A class, not :has(): the build is for
+   Chrome 94, and :has() came in 105.) */
+.tv .tv-profile-head.with-app { flex-wrap: wrap; }
 .tv .get-app.in-profile-head { flex: 1 0 100%; margin-top: 4px; }
 
-/* The site's line: at the top, over everything, as "A new Kino is out" is (shared/updateHint.css), as wide as its words up to the screen's width. */
+/* The line: in the page under its top, as wide as the page's words, pushing what is under it down (never over the top's buttons: the judge, 17 Nov). */
 .get-app-strip {
-  position: fixed;
-  left: 50%;
-  top: max(12px, env(safe-area-inset-top));
-  z-index: 100;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
-  width: max-content;
-  max-width: calc(100vw - 24px);
   box-sizing: border-box;
   margin: 0;
-  padding: 8px 8px 8px 10px;
-  border-radius: 16px;
-  background: rgb(245 245 247 / 0.97);
-  color: #111;
-  font: 600 0.95rem/1.3 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  transform: translateX(-50%);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 0.5);
-  animation: get-app-strip-in 0.16s ease-out;
+  padding: 8px 6px 8px 10px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgb(229 9 20 / 0.22), rgb(255 255 255 / 0.06) 75%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  color: #fff;
+  font: 600 14px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  text-align: left;
+  animation: get-app-strip-in 0.18s ease-out;
 }
-.get-app-strip-icon { flex: none; width: 28px; height: 28px; border-radius: 7px; }
-.get-app-strip p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.get-app-strip-icon { flex: none; width: 32px; height: 32px; border-radius: 8px; }
+.get-app-strip p { display: grid; flex: 1; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.get-app-strip p b { font-weight: 700; }
+.get-app-strip p span { font-weight: 500; font-size: 13px; color: rgb(255 255 255 / 0.7); }
 .get-app-strip-get {
   flex: none;
   display: grid;
@@ -72,6 +70,7 @@
   border-radius: 999px;
   background: var(--accent, #e50914);
   color: #fff;
+  font-weight: 700;
   text-decoration: none;
 }
 .get-app-strip-close {
@@ -80,17 +79,29 @@
   place-items: center;
   min-width: 40px;
   min-height: 40px;
+  padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.08);
-  color: #111;
+  background: transparent;
+  color: rgb(255 255 255 / 0.75);
   cursor: pointer;
 }
 .get-app-strip-get:focus-visible,
-.get-app-strip-close:focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+.get-app-strip-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Under the library's top, at the page's edges (polish/tv-phone.css's gutter). */
+.tv .get-app-strip.in-browse { margin: 6px var(--edge-r, 16px) 6px var(--gutter, 16px); }
+/* A narrow phone keeps its width for the words (the icon is the page's own logo anyway). */
+@media (max-width: 399px) {
+  .get-app-strip-icon { display: none; }
+  .get-app-strip-get { padding: 0 14px; }
+}
+/* A screen held sideways has no height to give for it: the rows would be cut. */
+@media (max-height: 499px) {
+  .get-app-strip { display: none; }
+}
 @keyframes get-app-strip-in {
-  from { opacity: 0; transform: translate(-50%, -10px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .get-app-strip { animation: none; }

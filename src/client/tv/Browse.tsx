@@ -13,6 +13,7 @@ import { listTap } from "../account/listTap";
 import { ratingFor, scoreOf } from "../account/ratingText";
 import { useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
+import { GetTheAppStrip } from "../app/GetTheApp";
 import { waitingFrom } from "../chat/notices";
 import { TvChat } from "../chat/TvChat";
 import { nameOf, recommendationOf } from "../friends/entries";
@@ -1721,6 +1722,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {rowsPage && (
         <>
+          {/* (On a phone's browser with Android: the line that says there is an app, in the page under its top, until it is put away. The profile's page has the card instead. See app/GetTheApp.tsx.) */}
+          {view.kind !== "profile" && <GetTheAppStrip className="in-browse" />}
           {sectionButtons && (
             // (Where the menu of a TV has a line for each section: a row of buttons, the one for the page that is shown lit. Choosing one is like choosing a list: the remote stays on the buttons.)
             <div className="tv-filters tv-sections" role="radiogroup" aria-label={t("tv.sections")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
