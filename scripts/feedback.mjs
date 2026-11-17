@@ -16,7 +16,7 @@
 //   node scripts/feedback.mjs official put <id> <file.srt> [--times] [--note "..."]   (the team's text, line for line; --times takes its times too)
 //   node scripts/feedback.mjs official remove <id> --yes
 //   node scripts/feedback.mjs stickers [--json]               (the personal stickers, newest first, with who made them; `node scripts/stickers.mjs` is the same)
-//   node scripts/feedback.mjs stickers show <name>            (saves .stickers/<name>.png)
+//   node scripts/feedback.mjs stickers show <name>            (saves .stickers/<name>.png, or .webp for one that moves)
 //   node scripts/feedback.mjs stickers remove <name> --yes    (taken down everywhere, for good)
 //   node scripts/feedback.mjs stickers remove-by <profile or account> --yes
 //
@@ -499,8 +499,11 @@ async function stickers({ words, flags }) {
     if (!response.ok) fail(`GET /api/admin/stickers/${name}: ${response.status}`);
     const folder = path.join(root, ".stickers");
     await mkdir(folder, { recursive: true });
-    await writeFile(path.join(folder, `${name}.png`), Buffer.from(await response.arrayBuffer()));
-    console.log(`Saved .stickers/${name}.png`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    // (one that moves is a WebP: named for what it is, so a viewer opens it as one)
+    const kind = bytes.toString("latin1", 0, 4) === "RIFF" && bytes.toString("latin1", 8, 12) === "WEBP" ? "webp" : "png";
+    await writeFile(path.join(folder, `${name}.${kind}`), bytes);
+    console.log(`Saved .stickers/${name}.${kind}`);
     return;
   }
   if (action === "remove") {

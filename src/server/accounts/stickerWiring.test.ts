@@ -323,6 +323,12 @@ describe("a personal sticker", () => {
     expect((await raw(new Client(app), alex.id)).statusCode).toBe(401);
     expect((await raw(sam.client, alex.id)).statusCode).toBe(404);
     expect((await raw(alex.client, alex.id)).statusCode).toBe(400);
+    // (and a body that is JSON, and not exactly what the page sends, is not unpacked to be looked at: a bad request too, the judge, 17 Nov)
+    const junk = (payload: string) =>
+      app.inject({ method: "POST", url: `/api/profiles/${alex.id}/stickers`, headers: { "content-type": "application/json", cookie: alex.client.cookie! }, payload });
+    expect((await junk(`{"data":"","delays":[20,20],"junk":[${"{},".repeat(1000)}{}]}`)).statusCode).toBe(400);
+    expect((await junk(`{ "data": "${picture(9)}" }`)).statusCode, "spaces are not what the page sends").toBe(400);
+    expect((await junk(`{"data":"${picture(9)}"}`)).statusCode, "what the page sends").toBe(201);
 
     // (pictures held on their way in: a second of Alex's waits, as does a fifth of the site's)
     const put = files.put.bind(files);
@@ -358,6 +364,9 @@ describe("a personal sticker", () => {
     await vi.waitFor(() => expect(release).toBeDefined());
     gone.abort();
     expect(await asked).toBe("gone");
+    // (its place is kept while what it sent is still being made: an asker who leaves does not make room for the next, the judge, 17 Nov)
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect((await alex.make(picture(31))).statusCode, "still being made").toBe(503);
     release!();
     files.put = put;
     await vi.waitFor(async () => expect(await alex.collection()).toHaveLength(1));

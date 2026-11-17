@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ChatReport, ChatReporter } from "../accounts/chatRoutes";
+import { pictureType } from "../accounts/stickerImage";
 import { readWords } from "./intake";
 import { FeedbackFull, TooManyOpen, type FeedbackStore } from "./store";
 
@@ -34,9 +35,10 @@ export function chatTranscript(report: ChatReport): string {
   ].join("\n");
 }
 
-/** The file each personal sticker's picture is in (`sticker1.png`, ...), in the order the report has them. */
+/** The file a personal sticker's picture is in: `sticker1.png`, ... (`.webp` for one that moves), in the order the report has them. */
+const pictureName = (data: Buffer, at: number) => `sticker${at + 1}.${pictureType(data) === "image/webp" ? "webp" : "png"}`;
 function pictureNames(report: ChatReport): Map<string, string> {
-  return new Map((report.pictures ?? []).map((picture, at) => [picture.sticker, `sticker${at + 1}.png`]));
+  return new Map((report.pictures ?? []).map((picture, at) => [picture.sticker, pictureName(picture.data, at)]));
 }
 
 /**
@@ -65,7 +67,10 @@ export function chatReporter(feedback: FeedbackStore): ChatReporter {
           files: [
             { meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") },
             // (The pictures of the personal stickers in it, as they were when it was sent: see `ChatReport.pictures`.)
-            ...(report.pictures ?? []).map((picture, at) => ({ meta: { id: `sticker${at + 1}`, name: `sticker${at + 1}.png`, mime: "image/png" as const, role: "photo" as const }, data: picture.data })),
+            ...(report.pictures ?? []).map((picture, at) => ({
+              meta: { id: `sticker${at + 1}`, name: pictureName(picture.data, at), mime: pictureType(picture.data), role: "photo" as const },
+              data: picture.data,
+            })),
           ],
           // (Kept in memory only, while the report is open, to count an account's reports: the report itself is not tied to the account.)
           from: `chat:${report.account}`,

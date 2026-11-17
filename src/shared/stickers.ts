@@ -35,6 +35,54 @@ export const PERSONAL_STICKER = {
 export const PERSONAL_STICKER_BASE64_MAX = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4;
 
 /**
+ * Stickers that move (the owner's ask of 17 Nov 2026: WhatsApp's stickers and GIFs): while the host has them on as well (env MOVING_STICKERS=on), a picture that
+ * moves (an animated WebP or GIF, or a short video such as WhatsApp keeps a GIF as) is made a sticker that moves, not only its first picture. The page sends its
+ * pictures one under the other as one PNG (`side` wide, `side` times as many as there are high) and how long each is shown; the server reads it as it reads a
+ * still one, and makes an animated WebP of its pixels (server/accounts/stickerImage.ts). Off, every picture is made of its first one, as before.
+ */
+export const MOVING_STICKER = {
+  /** The fewest and the most pictures one has. */
+  minFrames: 2,
+  maxFrames: 48,
+  /** How long a picture is shown, at the least and the most (ms), and how long all of them may be. */
+  minDelay: 20,
+  maxDelay: 1000,
+  maxDuration: 8000,
+  /** The most the pictures as sent may be (a PNG of photographs does not pack small), and the most what is kept may be. */
+  sentBytes: 4_000_000,
+  keptBytes: 600_000,
+  /**
+   * How many an account may send to be made in a day, made or not: each takes the server's time to pack, whether it is kept or turns out too big (the judge,
+   * 17 Nov: one refused cost nothing of the day's, so it could be sent again and again).
+   */
+  triesPerDay: 40,
+} as const;
+
+export const MOVING_STICKER_BASE64_MAX = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4;
+
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+const DELAYS = /^,"delays":\[(\d{1,4}(?:,\d{1,4})*)\]\}$/;
+/**
+ * The body of a sticker to be made, read from its text without making anything else of it (the judge, 17 Nov: a body of megabytes that was not a picture at
+ * all, a list of a million empty things say, was all unpacked before it was looked at). It is exactly what the page sends, `{"data":"<base64>"}` or
+ * `{"data":"<base64>","delays":[n,...]}`, with nothing between or after; anything else is nothing. What it gives is still checked by `StickerMakeSchema`.
+ */
+export function readStickerMake(text: string): { data: string; delays?: number[] } | undefined {
+  const head = '{"data":"';
+  if (!text.startsWith(head)) return undefined;
+  const end = text.indexOf('"', head.length);
+  if (end < 0) return undefined;
+  const rest = text.slice(end + 1);
+  // (the delays are at most so many numbers of four digits: a tail longer than that is not them)
+  if (rest.length > 16 + MOVING_STICKER.maxFrames * 5) return undefined;
+  const data = text.slice(head.length, end);
+  if (!BASE64.test(data)) return undefined;
+  if (rest === "}") return { data };
+  const delays = DELAYS.exec(rest)?.[1];
+  return delays === undefined ? undefined : { data, delays: delays.split(",").map(Number) };
+}
+
+/**
  * What a message that is a personal sticker says in words, wherever words are shown (the bell, the friends page, a page that is older than personal stickers,
  * a report): the framed-picture emoji. It is in no language, and it is not one of the built-in stickers (it would be drawn as one).
  */
@@ -50,8 +98,16 @@ export const MyStickersSchema = z.object({
 });
 export type MyStickers = z.infer<typeof MyStickersSchema>;
 
-/** A picture made into a sticker on the page: a PNG, as base64. */
-export const StickerMakeSchema = z.object({ data: z.string().max(PERSONAL_STICKER_BASE64_MAX) });
+/**
+ * A picture made into a sticker on the page: a PNG, as base64. One that moves says how long each of its pictures is shown (`delays`, in ms), and may be bigger;
+ * a still one is no bigger than a still one may be.
+ */
+export const StickerMakeSchema = z
+  .object({
+    data: z.string().max(MOVING_STICKER_BASE64_MAX),
+    delays: z.array(z.number().int().min(MOVING_STICKER.minDelay).max(MOVING_STICKER.maxDelay)).min(MOVING_STICKER.minFrames).max(MOVING_STICKER.maxFrames).optional(),
+  })
+  .refine((made) => made.delays !== undefined || made.data.length <= PERSONAL_STICKER_BASE64_MAX);
 /** Sending one of one's own in a chat, or saving one a friend sent. */
 export const StickerSendSchema = z.object({ id: StickerIdSchema });
 

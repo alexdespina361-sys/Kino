@@ -39,6 +39,7 @@ export const chatRo: ChatDictionary = {
   "chat.stickerAdd": "Adaugă o poză",
   "chat.stickerAdding": "Se face stickerul…",
   "chat.stickerFromWhatsApp": "Din WhatsApp",
+  "chat.stickerWhatsAppGifs": "GIF-uri WhatsApp",
   "chat.stickerYours": "Trimite stickerul tău",
   "chat.stickerSavedOne": "Trimite un sticker salvat",
   "chat.stickerRemove": "Șterge acest sticker",

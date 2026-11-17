@@ -151,9 +151,9 @@ export interface StoreOptions {
   log?: { warn(message: string): void };
   /**
    * Personal stickers (shared/stickers.ts): where their pictures are kept (memory unless set), whether the host turned them on (off unless it did:
-   * env PERSONAL_STICKERS), and how many bytes of pictures the site keeps.
+   * env PERSONAL_STICKERS) and stickers that move (env MOVING_STICKERS), and how many bytes of pictures the site keeps.
    */
-  stickers?: { files?: StickerFiles; on?: boolean; maxBytes?: number; uploadMs?: number };
+  stickers?: { files?: StickerFiles; on?: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number };
 }
 
 /**
@@ -219,7 +219,7 @@ export class AccountStore {
     this.stickerBook = new StickerBook(
       { touch: (key) => this.touch(key), drop: (key) => this.drop(key), now: () => this.now(), on: (profileId) => this.profileOwner.has(profileId) && friendChoices(this.settingsOf(profileId)).friends },
       stickers.files ?? new MemoryStickerFiles(),
-      { on: stickers.on ?? false, ...(stickers.maxBytes ? { maxBytes: stickers.maxBytes } : {}), ...(stickers.uploadMs ? { uploadMs: stickers.uploadMs } : {}), ...(options.log ? { log: options.log } : {}) },
+      { on: stickers.on ?? false, moving: stickers.moving ?? false, ...(stickers.maxBytes ? { maxBytes: stickers.maxBytes } : {}), ...(stickers.uploadMs ? { uploadMs: stickers.uploadMs } : {}), ...(options.log ? { log: options.log } : {}) },
     );
   }
 

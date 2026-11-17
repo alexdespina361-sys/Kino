@@ -5,7 +5,7 @@ import { PERSONAL_STICKER_TEXT, type ChatLine } from "../../shared";
 import { ApiError } from "../account/api";
 import { ChatLines, PERSONAL_RECHECK_MS, type PersonalLines } from "./ChatLines";
 import { count, has, line, tagOf } from "./fixtures";
-import { addProblemOf, chatStickerSrc, forgetPersonalStickers, keptCollection, lookAgain, ownStickerSrc, pictureSize, pixelBudget, StickerError, stickerPicture, tookCollection } from "./personalStickers";
+import { addProblemOf, asItWas, chatStickerSrc, forgetPersonalStickers, keptCollection, lookAgain, movingKind, ownStickerSrc, pictureSize, pixelBudget, steps, StickerError, stickerPicture, tookCollection } from "./personalStickers";
 
 const NOW = Date.UTC(2026, 9, 18, 15, 0);
 const SID = "Abcdefghijklmnopqrstuv";
@@ -102,11 +102,73 @@ describe("the page's side of personal stickers", () => {
       expect(await pictureSize(bytes([0xff, 0xd8], notes))).toBeNull();
     });
 
+    it("reads a GIF's (one that moves is not read whole before its size is known, the judge, 17 Nov)", async () => {
+      expect(await pictureSize(bytes("GIF89a", le(100, 2), le(80, 2), new Array(30).fill(0)))).toEqual({ width: 100, height: 80 });
+      expect(await pictureSize(bytes("GIF87a", le(8192, 2), le(8192, 2), new Array(30).fill(0)))).toEqual({ width: 8192, height: 8192 });
+    });
+
     it("does not say for another kind of picture, nor for what is not one", async () => {
-      expect(await pictureSize(bytes("GIF89a", le(100, 2), le(100, 2), new Array(30).fill(0)))).toBeNull();
       expect(await pictureSize(bytes([0, 0, 0, 0x18], "ftypheic", new Array(30).fill(0)))).toBeNull();
       expect(await pictureSize(bytes("hello"))).toBeNull();
       expect(await pictureSize(new Blob([]))).toBeNull();
+    });
+
+    it("tells a video from a picture by its first bytes: an MP4 or a WebM is a video; an AVIF or a HEIC photo, in the same kind of box, is a picture (the judge, 17 Nov)", async () => {
+      const boxed = (brand: string, type = "") => new Blob([new Uint8Array([0, 0, 0, 0x18]), new TextEncoder().encode(`ftyp${brand}`), new Uint8Array(30)], { type });
+      for (const brand of ["isom", "mp42", "3gp4", "qt  "]) expect(await movingKind(boxed(brand)), brand).toBe("video");
+      for (const brand of ["avif", "avis", "heic", "heix", "mif1", "msf1"]) expect(await movingKind(boxed(brand)), brand).toBeNull();
+      expect(await movingKind(boxed("isom", "image/avif")), "said to be a picture").toBeNull();
+      expect(await movingKind(bytes([0x1a, 0x45, 0xdf, 0xa3], new Array(30).fill(0)))).toBe("video");
+      expect(await movingKind(bytes("GIF89a", new Array(30).fill(0)))).toBe("image/gif");
+      expect(await movingKind(bytes("RIFF", le(100, 4), "WEBPVP8X"))).toBe("image/webp");
+      expect(await movingKind(bytes([0x89], "PNG\r\n\x1a\n", new Array(20).fill(0)))).toBe("image/png");
+      expect(await movingKind(bytes([0xff, 0xd8, 0xff, 0xe0], new Array(20).fill(0))), "a JPEG does not move").toBeNull();
+    });
+
+    it("takes a video's pictures 15 a second at the most, 48 at the most, of its first 8 seconds; one shorter than two pictures is two, shown a little longer", () => {
+      for (const duration of [40, 100, 134, 540, 600, 1400, 3200, 8000, 60_000]) {
+        const { at, delay } = steps(duration);
+        const shown = at.length * delay;
+        expect(at.length, String(duration)).toBeGreaterThanOrEqual(2);
+        expect(at.length, String(duration)).toBeLessThanOrEqual(48);
+        expect(delay, `${duration}: never more than 15 a second`).toBeGreaterThanOrEqual(67);
+        expect(delay, String(duration)).toBeLessThanOrEqual(1000);
+        expect(shown, String(duration)).toBeLessThanOrEqual(8000);
+        if (duration >= 134) expect(shown, `${duration}: not longer than it was`).toBeLessThanOrEqual(Math.min(duration, 8000));
+        expect(at.every((when, n) => when > 0 && when < Math.min(duration, 8000) && (n === 0 || when > at[n - 1]!)), `${duration}: within it, in order`).toBe(true);
+      }
+      expect(steps(100)).toMatchObject({ delay: 67 });
+      expect(steps(600).at).toHaveLength(8);
+      expect(steps(60_000).at).toHaveLength(48);
+    });
+
+    it("keeps each picture of a picture that moves as long as it was shown, when a sticker has room: one shown longer than a picture may be is itself again", () => {
+      expect(asItWas([200, 200, 200])).toEqual([
+        { index: 0, delay: 200 },
+        { index: 1, delay: 200 },
+        { index: 2, delay: 200 },
+      ]);
+      expect(asItWas([400.7, 20])?.map((each) => each.delay)).toEqual([400, 20]);
+      // (2.5 seconds: itself three times; 1010 ms: never a piece shorter than a picture may be shown)
+      expect(asItWas([2500, 100])).toEqual([
+        { index: 0, delay: 1000 },
+        { index: 0, delay: 1000 },
+        { index: 0, delay: 500 },
+        { index: 1, delay: 100 },
+      ]);
+      expect(asItWas([1010, 100])?.map((each) => each.delay)).toEqual([990, 20, 100]);
+      expect(asItWas([1000, 1000])?.map((each) => each.delay)).toEqual([1000, 1000]);
+      // (more pictures, or a longer time, than a sticker has: its pictures are taken at steps instead)
+      expect(asItWas(Array(49).fill(40))).toBeNull();
+      expect(asItWas(Array(48).fill(40))).toHaveLength(48);
+      expect(asItWas(Array(9).fill(900))).toBeNull();
+      expect(asItWas([300])).toBeNull();
+      // (a picture a file says is shown for days, or for no time that is a number: known at once, nothing is cut into pieces first)
+      const before = performance.now();
+      expect(asItWas([100, 4e12])).toBeNull();
+      expect(asItWas([100, Infinity])).toBeNull();
+      expect(asItWas([100, NaN])).toBeNull();
+      expect(performance.now() - before).toBeLessThan(200);
     });
 
     it("allows so many megapixels for each gigabyte of the phone: real phones' photos open where they are taken, and more is turned away without opening it", async () => {

@@ -5,7 +5,7 @@ Kino for Android (`android/`) is the site in a WebView, for phones and for Andro
 - **Notifications** from friends: a message, a title sent, an invitation to a watch party or to watch together, a plan or the answer to one.
 - **Updates of itself**: the app installs a new version on its own once the server says one is out.
 - **Google sign-in** that works inside the app. Google signs nobody in from a WebView, so the button goes out to the phone's browser and back.
-- **Stickers from WhatsApp** (0.2.0): "From WhatsApp" in the stickers opens the phone's file chooser in the folder where WhatsApp keeps the stickers it was sent. Several can be chosen at once; each becomes a personal sticker (one that moves becomes its first picture). The app knows WhatsApp's GIFs folder too (`whatsapp-gifs`, MP4 and GIF files); the site has no button for it until stickers that move are on.
+- **Stickers from WhatsApp** (0.2.0): "From WhatsApp" in the stickers opens the phone's file chooser in the folder where WhatsApp keeps the stickers it was sent. Several can be chosen at once; each becomes a personal sticker (one that moves becomes its first picture). The app knows WhatsApp's GIFs folder too (`whatsapp-gifs`, MP4 and GIF files): **WhatsApp GIFs** shows only while the host has stickers that move on (`MOVING_STICKERS`, docs/personal-stickers.md), and makes each a sticker that moves.
 
 It is Java, with no framework: `MainActivity` (the WebView), `Bridge` (`window.KinoApp` for the site's pages), `Folders`, `GoogleTrip`, `KinoMessaging` (Firebase), `Notices`, `Updates` and `UpdateWork` (WorkManager). It is
 built with AGP 8.13, Gradle 8.14.3, SDK 36, minimum Android 7.0 (API 24). Lint runs on every release build, and an error stops it.

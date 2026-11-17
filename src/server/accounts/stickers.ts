@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { isStickerId, PERSONAL_STICKER, type MyStickers, type StickerProblem } from "../../shared";
+import { isStickerId, MOVING_STICKER, PERSONAL_STICKER, type MyStickers, type StickerProblem } from "../../shared";
 import { RateLimiter } from "./rateLimit";
-import { makeSticker } from "./stickerImage";
+import { makeMovingSticker, makeSticker, type MadeSticker } from "./stickerImage";
 import type { StickerFiles } from "./stickerFiles";
 
 /**
@@ -63,6 +63,8 @@ export class StickerBook {
   /** profile -> the stickers it has. */
   private readonly held = new Map<string, Set<string>>();
   private readonly made: RateLimiter;
+  /** The ones that move an account sent to be made today, made or not (`MOVING_STICKER.triesPerDay`). */
+  private readonly tried: RateLimiter;
   private bytesInAll = 0;
   /** Pictures on their way to `files` (counted already, so two at once cannot both take the last room). */
   private writing = 0;
@@ -78,17 +80,23 @@ export class StickerBook {
     private readonly host: StickerHost,
     private readonly files: StickerFiles,
     /**
-     * `on`: the host turned them on (the kill switch is turning it off). `maxBytes`: of all the pictures together. `uploadMs`: how long a picture let in may take
-     * to arrive (stickerRoutes.ts; tests make it short).
+     * `on`: the host turned them on (the kill switch is turning it off). `moving`: and stickers that move (shared/stickers.ts `MOVING_STICKER`). `maxBytes`: of
+     * all the pictures together. `uploadMs`: how long a picture let in may take to arrive (stickerRoutes.ts; tests make it short).
      */
-    readonly options: { on: boolean; maxBytes?: number; uploadMs?: number; log?: { warn(message: string): void } },
+    readonly options: { on: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number; log?: { warn(message: string): void } },
   ) {
     this.made = new RateLimiter(PERSONAL_STICKER.madePerDay, DAY, () => host.now());
+    this.tried = new RateLimiter(MOVING_STICKER.triesPerDay, DAY, () => host.now());
     this.pictureReads = new RateLimiter(PERSONAL_STICKER.picturesPerMinute, 60_000, () => host.now());
   }
 
   get on(): boolean {
     return this.options.on;
+  }
+
+  /** Whether stickers that move are made (only while personal stickers are on). */
+  get moving(): boolean {
+    return this.options.on && this.options.moving === true;
   }
 
   private get maxBytes(): number {
@@ -198,9 +206,9 @@ export class StickerBook {
    * A profile makes a sticker of a picture its page made (a PNG: see stickerImage.ts). So many a day for an account; so many for a profile; the site keeps so
    * many, and so much. The same picture made again by the profile is the sticker it made. Answers with the sticker's name.
    */
-  async make(profileId: string, accountId: string, sent: Buffer): Promise<StickerOutcome<string>> {
+  async make(profileId: string, accountId: string, sent: Buffer, delays?: readonly number[]): Promise<StickerOutcome<string>> {
     const before = this.making.get(profileId) ?? Promise.resolve();
-    const run = before.then(() => this.makeNow(profileId, accountId, sent));
+    const run = before.then(() => this.makeNow(profileId, accountId, sent, delays));
     const after = run.catch(() => {});
     this.making.set(profileId, after);
     try {
@@ -210,13 +218,27 @@ export class StickerBook {
     }
   }
 
-  private async makeNow(profileId: string, accountId: string, sent: Buffer): Promise<StickerOutcome<string>> {
+  private async makeNow(profileId: string, accountId: string, sent: Buffer, delays?: readonly number[]): Promise<StickerOutcome<string>> {
     if (!this.on) return no("off");
     if (!this.host.on(profileId)) return no("friends_off");
     if (this.count(profileId) >= PERSONAL_STICKER.perProfile) return no("full");
     const wait = this.made.wait(accountId);
     if (wait > 0) return no("too_many", wait);
-    const made = makeSticker(sent);
+    // (One that moves only while those are on as well: the page that sent one while they are off is told it is not a picture, and makes a still one.)
+    if (delays && !this.moving) return no("not_a_picture");
+    // (One that moves takes the server's time to pack, kept or not: each sent is one of the day's tries, whatever comes of it.)
+    if (delays) {
+      const tries = this.tried.wait(accountId);
+      if (tries > 0) return no("too_many", tries);
+      this.tried.hit(accountId);
+    }
+    let made: MadeSticker;
+    try {
+      made = delays ? await makeMovingSticker(sent, delays) : makeSticker(sent);
+    } catch (error) {
+      this.options.log?.warn(`Personal stickers: could not make one that moves (${(error as Error).message}).`);
+      return no("not_a_picture");
+    }
     if (!made.ok) return no(made.error);
     this.made.hit(accountId);
     const known = this.docs.get(this.byHash.get(sameKey(profileId, made.hash)) ?? "");
@@ -224,30 +246,30 @@ export class StickerBook {
       if (!this.holds(profileId, known.id)) this.hold(profileId, known);
       return { ok: true, value: known.id };
     }
-    if (this.docs.size + this.writing >= PERSONAL_STICKER.siteMax || this.bytesInAll + made.png.length > this.maxBytes) {
+    if (this.docs.size + this.writing >= PERSONAL_STICKER.siteMax || this.bytesInAll + made.data.length > this.maxBytes) {
       this.made.undo(accountId);
       return no("site_full");
     }
     const id = randomBytes(16).toString("base64url");
     this.writing++;
-    this.bytesInAll += made.png.length;
+    this.bytesInAll += made.data.length;
     try {
-      await this.files.put(id, made.png);
+      await this.files.put(id, made.data);
     } catch (error) {
-      this.bytesInAll -= made.png.length;
+      this.bytesInAll -= made.data.length;
       this.made.undo(accountId);
       throw error;
     } finally {
       this.writing--;
     }
-    this.bytesInAll -= made.png.length; // (counted again as the document's, below)
+    this.bytesInAll -= made.data.length; // (counted again as the document's, below)
     // (A save while the picture was being written may have filled the collection: then nothing was made, and it does not count as one of the day's.)
     if (this.count(profileId) >= PERSONAL_STICKER.perProfile) {
       this.made.undo(accountId);
       await this.files.remove(id).catch(() => {});
       return no("full");
     }
-    const doc: StickerDoc = { v: 1, id, by: profileId, account: accountId, at: this.host.now(), bytes: made.png.length, hash: made.hash, held: {} };
+    const doc: StickerDoc = { v: 1, id, by: profileId, account: accountId, at: this.host.now(), bytes: made.data.length, hash: made.hash, held: {} };
     this.remember(doc);
     this.hold(profileId, doc);
     return { ok: true, value: id };

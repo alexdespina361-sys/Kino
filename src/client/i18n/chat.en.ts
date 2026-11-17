@@ -42,6 +42,7 @@ export const chatEn = {
   "chat.stickerAdd": "Add a picture",
   "chat.stickerAdding": "Making the sticker…",
   "chat.stickerFromWhatsApp": "From WhatsApp",
+  "chat.stickerWhatsAppGifs": "WhatsApp GIFs",
   "chat.stickerYours": "Send your sticker",
   "chat.stickerSavedOne": "Send a sticker you saved",
   "chat.stickerRemove": "Remove this sticker",
