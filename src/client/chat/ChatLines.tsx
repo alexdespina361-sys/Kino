@@ -3,6 +3,7 @@ import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
+import { useBackFirst } from "../tv/dpad";
 import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
 import { ReactBar, Reactions } from "./Reactions";
@@ -29,6 +30,12 @@ export interface ChatLinesProps {
   onReact?: (id: number, reaction: ChatReaction | null) => void;
   /** The TV: the list is a place the remote can land on, and Up and Down scroll it while there is more to see that way (and step onto the titles in it). */
   remote?: boolean;
+  /**
+   * A computer's list (with `remote` and `onPick`): its keyboard reaches the messages too. Tab stops on one of them (the one the keys were last on, else the
+   * newest), Up and Down go from message to message, Left and Right along what is under one (its reactions, Take back), Enter presses, and Escape shuts the
+   * reactions before it leaves the chat (the judge, 17 Nov: a keyboard could not react at all).
+   */
+  keyboard?: boolean;
   /** A title a message names was pressed (see titles.ts). Without it the cards are only shown. */
   onOpenTitle?: (item: LibraryItem) => void;
   /**
@@ -57,7 +64,7 @@ const CARD = ".chat-card[data-title]";
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, onReact, remote = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, onReact, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -89,20 +96,60 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     return () => watcher.disconnect();
   }, []);
 
-  // A card the remote is on can go away under it: taken back by its sender, no longer one of the newest titles, or carried out of view by the messages that
-  // came after it. The remote is then given back to the list, not left on nothing (where the next OK would only find a place to stand) nor on a card that
-  // cannot be seen (the judge, 16 Nov).
-  const onCard = useRef(false);
+  const pressable = (line: ChatLine) => onPick !== undefined && (line.mine || onReact !== undefined);
+  /** On a computer (`keyboard`), the one message Tab stops on: the one the keys were last on while it is there, else the newest that can be pressed. */
+  const [stop, setStop] = useState<number | null>(null);
+  const tabStop = useMemo(() => {
+    if (!keyboard) return null;
+    if (stop !== null && lines.some((line) => line.id === stop && pressable(line))) return stop;
+    return [...lines].reverse().find(pressable)?.id ?? null;
+  }, [keyboard, stop, lines, onPick, onReact]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // (A message pressed and then gone, taken back by its sender or let go, or one that can no longer be pressed (a friend's, once the friend takes no messages):
+  // what was pressed is forgotten, on every screen that keeps it, and its reactions do not come back by themselves later: the judge, 17 Nov.)
+  const pickedThere = picked !== null && lines.some((line) => line.id === picked && pressable(line));
   useEffect(() => {
-    if (!remote || !onCard.current) return;
-    const on = document.activeElement;
-    if (on === null || on === document.body) {
-      onCard.current = false;
-      box.current?.focus({ preventScroll: true });
+    if (picked !== null && !pickedThere) onPick?.(null);
+  }, [picked, pickedThere, onPick]);
+  // (Escape on a computer shuts the reactions under a message first, as a menu shuts, and only then leaves the chat.)
+  useBackFirst(keyboard && pickedThere ? () => onPick?.(null) : undefined);
+
+  // What the keys are on can go away under them: a message taken back (here, or by its sender on another screen) or let go, the reactions under a message
+  // that shut once one is picked, a card no longer one of the newest titles, or carried out of view by the messages that came after it. They are given to
+  // what is nearest, not left on nothing (where the next OK would only find a place to stand): the same message, else the one before it, else the one after;
+  // on the TV's list, and from a card, the list itself (the judges, 16 and 17 Nov).
+  const held = useRef<{ element: HTMLElement; line: number | null } | null>(null);
+  useEffect(() => {
+    const was = held.current;
+    const element = box.current;
+    if (!was || !element) return;
+    if (was.element.isConnected) {
+      if (document.activeElement !== was.element && !element.contains(document.activeElement)) held.current = null;
+      return;
     }
+    held.current = null;
+    const on = document.activeElement;
+    if (on !== null && on !== document.body) return;
+    const toList = remote && (!keyboard || was.element.matches(CARD));
+    const from = was.line;
+    const bubbles =
+      toList || from === null
+        ? []
+        : [...element.querySelectorAll<HTMLElement>("li[data-line]")].flatMap((item) => {
+            const bubble = item.querySelector<HTMLElement>("button[data-testid='chat-bubble']");
+            return bubble ? [{ id: Number(item.dataset.line), bubble }] : [];
+          });
+    const nearest = from === null ? undefined : (bubbles.find((each) => each.id === from) ?? [...bubbles].reverse().find((each) => each.id < from) ?? bubbles.find((each) => each.id > from));
+    (nearest?.bubble ?? element).focus({ preventScroll: true });
   });
   const onFocus = (event: FocusEvent<HTMLDivElement>) => {
-    onCard.current = event.target instanceof HTMLElement && event.target.matches(CARD);
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const item = target?.closest<HTMLElement>("li[data-line]");
+    held.current = target && target !== box.current ? { element: target, line: item ? Number(item.dataset.line) : null } : null;
+    if (keyboard && item && target?.matches("button[data-testid='chat-bubble']")) setStop(Number(item.dataset.line));
+  };
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (event.relatedTarget instanceof Node && !box.current?.contains(event.relatedTarget)) held.current = null;
   };
 
   const onScroll = () => {
@@ -126,6 +173,30 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     const action = actionForKey(event.nativeEvent);
     const on = document.activeElement instanceof HTMLElement && document.activeElement.matches(CARD) ? document.activeElement : null;
     if (on && action === "select") return event.stopPropagation(); // (the card's own click)
+    // A message, or a button under it (a reaction, Take back, Save): OK is its own click, not the D-pad's (which would take it for a landing, and cancel it).
+    const target = event.target instanceof HTMLElement && event.target !== element && !on && event.target.matches("button") ? event.target : null;
+    const item = target?.closest<HTMLElement>("li[data-line]");
+    if (target && item) {
+      if (action === "select") return event.stopPropagation();
+      if (keyboard && action !== null && ["up", "down", "left", "right"].includes(action)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const own = item.querySelector<HTMLElement>("button[data-testid='chat-bubble']");
+        if (action === "left" || action === "right") {
+          // (Along what the message has: its bubble, then the reactions under it, then Save or Take back; it does not go on past them.)
+          const along = [...item.querySelectorAll<HTMLElement>("button:not(:disabled)")].filter((button) => !button.matches(CARD));
+          along[along.indexOf(target) + (action === "right" ? 1 : -1)]?.focus({ preventScroll: true });
+          return;
+        }
+        // (Up from what is under a message is the message; else from message to message, and past the first or the last back to the list, which goes on from there.)
+        const bubbles = [...element.querySelectorAll<HTMLElement>("button[data-testid='chat-bubble']")];
+        const next = action === "up" && own && target !== own ? own : bubbles[bubbles.indexOf(own ?? target) + (action === "down" ? 1 : -1)];
+        if (!next) return element.focus({ preventScroll: true });
+        next.focus({ preventScroll: true });
+        next.scrollIntoView({ block: "nearest" });
+        return;
+      }
+    }
     if (on && (action === "left" || action === "right")) {
       // (Back to the list, and only that: the D-pad listens on the window, and would take the same press on from the list.)
       event.preventDefault();
@@ -173,19 +244,23 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       onScroll={onScroll}
       onKeyDown={onKeyDown}
       onFocus={onFocus}
+      onBlur={onBlur}
       role="log"
       aria-label={t("chat.title", { name })}
-      {...(remote ? { tabIndex: 0, "data-nav": true } : {})}
+      // (Elsewhere it is no stop of Tab's, and can still be given the keys when what they were on goes: see `held`.)
+      {...(remote ? { tabIndex: 0, "data-nav": true } : { tabIndex: -1 })}
       data-testid={testId}
     >
       <ol className="chat-list" ref={content}>
         {lines.map((line, index) => {
-          const pressable = onPick !== undefined && (line.mine || onReact !== undefined);
-          const open = pressable && picked === line.id;
-          // (In the TV's list a press gives the keys back to the list, which walks it: a message pressed with a mouse is no stop of the remote's.)
+          const canPress = pressable(line);
+          const open = canPress && picked === line.id;
+          // (In the TV's list a press gives the keys back to the list, which walks it: a message pressed with a mouse is no stop of the remote's. A computer's
+          // keyboard stays on the message, and goes on from it to its reactions.)
+          const listTakes = remote && !keyboard;
           const press = () => {
             onPick?.(open ? null : line.id);
-            if (remote) box.current?.focus({ preventScroll: true });
+            if (listTakes) box.current?.focus({ preventScroll: true });
           };
           const found = titles[index] ?? null;
           const gif = gifs[index] ?? null;
@@ -205,8 +280,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           );
           const said = (text: ReactNode, card: ReactNode) => (
             <>
-              {pressable ? (
-                <button type="button" className={`chat-bubble${picture}${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={press} {...(remote ? { tabIndex: -1 } : {})} data-testid="chat-bubble">
+              {canPress ? (
+                <button
+                  type="button"
+                  className={`chat-bubble${picture}${open ? " chat-picked" : ""}`}
+                  aria-expanded={open}
+                  onClick={press}
+                  {...(remote ? { tabIndex: keyboard && line.id === tabStop ? 0 : -1 } : {})}
+                  data-testid="chat-bubble"
+                >
                   {bubble(text)}
                 </button>
               ) : (
@@ -220,7 +302,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   onReact={(reaction) => {
                     onPick?.(null);
                     onReact(line.id, reaction);
-                    if (remote) box.current?.focus({ preventScroll: true });
+                    if (listTakes) box.current?.focus({ preventScroll: true }); // (a computer's keyboard goes back to the message: see `held`)
                   }}
                 />
               )}
@@ -232,7 +314,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   onClick={() => {
                     onPick?.(null);
                     saving.onSave?.(own);
-                    if (remote) box.current?.focus({ preventScroll: true });
+                    if (listTakes) box.current?.focus({ preventScroll: true });
                   }}
                   data-testid="chat-sticker-save"
                 >

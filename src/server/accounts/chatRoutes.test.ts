@@ -302,6 +302,22 @@ describe("reactions", () => {
     expect(again.statusCode).toBe(200);
   });
 
+  it("reach a page that says it can take them as only the reactions that changed, not every message again; a page from before is sent every message", async () => {
+    const { alex, sam } = await friends();
+    await write(sam, alex, "one");
+    const id = ((await write(sam, alex, "two")).data as ChatThread).lines!.at(-1)!.id;
+    const before = (await alex.call("GET", alex.chatWith(sam))).data as ChatThread;
+    await react(sam, alex, id, FIRE);
+    const compact = (await alex.call("GET", `${alex.chatWith(sam)}?since=${before.rev}&reactions=1`)).data as ChatThread;
+    expect(compact.lines).toBeUndefined();
+    expect(compact.reactions).toEqual([{ id, theirReaction: FIRE }]);
+    expect(compact.rev).toBeGreaterThan(before.rev);
+    const old = (await alex.call("GET", `${alex.chatWith(sam)}?since=${before.rev}`)).data as ChatThread;
+    expect(old.reactions).toBeUndefined();
+    expect(old.lines).toHaveLength(2);
+    expect((await alex.call("GET", `${alex.chatWith(sam)}?since=${compact.rev}&reactions=1`)).data).toEqual({ rev: compact.rev, open: true, muted: false });
+  });
+
   it("are one of the set, on a message that is there, from a friend, and only to one who takes messages (taking one away always works)", async () => {
     const world = await friends();
     const { alex, sam, quiet } = world;

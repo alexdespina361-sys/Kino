@@ -63,7 +63,8 @@ type Asked = FastifyRequest & { params: { id: string; fid: string } };
  * the signed-in account's, with friends turned on; the friend has to be one of its friends. The rules of what may be written are the book's
  * (see chat.ts): these only say who is asking and what became of it.
  *
- *   GET    /chat?since=<rev>      the chat, and looking at it is having seen it; without `lines` when it is still at `rev`
+ *   GET    /chat?since=<rev>      the chat, and looking at it is having seen it; without `lines` when it is still at `rev`, and with `&reactions=1`
+ *                                 only the reactions that changed when nothing else did (see `ChatBook.readSince`)
  *   POST   /chat                  write to the friend ({ text }): answers with the chat
  *   DELETE /chat/:id              take back a message of one's own: answers with the chat
  *   PUT    /chat/:id/reaction     put a reaction on a message, change it, or take it away ({ reaction }, null for none): answers with the chat
@@ -108,16 +109,16 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     error === "rate_limited" ? helpers.tooMany(reply, waitMs ?? MINUTE) : reply.code(STATUS[error]).send({ error });
   const fail = (reply: FastifyReply, outcome: Extract<ChatOutcome<unknown>, { ok: false }>) => refuse(reply, outcome.error, outcome.waitMs);
 
-  app.get<{ Params: { id: string; fid: string }; Querystring: { since?: string } }>(base, async (request, reply) => {
+  app.get<{ Params: { id: string; fid: string }; Querystring: { since?: string; reactions?: string } }>(base, async (request, reply) => {
     const me = asker(request, reply, readsByAccount);
     if (!me) return reply;
-    const read = chat.read(me.profileId, me.friendId);
+    const since = /^\d{1,16}$/.test(request.query.since ?? "") ? Number(request.query.since) : undefined;
+    // (A page from before `reactions` knows nothing of them, and is sent every message when anything changed, as it always was.)
+    const read = chat.readSince(me.profileId, me.friendId, since, request.query.reactions === "1");
     if (!read.ok) return fail(reply, read);
     // A page that has the chat open has seen what is in it.
     chat.markSeen(me.profileId, me.friendId);
-    const { lines, ...state } = read.value;
-    const since = /^\d{1,16}$/.test(request.query.since ?? "") ? Number(request.query.since) : undefined;
-    const answer: ChatThread = since === state.rev ? state : { ...state, lines };
+    const answer: ChatThread = read.value;
     return reply.send(answer);
   });
 

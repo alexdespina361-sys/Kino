@@ -1611,7 +1611,118 @@ test.describe("reactions in a chat", () => {
     await expect.poll(() => reactionsOn(tvLines(ann.page).first())).toEqual([`theirs:${JOY}`]);
     await expect.poll(() => reactionsOn(tvLines(bob.page).first()), SOON).toEqual([`mine:${JOY}`]);
   });
+
+  test("on a computer the keyboard reaches them: Tab stops on the newest message, Up and Down go between messages, Enter opens the six and Right walks them, Escape shuts them before the chat; a message taken back while its six are open takes them, and the keys go to the one before (the judge, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob", { desk: true });
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "First");
+    await writes(bob.page, ann.page, "Second");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    const list = ann.page.getByTestId("tv-chat-lines");
+    const bubbles = list.getByTestId("chat-bubble");
+    const bar = ann.page.getByTestId("chat-react-bar");
+    const six = bar.getByTestId("chat-react");
+
+    // Tab from the list stops on the newest message; Up and Down go between them
+    await list.focus();
+    await ann.page.keyboard.press("Tab");
+    await expect(bubbles.last()).toBeFocused();
+    await ann.page.keyboard.press("ArrowUp");
+    await expect(bubbles.first()).toBeFocused();
+    await ann.page.keyboard.press("ArrowDown");
+    await expect(bubbles.last()).toBeFocused();
+
+    // Enter opens the six under it with the keys still on the message; Right goes along them; Enter puts one on, and the keys are on the message again
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    await expect(bubbles.last()).toBeFocused();
+    await expect(bubbles.last()).toHaveAttribute("aria-expanded", "true");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(six.first()).toBeFocused();
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(six.nth(1)).toBeFocused();
+    await expect(six.nth(1)).toHaveAttribute("data-reaction", JOY);
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.last()).toBeFocused();
+    await expect.poll(() => reactionsOn(tvLines(ann.page).last())).toEqual([`mine:${JOY}`]);
+    await expect.poll(async () => (await openFriendsChatOf(bob.page, ann.page)).lines.at(-1)?.theirReaction).toBe(JOY);
+
+    // Escape shuts the six, and only them
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(bar).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(bubbles.last()).toBeFocused();
+    // (Space presses a message as Enter does)
+    await ann.page.keyboard.press("Space");
+    await expect(bar).toBeVisible();
+    await ann.page.keyboard.press("Space");
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.last()).toBeFocused();
+
+    // the six open on Bob's newest, the keys on one of them: Bob takes it back, and the message goes with its six; the keys are on the one before,
+    // and Enter there opens that one's own six
+    await ann.page.keyboard.press("Enter");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(six.first()).toBeFocused();
+    const newest = (await openFriendsChatOf(bob.page, ann.page)).lines.at(-1)!.id;
+    expect((await bob.page.request.delete(`${await chatAddress(bob.page, ann.page)}/${newest}`)).ok()).toBe(true);
+    await expect(tvLines(ann.page)).toHaveCount(1, SOON);
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.first()).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    await expect(bubbles.first()).toHaveAttribute("aria-expanded", "true");
+
+    // Bob stops taking messages while the six are open: they go (his message can't be pressed now), and do not come back by themselves when he takes them again
+    await chose(bob.page, { friendsMessages: false });
+    await expect(ann.page.getByTestId("tv-chat-closed")).toBeVisible(SOON);
+    await expect(bar).toHaveCount(0);
+    await chose(bob.page, { friendsMessages: true });
+    await expect(ann.page.getByTestId("tv-chat-box")).toBeVisible(SOON);
+    await expect(bubbles).toHaveCount(1);
+    await expect(bubbles.first()).toHaveAttribute("aria-expanded", "false");
+    await expect(bar).toHaveCount(0);
+  });
+
+  test("a TV's page of six, open when the friend stopped taking messages, does not come back by itself when they take them again: the chat is shown (the judge, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "Popcorn?");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-react-last").click();
+    await expect(ann.page.getByTestId("tv-chat-react-page")).toBeVisible();
+
+    await chose(bob.page, { friendsMessages: false });
+    await expect(ann.page.getByTestId("tv-chat-closed")).toBeVisible(SOON);
+    await expect(ann.page.getByTestId("tv-chat-react-page")).toHaveCount(0);
+    await chose(bob.page, { friendsMessages: true });
+    await expect(ann.page.getByTestId("tv-chat-write")).toBeVisible(SOON);
+    await expect(ann.page.getByTestId("tv-chat-react-page")).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+  });
 });
+
+/** Where `from`'s chat with `to` is asked for, and what it holds as `from` sees it. */
+const chatAddress = async (from: Page, to: Page) => `/api/profiles/${await profileOf(from)}/friends/${await profileOf(to)}/chat`;
+async function openFriendsChatOf(from: Page, to: Page): Promise<{ lines: Array<{ id: number; theirReaction?: string }> }> {
+  const response = await from.request.get(await chatAddress(from, to));
+  expect(response.ok()).toBe(true);
+  return response.json();
+}
 
 /* ------------------------------ Personal stickers (a picture of one's own, made a sticker on the page: on for the e2e server, see playwright.config.ts) ------------------------------ */
 

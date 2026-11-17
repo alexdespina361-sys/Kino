@@ -46,12 +46,19 @@ export function useChat(profileId: string, friendId: string, options: { active?:
 
   const seen = useRef(state);
   seen.current = state;
-  /** `tick` numbers every call; `muted` is the number of the last mute that was answered: a reading that started before it knows nothing of it. */
-  const clock = useRef({ tick: 0, muted: 0 });
+  /**
+   * `tick` numbers every call; `muted` is the number of the last mute that was answered: a reading that started before it knows nothing of it; `taken` is the
+   * number of the call whose answer the page took last: an answer at the same revision to a call that started before it is older news (see `applyThread`).
+   */
+  const clock = useRef({ tick: 0, muted: 0, taken: 0 });
   const writing = useRef(false);
 
   const take = useCallback((answer: ChatThread, started: number) => {
-    setState((before) => applyThread(before, answer, started < clock.current.muted));
+    setState((before) => {
+      const after = applyThread(before, answer, started < clock.current.muted, started < clock.current.taken);
+      if (after !== before) clock.current.taken = Math.max(clock.current.taken, started);
+      return after;
+    });
     setLoaded(true);
   }, []);
 
@@ -125,6 +132,8 @@ export function useChat(profileId: string, friendId: string, options: { active?:
       } catch (error) {
         // (A friend who stopped taking messages while the page was open: the box gives way to the line that says so, and that line is the only one: the same words twice were a mistake.)
         if (fail(error) === "chat_off") {
+          // (Taken as an answer: a reading at the same revision that began before it must not put `open` back.)
+          clock.current.taken = Math.max(clock.current.taken, started);
           setState((before) => ({ ...before, open: false }));
           setFailure(null);
         }
