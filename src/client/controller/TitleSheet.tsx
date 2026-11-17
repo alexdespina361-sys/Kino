@@ -7,10 +7,10 @@ import { useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { aboutRows, useAbout } from "../shared/about";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
-import { CheckIcon, ListIcon, PlayIcon, PlusIcon } from "../shared/icons";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, ListIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
-import { entryOfItem, playLabel, resumable, type Entry } from "../tv/pages";
+import { entryOfItem, EPISODES_AT_ONCE, playLabel, resumable, type Entry } from "../tv/pages";
 import { Page } from "./AccountScreen";
 import { RecommendButton } from "./Friends";
 import { Tile } from "./Library";
@@ -122,7 +122,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
           {...(play ? { onPlay: (episode: PageEpisode) => play(episode.url, episode.startAt) } : {})}
           seasonRating={
             ratings && series.season !== undefined ? (
-              <RatingBox key={series.season} entry={entry} isShow season={series.season} total={series.episodes?.length} title={t("rating.seasonRating", { n: series.season })} testId="rate-season" />
+              <RatingBox key={series.season} entry={entry} isShow season={series.season} total={series.count ?? undefined} title={t("rating.seasonRating", { n: series.season })} testId="rate-season" />
             ) : undefined
           }
         />
@@ -144,8 +144,9 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
 /** A show's seasons (when there is a choice) and the episodes of the one that is shown, each a card the way the episode sheet lists them. */
 function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None on a phone with no TV: the episodes are then only to read. */ onPlay?: (episode: PageEpisode) => void; /** The rating box of the season that is shown. */ seasonRating?: ReactNode }) {
   const t = useT();
-  const { seasons, season, episodes } = page;
+  const { seasons, season, shown: episodes, earlier, later } = page;
   const Row = onPlay ? "button" : "div";
+  // (24 at a time, from the one Play leads to: see `SeriesPage.shown`. Show earlier adds the ones before above, and the page keeps its place under the finger.)
   return (
     <section className="title-episodes" aria-label={t("player.episodes")} data-testid="title-episodes">
       <h3 className="sheet-section">{t("player.episodes")}</h3>
@@ -166,6 +167,11 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None o
         </div>
       )}
       {seasonRating}
+      {episodes && earlier > 0 && (
+        <button type="button" className="btn btn-block episodes-more" onClick={() => page.showEarlier()} data-testid="title-episodes-earlier">
+          <ChevronUpIcon aria-hidden="true" /> {t("series.earlier", { count: Math.min(EPISODES_AT_ONCE, earlier) })}
+        </button>
+      )}
       {episodes ? (
         <ul className="episodes">
           {episodes.map((episode) => {
@@ -215,6 +221,11 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None o
         <p className="muted small" data-testid="title-episodes-note">
           {episodes === null ? t("series.failed") : t("series.loading")}
         </p>
+      )}
+      {episodes && later > 0 && (
+        <button type="button" className="btn btn-block episodes-more" onClick={() => page.showMore()} data-testid="title-episodes-more">
+          <ChevronDownIcon aria-hidden="true" /> {t("series.more", { count: Math.min(EPISODES_AT_ONCE, later) })}
+        </button>
       )}
     </section>
   );

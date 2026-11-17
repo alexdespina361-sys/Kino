@@ -9,6 +9,7 @@ import {
   type StreamType,
   type SubtitleSyncMode,
   type SubtitleTrack,
+  reachedEnd,
   trackLabel,
 } from "../../shared";
 import { reloadForScript, scriptIsMissing } from "../shared/scriptRescue";
@@ -279,6 +280,8 @@ export class PlayerEngine {
   private errorDetail: string | undefined;
   /** Resume point for a plain (non-hls.js) source; applied once the duration is known. */
   private startAt: number | undefined;
+  /** Where hls.js was told to start (it seeks there itself), until the length is known: a start past the end is taken back to 0 then. */
+  private hlsStartAt: number | undefined;
   /** Where the video that is loading (or has just failed to) was told to start, kept after the player has taken it: see `resumePoint`. */
   private requestedStart: number | undefined;
   private generation = 0;
@@ -330,10 +333,17 @@ export class PlayerEngine {
       clearTimeout(this.directTimer);
       this.corsTrial = false;
       this.loading = false;
+      // (A start that would be the end at once - a time a friend or a link asked for, past the end of this source - starts from the beginning instead: at the
+      // end, the title would count as watched and the next episode would start. Resume never asks for one: it forgets a title played to its end.)
+      const pastTheEnd = (at: number) => Number.isFinite(video.duration) && reachedEnd({ currentTime: at, duration: video.duration });
       if (this.startAt !== undefined) {
         const duration = Number.isFinite(video.duration) ? video.duration : this.startAt;
-        video.currentTime = Math.max(0, Math.min(this.startAt, duration - 1));
+        video.currentTime = pastTheEnd(this.startAt) ? 0 : Math.max(0, Math.min(this.startAt, duration - 1));
         this.startAt = undefined;
+      }
+      if (this.hlsStartAt !== undefined) {
+        if (pastTheEnd(this.hlsStartAt)) video.currentTime = 0;
+        this.hlsStartAt = undefined;
       }
       if (this.pendingPlay) {
         this.pendingPlay = false;
@@ -440,6 +450,7 @@ export class PlayerEngine {
     if (HlsLib.isSupported()) {
       const resumeAt = this.startAt;
       this.startAt = undefined; // hls.js starts there itself
+      this.hlsStartAt = resumeAt;
       const adaptive = this.adaptive;
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
@@ -1018,6 +1029,7 @@ export class PlayerEngine {
     this.lowStart = null;
     this.pendingPlay = false;
     this.startAt = undefined;
+    this.hlsStartAt = undefined;
     this.requestedStart = undefined;
     this.nativeFallbackSrc = undefined;
     clearTimeout(this.directTimer);

@@ -282,7 +282,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-pick-more:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); color: var(--text); }
 .chat-pick-more:focus-visible, .chat-pick:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
 /* The send step: in the pane, in place of the titles; it scrolls, and Send stays at its foot. */
-.chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; font-size: 0.85rem; }
+.chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 56px; font-size: 0.85rem; }
+/* (The scroll padding: what the keys land on is scrolled clear of Send, which stays over the step's foot.) */
 .chat-extras-head { display: flex; flex: none; align-items: center; gap: 10px; }
 .chat-extras-back { display: grid; flex: none; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 1.15rem; }
 .chat-extras-art { position: relative; display: grid; flex: none; place-items: center; width: 28px; height: 42px; border-radius: 4px; overflow: hidden; }
@@ -525,7 +526,7 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-pick-more:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
 .tv-chat-pick-more:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; color: #fff; }
 /* The send step on the TV's pages: as the phone's, in the TV's sizes. */
-.tv-chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.5em; width: 100%; min-height: 0; padding: 0.2em 0.6em 0; overflow-y: auto; scrollbar-width: none; color: #fff; font-size: 1.25em; }
+.tv-chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.5em; width: 100%; min-height: 0; padding: 0.2em 0.6em 0; overflow-y: auto; scrollbar-width: none; scroll-padding-bottom: 3.2em; color: #fff; font-size: 1.25em; }
 /* (Taller while the step is in it, as on the phone: read from the couch, its words are the size of the titles'.) */
 .tv-chat-panel:has(.tv-chat-extras) { height: min(52vh, 30em); }
 .tv-chat-extras::-webkit-scrollbar { display: none; }
@@ -817,7 +818,7 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv-chat-screen .tv-chat-picks:has(.tv-chat-pick-row) { grid-template-columns: 1fr; }
   .tv-chat-screen .tv-chat-pick-row { gap: 6px; }
   .tv-chat-screen .tv-chat-pick-more { width: 44px; border-radius: 12px; font-size: 18px; }
-  .tv-chat-screen .tv-chat-extras { gap: 8px; padding: 0 8px; font-size: 14px; }
+  .tv-chat-screen .tv-chat-extras { gap: 8px; padding: 0 8px; scroll-padding-bottom: 56px; font-size: 14px; }
   .tv-chat-screen .tv-chat-panel:has(.tv-chat-extras) { height: min(60vh, 440px); }
   .tv-chat-screen .tv-chat-extras button { min-height: 40px; }
   .tv-chat-screen .tv-chat-gif-pane { gap: 8px; }

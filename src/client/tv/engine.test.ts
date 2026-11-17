@@ -658,6 +658,53 @@ describe("a file that will not open", () => {
   });
 });
 
+describe("a start asked for past the end (a friend's message, a link typed by hand)", () => {
+  beforeEach(() => {
+    FakeHls.instances.length = 0;
+    FakeHls.supported = true;
+    stubBrowser();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  /** The length is known: the browser has read the start of the film. */
+  const known = (video: FakeVideo, duration: number) => {
+    (video as unknown as { duration: number }).duration = duration;
+    video.dispatchEvent(new Event("loadedmetadata"));
+  };
+
+  it("starts a file from the beginning, not at its end where it would count as watched; a start inside it is kept", async () => {
+    const { video, engine } = newEngine();
+    await engine.load("https://cdn.example/a.mp4", "mp4", undefined, 86_400);
+    known(video, 6_000);
+    expect(video.currentTime).toBe(0);
+    await engine.load("https://cdn.example/b.mp4", "mp4", undefined, 5_950); // (in the last minute: the end, as `reachedEnd` counts it)
+    known(video, 6_000);
+    expect(video.currentTime).toBe(0);
+    await engine.load("https://cdn.example/c.mp4", "mp4", undefined, 754);
+    known(video, 6_000);
+    expect(video.currentTime).toBe(754);
+    engine.destroy();
+  });
+
+  it("takes hls.js back to the beginning when the start it was given is the end, and leaves one inside the film where hls.js put it", async () => {
+    const { video, engine } = newEngine();
+    await engine.load("https://cdn.example/a.m3u8", "hls", undefined, 86_400);
+    video.currentTime = 5_999; // (where hls.js went)
+    known(video, 6_000);
+    expect(video.currentTime).toBe(0);
+    await engine.load("https://cdn.example/b.m3u8", "hls", undefined, 754);
+    video.currentTime = 754;
+    known(video, 6_000);
+    expect(video.currentTime).toBe(754);
+    video.currentTime = 4_000; // (later on, the length known again: nothing more is done)
+    known(video, 6_000);
+    expect(video.currentTime).toBe(4_000);
+    engine.destroy();
+  });
+});
+
 describe("the subtitle aligner", () => {
   const HLS = "https://cdn.example/a.m3u8";
   beforeEach(() => {

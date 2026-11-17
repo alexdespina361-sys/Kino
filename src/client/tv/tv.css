@@ -1188,6 +1188,9 @@
 .tv-detail-eps > .tv-detail-list:not([data-cols="1"]) { display: grid; grid-template-columns: repeat(var(--ep-cols, 2), minmax(0, 1fr)); gap: 0.5em 1em; max-width: none; }
 .tv-detail-list:not([data-cols="1"]) > .tv-opt.tv-ep { grid-template-columns: 2.2em 10.5em minmax(0, 1fr); gap: 0.9em; }
 .tv-detail-eps-note { margin: 0.2em 0 0; font-size: 1.5em; color: var(--muted); }
+/* Show earlier over the episodes listed, Show more under them (24 at a time: Episodes.tsx), a line of their own across the columns. */
+.tv-detail-list > .tv-detail-eps-more { grid-column: 1 / -1; align-self: center; justify-self: center; display: inline-flex; align-items: center; gap: 0.45em; margin: 0.2em 0; }
+.tv-detail-eps-more svg { flex: none; font-size: 1.1em; }
 
 /* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */
 .tv-rows {
