@@ -1,8 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { askedTime, asOpened, backOf, cardOf, cardsToLookUp, freshSimilar, gridOf, hasRows, heldStart, heroActions, isProfilePage, isRowsPage, ofSection, openedAt, overviewActions, playLabel, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
+import { askedTime, asOpened, backOf, cardOf, cardsToLookUp, episodeWindow, EPISODES_AT_ONCE, freshSimilar, gridOf, hasRows, heldStart, heroActions, isProfilePage, isRowsPage, listedWindow, ofSection, openedAt, overviewActions, playLabel, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
 import type { ChildGate } from "../shared/childGate";
+import { episodeRows } from "./Episodes";
+
+describe("a long season's episodes, 24 at a time", () => {
+  it("lists a season of 24 or fewer whole, wherever Play leads", () => {
+    expect(EPISODES_AT_ONCE).toBe(24);
+    expect(episodeWindow(10, 7)).toEqual({ from: 0, to: 10 });
+    expect(episodeWindow(24, 20)).toEqual({ from: 0, to: 24 });
+    expect(episodeWindow(0, -1)).toEqual({ from: 0, to: 0 });
+  });
+
+  it("lists a longer one from the episode Play leads to (the one this profile is at, or a friend sent), full 24 when it is among the last; else the first 24", () => {
+    expect(episodeWindow(366, -1)).toEqual({ from: 0, to: 24 }); // (nothing begun: the first)
+    expect(episodeWindow(366, 0)).toEqual({ from: 0, to: 24 });
+    expect(episodeWindow(366, 149)).toEqual({ from: 149, to: 173 }); // (at episode 150 of Bleach's 366: from it)
+    expect(episodeWindow(366, 360)).toEqual({ from: 342, to: 366 }); // (near the end: the last 24, it among them)
+    expect(episodeWindow(30, 20)).toEqual({ from: 6, to: 30 });
+  });
+
+  it("keeps what Show more and Show earlier widened it to while the episode Play leads to is in it, and starts again from it when it is not", () => {
+    expect(listedWindow(366, 149, { from: 125, to: 197 })).toEqual({ from: 125, to: 197 });
+    expect(listedWindow(366, 149, undefined)).toEqual({ from: 149, to: 173 });
+    // (episode 197 was played to its end: Play leads to 198, out of what was listed)
+    expect(listedWindow(366, 197, { from: 125, to: 197 })).toEqual({ from: 197, to: 221 });
+    // (a season that came back shorter: what is past its end is not listed)
+    expect(listedWindow(40, -1, { from: 0, to: 48 })).toEqual({ from: 0, to: 40 });
+    expect(listedWindow(10, -1, { from: 24, to: 48 })).toEqual({ from: 0, to: 10 });
+  });
+
+  it("is the remote's lines: Show earlier, the episodes so many across, Show more", () => {
+    const shown = (count: number) => Array.from({ length: count }, () => ({}) as never);
+    expect(episodeRows({ shown: shown(24), earlier: 149, later: 193 }, 2)).toEqual([1, ...Array(12).fill(2), 1]);
+    expect(episodeRows({ shown: shown(5), earlier: 0, later: 0 }, 2)).toEqual([2, 2, 1]);
+    expect(episodeRows({ shown: shown(24), earlier: 0, later: 342 }, 1)).toEqual([...Array(24).fill(1), 1]);
+    expect(episodeRows({ shown: null, earlier: 0, later: 0 }, 2)).toEqual([]);
+  });
+});
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3, section?: "cartoon" | "anime"): LibraryRow => ({

@@ -40,7 +40,7 @@ import { addressOf, dropLink, pendingLink, showTitle } from "../shared/titleAddr
 import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact, useFlatHand } from "./compact";
-import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
+import { episodeRows, SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { NewsTv } from "./News";
 import { dayOf, LATEST, useNews } from "../changelog/news";
@@ -790,7 +790,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           close: [1],
           detail: [overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
-          ...(series.episodes?.length ? { episodes: gridRows(series.episodes.length, episodeColumns) } : {}),
+          ...(series.shown?.length ? { episodes: episodeRows(series, episodeColumns) } : {}),
           ...(aboutList.length > 0 ? { related: aboutList.map((row) => row.items.length) } : {}),
         }
       : {}),
