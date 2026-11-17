@@ -6,7 +6,6 @@ import { switchRole } from "../role";
 import type { SocketStatus } from "../shared/socket";
 import { PlayIcon, ScanIcon, TvIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
-import { useWaking } from "../shared/useSlow";
 import { cameraAvailable, Scanner } from "./Scanner";
 
 interface PairScreenProps {
@@ -42,7 +41,6 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
     const timer = setTimeout(() => setOffline(true), OFFLINE_AFTER_MS);
     return () => clearTimeout(timer);
   }, [connection]);
-  const waking = useWaking(connection);
   // A code that was refused leaves an empty field: the keyboard stays up for the next try.
   useEffect(() => {
     if (error && code === "") input.current?.focus();
@@ -128,8 +126,8 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
         </form>
 
         {connection !== "open" && (
-          <p className="muted center" data-testid={waking ? "server-waking" : undefined} role="status">
-            <span className="spinner" /> {waking ? t("server.waking") : offline ? t("error.offline") : t("pair.reaching")}
+          <p className="muted center" role="status">
+            <span className="spinner" /> {offline ? t("error.offline") : t("pair.reaching")}
           </p>
         )}
         {error && (

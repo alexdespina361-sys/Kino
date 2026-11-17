@@ -40,7 +40,7 @@ import { readPartyCode } from "../shared/launch";
 import { useProfileHold } from "../shared/profileHold";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
-import { useSlow, useWaking } from "../shared/useSlow";
+import { useSlow } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
@@ -184,7 +184,9 @@ export function Tv() {
     setStartingNow(value);
   };
   /** The server has not answered for a while: say why that can be, instead of "Reconnecting…" alone. */
-  const waking = useWaking(connection);
+  // (A connection that is away for a moment is not said at all: a server that restarts, a phone that comes back to the page. One away for long is, in a
+  // word. The owner, 17 Nov: the note that "a free server is waking up" came up over a chat when the server restarted; the site left its free host on 7 Nov.)
+  const away = useSlow(connection === "connecting" || connection === "reconnecting");
 
   // Netflix Up Next Countdown & Preload State
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
@@ -2044,9 +2046,9 @@ export function Tv() {
         </button>
       )}
 
-      {unlocked && connection !== "open" && (
+      {unlocked && (connection === "replaced" || away) && (
         <div className="tv-banner" data-testid="tv-banner">
-          {connection === "replaced" ? t("tv.bannerReplaced") : waking ? t("server.waking") : connection === "connecting" ? t("tv.connecting") : t("tv.bannerReconnecting")}
+          {connection === "replaced" ? t("tv.bannerReplaced") : connection === "connecting" ? t("tv.connecting") : t("tv.bannerReconnecting")}
         </div>
       )}
 

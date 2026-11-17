@@ -211,35 +211,28 @@ test.describe("pairing", () => {
 });
 
 test.describe("a server that is slow to answer", () => {
-  // A free host that has slept takes most of a minute to wake: after ten seconds without it the page says why, in the place it already says it is waiting.
-  test("the phone's first screen says the server is waking up after ten seconds, and the line goes when the server answers", async ({ browser }) => {
+  // A server that is away says so in the place the page already says it is waiting, and in few words: nothing about why (the owner, 17 Nov: the note that "a
+  // free server is waking up" came up over a chat when the server restarted, and the site has not been on a free host for weeks).
+  const WAKING = /waking up|se trezește|svegliando/i;
+
+  test("the phone's first screen keeps saying it is reaching the server, never that one is waking up, and is back when the server answers", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, sleepingServer());
     await phone.goto("/");
     await expect(phone.getByTestId("code-input")).toBeVisible();
     await expect(phone.getByText(en["pair.reaching"])).toBeVisible();
-    await expect(phone.getByTestId("server-waking")).toHaveCount(0); // a moment is not a sleeping server
 
     await phone.clock.fastForward(10_500);
-    await expect(phone.getByTestId("server-waking")).toHaveText(en["server.waking"]);
+    await expect(phone.getByText(en["error.offline"])).toBeVisible(); // (its own line for a connection that has not come)
+    await expect(phone.getByText(WAKING)).toHaveCount(0);
 
     await serverUp(phone);
     await phone.clock.fastForward(10_500); // the connection that was never answered gives up, and the next one is
-    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
+    await expect(phone.getByText(en["error.offline"])).toHaveCount(0);
     await phone.getByTestId("code-input").fill("000000");
     await expect(phone.getByTestId("error")).toBeVisible(); // it is talking to the server again: the code is refused
   });
 
-  test("a phone that knows it has no network at all does not blame the server", async ({ browser }) => {
-    const phone = await openDevice(browser, PHONE, {}, sleepingServer());
-    await phone.goto("/");
-    await expect(phone.getByTestId("code-input")).toBeVisible();
-    await phone.context().setOffline(true);
-    await phone.clock.fastForward(10_500);
-    await expect(phone.getByText(en["error.offline"])).toBeVisible(); // its own line for that
-    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
-  });
-
-  test("a paired remote that loses the server says Reconnecting first, then that it is waking up, and is back when it answers", async ({ browser }) => {
+  test("a paired remote that loses the server says Reconnecting in its header, and nothing more, and is back when it answers", async ({ browser }) => {
     const tv = await openTv(browser);
     const phone = await openDevice(browser, PHONE, {}, sleepingServer(true));
     await phone.goto("/");
@@ -248,23 +241,25 @@ test.describe("a server that is slow to answer", () => {
 
     await serverDown(phone);
     await expect(phone.getByTestId("tv-online")).toHaveText(en["phone.reconnecting"]);
-    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
     await phone.clock.fastForward(10_500);
-    await expect(phone.getByTestId("server-waking")).toHaveText(en["server.waking"]);
-    await expect(phone.getByTestId("tv-online")).toHaveText(en["phone.reconnecting"]); // and the header still says what is going on
+    await expect(phone.getByTestId("tv-online")).toHaveText(en["phone.reconnecting"]); // (the header still says what is going on)
+    await expect(phone.getByText(WAKING)).toHaveCount(0);
 
     await serverUp(phone);
     await phone.clock.fastForward(10_500);
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
-    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
   });
 
-  test("the TV's banner says the same, in place of Connecting, and goes when the server answers", async ({ browser }) => {
+  test("the TV's banner says nothing of a connection away for a moment (a server that restarts); away for ten seconds it says so in a word, and goes when the server answers", async ({ browser }) => {
     const tv = await openLibrary(browser, sleepingServer());
-    await expect(tv.getByTestId("tv-banner")).toHaveText(en["tv.connecting"]);
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.clock.fastForward(8_000);
+    await expect(tv.getByTestId("tv-banner"), "a moment is not said").toHaveCount(0);
 
-    await tv.clock.fastForward(10_500);
-    await expect(tv.getByTestId("tv-banner")).toHaveText(en["server.waking"]);
+    await tv.clock.fastForward(2_500);
+    // (Connecting, or Reconnecting once its first try has given up: whichever it is at by then)
+    await expect(tv.getByTestId("tv-banner")).toHaveText(new RegExp(`^(${en["tv.connecting"]}|${en["tv.bannerReconnecting"]})$`));
+    await expect(tv.getByText(WAKING)).toHaveCount(0);
 
     await serverUp(tv);
     await tv.clock.fastForward(10_500);
