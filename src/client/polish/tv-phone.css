@@ -233,6 +233,14 @@
   :root[data-ui="polish"] .tv .tv-grid .tv-tile-category { width: auto; height: 92px; }
   :root[data-ui="polish"] .tv .tv-grid .tv-tile-person { height: auto; }
   :root[data-ui="polish"] .tv .tv-view-foot { padding: 4px 0 16px; }
+  /* The head of a page of titles and a friend's foot are in the grid that scrolls (Browse.tsx `headInGrid`: the owner, 17 Nov, "only the titles under Chat
+     moved"): as wide as the grid, what is in them one under the other as it was, the name where it was before (the grid's own 12 px over its titles). */
+  :root[data-ui="polish"] .tv .tv-view-head,
+  :root[data-ui="polish"] .tv .tv-view-tail { display: flex; flex-direction: column; grid-column: 1 / -1; min-width: 0; }
+  :root[data-ui="polish"] .tv .tv-view-head { margin-top: -12px; }
+  :root[data-ui="polish"] .tv .tv-view-head > .tv-view-meta + .tv-filters,
+  :root[data-ui="polish"] .tv .tv-view-head > .tv-view-hint + .tv-filters { margin-top: 0.3em; }
+  :root[data-ui="polish"] .tv .tv-view-tail .tv-view-foot { padding-bottom: 0; }
   :root[data-ui="polish"] .tv .tv-results-closest, :root[data-ui="polish"] .tv .tv-grid-heading { font-size: var(--fs-4); }
 
   /* ------------------------------ search ------------------------------ */
