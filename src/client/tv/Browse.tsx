@@ -22,7 +22,7 @@ import { friendGrid, friendRows, friendsSummary } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { browserBack, handHeld, useBackWhile } from "../shared/backButton";
-import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, EyeIcon, FilmIcon, GearIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, EyeIcon, FilmIcon, GearIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, SparkleIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
@@ -41,6 +41,8 @@ import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, t
 import { isCompact, useCompact, useFlatHand } from "./compact";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
+import { NewsTv } from "./News";
+import { dayOf, LATEST, useNews } from "../changelog/news";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyForChildren, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
@@ -200,6 +202,7 @@ type Overlay =
   | { kind: "recommend"; entry: Entry; back: Target }
   | { kind: "addFriend"; back: Target }
   | { kind: "friendSettings"; back: Target }
+  | { kind: "news"; back: Target }
   | { kind: "unfriend"; id: string; name: string; back: Target }
   | { kind: "friendRequest"; person: Person; back: Target }
   | { kind: "plan"; id: string; back: Target }
@@ -342,6 +345,7 @@ function slideAlong(element: HTMLElement) {
 export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice, quiet = false }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
+  const news = useNews(); // (what's new in Kino: the profile's tile says the newest version, "New" until this screen opened it)
   const { status: accountStatus, me, profile, say, withGoogle, childLock } = useAccount();
   /** The profile's page offers to connect Google to an account that has none yet (see `useCanConnectGoogle`). */
   const canConnectGoogle = useCanConnectGoogle();
@@ -481,8 +485,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (isRowsPage(view)) return rowsOfPage(view.kind, data);
     if (view.kind === "friends") return friendRows(friends.state, Date.now(), iGet);
     if (view.kind !== "profile") return [];
-    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings: shownRatings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: shownProgress.length, progress: shownProgress });
-  }, [holding, view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, shownRatings, shownProgress, iGet]);
+    const latest = { version: LATEST.version, day: dayOf(LATEST.date, language, true), fresh: news.fresh };
+    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings: shownRatings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: shownProgress.length, progress: shownProgress, news: latest });
+  }, [holding, view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, shownRatings, shownProgress, iGet, news.fresh]);
   // (`data` holds this profile's own lists and ratings: what it has in common with the friend comes first on their page.)
   const grid = useMemo(
     () => (holding ? null : (gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data))),
@@ -2087,6 +2092,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       {overlay?.kind === "recommend" && <FriendPickerTv title={t("friends.sendTitle")} lead={overlay.entry.title} build={() => recommendationOf(overlay.entry)} said="friends.sent" onClose={closeOverlay} />}
       {overlay?.kind === "addFriend" && <AddFriendTv onClose={closeOverlay} />}
       {overlay?.kind === "friendSettings" && <FriendSettingsTv onClose={closeOverlay} />}
+      {overlay?.kind === "news" && <NewsTv onClose={closeOverlay} onSeen={news.seen} />}
       {overlay?.kind === "friendRequest" && <FriendRequestTv person={overlay.person} onClose={closeOverlay} />}
       {overlay?.kind === "plan" && (
         <PlanTv
@@ -2250,6 +2256,7 @@ const PLACE_ICON: Record<string, ReactNode> = {
   "profile:ratings": <StarIcon />,
   "profile:friends": <UsersIcon />,
   "profile:history": <ClockIcon />,
+  "profile:news": <SparkleIcon />,
 };
 
 /** The cards beside the friends that are not a friend (add one, what is shared, turn on what they watch): a glyph where a friend's picture is, the same card. */

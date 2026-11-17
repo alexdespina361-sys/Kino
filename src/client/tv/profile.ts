@@ -24,6 +24,8 @@ export interface ProfileFacts {
   watched: number;
   /** This profile's cards, newest first: the row of what was watched last. */
   progress: readonly LiveProgress[];
+  /** What's new in Kino: the newest version, its day as the page shows it, and whether it is news to this screen. Without it, no tile for it. */
+  news?: { version: string; day: string; fresh: boolean } | undefined;
 }
 
 /** The rows under the places show this many titles at most: a look at what History and My ratings hold, which have all of them. */
@@ -42,6 +44,11 @@ export function profileRows(facts: ProfileFacts): HomeRow[] {
     entries.push(tile("friends", t("friends.title"), note, { opens: { kind: "friends" } }));
   }
   entries.push(tile("history", t("tv.history"), facts.watched > 0 ? t("tv.titles", { count: facts.watched }) : t("tv.historyHelp"), { opens: { kind: "history" } }));
+  // (Last, so that the places before it keep where the remote finds them.)
+  if (facts.news) {
+    const { version, day, fresh } = facts.news;
+    entries.push(tile("news", t("news.title"), fresh ? t("news.tileFresh", { version }) : t("news.tile", { version, day }), { action: "news" }));
+  }
   const rows: HomeRow[] = [{ id: "profile", layout: "categories", title: facts.signedIn && facts.name ? facts.name : t("profile.guest"), entries }];
   // (On a computer the page was its top and three cards over an empty half: the owner, 15 Nov 2026, "it could look better, especially on pc/laptops".)
   if (facts.progress.length > 0) rows.push({ id: "profile:recent", layout: "continue", title: t("profile.recent"), entries: facts.progress.slice(0, PROFILE_PEEK).map(entryOfProgress) });

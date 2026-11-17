@@ -1,6 +1,7 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { AVATAR_IDS, type NormalizedMedia } from "../src/shared";
 import { weakness } from "../src/client/account/password";
+import { LATEST } from "../src/client/changelog/news";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -59,7 +60,7 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("account-screen")).toBeVisible();
     const onThePage = () => phone.evaluate(() => document.activeElement?.closest(".page") !== null && document.activeElement !== document.body);
 
-    for (const [row, page] of [["menu-settings", "settings-page"], ["menu-devices", "devices-page"], ["menu-security", "security-page"]] as const) {
+    for (const [row, page] of [["menu-settings", "settings-page"], ["menu-news", "news-page"], ["menu-devices", "devices-page"], ["menu-security", "security-page"]] as const) {
       await phone.getByTestId(row).click();
       await expect(phone.getByTestId(page)).toBeVisible();
       expect(await onThePage(), `${page}: the keyboard starts on the page`).toBe(true);
@@ -75,6 +76,20 @@ test.describe("accounts and profiles", () => {
       await phone.keyboard.press("Escape"); // back to the account page
       await expect(phone.getByTestId("account-screen")).toBeVisible();
     }
+  });
+
+  test("What's new is a row of the account's menu, the newest version beside it, opening every version with the newest first", async ({ browser }) => {
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, fresh());
+    await expect(phone.getByTestId("menu-news")).toContainText(`Kino ${LATEST.version}`);
+    await phone.getByTestId("menu-news").click();
+    await expect(phone.getByTestId("news-page")).toBeVisible();
+    await expect(phone.locator(".news-version").first()).toHaveAttribute("data-version", LATEST.version);
+    await expect(phone.locator(".news-lines li").first()).toBeVisible();
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await phone.keyboard.press("Escape");
+    await expect(phone.getByTestId("account-screen")).toBeVisible();
   });
 
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {

@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { ratingKey } from "../src/shared";
+import { LATEST } from "../src/client/changelog/news";
 import { guestStorage, openDevice, openLibrary, openProfilePage, openProfilePlace, pressProfilePlace, test, withLibrary, type ProfilePlace } from "./helpers";
 
 /**
@@ -34,11 +35,12 @@ test.describe("the profile's page", () => {
     await openProfilePage(tv);
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-current", "page");
     await expect(tv.getByTestId("rail-profile")).toHaveCount(0); // (who is watching is the corner's button, not a line of the menu)
-    expect(await places(tv)).toEqual(["profile:ratings", "profile:history"]);
+    expect(await places(tv)).toEqual(["profile:ratings", "profile:history", "profile:news"]);
     await expect(tv.locator('.tv-row[data-layout="categories"]').getByTestId("tv-tile-corner")).toHaveCount(0); // (a place is no title to keep)
     await expect(tv.getByTestId("tv-profile-name")).toHaveText("Guest");
     await expect(tv.getByTestId("tv-profile-tag")).toHaveCount(0); // (a guest has no tag: friends are for a profile)
     await expect(tv.getByTestId("tv-profile-tag-copy")).toHaveCount(0);
+    await expect(place(tv, "news")).toContainText(`Kino ${LATEST.version} ·`); // (a first visit: the version, not "New")
     // Under the places, a look at what was watched last and what was liked best (the highest first).
     const recent = tv.locator('section.tv-row[aria-label="Recently watched"]');
     const best = tv.locator('section.tv-row[aria-label="Your highest rated"]');
@@ -53,7 +55,9 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-profile-settings")).toBeFocused();
-    await tv.keyboard.press("ArrowDown"); // (Settings is on the right: History, not My ratings at the far left)
+    await tv.keyboard.press("ArrowDown"); // (Settings is on the right: What's new, the last place, not My ratings at the far left)
+    await expect(place(tv, "news")).toBeFocused();
+    await tv.keyboard.press("ArrowLeft");
     await expect(place(tv, "history")).toBeFocused();
     await tv.keyboard.press("ArrowLeft");
     await expect(place(tv, "ratings")).toBeFocused();
@@ -95,7 +99,9 @@ test.describe("the profile's page", () => {
         expect(landed.focused, `${id} at ${viewport.width}`).toBe(landed.nearest);
         reached.add(landed.focused!);
       }
-      expect([...reached].sort(), `at ${viewport.width}`).toEqual(["profile:history", "profile:ratings"]); // (the buttons on the right lead to the place on the right)
+      // (the way to sign in, at the left, leads to the first place; the buttons on the right to a place on the right, not to it)
+      expect(reached.has("profile:ratings"), `at ${viewport.width}`).toBe(true);
+      expect(reached.size, `at ${viewport.width}`).toBeGreaterThan(1);
       await tv.context().close();
     }
   });
@@ -117,6 +123,53 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
   });
 
+  test("What's new, its last place: every version, the newest first, the remote walking its lines; Back returns to the place, which says New only until opened on a screen that had seen an older one", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library), undefined, { ...seed, "kino.seenVersion": "0.0.1" });
+    await openProfilePage(tv);
+    await expect(place(tv, "news")).toContainText("What's new");
+    await expect(place(tv, "news")).toContainText(`New: Kino ${LATEST.version}`);
+    await place(tv, "news").focus();
+    await tv.keyboard.press("Enter");
+    const page = tv.getByTestId("tv-news");
+    await expect(page).toBeVisible();
+    await expect(page.locator(".news-version").first()).toHaveAttribute("data-version", LATEST.version);
+    await expect(page.locator(".news-head").first()).toContainText(`Kino ${LATEST.version}`);
+    const lines = page.locator(".news-lines li");
+    await expect(lines.first()).toBeFocused(); // (the remote is on the first line as the list comes)
+    const count = await lines.count();
+    expect(count).toBeGreaterThan(3);
+    for (let at = 1; at < count; at++) await tv.keyboard.press("ArrowDown");
+    await expect(lines.last()).toBeFocused();
+    await expect(lines.last()).toBeInViewport({ ratio: 1 }); // (the list follows the remote to its end)
+    for (let at = 1; at < count; at++) await tv.keyboard.press("ArrowUp");
+    await expect(lines.first()).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("tv-news-back")).toBeFocused();
+    await tv.keyboard.press("Escape");
+    await expect(page).toHaveCount(0);
+    await expect(place(tv, "news")).toBeFocused();
+    await expect(place(tv, "news")).toContainText(`Kino ${LATEST.version} ·`);
+    await expect(place(tv, "news")).not.toContainText("New:");
+    expect(await tv.evaluate(() => localStorage.getItem("kino.seenVersion"))).toBe(LATEST.version);
+  });
+
+  test("What's new fits a 720p screen in Italian, and a phone's width: nothing wider than the screen, the way back on it", async ({ browser }) => {
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+      const tv = await openDevice(browser, { viewport, locale: "it-IT" }, seed, withLibrary(library));
+      await tv.goto("/tv");
+      await expect(tv.getByTestId("tv-browse")).toBeVisible();
+      await tv.getByTestId("tv-account-chip").click();
+      await place(tv, "news").click();
+      await expect(tv.getByTestId("tv-news")).toBeVisible();
+      await expect(tv.locator(".news-lines li").first()).toBeVisible();
+      await expect(tv.getByTestId("tv-news-back")).toBeInViewport({ ratio: 1 });
+      const wide = await tv.evaluate(() => [...document.querySelectorAll<HTMLElement>(".news-lines li, .news-head")].filter((one) => one.scrollWidth > one.clientWidth + 1 || one.getBoundingClientRect().right > innerWidth + 0.5).length);
+      expect(wide, `at ${viewport.width}`).toBe(0);
+      expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await tv.context().close();
+    }
+  });
+
   test("is left with Back: to Home, and Back from Home opens the menu", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await openProfilePage(tv);
@@ -134,7 +187,7 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("tv-account")).toBeVisible();
     await expect(tv.getByTestId("tv-ratings-switch")).toHaveCount(0);
     await tv.getByTestId("tv-account-back").click();
-    expect(await places(tv)).toEqual(["profile:ratings", "profile:history"]);
+    expect(await places(tv)).toEqual(["profile:ratings", "profile:history", "profile:news"]);
     await expect(tv.getByTestId("tv-profile-settings")).toBeFocused(); // (the button it left from)
   });
 
@@ -161,7 +214,7 @@ test.describe("the profile's page", () => {
         expect(room.needed).toBeLessThanOrEqual(room.given);
         await tv.getByTestId("tv-account-chip").click();
         await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
-        await expect(tv.getByTestId("tv-category-tile")).toHaveCount(2);
+        await expect(tv.getByTestId("tv-category-tile")).toHaveCount(3); // (what it rated, History, What's new)
 
         // Every word of a tile is inside it (a name or a note that does not fit is cut, and what is cut is not read), the bottom of its letters too: a card of a
         // fixed height squeezed its name under a note of two lines, and "My ratings" lost the foot of its g (the owner's report of 15 Nov).

@@ -875,9 +875,13 @@
 /* What the profile holds: a few places, each a card that says what is in it. Quiet surfaces (the picture's hue was the card's only difference), with the glyph first.
    The words hang under the glyph, so the names of the cards stand in one line whether the line under them takes one line or two (History's took two, and its name stood higher). */
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-title { display: none; }
-/* The places are three equal cards as wide as the head over them (a guest's two take two of the three): on a wide computer screen they stood at the left of an empty half. */
-:root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: calc(var(--em) * 1); padding-right: var(--edge-r); }
+/* The places are four equal cards as wide as the head over them (a guest's three take three of the four): on a wide computer screen they stood at the left of an empty half. */
+:root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: calc(var(--em) * 1); padding-right: var(--edge-r); }
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-tile-place { width: auto; }
+/* (Under 800 px of width, a phone on its side or a small window, four across left each card too narrow for its words, cut after three lines: two across, the others under them, as on the upright phone.) */
+@media (max-width: 799px) {
+  :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 /* (At least that tall, and taller when the words need it: at a fixed height a name over a note of two lines was squeezed, and the bottom of its letters cut
    - "My ratings", the owner's report of 15 Nov. The cards of a row stay one height: the row stretches them to the tallest.) */
 :root[data-ui="polish"] .tv-tile-place {

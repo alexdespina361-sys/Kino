@@ -1,0 +1,27 @@
+/* What's new (NewsList.tsx): every version, the newest first, its number and day over what changed. */
+.news-list { display: flex; flex-direction: column; gap: 22px; text-align: left; }
+.news-version { display: flex; flex-direction: column; gap: 8px; }
+.news-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; font-size: 1.05rem; }
+.news-head b { font-weight: 700; }
+.news-day { font-size: 0.85em; font-weight: 400; color: var(--muted); }
+.news-lines { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0 0 0 1.1em; }
+.news-lines li { line-height: 1.4; }
+.news-wait, .news-failed p { margin: 0; color: var(--muted); }
+.news-failed { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.page-news { padding: 4px 2px 24px; }
+
+/*
+ * On the TV's pages (a TV, a computer, a phone showing them): one column under the title that scrolls with the remote. Each line is a stop of the
+ * remote, so Up and Down walk it and the list follows; the focused line is lit, as a row of a menu is.
+ */
+.tv-news-screen { justify-content: flex-start; }
+.tv-news-body { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: 64em; min-height: 0; }
+.tv-news-list { flex: 1 1 auto; min-height: 0; gap: 2.2em; padding: 0.4em 0.6em 2em; overflow-y: auto; scroll-padding-top: 1.5em; scroll-padding-bottom: 2em; scrollbar-width: none; }
+.tv-news-list::-webkit-scrollbar { display: none; }
+.tv-news-list .news-version { gap: 0.6em; }
+.tv-news-list .news-head { font-size: 2em; }
+.tv-news-list .news-lines { gap: 0.2em; padding-left: 0; list-style: none; }
+.tv-news-list .news-lines li { padding: 0.35em 0.6em; border-radius: 0.5em; font-size: 1.6em; color: #c9c9d1; }
+.tv-news-list .news-lines li:focus { outline: none; background: rgba(255, 255, 255, 0.1); color: #fff; }
+.tv-news-body .news-wait, .tv-news-body .news-failed p { font-size: 1.5em; }
+.tv-news-body .news-failed { align-items: center; align-self: center; }

@@ -284,7 +284,7 @@ export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
  * What is on a TV's profile page: three places that are cards (what the profile rated, its friends, History), and two buttons in its top, which
  * are not places (Settings, and for a guest the way to sign in).
  */
-export type ProfilePlace = "ratings" | "friends" | "history" | "signin" | "settings";
+export type ProfilePlace = "ratings" | "friends" | "history" | "news" | "signin" | "settings";
 
 /** The button of the profile page's top that a place is, if it is one (the others are cards). */
 export const profileButton = (tv: Page, place: ProfilePlace): Locator | null =>
