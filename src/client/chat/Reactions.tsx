@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { CHAT_REACTIONS, isChatReaction, type ChatLine, type ChatReaction } from "../../shared";
+import { useEffect, useRef, useState } from "react";
+import { CHAT_ALL_REACTIONS, CHAT_MORE_REACTIONS, CHAT_REACTIONS, isChatReaction, type ChatLine, type ChatReaction } from "../../shared";
 import { useT } from "../i18n";
+import { PlusIcon } from "../shared/icons";
 import { BackButton, Screen } from "../tv/Idle";
 import { stickerOf, stickerSrc } from "./stickers";
 import type { ChatSession } from "./useChat";
@@ -47,19 +48,57 @@ export function Reactions({ line, name }: { line: ChatLine; name: string }) {
   );
 }
 
-/** The bar under a message that was pressed: the six, the one that is on shown as on; pressing it takes it away. */
+/** Whether a reaction is one of those behind the + (`CHAT_MORE_REACTIONS`): a message that has one opens with them all shown. */
+const isMore = (reaction: string | undefined): boolean => reaction !== undefined && (CHAT_MORE_REACTIONS as readonly string[]).includes(reaction);
+
+/**
+ * The reactions, and a + after them that brings the sixteen more (the owner, 17 Nov: "more reaction options like that +"). The keys that pressed the + go on
+ * to the first of the sixteen, which are where it was.
+ */
+function useMore(current: string | undefined) {
+  const [all, setAll] = useState(() => isMore(current));
+  const first = useRef<HTMLButtonElement>(null);
+  const keys = useRef(false);
+  useEffect(() => {
+    if (all && keys.current) first.current?.focus({ preventScroll: true });
+    keys.current = false;
+  }, [all]);
+  const open = (event: { detail: number; currentTarget: HTMLElement }) => {
+    keys.current = event.detail === 0 || document.activeElement === event.currentTarget;
+    setAll(true);
+  };
+  return { shown: all ? CHAT_ALL_REACTIONS : CHAT_REACTIONS, all, first, open };
+}
+
+/** The bar under a message that was pressed: the six and the +, the one that is on shown as on; pressing it takes it away. */
 export function ReactBar({ current, onReact }: { current?: string | undefined; onReact: (reaction: ChatReaction | null) => void }) {
   const t = useT();
+  const more = useMore(current);
   return (
-    <div className="chat-react-bar" role="group" aria-label={t("chat.react")} data-testid="chat-react-bar">
-      {CHAT_REACTIONS.map((reaction) => {
+    <div className={`chat-react-bar${more.all ? " is-all" : ""}`} role="group" aria-label={t("chat.react")} data-testid="chat-react-bar">
+      {more.shown.map((reaction, at) => {
         const on = current === reaction;
         return (
-          <button type="button" key={reaction} className={`chat-react${on ? " is-on" : ""}`} aria-pressed={on} aria-label={reaction} onClick={() => onReact(on ? null : reaction)} data-reaction={reaction} data-testid="chat-react">
+          <button
+            type="button"
+            key={reaction}
+            ref={at === CHAT_REACTIONS.length ? more.first : undefined}
+            className={`chat-react${on ? " is-on" : ""}`}
+            aria-pressed={on}
+            aria-label={reaction}
+            onClick={() => onReact(on ? null : reaction)}
+            data-reaction={reaction}
+            data-testid="chat-react"
+          >
             <ReactionPicture reaction={reaction} />
           </button>
         );
       })}
+      {!more.all && (
+        <button type="button" className="chat-react chat-react-more" aria-label={t("chat.reactMore")} title={t("chat.reactMore")} aria-expanded={false} onClick={more.open} data-testid="chat-react-more">
+          <PlusIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -74,6 +113,7 @@ export const lastTheirs = (lines: readonly ChatLine[]): ChatLine | undefined => 
 export function ReactTv({ name, line, session, onBack }: { name: string; line: ChatLine; session: ChatSession; onBack: () => void }) {
   const t = useT();
   const current = isChatReaction(line.myReaction) ? line.myReaction : undefined;
+  const more = useMore(current);
   const choose = (reaction: ChatReaction | null) => {
     onBack();
     void session.react(line.id, reaction);
@@ -84,13 +124,14 @@ export function ReactTv({ name, line, session, onBack }: { name: string; line: C
       <p className="tv-chat-quote" data-testid="tv-chat-react-quote">
         <b>{line.mine ? t("chat.you") : name}</b> {quoteOf(t, line.text)}
       </p>
-      <div className="tv-chat-reacts" data-testid="tv-chat-reacts">
-        {CHAT_REACTIONS.map((reaction, at) => {
+      <div className={`tv-chat-reacts${more.all ? " is-all" : ""}`} data-testid="tv-chat-reacts">
+        {more.shown.map((reaction, at) => {
           const on = current === reaction;
           return (
             <button
               type="button"
               key={reaction}
+              ref={at === CHAT_REACTIONS.length ? more.first : undefined}
               className={`tv-chat-react${on ? " is-on" : ""}`}
               aria-pressed={on}
               aria-label={reaction}
@@ -104,6 +145,11 @@ export function ReactTv({ name, line, session, onBack }: { name: string; line: C
             </button>
           );
         })}
+        {!more.all && (
+          <button type="button" className="tv-chat-react tv-chat-react-more" aria-label={t("chat.reactMore")} title={t("chat.reactMore")} aria-expanded={false} onClick={more.open} data-nav data-testid="tv-chat-react-more">
+            <PlusIcon />
+          </button>
+        )}
       </div>
       {current && (
         <button type="button" className="tv-action" onClick={() => choose(null)} data-nav data-testid="tv-chat-react-remove">

@@ -20,6 +20,12 @@ export interface ChatSession {
   send: (text: string) => Promise<boolean>;
   /** Send one of one's personal stickers (personalStickers.ts), as `send` sends words. */
   sendSticker: (id: string) => Promise<boolean>;
+  /**
+   * The message the next one answers (Reply was pressed, or the message was drawn aside), or null. Whatever is sent next - words, a title, a GIF, a
+   * sticker - answers it, and then it is let go; it is let go too when the message is gone (taken back, or let go with time).
+   */
+  replyTo: number | null;
+  setReplyTo: (id: number | null) => void;
   takeBack: (id: number) => Promise<void>;
   /** Put a reaction on a message, change it, or take it away (null). */
   react: (id: number, reaction: ChatReaction | null) => Promise<void>;
@@ -43,6 +49,13 @@ export function useChat(profileId: string, friendId: string, options: { active?:
   const [offline, setOffline] = useState(false);
   const [failure, setFailure] = useState<ChatProblem | null>(null);
   const [sending, setSending] = useState(false);
+  const [replyTo, setReplyState] = useState<number | null>(null);
+  /** (What `replyTo` is now, for a message on its way: the state the call was made with would be old by the time it is answered.) */
+  const replying = useRef<number | null>(null);
+  const setReplyTo = useCallback((id: number | null) => {
+    replying.current = id;
+    setReplyState(id);
+  }, []);
 
   const seen = useRef(state);
   seen.current = state;
@@ -117,17 +130,20 @@ export function useChat(profileId: string, friendId: string, options: { active?:
     };
   }, [active, ended, interval, read]);
 
-  /** A message on its way (words, or a personal sticker): one at a time. */
+  /** A message on its way (words, or a personal sticker): one at a time. It answers the message that `replyTo` names, and lets it go once it went. */
   const write = useCallback(
-    async (call: () => Promise<ChatThread>): Promise<boolean> => {
+    async (call: (replyTo: number | undefined) => Promise<ChatThread>): Promise<boolean> => {
       if (writing.current) return false;
       writing.current = true;
       setSending(true);
       setFailure(null);
       const started = ++clock.current.tick;
+      const answers = replying.current;
       try {
-        take(await call(), started);
+        take(await call(answers ?? undefined), started);
         setOffline(false);
+        // (Another message picked to answer while this one was on its way stays picked: that is the next one's.)
+        if (answers !== null && replying.current === answers) setReplyTo(null);
         return true;
       } catch (error) {
         // (A friend who stopped taking messages while the page was open: the box gives way to the line that says so, and that line is the only one: the same words twice were a mistake.)
@@ -143,10 +159,16 @@ export function useChat(profileId: string, friendId: string, options: { active?:
         setSending(false);
       }
     },
-    [take, fail],
+    [take, fail, setReplyTo],
   );
-  const send = useCallback((text: string) => write(() => chatApi.send(profileId, friendId, text)), [write, profileId, friendId]);
-  const sendSticker = useCallback((id: string) => write(() => chatApi.sendSticker(profileId, friendId, id)), [write, profileId, friendId]);
+  const send = useCallback((text: string) => write((answers) => chatApi.send(profileId, friendId, text, answers)), [write, profileId, friendId]);
+  const sendSticker = useCallback((id: string) => write((answers) => chatApi.sendSticker(profileId, friendId, id, answers)), [write, profileId, friendId]);
+
+  // (The message being answered is gone - taken back by the friend, or let go with time: there is nothing to answer, and the strip goes.)
+  const answerable = replyTo === null || state.lines.some((line) => line.id === replyTo);
+  useEffect(() => {
+    if (!answerable && loaded) setReplyTo(null);
+  }, [answerable, loaded, setReplyTo]);
 
   const takeBack = useCallback(
     async (id: number): Promise<void> => {
@@ -197,7 +219,23 @@ export function useChat(profileId: string, friendId: string, options: { active?:
 
   const settle = useCallback(() => setFailure(null), []);
 
-  return { profileId, friendId, state, loaded, ended, problem: failure ?? (offline ? "offline" : null), sending, send, sendSticker, takeBack, react, setMuted, settle };
+  return {
+    profileId,
+    friendId,
+    state,
+    loaded,
+    ended,
+    problem: failure ?? (offline ? "offline" : null),
+    sending,
+    send,
+    sendSticker,
+    replyTo: answerable ? replyTo : null,
+    setReplyTo,
+    takeBack,
+    react,
+    setMuted,
+    settle,
+  };
 }
 
 /** Where a report of the chat is: closed, being fetched, shown (and waiting for a yes), on its way, or sent. */

@@ -6,6 +6,7 @@ import { FilmIcon, GifIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon } from "
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
+import { ReplyStrip } from "./Reply";
 import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
 import { StickerPickSheet } from "./StickerPick";
 import { afterSent, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
@@ -57,6 +58,12 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   useEffect(() => {
     if (over) setPicked(null);
   }, [over]);
+  // (Answering a message: Reply at the top, or the message drawn to the right. The selection goes, and the box is where the answer is written.)
+  const reply = (id: number) => {
+    setPicked(null);
+    session.setReplyTo(id);
+  };
+  const answering = session.replyTo === null ? undefined : state.lines.find((line) => line.id === session.replyTo);
 
   return (
     <>
@@ -79,6 +86,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               <PickedActions
                 line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
                 personal={personal.lines}
+                {...(blocked ? {} : { onReply: reply })}
                 onTakeBack={(id) => {
                   setPicked(null);
                   void session.takeBack(id);
@@ -107,7 +115,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               now={now}
               picked={picked}
               onPick={setPicked}
-              {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) })}
+              {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction), onReply: reply })}
               onOpenTitle={onOpenTitle}
               personal={personal.lines}
             />
@@ -125,7 +133,10 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               {blocked === "ended" && session.ended ? problemText(t, session.ended, name) : t("chat.closed", { name })}
             </p>
           ) : (
-            <Composer session={session} onPickTitle={() => setPicking(true)} {...(gifKey ? { onPickGif: () => setGifPicking(true) } : {})} onPickSticker={() => setStickerPicking(true)} />
+            <>
+              {answering && <ReplyStrip line={answering} name={name} onCancel={() => session.setReplyTo(null)} />}
+              <Composer session={session} onPickTitle={() => setPicking(true)} {...(gifKey ? { onPickGif: () => setGifPicking(true) } : {})} onPickSticker={() => setStickerPicking(true)} />
+            </>
           )}
         </div>
       </Sheet>
@@ -149,6 +160,10 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
   const unfold = useUnfold(tools, () => setTools(true));
   const input = useRef<HTMLDivElement>(null);
   const checked = checkChatText(text);
+  // (A message to answer was picked: the answer is written in the box, which has the keyboard at once, as in any messenger.)
+  useEffect(() => {
+    if (session.replyTo !== null) input.current?.focus();
+  }, [session.replyTo]);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();

@@ -3,12 +3,13 @@ import { createPortal } from "react-dom";
 import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
-import { CloseIcon, StarIcon, TrashIcon } from "../shared/icons";
+import { CloseIcon, ReplyIcon, StarIcon, TrashIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useBackFirst } from "../tv/dpad";
 import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
 import { ReactBar, Reactions } from "./Reactions";
+import { QuoteBlock } from "./Reply";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
@@ -32,6 +33,11 @@ export interface ChatLinesProps {
   picked?: number | null;
   onPick?: (id: number | null) => void;
   onReact?: (id: number, reaction: ChatReaction | null) => void;
+  /**
+   * Answer a message (Reply.tsx): any message can then be selected (Reply is at the top, with `PickedActions`), and one drawn to the right with a finger or the
+   * mouse is answered at once, as in any messenger. Without it (the friend takes no messages) nothing is answered.
+   */
+  onReply?: (id: number) => void;
   /** The TV: the list is a place the remote can land on, and Up and Down scroll it while there is more to see that way (and step onto the titles in it). */
   remote?: boolean;
   /**
@@ -64,9 +70,19 @@ const HOLD_MS = 450;
 const HOLD_SLOP = 10;
 /** A touch this soon after the list scrolled stops the scroll, and holds nothing. */
 const SCROLL_REST_MS = 150;
+/**
+ * Drawing a message aside to answer it: how far the finger goes to the right before the message moves (less is a press, or a slip), how far the message
+ * then moves before letting go answers it, and the most it moves. A finger that goes more up or down than across is scrolling the list, and draws nothing.
+ */
+const SWIPE_START = 12;
+const SWIPE_REPLY = 56;
+const SWIPE_MAX = 84;
+/** How long the message a quote names is lit, once the quote was pressed and it was brought into view. */
+const SHOWN_MS = 1400;
 
-/** Whether a message can be selected: for its reactions, to take it back (one's own), or to save it (a friend's personal sticker, with `save`). */
-export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boolean }): boolean => line.mine || options.reacts || (line.sticker !== undefined && options.saves);
+/** Whether a message can be selected: for its reactions, to answer it, to take it back (one's own), or to save it (a friend's personal sticker, with `save`). */
+export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boolean; replies?: boolean }): boolean =>
+  line.mine || options.reacts || options.replies === true || (line.sticker !== undefined && options.saves);
 
 /**
  * The messages of a chat, oldest first and the newest at the bottom, where the list stays as messages come (unless it was scrolled up to read:
@@ -76,7 +92,7 @@ export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boole
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -88,6 +104,9 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const stickers = useMemo(() => lines.map((line) => (showWriter || line.sticker ? null : stickerOf(line.text))), [lines, showWriter]);
   const titles = useMemo(() => lines.map((line, index) => (showWriter || line.sticker || gifs[index] || stickers[index] ? null : titleIn(line.text))), [lines, showWriter, gifs, stickers]);
   const cards = useMemo(() => cardsOf(titles.map((found) => found?.id ?? null)), [titles]);
+  /** The messages by their number: what a quote finds the message it names in. */
+  const byId = useMemo(() => new Map(lines.map((line) => [line.id, line])), [lines]);
+  const answers = !showWriter && onPick !== undefined && onReply !== undefined;
 
   // The newest message in view: the first time, for each new one when the person was at the end, and again when what is in the list changes
   // its size by itself (the page's fonts arriving, the box shrinking under a keyboard) so that the end does not slip away.
@@ -110,7 +129,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
 
   // (A message can be selected for its reactions, Take back for one's own, and Save for a friend's personal sticker, which stays possible while the friend
   // takes no messages, as the server allows: the judge, 17 Nov.)
-  const pressable = (line: ChatLine) => onPick !== undefined && canPick(line, { reacts: onReact !== undefined, saves: !showWriter && personal?.onSave !== undefined });
+  const pressable = (line: ChatLine) => onPick !== undefined && canPick(line, { reacts: onReact !== undefined, saves: !showWriter && personal?.onSave !== undefined, replies: answers });
 
   // The picture shown larger, in the middle of the screen (a press of a GIF or a sticker): nothing is selected while it is.
   const [enlarged, setEnlarged] = useState<{ src: string; alt: string; small: boolean; line: number } | null>(null);
@@ -130,12 +149,32 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     if (holding.current) window.clearTimeout(holding.current.timer);
     holding.current = null;
   };
-  useEffect(() => letGo, []);
-  const holds = (select: (() => void) | null) => ({
+  /** A message being drawn to the right, to answer it (`SWIPE_START`): where the finger went down, whether the message moves yet, and how far it has. */
+  const swipe = useRef<{ pointer: number; x: number; y: number; on: boolean; shift: number; item: HTMLElement | null; reply: () => void } | null>(null);
+  /** The message drawn aside goes back to its place, as the finger leaves it. */
+  const putBack = () => {
+    const was = swipe.current;
+    swipe.current = null;
+    if (!was?.item) return was;
+    was.item.style.removeProperty("transform");
+    delete was.item.dataset.swipe;
+    return was;
+  };
+  useEffect(
+    () => () => {
+      letGo();
+      putBack();
+    },
+    [],
+  );
+  const holds = (select: (() => void) | null, reply: (() => void) | null) => ({
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       heldNow.current = false;
       letGo();
-      if (!select || event.button !== 0 || performance.now() - scrolled.current < SCROLL_REST_MS) return;
+      putBack();
+      if (event.button !== 0 || performance.now() - scrolled.current < SCROLL_REST_MS) return;
+      if (reply) swipe.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, on: false, shift: 0, item: event.currentTarget.closest("li"), reply };
+      if (!select) return;
       const timer = window.setTimeout(() => {
         holding.current = null;
         heldNow.current = true;
@@ -146,16 +185,74 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     onPointerMove: (event: PointerEvent<HTMLElement>) => {
       const at = holding.current;
       if (at && Math.hypot(event.clientX - at.x, event.clientY - at.y) > HOLD_SLOP) letGo();
+      const drawn = swipe.current;
+      if (!drawn || drawn.pointer !== event.pointerId) return;
+      const across = event.clientX - drawn.x;
+      const down = event.clientY - drawn.y;
+      if (!drawn.on) {
+        // (Up or down first: the list is being scrolled, and the message is not drawn this time.)
+        if (Math.abs(down) > HOLD_SLOP && Math.abs(down) >= Math.abs(across)) return void (swipe.current = null);
+        if (across <= SWIPE_START || across < Math.abs(down) * 1.5) return;
+        drawn.on = true;
+        letGo(); // (a hold that had begun is no hold: the message is being drawn)
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId); // (the finger may leave the message as it goes)
+        } catch {
+          /* (a pointer that is already gone: the next move or the lifting says so) */
+        }
+      }
+      const shift = Math.max(0, Math.min(across - SWIPE_START, SWIPE_MAX));
+      if (shift >= SWIPE_REPLY && drawn.shift < SWIPE_REPLY) {
+        try {
+          navigator.vibrate?.(8); // (a phone says, with a tap, that letting go now answers)
+        } catch {
+          /* (no vibration here) */
+        }
+      }
+      drawn.shift = shift;
+      if (drawn.item) {
+        drawn.item.style.transform = `translateX(${shift}px)`;
+        drawn.item.dataset.swipe = shift >= SWIPE_REPLY ? "ready" : "on";
+      }
     },
-    onPointerUp: letGo,
-    onPointerCancel: letGo,
-    onPointerLeave: letGo,
+    onPointerUp: () => {
+      letGo();
+      const was = putBack();
+      if (!was?.on) return;
+      heldNow.current = true; // (the press the lifting makes is no press of the message, nor of what is under the finger: see `onClickCapture`)
+      if (was.shift >= SWIPE_REPLY) was.reply();
+    },
+    onPointerCancel: () => {
+      letGo();
+      putBack();
+    },
+    onPointerLeave: () => {
+      letGo();
+      if (!swipe.current?.on) swipe.current = null; // (while it is drawn the message has the pointer, and hears it wherever it goes)
+    },
     onContextMenu: (event: MouseEvent<HTMLElement>) => {
       event.preventDefault();
       letGo();
+      if (swipe.current?.on) return; // (a phone's long-press menu, while a message is drawn: it is being drawn, not held)
+      putBack();
       select?.();
     },
   });
+
+  // The message a quote names, brought into view and lit for a moment (a quote pressed). One no longer in the chat has no quote to press.
+  const shownTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(shownTimer.current), []);
+  const showQuoted = (id: number) => {
+    const item = box.current?.querySelector<HTMLElement>(`li[data-line="${id}"]`);
+    if (!item) return;
+    item.scrollIntoView({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    for (const lit of box.current?.querySelectorAll<HTMLElement>("li[data-shown]") ?? []) delete lit.dataset.shown;
+    item.dataset.shown = "true";
+    window.clearTimeout(shownTimer.current);
+    shownTimer.current = window.setTimeout(() => {
+      if (item.isConnected) delete item.dataset.shown;
+    }, SHOWN_MS);
+  };
   /**
    * A press beside the messages lets the selection go, as in any messenger: not the press that ended a hold, wherever it ends. The message held can move
    * from under a mouse while it is held (the reactions come under it, and a list at its end stays at its end), and the press then ends beside it, on its
@@ -259,7 +356,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
         if (action === "left" || action === "right") {
           // (Along what the message has: its bubble, then the reactions under it; Right past the last of them goes on to what can be done with the selected
           // message at the top of the chat (Save, Take back: `PickedActions`), whose Left comes back. It goes no further.)
-          const along = [...item.querySelectorAll<HTMLElement>("button:not(:disabled)")].filter((button) => !button.matches(CARD));
+          // (A quote over the bubble is pressed with a mouse, not walked: the keys go along what is the message's own.)
+          const along = [...item.querySelectorAll<HTMLElement>("button:not(:disabled)")].filter((button) => !button.matches(CARD) && !button.matches(".chat-quote"));
           const next = along[along.indexOf(target) + (action === "right" ? 1 : -1)];
           if (next) next.focus({ preventScroll: true });
           else if (action === "right" && picked !== null && Number(item.dataset.line) === picked) {
@@ -318,7 +416,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
 
   return (
     <div
-      className={`chat-lines${remote ? " chat-lines-remote" : ""}`}
+      className={`chat-lines${remote ? " chat-lines-remote" : ""}${answers ? " chat-lines-swipe" : ""}`}
       ref={box}
       onScroll={onScroll}
       onKeyDown={onKeyDown}
@@ -388,15 +486,21 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
               <span className="chat-time">{stampOf(line.at, language)}</span>
             </>
           );
+          // (The message it answers, over it, while that message is in the chat. A report sends the words alone, and shows no quote.)
+          const quoted = !showWriter && line.replyTo !== undefined ? byId.get(line.replyTo) : undefined;
+          const replyTo = line.replyTo;
           const said = (text: ReactNode, card: ReactNode) => (
             <>
+              {quoted && replyTo !== undefined && (
+                <QuoteBlock quoted={quoted} name={name} focusable={!remote} {...(onPick !== undefined ? { onShow: () => showQuoted(replyTo) } : {})} />
+              )}
               {canPress || shows ? (
                 <button
                   type="button"
                   className={`chat-bubble${picture}${open ? " chat-picked" : ""}`}
                   {...(canPress ? { "aria-expanded": open } : {})}
                   onClick={pressed}
-                  {...holds(canPress ? () => onPick?.(line.id) : null)}
+                  {...holds(canPress ? () => onPick?.(line.id) : null, answers && onReply ? () => onReply(line.id) : null)}
                   {...(remote ? { tabIndex: keyboard && line.id === tabStop ? 0 : -1 } : {})}
                   data-testid={canPress ? "chat-bubble" : "chat-picture"}
                 >
@@ -500,6 +604,7 @@ function PictureView({ src, alt, small, onClose }: { src: string; alt: string; s
 export function PickedActions({
   line,
   personal,
+  onReply,
   onTakeBack,
   onSaved,
   className,
@@ -508,6 +613,8 @@ export function PickedActions({
   /** The message that is selected (none: nothing is drawn). */
   line: ChatLine | undefined;
   personal?: PersonalLines | undefined;
+  /** Answer it (Reply.tsx): none while the friend takes no messages. */
+  onReply?: ((id: number) => void) | undefined;
   onTakeBack?: ((id: number) => void) | undefined;
   /** After Save was pressed: the selection is let go. */
   onSaved?: (() => void) | undefined;
@@ -521,11 +628,17 @@ export function PickedActions({
   const own = line.sticker ?? null;
   const saving = own !== null && !line.mine && personal?.onSave ? personal : null;
   const taking = line.mine && onTakeBack !== undefined;
-  if (!saving && !taking) return null;
+  if (!saving && !taking && !onReply) return null;
   const has = saving && own ? (saving.has?.(own) ?? false) : false;
   const steps = nav ? { "data-nav": true } : {};
   return (
     <>
+      {onReply && (
+        <button type="button" className={`${className} chat-act chat-act-reply`} onClick={() => onReply(line.id)} aria-label={t("chat.reply")} title={t("chat.reply")} {...steps} data-testid="chat-reply">
+          <ReplyIcon />
+          <span className="chat-act-words">{t("chat.reply")}</span>
+        </button>
+      )}
       {saving && own && (
         <button
           type="button"
