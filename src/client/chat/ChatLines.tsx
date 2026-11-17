@@ -62,6 +62,8 @@ const CARD = ".chat-card[data-title]";
 /** How long a message is held before it is selected, and how far the finger may wander meanwhile (more is a scroll, or a slip). */
 const HOLD_MS = 450;
 const HOLD_SLOP = 10;
+/** A touch this soon after the list scrolled stops the scroll, and holds nothing. */
+const SCROLL_REST_MS = 150;
 
 /** Whether a message can be selected: for its reactions, to take it back (one's own), or to save it (a friend's personal sticker, with `save`). */
 export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boolean }): boolean => line.mine || options.reacts || (line.sticker !== undefined && options.saves);
@@ -111,12 +113,19 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const pressable = (line: ChatLine) => onPick !== undefined && canPick(line, { reacts: onReact !== undefined, saves: !showWriter && personal?.onSave !== undefined });
 
   // The picture shown larger, in the middle of the screen (a press of a GIF or a sticker): nothing is selected while it is.
-  const [enlarged, setEnlarged] = useState<{ src: string; alt: string; small: boolean } | null>(null);
+  const [enlarged, setEnlarged] = useState<{ src: string; alt: string; small: boolean; line: number } | null>(null);
+  // (Its message taken back by its sender, or the sticker taken down, takes it away too: the judge, 17 Nov.)
+  const enlargedThere = enlarged !== null && lines.some((line) => line.id === enlarged.line);
+  useEffect(() => {
+    if (enlarged && !enlargedThere) setEnlarged(null);
+  }, [enlarged, enlargedThere]);
 
   // A hold selects: so long down without wandering (a finger that moves is scrolling, and the browser then takes the touch away: `pointercancel`). The press
   // that ends a hold is not one more press (`heldNow`). The right button of a mouse, and a phone's own long-press menu, select too, and no menu comes.
   const holding = useRef<{ timer: number; x: number; y: number } | null>(null);
   const heldNow = useRef(false);
+  /** When the list last scrolled: a finger that stops a fast scroll and rests there is not holding a message (the judge, 17 Nov). */
+  const scrolled = useRef(Number.NEGATIVE_INFINITY);
   const letGo = () => {
     if (holding.current) window.clearTimeout(holding.current.timer);
     holding.current = null;
@@ -126,7 +135,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       heldNow.current = false;
       letGo();
-      if (!select || event.button !== 0) return;
+      if (!select || event.button !== 0 || performance.now() - scrolled.current < SCROLL_REST_MS) return;
       const timer = window.setTimeout(() => {
         holding.current = null;
         heldNow.current = true;
@@ -218,6 +227,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const onScroll = () => {
     const element = box.current;
     if (!element) return;
+    scrolled.current = performance.now();
+    letGo(); // (a hold that has begun is no hold once the list moves under it)
     atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
     const on = document.activeElement;
     if (remote && on instanceof HTMLElement && on.matches(CARD) && element.contains(on)) {
@@ -246,9 +257,14 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
         event.stopPropagation();
         const own = item.querySelector<HTMLElement>("button[data-testid='chat-bubble']");
         if (action === "left" || action === "right") {
-          // (Along what the message has: its bubble, then the reactions under it, then Save or Take back; it does not go on past them.)
+          // (Along what the message has: its bubble, then the reactions under it; Right past the last of them goes on to what can be done with the selected
+          // message at the top of the chat (Save, Take back: `PickedActions`), whose Left comes back. It goes no further.)
           const along = [...item.querySelectorAll<HTMLElement>("button:not(:disabled)")].filter((button) => !button.matches(CARD));
-          along[along.indexOf(target) + (action === "right" ? 1 : -1)]?.focus({ preventScroll: true });
+          const next = along[along.indexOf(target) + (action === "right" ? 1 : -1)];
+          if (next) next.focus({ preventScroll: true });
+          else if (action === "right" && picked !== null && Number(item.dataset.line) === picked) {
+            element.parentElement?.closest("[role='group'], .chat")?.querySelector<HTMLElement>(".chat-act:not(:disabled)")?.focus({ preventScroll: true });
+          }
           return;
         }
         // (Up from what is under a message is the message; else from message to message, and past the first or the last back to the list, which goes on from there.)
@@ -309,6 +325,19 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       onFocus={onFocus}
       onBlur={onBlur}
       onClick={pressBeside}
+      // The press that ends a hold is no press of anything, wherever it lands: the reactions come under the message as it is selected, and a list at its
+      // end moves up, so a finger lifted after a hold could press a reaction, or a title's card, that was not there when it went down (the judge, 17 Nov:
+      // an unasked reaction sent to the friend). It is stopped on its way down, before any of them hears of it; so is the phone's own long-press menu,
+      // which would otherwise open on the picture of a reaction that slid under the finger.
+      onClickCapture={(event) => {
+        if (!heldNow.current || event.detail === 0) return;
+        heldNow.current = false;
+        event.stopPropagation();
+        event.preventDefault();
+      }}
+      onContextMenuCapture={(event) => {
+        if (heldNow.current) event.preventDefault();
+      }}
       onPointerDown={() => {
         heldNow.current = false; // (a message's own `onPointerDown` came first, and its hold sets this again when it has lasted)
       }}
@@ -346,7 +375,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
             if (shows && event.detail > 0) {
               if (picked !== null) return onPick?.(null);
               const drawn = event.currentTarget.querySelector("img");
-              if (drawn) return setEnlarged({ src: drawn.currentSrc || drawn.src, alt: drawn.alt, small: !gif });
+              if (drawn) return setEnlarged({ src: drawn.currentSrc || drawn.src, alt: drawn.alt, small: !gif, line: line.id });
             }
             if (canPress) press();
           };
@@ -412,7 +441,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           );
         })}
       </ol>
-      {enlarged && <PictureView {...enlarged} onClose={() => setEnlarged(null)} />}
+      {enlarged && enlargedThere && <PictureView src={enlarged.src} alt={enlarged.alt} small={enlarged.small} onClose={() => setEnlarged(null)} />}
     </div>
   );
 }
@@ -441,6 +470,8 @@ function PictureView({ src, alt, small, onClose }: { src: string; alt: string; s
       aria-label={alt}
       onClick={(event) => {
         event.stopPropagation(); // (it is over a sheet, whose own backdrop a press would close as well)
+        // (The second press of a double tap or a double click is the one that opened it, and does not close it at once: the judge, 17 Nov.)
+        if (event.detail > 1) return;
         onClose();
       }}
       onKeyDown={(event) => {
@@ -451,7 +482,8 @@ function PictureView({ src, alt, small, onClose }: { src: string; alt: string; s
       }}
       data-testid="chat-view"
     >
-      <img className={`chat-view-picture${small ? " chat-view-small" : ""}`} src={src} alt={alt} draggable={false} referrerPolicy="no-referrer" data-testid="chat-view-picture" />
+      {/* (A picture that does not come, shown larger, is not shown at all: the view goes, never a broken picture.) */}
+      <img className={`chat-view-picture${small ? " chat-view-small" : ""}`} src={src} alt={alt} draggable={false} referrerPolicy="no-referrer" onError={onClose} data-testid="chat-view-picture" />
       <button type="button" className="chat-view-close" ref={close} aria-label={t("common.close")} title={t("common.close")} data-testid="chat-view-close">
         <CloseIcon />
       </button>

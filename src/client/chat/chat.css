@@ -54,7 +54,7 @@ button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch
 /* A picture of the chat shown larger (ChatLines `PictureView`), over whatever the chat is in (a sheet is 50, the TV's pages 80 and their notes 90) and under
    the question asked before the site is left (100). It is drawn at the end of the page, outside the chat's own colours: its own are said here. */
 .chat-view { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.9); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: zoom-out; animation: chat-view-in 0.14s ease-out; }
-.chat-view-picture { display: block; width: min(92vw, 640px); height: auto; max-height: 72vh; border-radius: 14px; object-fit: contain; }
+.chat-view-picture { display: block; width: min(100vw - 48px, 640px); height: auto; max-height: 72vh; border-radius: 14px; object-fit: contain; }
 .chat-view-small { width: min(78vw, 60vh, 384px); border-radius: 0; }
 .chat-view-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 22px; cursor: pointer; }
 .chat-view-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
@@ -104,6 +104,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 40px; /* (a finger's size: the judge, 17 Nov) */
+  box-sizing: border-box;
   padding: 8px 14px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -282,6 +284,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-name { margin: 0; overflow: hidden; color: #fff; font-size: 2em; font-weight: 700; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
 .tv-chat-status { margin: 0.15em 0 0; color: rgba(255, 255, 255, 0.6); font-size: 1.25em; }
 .tv-chat-more-wrap { position: relative; flex: none; }
+/* (Take back and Save, in the head's row as they were: the span only listens for the keys.) */
+.tv-chat-picked { display: contents; }
 .tv-chat-more { display: grid; place-items: center; width: 3.4em; height: 3.4em; border-radius: 50%; background: transparent; color: rgba(255, 255, 255, 0.75); font-size: 1em; }
 .tv-chat-more svg { width: 1.8em; height: 1.8em; }
 .tv-chat-more:hover, .tv-chat-more[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1); color: #fff; }

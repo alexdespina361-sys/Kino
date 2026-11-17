@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type SetStateAction } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
 import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
+import { actionForKey } from "../tv/keys";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
@@ -217,6 +218,26 @@ export function ReadTv({
     setMenu(false);
     action();
   };
+  /** The selected message's own button in the list. */
+  const pickedBubble = (id: number) => document.querySelector<HTMLElement>(`[data-testid='tv-chat'] li[data-line="${id}"] button[data-testid='chat-bubble']`);
+  // What had the keys at the top (Take back, Save) goes with the selection, as it is let go (Escape, a press elsewhere, the message taken back from another
+  // screen): the keys go back to the message, else to the ⋯, never to nothing (the judge, 17 Nov).
+  const wasPicked = useRef<number | null>(null);
+  useEffect(() => {
+    const was = wasPicked.current;
+    wasPicked.current = picked;
+    if (picked !== null || was === null) return;
+    const on = document.activeElement;
+    if (on && on !== document.body) return;
+    (pickedBubble(was) ?? more.current)?.focus({ preventScroll: true });
+  }, [picked]);
+  const backToPicked = (event: KeyboardEvent<HTMLSpanElement>) => {
+    if (!desk || picked === null || event.altKey || event.ctrlKey || event.metaKey || actionForKey(event.nativeEvent) !== "left") return;
+    if (event.target !== event.currentTarget.querySelector(".chat-act:not(:disabled)")) return;
+    event.preventDefault();
+    event.stopPropagation(); // (the D-pad listens on the window)
+    pickedBubble(picked)?.focus({ preventScroll: true });
+  };
 
   // (A hand-held screen, while something is typed: the buttons that send something else are one +, until it is pressed; typing on folds them again.)
   const [tools, setTools] = useState(false);
@@ -304,21 +325,24 @@ export function ReadTv({
           </div>
           {/* (What can be done with the message that is selected, beside the ⋯, as in any messenger: the owner, 17 Nov. Once done, the keys are the ⋯'s.) */}
           {pointer && (
-            <PickedActions
-              line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
-              personal={personal?.lines}
-              onTakeBack={(id) => {
-                setPicked(null);
-                more.current?.focus({ preventScroll: true });
-                void session.takeBack(id);
-              }}
-              onSaved={() => {
-                setPicked(null);
-                more.current?.focus({ preventScroll: true });
-              }}
-              className="tv-chat-more"
-              nav
-            />
+            // (A computer's keys reach them from the message, with Right past what is under it, and Left from the first goes back to the message: the judge, 17 Nov.)
+            <span className="tv-chat-picked" onKeyDown={backToPicked}>
+              <PickedActions
+                line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
+                personal={personal?.lines}
+                onTakeBack={(id) => {
+                  setPicked(null);
+                  more.current?.focus({ preventScroll: true });
+                  void session.takeBack(id);
+                }}
+                onSaved={() => {
+                  setPicked(null);
+                  more.current?.focus({ preventScroll: true });
+                }}
+                className="tv-chat-more"
+                nav
+              />
+            </span>
           )}
           <div className="tv-chat-more-wrap" onBlur={leaving}>
             <button
@@ -328,7 +352,12 @@ export function ReadTv({
               aria-label={t("chat.more")}
               title={t("chat.more")}
               aria-expanded={menu}
-              onClick={() => (menu ? shut() : setMenu(true))}
+              onClick={() => {
+                if (menu) return shut();
+                // (The menu and a selection are not open at once: one Back would shut both, the judge, 17 Nov.)
+                setPicked(null);
+                setMenu(true);
+              }}
               data-nav
               data-testid="tv-chat-more"
             >

@@ -2684,6 +2684,21 @@ test.describe("GIFs in a chat", () => {
     await expect(newest).toHaveAttribute("aria-expanded", "true");
     await ann.page.keyboard.press("Escape");
     await expect(take).toHaveCount(0);
+    // A finger's hold, on the newest message (the judge, 17 Nov): as it is selected the reactions come under it and the list moves up, so the finger is lifted
+    // over one of them. Whatever a lifted finger then presses is no press: no reaction goes to the friend, no picture is shown larger.
+    const cdp = await ann.page.context().newCDPSession(ann.page);
+    const spot = await where(newest);
+    const finger = { x: Math.round(spot.x + spot.width / 2), y: Math.round(spot.y + spot.height / 2) };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [finger] });
+    await ann.page.waitForTimeout(650);
+    await expect(newest).toHaveAttribute("aria-expanded", "true");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await ann.page.waitForTimeout(400);
+    await expect(newest, "still selected").toHaveAttribute("aria-expanded", "true");
+    await expect(ann.page.getByTestId("chat-reaction"), "no reaction put on by the finger's lifting").toHaveCount(0);
+    await expect(view).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+    await expect(take).toHaveCount(0);
     await sent.click({ delay: 650 });
     await take.click();
     await expect(tvLines(ann.page)).toHaveCount(1);

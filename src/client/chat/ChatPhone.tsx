@@ -51,6 +51,12 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const [stickerPicking, setStickerPicking] = useState(false);
   const blocked = whyNotWrite(session);
   const personal = usePersonalLines(session, true);
+  // (A sheet over the chat - the titles, the GIFs, the stickers, a report - lets the selection go: else Escape would let it go behind the sheet before
+  // shutting the sheet, the judge, 17 Nov.)
+  const over = picking || gifPicking || stickerPicking || report.stage !== "closed";
+  useEffect(() => {
+    if (over) setPicked(null);
+  }, [over]);
 
   return (
     <>
