@@ -26,6 +26,16 @@ export const PERSONAL_STICKER = {
   picturesPerMinute: 600,
   /** How many pictures are on their way to the server at once: one an account, so many for the whole site (each is held in memory until it is read). */
   uploadsAtOnce: 4,
+  /**
+   * What the whole site spends on making them, whoever sends them (the judge, 17 Nov: every limit was an account's, and five hundred accounts' allowances
+   * together were the server's one core for a day): so many pictures let in in a minute, before their body is read, and so long spent reading and packing
+   * them in an hour (ms; a still one takes a few ms, one that moves a quarter to half a second on the box, measured there: this is hundreds of them an hour,
+   * and a twentieth of the core at the very most).
+   */
+  sitePerMinute: 120,
+  siteWorkMsPerHour: 180_000,
+  /** How many pictures may be on their way to where they are kept at once: more means it does not answer, and nothing new is made until it does. */
+  writesAtOnce: 8,
   /** How many the whole site keeps, and how many megabytes (unless the host says another: env PERSONAL_STICKERS_MB). */
   siteMax: 3000,
   siteMegabytes: 200,

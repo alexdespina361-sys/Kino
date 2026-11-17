@@ -316,7 +316,7 @@ describe("a personal sticker", () => {
 
   it("lets a picture in before its body is read: only from the profile's own account, one at a time for it, and so many at once for the site", async () => {
     const files = new MemoryStickerFiles();
-    const { app, alex, sam } = await friends({ files });
+    const { app, alex, sam, store } = await friends({ files });
     // (what is not even read as a body is turned away for who sent it, not for what it is)
     const raw = (client: Client, id: string) =>
       app.inject({ method: "POST", url: `/api/profiles/${id}/stickers`, headers: { "content-type": "application/json", ...(client.cookie ? { cookie: client.cookie } : {}) }, payload: "{ not json" });
@@ -346,6 +346,13 @@ describe("a personal sticker", () => {
     // (and each is let go when its answer has gone)
     expect((await alex.make(picture(22))).statusCode).toBe(201);
     expect((await sam.make(picture(23))).statusCode).toBe(201);
+    // (and the whole site's allowance, whoever sends: when the book says to wait, the picture is not let in, and is told for how long)
+    const arriving = store.stickers.arriving.bind(store.stickers);
+    store.stickers.arriving = () => 90_000;
+    const full = await alex.make(picture(24));
+    expect([full.statusCode, full.data, full.headers["retry-after"]]).toEqual([503, { error: "busy", retryAfter: 90 }, "90"]);
+    store.stickers.arriving = arriving;
+    expect((await alex.make(picture(24))).statusCode).toBe(201);
   });
 
   it("lets an upload's place go however it ends: its asker gone while the picture was being kept, or the picture too slow to come", async () => {
@@ -355,7 +362,7 @@ describe("a personal sticker", () => {
     const path = `/api/profiles/${alex.id}/stickers`;
     const body = JSON.stringify({ data: picture(30) });
 
-    // the picture came whole, and its asker went while it was being kept: the account's next is let in
+    // the picture came whole, and its asker went while it was being kept: the account's next is let in once it has been kept, not before
     const put = files.put.bind(files);
     let release: (() => void) | undefined;
     files.put = (id, data) => new Promise<void>((resolve) => (release = () => void put(id, data).then(resolve)));

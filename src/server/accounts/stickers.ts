@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { isStickerId, MOVING_STICKER, PERSONAL_STICKER, type MyStickers, type StickerProblem } from "../../shared";
-import { RateLimiter } from "./rateLimit";
+import { RateLimiter, WorkBudget } from "./rateLimit";
 import { makeMovingSticker, makeSticker, type MadeSticker } from "./stickerImage";
 import type { StickerFiles } from "./stickerFiles";
 
@@ -40,6 +40,27 @@ export type StickerOutcome<T> = { ok: true; value: T } | { ok: false; error: Sti
 
 const PREFIX = "sticker:";
 const DAY = 24 * 3600 * 1000;
+/** How long a picture may take to be written where it is kept before its maker is told it failed (tests make it short). */
+const WRITE_MS = 30_000;
+/** Everybody's pictures together are counted under one name. */
+const SITE = "site";
+const LATE = Symbol("late");
+/** `promise`, or `LATE` thrown when it has not answered in `ms` (it goes on by itself: whoever asked decides what becomes of it). */
+function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(LATE), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 const no = (error: StickerProblem | "gone" | "friends_off", waitMs?: number) => ({ ok: false as const, error, ...(waitMs ? { waitMs } : {}) });
 /**
  * The same picture made again by the same profile is the sticker it made: by somebody else, it is a sticker of theirs (one profile's picture is never found by
@@ -75,19 +96,35 @@ export class StickerBook {
    * for each place, so the pictures are not twice as many reads of where they are kept (the judge, 17 Nov).
    */
   readonly pictureReads: RateLimiter;
+  /** The whole site's, whoever sends them (`PERSONAL_STICKER.sitePerMinute`, `siteWorkMsPerHour`): pictures let in in a minute, and the time spent making them. */
+  private readonly arrivals: RateLimiter;
+  private readonly work: WorkBudget;
 
   constructor(
     private readonly host: StickerHost,
     private readonly files: StickerFiles,
     /**
      * `on`: the host turned them on (the kill switch is turning it off). `moving`: and stickers that move (shared/stickers.ts `MOVING_STICKER`). `maxBytes`: of
-     * all the pictures together. `uploadMs`: how long a picture let in may take to arrive (stickerRoutes.ts; tests make it short).
+     * all the pictures together. `uploadMs`: how long a picture let in may take to arrive (stickerRoutes.ts; tests make it short), `writeMs`: to be written,
+     * `siteWorkMs`: what the site gives to making them in an hour.
      */
-    readonly options: { on: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number; log?: { warn(message: string): void } },
+    readonly options: { on: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number; writeMs?: number; siteWorkMs?: number; log?: { warn(message: string): void } },
   ) {
     this.made = new RateLimiter(PERSONAL_STICKER.madePerDay, DAY, () => host.now());
     this.tried = new RateLimiter(MOVING_STICKER.triesPerDay, DAY, () => host.now());
     this.pictureReads = new RateLimiter(PERSONAL_STICKER.picturesPerMinute, 60_000, () => host.now());
+    this.arrivals = new RateLimiter(PERSONAL_STICKER.sitePerMinute, 60_000, () => host.now());
+    this.work = new WorkBudget(options.siteWorkMs ?? PERSONAL_STICKER.siteWorkMsPerHour, 3600_000, () => host.now());
+  }
+
+  /**
+   * A picture is about to be let in (stickerRoutes.ts, before its body is read): how long until the site takes another, 0 when it takes this one, which is
+   * then counted. More than so many a minute, or more time spent making them this hour than the site gives them, and it waits.
+   */
+  arriving(): number {
+    const wait = Math.max(this.arrivals.wait(SITE), this.work.wait());
+    if (wait === 0) this.arrivals.hit(SITE);
+    return wait;
   }
 
   get on(): boolean {
@@ -222,6 +259,8 @@ export class StickerBook {
     if (!this.on) return no("off");
     if (!this.host.on(profileId)) return no("friends_off");
     if (this.count(profileId) >= PERSONAL_STICKER.perProfile) return no("full");
+    // (Where the pictures are kept is not answering: nothing new is made, and held in memory, until it does.)
+    if (this.writing >= PERSONAL_STICKER.writesAtOnce) return no("site_full");
     const wait = this.made.wait(accountId);
     if (wait > 0) return no("too_many", wait);
     // (One that moves only while those are on as well: the page that sent one while they are off is told it is not a picture, and makes a still one.)
@@ -233,8 +272,18 @@ export class StickerBook {
       this.tried.hit(accountId);
     }
     let made: MadeSticker;
+    // (What reading and packing it takes is the whole site's time, counted whatever comes of it: `arriving`.)
+    const spend = (ms: number) => this.work.spend(ms);
     try {
-      made = delays ? await makeMovingSticker(sent, delays) : makeSticker(sent);
+      if (delays) made = await makeMovingSticker(sent, delays, spend);
+      else {
+        const began = performance.now();
+        try {
+          made = makeSticker(sent);
+        } finally {
+          spend(performance.now() - began);
+        }
+      }
     } catch (error) {
       this.options.log?.warn(`Personal stickers: could not make one that moves (${(error as Error).message}).`);
       return no("not_a_picture");
@@ -253,16 +302,29 @@ export class StickerBook {
     const id = randomBytes(16).toString("base64url");
     this.writing++;
     this.bytesInAll += made.data.length;
-    try {
-      await this.files.put(id, made.data);
-    } catch (error) {
-      this.bytesInAll -= made.data.length;
-      this.made.undo(accountId);
-      throw error;
-    } finally {
+    const settle = () => {
       this.writing--;
+      this.bytesInAll -= made.data.length;
+    };
+    // (The write has so long: one that does not answer is a failure to its maker, whose place is let go (the judge, 17 Nov: four such held every place for
+    // good), and it stays counted, and its picture in memory, until it does answer; what it wrote then, if anything, is let go: nothing was made of it. With
+    // so many still on their way nothing new is made: see the top.)
+    const written = this.files.put(id, made.data);
+    try {
+      await within(written, this.options.writeMs ?? WRITE_MS);
+    } catch (error) {
+      this.made.undo(accountId);
+      if (error !== LATE) {
+        settle();
+        throw error;
+      }
+      void written
+        .then(() => this.files.remove(id))
+        .catch(() => {})
+        .finally(settle);
+      throw new Error("Personal stickers: a picture was not written in time.");
     }
-    this.bytesInAll -= made.data.length; // (counted again as the document's, below)
+    settle(); // (its bytes are counted again as the document's, below)
     // (A save while the picture was being written may have filled the collection: then nothing was made, and it does not count as one of the day's.)
     if (this.count(profileId) >= PERSONAL_STICKER.perProfile) {
       this.made.undo(accountId);

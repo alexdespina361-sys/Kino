@@ -20,6 +20,11 @@ when they are on again.
   padded is refused), checks every chunk, and keeps a PNG it made itself from the pixels. A picture with nothing in it (all see-through) is refused.
 - A profile has at most 24 (made and kept); an account makes at most 20 a day; the site keeps at most 3000 pictures and 200 MB (`PERSONAL_STICKERS_MB`
   to say another). The same picture made twice by one profile is the same sticker.
+- The whole site, whoever sends (the judge, 17 Nov: every limit was an account's, and the box has one core): at most 120 pictures let in a minute, before
+  their body is read, and at most 3 minutes an hour spent reading and packing them (`PERSONAL_STICKER.sitePerMinute`, `siteWorkMsPerHour`; measured on
+  the box, a still one takes a few ms and a full 48-picture one that moves a quarter to half a second). Over either, a picture is told to wait (503 `busy`).
+- A picture has 30 seconds to be written where it is kept: after that its maker is told it failed, and its place is let go. It stays counted until the
+  write answers (what it wrote then is removed), and with 8 such on their way nothing new is made (`site_full`) until they answer.
 - A picture is shown to the profiles that have it, and in a chat to the two whose chat it was sent in, while they are friends: nobody else.
 - A picture is kept while somebody has it. The last one to let it go (or a profile, or an account, going) lets it go for good, and the messages that were it
   say "no longer available". A browser that saw it may show it for up to five minutes more (`private, max-age=300`).

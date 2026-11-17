@@ -188,7 +188,7 @@ function oneAtATime<T>(pack: () => Promise<T>): Promise<T> {
  * still sticker (a PNG). Too many pictures, too long a time, or a size that is not so many squares, is not a picture; one that does not fit in what is kept even
  * at the lesser quality is too big. sharp failing (or missing) is said by the error it throws: the page makes a still one then.
  */
-export async function makeMovingSticker(sent: Buffer, delays: readonly number[]): Promise<MadeSticker> {
+export async function makeMovingSticker(sent: Buffer, delays: readonly number[], spend: (ms: number) => void = () => {}): Promise<MadeSticker> {
   if (sent.length > MOVING_STICKER.sentBytes) return { ok: false, error: "too_big" };
   const frames = delays.length;
   if (
@@ -199,23 +199,36 @@ export async function makeMovingSticker(sent: Buffer, delays: readonly number[])
   ) {
     return NOT_A_PICTURE;
   }
-  const read = pixelsOf(sent, frames);
-  if (!read.ok) return read;
-  const side = read.head.width;
-  const square = side * side * 4;
-  const first = read.pixels.subarray(0, square);
+  // (`spend` is told what the reading took, and then the packing, each as it ends and whatever came of it: not the wait for its turn to be packed.)
+  const began = performance.now();
+  let read: ReturnType<typeof pixelsOf>;
   let moves = false;
-  for (let frame = 1; frame < frames && !moves; frame++) moves = !read.pixels.subarray(frame * square, (frame + 1) * square).equals(first);
-  if (!moves) return stillOf(read.pixels, side, read.opaque);
+  try {
+    read = pixelsOf(sent, frames);
+    if (!read.ok) return read;
+    const square = read.head.width * read.head.width * 4;
+    const first = read.pixels.subarray(0, square);
+    for (let frame = 1; frame < frames && !moves; frame++) moves = !read.pixels.subarray(frame * square, (frame + 1) * square).equals(first);
+    if (!moves) return stillOf(read.pixels, read.head.width, read.opaque);
+  } finally {
+    spend(performance.now() - began);
+  }
+  const { pixels } = read;
+  const side = read.head.width;
   const sharp = await loadSharp();
   return oneAtATime(async (): Promise<MadeSticker> => {
-    for (const quality of QUALITIES) {
-      const data = await sharp(read.pixels, { raw: { width: side, height: side * frames, channels: 4, pageHeight: side } })
-        .timeout({ seconds: PACK_SECONDS })
-        .webp({ quality, alphaQuality: 90, effort: 4, loop: 0, delay: [...delays] })
-        .toBuffer();
-      if (data.length <= MOVING_STICKER.keptBytes) return { ok: true, data, hash: createHash("sha256").update(data).digest("base64url") };
+    const packing = performance.now();
+    try {
+      for (const quality of QUALITIES) {
+        const data = await sharp(pixels, { raw: { width: side, height: side * frames, channels: 4, pageHeight: side } })
+          .timeout({ seconds: PACK_SECONDS })
+          .webp({ quality, alphaQuality: 90, effort: 4, loop: 0, delay: [...delays] })
+          .toBuffer();
+        if (data.length <= MOVING_STICKER.keptBytes) return { ok: true, data, hash: createHash("sha256").update(data).digest("base64url") };
+      }
+      return { ok: false, error: "too_big" };
+    } finally {
+      spend(performance.now() - packing);
     }
-    return { ok: false, error: "too_big" };
   });
 }

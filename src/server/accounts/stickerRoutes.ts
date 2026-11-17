@@ -124,6 +124,12 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
           if (uploading.has(me.accountId) || uploading.size >= PERSONAL_STICKER.uploadsAtOnce) {
             return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
           }
+          // (And the whole site takes so many a minute, and gives their making so much of an hour, whoever sends them: counted here, before the body is read.)
+          const wait = stickers.arriving();
+          if (wait > 0) {
+            const after = Math.min(3600, Math.max(5, Math.ceil(wait / 1000)));
+            return reply.code(503).header("Retry-After", after).send({ error: "busy", retryAfter: after });
+          }
           uploading.add(me.accountId);
           // (A picture that has not come by then is let go, and its request ended.)
           const deadline = setTimeout(() => {
