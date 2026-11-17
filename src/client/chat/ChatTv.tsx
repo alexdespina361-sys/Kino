@@ -2,13 +2,16 @@ import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormE
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, PlusIcon, ReplyIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, ImageIcon, MoreIcon, PlusIcon, ReplyIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { actionForKey } from "../tv/keys";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
+import { ChatMediaTv } from "./ChatMedia";
+import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
+import { useShutOnPressBeside } from "./pressBeside";
 import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
@@ -53,7 +56,8 @@ export interface ChatTvProps {
 
 /**
  * The chat with one friend, on the TV: pages over the friend's page. One window: the friend at the top, the messages, and the box to write in at
- * the bottom; what is done less often (take back the last, mute, report) is behind the ⋯ at the top, not a row of buttons beside the box.
+ * the bottom; what is done less often (take back the last, search, the chat's GIFs and stickers, mute, report) is behind the ⋯ at the top, not a row of
+ * buttons beside the box. (Search and the GIFs and stickers where a message can be pressed: a computer, a hand-held screen.)
  * A computer and a hand-held screen type in the box itself, as any messenger does (the owner, 16 Nov: a phone opened a page of its own to type, "instead of
  * directly making the chat a main chat like messenger/whatsapp"); a TV's box opens a page of its own, where the message is typed with the keys of the page
  * (the way the note of a rating is) and sent with the button. The Back of the remote goes back a page at a time: from the ⋯, a report or the writing to the
@@ -76,6 +80,14 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   const [draft, setDraft] = useState("");
   /** Personal stickers in the messages, while they are on (personalStickers.ts): saved from a chat where a message can be clicked or touched. */
   const personal = usePersonalLines(session, desk || narrow);
+  /**
+   * The chat's GIFs and stickers are shown (ChatMedia.tsx), and the message a press there shows, brought into view and lit once the chat is back: where a
+   * message can be pressed (a computer, a hand-held screen). A TV that is only a remote has neither the gallery nor the search, whose words it would type
+   * on the keys of a page.
+   */
+  const [mediaShown, setMediaShown] = useState(false);
+  const [showing, setShowing] = useState<{ id: number; seq: number } | null>(null);
+  const pointer = desk || narrow;
 
   // A chat that closes (the friend takes no messages now, or the friendship is over) forgets the pages it had open on it, and a message that goes takes its
   // page of reactions: when the chat opens again, it is the chat that is shown, not a page coming back by itself with the remote on it (the judge, 17 Nov).
@@ -91,6 +103,19 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   }, [blocked, reactingGone]);
 
   if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} personal={personal.lines} />;
+  if (mediaShown && pointer) {
+    return (
+      <ChatMediaTv
+        lines={session.state.lines}
+        name={name}
+        now={now}
+        personal={personal.lines}
+        narrow={narrow}
+        onShow={(id) => setShowing((was) => ({ id, seq: (was?.seq ?? 0) + 1 }))}
+        onBack={() => setMediaShown(false)}
+      />
+    );
+  }
   if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
   if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
   if (stickerPicking && !whyNotWrite(session)) return <StickerPickTv name={name} session={session} narrow={narrow} pointer={desk || narrow} onBack={() => setStickerPicking(false)} />;
@@ -136,6 +161,7 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       onClose={onClose}
       onOpenTitle={onOpenTitle}
       personal={personal}
+      {...(pointer ? { onMedia: () => setMediaShown(true), showing, onShown: () => setShowing(null) } : {})}
     />
   );
 }
@@ -162,6 +188,9 @@ export function ReadTv({
   onClose,
   onOpenTitle,
   personal,
+  onMedia,
+  showing = null,
+  onShown,
 }: {
   name: string;
   avatar?: AvatarId | undefined;
@@ -191,6 +220,11 @@ export function ReadTv({
   onOpenTitle?: ((item: LibraryItem) => void) | undefined;
   /** Personal stickers in the messages (see `usePersonalLines`): none while they are off. */
   personal?: { lines: PersonalLines | undefined; note: SaveNote | null } | undefined;
+  /** "GIFs and stickers" behind the ⋯ opens the chat's gallery (none: neither it nor Search is there, a TV that is only a remote). */
+  onMedia?: (() => void) | undefined;
+  /** The message the gallery shows, as the chat comes back (ChatLines.tsx `showing`); `onShown` once it is, so that it is shown that once. */
+  showing?: { id: number; seq: number } | null;
+  onShown?: (() => void) | undefined;
 }) {
   const t = useT();
   const { state } = session;
@@ -218,6 +252,9 @@ export function ReadTv({
   useEffect(() => {
     if (menu) document.querySelector<HTMLElement>("[data-testid='tv-chat-menu'] [data-nav]")?.focus();
   }, [menu]);
+  // (A press beside it shuts it, and goes where it was pressed: see pressBeside.ts.)
+  const moreWrap = useRef<HTMLDivElement>(null);
+  useShutOnPressBeside(menu, moreWrap, () => setMenu(false));
   const leaving = (event: FocusEvent<HTMLDivElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenu(false);
   };
@@ -225,6 +262,24 @@ export function ReadTv({
     setMenu(false);
     action();
   };
+
+  // The search (ChatSearch.tsx), in place of the head while it is open, where a message can be pressed. Back shuts it when nothing is open over it (a
+  // selection, a picture shown larger: each Back shuts first); shut, the keys go back to the ⋯ it was opened from.
+  const search = useChatSearch(state.lines);
+  const searching = search.open && onMedia !== undefined;
+  useBackFirst(searching && picked === null && !menu ? () => searchBack(session, search, "tv-chat-box") : undefined);
+  const wasSearching = useRef(false);
+  useEffect(() => {
+    const was = wasSearching.current;
+    wasSearching.current = searching;
+    // (The keys go back to the ⋯ when the search took them with it, not from the box being typed in: the judge, 17 Nov.)
+    const on = document.activeElement;
+    if (was && !searching && (!on || on === document.body)) more.current?.focus({ preventScroll: true });
+  }, [searching]);
+  // (The gallery's message, shown as the chat comes back, and not again when the chat comes back from another page.)
+  useEffect(() => {
+    if (showing) onShown?.();
+  }, [showing]); // eslint-disable-line react-hooks/exhaustive-deps
   /** The selected message's own button in the list. */
   const pickedBubble = (id: number) => document.querySelector<HTMLElement>(`[data-testid='tv-chat'] li[data-line="${id}"] button[data-testid='chat-bubble']`);
   // What had the keys at the top (Take back, Save) goes with the selection, as it is let go (Escape, a press elsewhere, the message taken back from another
@@ -324,29 +379,36 @@ export function ReadTv({
     // stray Enter from closing the chat. A keyboard's first arrow lands on the first thing, as everywhere.)
     <Screen key="read" testId="tv-chat" compact focus={!narrow} onBack={onClose} {...(narrow ? { className: "tv-chat-screen" } : {})}>
       <div className="tv-chat-window" role="group" aria-label={t("chat.title", { name })}>
-        <div className="tv-chat-head">
-          {/* (A hand-held screen: the chat is the whole screen, and the way back is the arrow at the top of it, as in any messenger.) */}
-          {narrow && (
-            <button type="button" className="tv-chat-headback" onClick={onClose} aria-label={t("common.back")} title={t("common.back")} data-nav {...(blocked ? { "data-autofocus": true } : {})} data-testid="tv-chat-back">
-              <ChevronLeftIcon />
-            </button>
+        <div className="tv-chat-head" data-searching={searching ? "true" : undefined}>
+          {searching ? (
+            // (The search, the head's width, as in any messenger: × or Back shuts it, and the friend is at the top again.)
+            <ChatSearchBar query={search.query} onQuery={search.setQuery} count={search.ids.length} at={search.at} onStep={search.step} onClose={search.close} nav />
+          ) : (
+            <>
+              {/* (A hand-held screen: the chat is the whole screen, and the way back is the arrow at the top of it, as in any messenger.) */}
+              {narrow && (
+                <button type="button" className="tv-chat-headback" onClick={onClose} aria-label={t("common.back")} title={t("common.back")} data-nav {...(blocked ? { "data-autofocus": true } : {})} data-testid="tv-chat-back">
+                  <ChevronLeftIcon />
+                </button>
+              )}
+              {avatar && (
+                <span className="tv-person-pic tv-chat-pic" data-online={online ? "true" : undefined}>
+                  <Avatar id={avatar} />
+                </span>
+              )}
+              <div className="tv-chat-who">
+                <h1 className="tv-chat-name" data-testid="tv-chat-name">
+                  {name}
+                </h1>
+                {/* (When they were last online, by the clock, and not the word "Chat" when that is not told: the owner, 17 Nov. Nothing told, nothing said.) */}
+                {status && (
+                  <p className="tv-chat-status" data-testid="tv-chat-status">
+                    {status}
+                  </p>
+                )}
+              </div>
+            </>
           )}
-          {avatar && (
-            <span className="tv-person-pic tv-chat-pic" data-online={online ? "true" : undefined}>
-              <Avatar id={avatar} />
-            </span>
-          )}
-          <div className="tv-chat-who">
-            <h1 className="tv-chat-name" data-testid="tv-chat-name">
-              {name}
-            </h1>
-            {/* (When they were last online, by the clock, and not the word "Chat" when that is not told: the owner, 17 Nov. Nothing told, nothing said.) */}
-            {status && (
-              <p className="tv-chat-status" data-testid="tv-chat-status">
-                {status}
-              </p>
-            )}
-          </div>
           {/* (What can be done with the message that is selected, beside the ⋯, as in any messenger: the owner, 17 Nov. Once done, the keys are the ⋯'s.) */}
           {pointer && (
             // (A computer's keys reach them from the message, with Right past what is under it, and Left from the first goes back to the message: the judge, 17 Nov.)
@@ -369,7 +431,8 @@ export function ReadTv({
               />
             </span>
           )}
-          <div className="tv-chat-more-wrap" onBlur={leaving}>
+          {!searching && (
+          <div className="tv-chat-more-wrap" ref={moreWrap} onBlur={leaving}>
             <button
               type="button"
               className="tv-chat-more"
@@ -405,6 +468,17 @@ export function ReadTv({
                   <TrashIcon /> {t("chat.takeBackLast")}
                 </button>
               )}
+              {/* (Search and the chat's GIFs and stickers where a message can be pressed: the owner, 17 Nov, "add a search in conversation (in the three dots)".) */}
+              {onMedia && (
+                <button type="button" onClick={pick(search.start)} data-nav data-testid="tv-chat-search-open">
+                  <SearchIcon /> {t("chat.search")}
+                </button>
+              )}
+              {onMedia && (
+                <button type="button" onClick={pick(onMedia)} data-nav data-testid="tv-chat-media-open">
+                  <ImageIcon /> {t("chat.media")}
+                </button>
+              )}
               <button type="button" aria-pressed={state.muted} onClick={pick(() => void session.setMuted(!state.muted))} data-nav data-testid="tv-chat-mute">
                 {state.muted ? <BellIcon /> : <BellOffIcon />} {t(state.muted ? "chat.unmute" : "chat.mute")}
               </button>
@@ -413,6 +487,7 @@ export function ReadTv({
               </button>
             </div>
           </div>
+          )}
         </div>
         {!session.loaded && !session.ended ? (
           <p className="tv-lead tv-chat-middle" role="status" data-testid="tv-chat-loading">
@@ -442,6 +517,8 @@ export function ReadTv({
                 }
               : {})}
             personal={personal?.lines}
+            found={searching ? search.found : undefined}
+            showing={showing}
             testId="tv-chat-lines"
           />
         )}

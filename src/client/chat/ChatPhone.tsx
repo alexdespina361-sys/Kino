@@ -2,8 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
-import { FilmIcon, GifIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, FilmIcon, GifIcon, ImageIcon, MoreIcon, PlusIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
+import { useBackFirst } from "../tv/dpad";
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
+import { ChatMediaSheet } from "./ChatMedia";
+import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
+import { useShutOnPressBeside } from "./pressBeside";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
 import { backLetsAnswerGo, ReplyStrip } from "./Reply";
@@ -36,8 +40,8 @@ export interface ChatPhoneProps {
 
 /**
  * The chat with one friend, on the phone: a sheet over the friend's page. The messages, with a line for who they are from and when; a box to write
- * in; Mute and Report on top. A message can be pressed: under it come the six reactions (Reactions.tsx), and, for one's own, Take back. The sheet closes with
- * the phone's Back, like the others.
+ * in; on top, when the friend was last online and the ⋮ (Search, the chat's GIFs and stickers, Mute, Report). A message can be pressed: under it come the
+ * reactions (Reactions.tsx), and, for one's own, Take back. The sheet closes with the phone's Back, like the others.
  */
 export function ChatPhone({ name, presence, online = false, session, report, receiving = true, onClose, onOpenTitle, now = Date.now() }: ChatPhoneProps) {
   const t = useT();
@@ -54,7 +58,9 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const personal = usePersonalLines(session, true);
   // (A sheet over the chat - the titles, the GIFs, the stickers, a report - lets the selection go: else Escape would let it go behind the sheet before
   // shutting the sheet, the judge, 17 Nov.)
-  const over = picking || gifPicking || stickerPicking || report.stage !== "closed";
+  /** The sheet of the chat's GIFs and stickers is open (ChatMedia.tsx). */
+  const [media, setMedia] = useState(false);
+  const over = picking || gifPicking || stickerPicking || media || report.stage !== "closed";
   useEffect(() => {
     if (over) setPicked(null);
   }, [over]);
@@ -67,22 +73,41 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   };
   const answering = session.replyTo === null ? undefined : state.lines.find((line) => line.id === session.replyTo);
 
+  // The ⋮ at the top (the owner, 17 Nov: "the three dots vertical"): Search, the chat's GIFs and stickers, Mute, Report. It shuts with Back, a press beside
+  // it, or a choice; a message selected shuts it (one Back would otherwise shut both).
+  const [menu, setMenu] = useState(false);
+  const moreWrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (picked !== null || over) setMenu(false);
+  }, [picked, over]);
+  useBackFirst(menu ? () => setMenu(false) : undefined);
+  useShutOnPressBeside(menu, moreWrap, () => setMenu(false));
+  const choose = (action: () => void) => () => {
+    setMenu(false);
+    action();
+  };
+  // The search, in place of the buttons at the top while it is open; the gallery, a sheet over the chat.
+  const search = useChatSearch(state.lines);
+  const [showing, setShowing] = useState<{ id: number; seq: number } | null>(null);
+  // (Back shuts the search when nothing is open over it: a selection, the ⋮, a sheet, or a picture shown larger - each of which Back shuts first.)
+  useBackFirst(search.open && picked === null && !menu && !over ? () => searchBack(session, search, "chat-input") : undefined);
+  const status = [presence, state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
+
   return (
     <>
       <Sheet title={t("chat.title", { name })} onClose={onClose} testId="chat-sheet">
         <div className="chat" data-testid="chat">
-          {presence && (
-            <p className="chat-presence" data-online={online} data-testid="chat-presence">
-              {presence}
-            </p>
-          )}
-          <div className="chat-tools">
-            <button type="button" className="chat-tool" aria-pressed={state.muted} onClick={() => void session.setMuted(!state.muted)} data-testid="chat-mute">
-              {t(state.muted ? "chat.unmute" : "chat.mute")}
-            </button>
-            <button type="button" className="chat-tool" onClick={report.start} data-testid="chat-report">
-              <ShieldIcon /> {t("chat.report")}
-            </button>
+          {/* (One row at the top: when they were last online, or the search while it is open; what can be done with the message selected; the ⋮.) */}
+          <div className="chat-tools" data-searching={search.open ? "true" : undefined}>
+            {search.open ? (
+              <ChatSearchBar query={search.query} onQuery={search.setQuery} count={search.ids.length} at={search.at} onStep={search.step} onClose={search.close} />
+            ) : status ? (
+              <p className="chat-presence" data-online={online} data-testid="chat-presence">
+                {status}
+              </p>
+            ) : (
+              <span className="chat-presence" aria-hidden="true" />
+            )}
             {/* (What can be done with the message that is selected, at the top and not under it, as in any messenger: the owner, 17 Nov.) */}
             <span className="chat-tools-picked">
               <PickedActions
@@ -97,6 +122,46 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
                 className="chat-tool"
               />
             </span>
+            {!search.open && (
+            <div
+              className="chat-more-wrap"
+              ref={moreWrap}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenu(false);
+              }}
+            >
+              <button
+                type="button"
+                className="chat-tool chat-more"
+                aria-label={t("chat.menu")}
+                title={t("chat.menu")}
+                aria-expanded={menu}
+                aria-haspopup="menu"
+                onClick={() => {
+                  if (!menu) setPicked(null);
+                  setMenu(!menu);
+                }}
+                data-testid="chat-more"
+              >
+                <MoreIcon />
+              </button>
+              {/* (There all along, and hidden: nothing in it is pressed, or reached with Tab, until the ⋮ opens it.) */}
+              <div className="chat-menu" role="menu" hidden={!menu} data-testid="chat-menu">
+                <button type="button" role="menuitem" onClick={choose(search.start)} data-testid="chat-search-open">
+                  <SearchIcon /> {t("chat.search")}
+                </button>
+                <button type="button" role="menuitem" onClick={choose(() => setMedia(true))} data-testid="chat-media-open">
+                  <ImageIcon /> {t("chat.media")}
+                </button>
+                <button type="button" role="menuitem" aria-pressed={state.muted} onClick={choose(() => void session.setMuted(!state.muted))} data-testid="chat-mute">
+                  {state.muted ? <BellIcon /> : <BellOffIcon />} {t(state.muted ? "chat.unmute" : "chat.mute")}
+                </button>
+                <button type="button" role="menuitem" onClick={choose(report.start)} data-testid="chat-report">
+                  <ShieldIcon /> {t("chat.report")}
+                </button>
+              </div>
+            </div>
+            )}
           </div>
 
           {!session.loaded && !session.ended ? (
@@ -120,6 +185,8 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction), onReply: reply })}
               onOpenTitle={onOpenTitle}
               personal={personal.lines}
+              found={search.found}
+              showing={showing}
             />
           )}
           {personal.note && (
@@ -146,6 +213,16 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
       {gifPicking && gifKey && !blocked && <GifPickSheet name={name} gifKey={gifKey} session={session} onClose={() => setGifPicking(false)} />}
       {stickerPicking && !blocked && <StickerPickSheet name={name} session={session} onClose={() => setStickerPicking(false)} />}
       {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} personal={personal.lines} />}
+      {media && (
+        <ChatMediaSheet
+          lines={state.lines}
+          name={name}
+          now={now}
+          personal={personal.lines}
+          onShow={(id) => setShowing((was) => ({ id, seq: (was?.seq ?? 0) + 1 }))}
+          onClose={() => setMedia(false)}
+        />
+      )}
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { LibraryItem } from "../../shared";
 import { askTitle } from "../shared/titleAddress";
 
@@ -18,6 +18,18 @@ export type ChatTitle = { status: "loading" } | { status: "ready"; item: Library
 type Kept = { item: LibraryItem | null } | { failedAt: number };
 const kept = new Map<string, Kept>();
 const asking = new Map<string, Promise<void>>();
+/** How many answers have come: what is worked out from what is known (a chat's search, by the titles' names) listens to it. */
+let learned = 0;
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => void listeners.delete(listener);
+};
+
+/** A number that goes up each time the server answers about a title. */
+export function useTitlesLearned(): number {
+  return useSyncExternalStore(subscribe, () => learned, () => learned);
+}
 
 /** What is known of a title now, without asking. */
 export function knownTitle(id: string, now = Date.now()): ChatTitle {
@@ -40,7 +52,11 @@ export function askAbout(id: string): Promise<void> {
   if (!pending) {
     pending = askTitle(id)
       .then((answer) => void kept.set(id, answer === undefined ? { failedAt: Date.now() } : { item: answer }))
-      .finally(() => asking.delete(id));
+      .finally(() => {
+        asking.delete(id);
+        learned++;
+        for (const listener of listeners) listener();
+      });
     asking.set(id, pending);
   }
   return pending;

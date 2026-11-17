@@ -94,7 +94,8 @@ export function QuoteBlock({ quoted, name, onShow, focusable = true }: { quoted:
  * before this, as it is heard on the way down.)
  */
 export function backLetsAnswerGo(event: KeyboardEvent<HTMLElement>, answering: boolean, letGo: () => void, box: string): void {
-  if (!answering || event.altKey || event.ctrlKey || event.metaKey || actionForKey(event.nativeEvent) !== "back") return;
+  // (Escape while a word is being composed - a Chinese or Japanese keyboard - is the keyboard's own, and leaves the answer be: the judge, 17 Nov.)
+  if (!answering || event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing || actionForKey(event.nativeEvent) !== "back") return;
   if (!(event.target instanceof HTMLElement) || !event.target.matches(`[data-testid='${box}']`)) return;
   event.preventDefault();
   event.stopPropagation();

@@ -10,6 +10,7 @@ import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
 import { ReactBar, Reactions } from "./Reactions";
 import { QuoteBlock } from "./Reply";
+import { marked } from "./search";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
@@ -53,7 +54,20 @@ export interface ChatLinesProps {
    * saving a friend's into one's own collection, `has` saying which are there already. Without it a message of one says that it is not available.
    */
   personal?: PersonalLines | undefined;
+  /**
+   * A search of the chat (ChatSearch.tsx, search.ts): the messages found are lit, their words that were searched for marked, and the one shown (`current`)
+   * brought into view each time it changes.
+   */
+  found?: SearchFound | undefined;
+  /** A message to bring into view and light for a moment, as a quote's does (the gallery's): again each time `seq` changes. */
+  showing?: { id: number; seq: number } | null | undefined;
   testId?: string;
+}
+
+export interface SearchFound {
+  query: string;
+  ids: ReadonlySet<number>;
+  current: number | null;
 }
 
 export interface PersonalLines {
@@ -96,12 +110,21 @@ export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boole
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, found: search, showing, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLOListElement>(null);
   const atEnd = useRef(true);
+  /**
+   * The list on its way to a message brought into view (`bringIntoView`): where it will stop, and until when its own scrolling is not asked whether it is at
+   * the end (its first steps are still near it). The way there decides that, from where it will stop.
+   */
+  const travel = useRef<{ goal: number; until: number } | null>(null);
+  const travelTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(travelTimer.current), []);
+  /** The newest message seen: one of one's own that comes after it is followed to the end, wherever the list was being read. */
+  const newest = useRef<number | null>(null);
   // (A report shows what it would send: the text as it is, a GIF's address among it.)
   const gifs = useMemo(() => lines.map((line) => (showWriter || line.sticker ? null : gifOf(line.text))), [lines, showWriter]);
   // (A report shows what it would send: a sticker's emoji, as it was sent.)
@@ -116,8 +139,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   // its size by itself (the page's fonts arriving, the box shrinking under a keyboard) so that the end does not slip away.
   useEffect(() => {
     const element = box.current;
+    // (One's own new message is shown, as in any messenger, even when the list was being read higher up: what was just sent is where the eye goes.)
+    const last = lines[lines.length - 1];
+    if (last && newest.current !== null && last.id > newest.current && last.mine && !showWriter) {
+      atEnd.current = true;
+      travel.current = null;
+    }
+    if (last) newest.current = Math.max(newest.current ?? last.id, last.id);
     if (element && atEnd.current) element.scrollTop = element.scrollHeight;
-  }, [lines]);
+  }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const element = box.current;
     const inside = content.current;
@@ -260,10 +290,40 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   // The message a quote names, brought into view and lit for a moment (a quote pressed). One no longer in the chat has no quote to press.
   const shownTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(shownTimer.current), []);
+  /**
+   * A message brought into view: in the middle of the list, smoothly where motion is welcome, the list alone moving (not the sheet or the page around it).
+   * Whether the list is then kept at its end is where it will stop that says: a message already in view near the end moves nothing, and the list goes on
+   * following what comes (the judge, 17 Nov: it stopped, and new messages, one's own too, came in below where it was looked at).
+   */
+  const bringIntoView = (id: number): HTMLElement | null => {
+    const element = box.current;
+    const item = element?.querySelector<HTMLElement>(`li[data-line="${id}"]`) ?? null;
+    if (!element || !item) return null;
+    const view = element.getBoundingClientRect();
+    const at = item.getBoundingClientRect();
+    const most = Math.max(0, element.scrollHeight - element.clientHeight);
+    const goal = Math.round(Math.min(most, Math.max(0, element.scrollTop + at.top - view.top - (view.height - at.height) / 2)));
+    atEnd.current = most - goal <= AT_END;
+    const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const wait = smooth ? 900 : 100;
+    const trip = Math.abs(goal - element.scrollTop) > 1 ? { goal, until: performance.now() + wait } : null;
+    travel.current = trip;
+    // (When its time is up the list is asked where it is, once more: a hand that scrolled it meanwhile and stopped sends no scroll after, the judge, 17 Nov.)
+    window.clearTimeout(travelTimer.current);
+    if (trip) {
+      travelTimer.current = window.setTimeout(() => {
+        const list = box.current;
+        if (travel.current !== trip || !list) return;
+        travel.current = null;
+        atEnd.current = list.scrollHeight - list.scrollTop - list.clientHeight <= AT_END;
+      }, wait + 30);
+    }
+    element.scrollTo({ top: goal, behavior: smooth ? "smooth" : "auto" });
+    return item;
+  };
   const showQuoted = (id: number) => {
-    const item = box.current?.querySelector<HTMLElement>(`li[data-line="${id}"]`);
+    const item = bringIntoView(id);
     if (!item) return;
-    item.scrollIntoView({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     for (const lit of box.current?.querySelectorAll<HTMLElement>("li[data-shown]") ?? []) delete lit.dataset.shown;
     item.dataset.shown = "true";
     window.clearTimeout(shownTimer.current);
@@ -271,6 +331,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       if (item.isConnected) delete item.dataset.shown;
     }, SHOWN_MS);
   };
+  // The search's message shown, brought into view each time it changes (Earlier, Later, what is typed); the gallery's, lit as a quote's is, each time one is pressed.
+  const current = search?.current ?? null;
+  useEffect(() => {
+    if (current !== null) bringIntoView(current);
+  }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showingSeq = showing?.seq;
+  useEffect(() => {
+    if (showing) showQuoted(showing.id);
+  }, [showingSeq]); // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * A press beside the messages lets the selection go, as in any messenger: not the press that ended a hold, wherever it ends. The message held can move
    * from under a mouse while it is held (the reactions come under it, and a list at its end stays at its end), and the press then ends beside it, on its
@@ -344,7 +413,12 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     if (!element) return;
     scrolled.current = performance.now();
     letGo(); // (a hold that has begun is no hold once the list moves under it)
-    atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+    // (On its way to a message brought into view, the list is where it is going, not where it passes: see `bringIntoView`.)
+    const trip = travel.current;
+    if (!trip || performance.now() >= trip.until || Math.abs(element.scrollTop - trip.goal) <= 1) {
+      travel.current = null;
+      atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+    }
     const on = document.activeElement;
     if (remote && on instanceof HTMLElement && on.matches(CARD) && element.contains(on)) {
       const at = on.getBoundingClientRect();
@@ -495,11 +569,13 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
             }
             if (canPress) press();
           };
+          const hit = search?.ids.has(line.id) === true;
           const bubble = (text: ReactNode) => (
             <>
               {showWriter && <span className="chat-writer">{line.mine ? t("chat.you") : name}</span>}
               <span className="chat-text" data-testid="chat-text">
-                {text}
+                {/* (A message the search found has the words searched for marked, as they were written.) */}
+                {hit && search && typeof text === "string" ? <Marked text={text} query={search.query} /> : text}
               </span>
               <span className="chat-time">{stampOf(line.at, language)}</span>
             </>
@@ -542,7 +618,14 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
             </>
           );
           return (
-            <li key={line.id} className={`chat-line ${line.mine ? "chat-mine" : "chat-theirs"}`} data-testid="chat-line" data-line={line.id} data-mine={line.mine}>
+            <li
+              key={line.id}
+              className={`chat-line ${line.mine ? "chat-mine" : "chat-theirs"}`}
+              data-testid="chat-line"
+              data-line={line.id}
+              data-mine={line.mine}
+              {...(hit ? { "data-found": search?.current === line.id ? "current" : "true" } : {})}
+            >
               {startsDay(lines, index) && (
                 <span className="chat-day" data-testid="chat-day">
                   {dayOf(line.at, now, language)}
@@ -565,6 +648,24 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       </ol>
       {enlarged && enlargedThere && <PictureView src={enlarged.src} alt={enlarged.alt} small={enlarged.small} onClose={() => setEnlarged(null)} />}
     </div>
+  );
+}
+
+/** A message's words with those a search looked for marked (search.ts `marked`). */
+function Marked({ text, query }: { text: string; query: string }) {
+  const pieces = useMemo(() => marked(text, query), [text, query]);
+  return (
+    <>
+      {pieces.map((piece, at) =>
+        piece.hit ? (
+          <mark key={at} className="chat-found-words" data-testid="chat-found-words">
+            {piece.text}
+          </mark>
+        ) : (
+          piece.text
+        ),
+      )}
+    </>
   );
 }
 

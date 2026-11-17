@@ -4,6 +4,25 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.7",
+    date: "2026-11-17",
+    en: [
+      "In a chat on a phone or a computer: search the messages from the ⋮ at the top. Accents and capitals don't matter; the arrows go from one to the next.",
+      "In a chat on a phone or a computer: all its GIFs and stickers are behind the ⋮ too. Press one to go to its message.",
+      "On a phone: Mute and Report are behind the chat's ⋮, and the top of a muted chat says so.",
+    ],
+    ro: [
+      "Într-un chat pe telefon sau calculator: caută în mesaje din meniul ⋮ de sus. Diacriticele și majusculele nu contează; săgețile trec de la un rezultat la altul.",
+      "Într-un chat pe telefon sau calculator: toate GIF-urile și stickerele lui sunt și ele în meniul ⋮. Apasă pe unul ca să ajungi la mesajul lui.",
+      "Pe telefon: „Dă pe mut” și „Raportează” sunt acum în meniul ⋮ al chatului, iar un chat pus pe mut arată asta sus.",
+    ],
+    it: [
+      "In una chat su telefono o computer: cerca nei messaggi dal ⋮ in alto. Accenti e maiuscole non contano; le frecce passano da un risultato all'altro.",
+      "In una chat su telefono o computer: anche tutte le sue GIF e i suoi sticker sono nel ⋮. Toccane uno per andare al suo messaggio.",
+      "Su telefono: Silenzia e Segnala sono nel ⋮ della chat, e in alto una chat silenziata lo indica.",
+    ],
+  },
+  {
     version: "0.4.6",
     date: "2026-11-17",
     en: [
