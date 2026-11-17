@@ -315,6 +315,9 @@ const TmdbSeasonSchema = z.object({
 const TmdbShowSchema = z.object({
   seasons: z.array(z.object({ season_number: z.number().int(), episode_count: z.number().int().optional(), air_date: z.string().nullable().optional() })),
 });
+type TmdbEpisode = z.infer<typeof TmdbSeasonSchema>["episodes"][number];
+/** A season of a show, and how many episodes it has. */
+type ShowPart = { season: number; episodes: number };
 
 /**
  * One title with what TMDB can append to its answer (`append_to_response`): the people, the age rating (a film's `release_dates`, a show's `content_ratings`)
@@ -472,6 +475,65 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const probeFetcher = options.probeFetch ?? get;
   const probeTimeout = options.probeTimeoutMs ?? 1500;
   const probeSlots = new Slots(options.probesAtOnce ?? PROBES_AT_ONCE);
+
+  /**
+   * What TMDB says of a show's seasons: those from 1 on with episodes, out by today, in order, with how many episodes each has. Remembered for six
+   * hours, for so many shows. Null for a show TMDB does not know; it throws when TMDB cannot be asked, so that nothing is remembered.
+   */
+  const shows = new Map<number, { at: number; seasons: ShowPart[] }>();
+  const showOf = async (id: number): Promise<ShowPart[] | null> => {
+    const kept = shows.get(id);
+    if (kept && now() - kept.at < PROBE_TTL_MS) return kept.seasons;
+    // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
+    const res = await get(`${BASE_URL}/tv/${id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
+    knownTvIds.add(id);
+    const day = today();
+    const seasons = TmdbShowSchema.parse(await res.json())
+      .seasons.filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
+      .map((season) => ({ season: season.season_number, episodes: season.episode_count ?? 0 }))
+      .sort((a, b) => a.season - b.season);
+    remember(shows, id, { at: now(), seasons }, MAX_PRELOADED_SEASONS);
+    return seasons;
+  };
+  /** The episodes of one season as TMDB has them; null for a season it does not know. */
+  const seasonOf = async (id: number, season: number): Promise<TmdbEpisode[] | null> => {
+    const res = await get(`${BASE_URL}/tv/${id}/season/${season}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`episodes: HTTP ${res.status}`);
+    return TmdbSeasonSchema.parse(await res.json()).episodes;
+  };
+  /**
+   * The parts a show is played in when TMDB keeps it as one long season and the players number it in seasons (JJK: TMDB's one season of 59, the
+   * players' seasons of 24 and more): the seasons the video check told of when it told of more than one, beginning with 1; else, for a season of
+   * more than 30 episodes, parts of 24. Null for any other show, which is listed as TMDB lists it. `seasons` and `episodes` both go by this, so
+   * the list of seasons and the episodes of each agree.
+   */
+  const partsOf = async (id: number, show: ShowPart[]): Promise<ShowPart[] | null> => {
+    if (show.length !== 1 || show[0]!.season !== 1) return null;
+    let counts = preloadedSeasonCounts.get(id);
+    if (!counts && shouldVerify) {
+      try {
+        const probe = await probePlayback(id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
+        if (probe.seasonCounts) {
+          counts = probe.seasonCounts;
+          remember(preloadedSeasonCounts, id, counts, MAX_PRELOADED_SEASONS);
+        }
+        if (probe.seasons && probe.seasons.length > 0) remember(preloadedSeasons, id, probe.seasons, MAX_PRELOADED_SEASONS);
+      } catch {
+        // (no word from the check: the show is cut as if it had said nothing)
+      }
+    }
+    const told = Object.entries(counts ?? {})
+      .map(([season, episodes]) => ({ season: Number(season), episodes }))
+      .filter((part) => Number.isInteger(part.season) && part.season >= 1 && Number.isInteger(part.episodes) && part.episodes > 0)
+      .sort((a, b) => a.season - b.season);
+    if (told[0]?.season === 1) return told.length > 1 ? told : null; // (the players have it as one season too: TMDB's, whole)
+    const total = show[0]!.episodes;
+    if (total <= 30) return null;
+    return Array.from({ length: Math.ceil(total / 24) }, (_, at) => ({ season: at + 1, episodes: Math.min(24, total - at * 24) }));
+  };
 
   const shelfGroups = options.shelves ?? SHELF_GROUPS;
   const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => {
@@ -690,116 +752,51 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
-
-      let counts = preloadedSeasonCounts.get(title.id);
-      if (!counts && shouldVerify) {
-        try {
-          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
-          if (probe.seasonCounts) {
-            counts = probe.seasonCounts;
-            remember(preloadedSeasonCounts, title.id, counts, MAX_PRELOADED_SEASONS);
-          }
-          if (probe.seasons && probe.seasons.length > 0) {
-            remember(preloadedSeasons, title.id, probe.seasons, MAX_PRELOADED_SEASONS);
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
-      const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      const show = await showOf(title.id);
+      if (!show) return [];
+      const parts = await partsOf(title.id, show);
       const day = today();
+      const detail = (episode: TmdbEpisode, number: number): EpisodeDetail => {
+        const name = episode.name?.trim();
+        const overview = episode.overview?.trim();
+        return {
+          season,
+          episode: number,
+          ...(name ? { title: name.slice(0, 200) } : {}),
+          ...(overview ? { overview: overview.slice(0, 400) } : {}),
+          ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+          ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+          url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${number}`,
+        };
+      };
 
-      if (res.ok) {
-        const tmdbSeason = TmdbSeasonSchema.parse(await res.json());
-        const validEps = tmdbSeason.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
-
-        return validEps.map((episode) => {
-          const name = episode.name?.trim();
-          const overview = episode.overview?.trim();
-          return {
-            season,
-            episode: episode.episode_number,
-            ...(name ? { title: name.slice(0, 200) } : {}),
-            ...(overview ? { overview: overview.slice(0, 400) } : {}),
-            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-            url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${episode.episode_number}`,
-          };
-        });
+      if (parts) {
+        // A show TMDB keeps as one long season is played in parts (see `partsOf`): a part is its share of TMDB's season 1, numbered from one, and
+        // no episode is in two parts (the judge, 17 Nov: with season 1 listed whole, the parts after it listed its episodes again).
+        const at = parts.findIndex((part) => part.season === season);
+        if (at < 0) return [];
+        const offset = parts.slice(0, at).reduce((sum, part) => sum + part.episodes, 0);
+        const all = await seasonOf(title.id, 1);
+        if (!all) return [];
+        return all
+          .filter((episode) => !(episode.air_date && episode.air_date > day))
+          .slice(offset, offset + parts[at]!.episodes)
+          .map((episode, index) => detail(episode, index + 1));
       }
 
-      // If TMDB returned 404 for this season (e.g. TMDB lumped all seasons into season 1):
-      if (res.status === 404 && season > 1) {
-        const s1Url = `${BASE_URL}/tv/${title.id}/season/1?api_key=${apiKey}&language=en-US`;
-        const s1Res = await get(s1Url, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-        if (s1Res.ok) {
-          const s1Data = TmdbSeasonSchema.parse(await s1Res.json());
-          const validEps = s1Data.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
-
-          let offset = 0;
-          let targetCount = counts?.[season] ?? 0;
-          if (counts) {
-            for (let s = 1; s < season; s++) {
-              offset += counts[s] ?? 0;
-            }
-          } else if (validEps.length > 24) {
-            offset = (season - 1) * 24;
-            targetCount = 24;
-          }
-          const slice = validEps.slice(offset, targetCount > 0 ? offset + targetCount : undefined);
-
-          if (slice.length > 0) {
-            return slice.map((episode, idx) => {
-              const name = episode.name?.trim();
-              const overview = episode.overview?.trim();
-              return {
-                season,
-                episode: idx + 1,
-                ...(name ? { title: name.slice(0, 200) } : {}),
-                ...(overview ? { overview: overview.slice(0, 400) } : {}),
-                ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-                ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-                url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${idx + 1}`,
-              };
-            });
-          }
-        }
-      }
-
-      if (res.status === 404) return [];
-      throw new Error(`episodes: HTTP ${res.status}`);
+      // Any other show is listed as TMDB lists it, each season whole (a long one is shown 24 at a time by the page, not cut here: Bleach, 17 Nov).
+      const episodes = await seasonOf(title.id, season);
+      if (!episodes) return [];
+      return episodes.filter((episode) => !(episode.air_date && episode.air_date > day)).map((episode) => detail(episode, episode.episode_number));
     },
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
-      const preloaded = preloadedSeasons.get(title.id);
-      if (preloaded && preloaded.length > 0 && preloaded.includes(1)) return preloaded;
-      // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
-      const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-      if (res.status === 404) return [];
-      if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
-      knownTvIds.add(title.id);
-      const day = today();
-      const parsed = TmdbShowSchema.parse(await res.json());
-      const valid = parsed.seasons
-        .filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
-        .map((season) => season.season_number)
-        .sort((a, b) => a - b);
-      if (valid.length === 1 && valid[0] === 1) {
-        const counts = preloadedSeasonCounts.get(title.id);
-        if (counts) {
-          const cSeasons = Object.keys(counts).map(Number).filter((n) => Number.isInteger(n) && n >= 1).sort((a, b) => a - b);
-          if (cSeasons.length > 0) return cSeasons;
-        }
-        const s1 = parsed.seasons.find((s) => s.season_number === 1);
-        if (s1 && (s1.episode_count ?? 0) > 30) {
-          const derived = Math.ceil(s1.episode_count! / 24);
-          return Array.from({ length: derived }, (_, i) => i + 1);
-        }
-      }
-      return valid;
+      // (TMDB's list, always: the video check's own list of seasons once put Bleach at seasons 3 to 16 over TMDB's 1 and 2. The judge, 17 Nov.)
+      const show = await showOf(title.id);
+      if (!show) return [];
+      const parts = await partsOf(title.id, show);
+      return parts ? parts.map((part) => part.season) : show.map((part) => part.season);
     },
   };
 }
