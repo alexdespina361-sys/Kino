@@ -13,6 +13,8 @@ import { ExitHint } from "./shared/ExitHint";
 import { setUpFullscreen } from "./shared/fullscreen";
 import { ScreenGate } from "./shared/ScreenGate";
 import { noteStrayAddress } from "./shared/strayAddress";
+import { watchForUpdates } from "./shared/update";
+import { UpdateHint } from "./shared/UpdateHint";
 import "./styles.css";
 import "./polish/base.css";
 
@@ -38,6 +40,8 @@ setUpFullscreen({ byItself: role === "tv" && !thisIsDesk() && !thisIsHandHeld() 
 if (thisIsHandHeld()) installExitGuard();
 // What the page can say about itself if somebody sends feedback is kept from the start (nothing leaves the page unless it is sent: see feedback/diagnostics.ts).
 installDiagnostics();
+// A page of an older Kino than the site serves offers to be reloaded (see shared/update.ts).
+watchForUpdates();
 // A cat on the TV's screen, for a device that asked for one and a host that offers it (nothing of it is downloaded otherwise: see cat/boot.ts).
 bootCat(role);
 // (Drawn once the words of this screen's language are here: English is in the page already, Romanian and Italian are a small file each.)
@@ -50,6 +54,7 @@ void languageReady.then(() =>
         </ScreenGate>
       </FriendsProvider>
       <ExitHint />
+      <UpdateHint />
       <FeedbackGate />
     </AccountProvider>,
   ),
