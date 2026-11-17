@@ -4,7 +4,7 @@ import sharp from "sharp";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { CHAT_REPORT_LINES, CHAT_TEXT_MAX } from "../src/shared";
+import { CHAT_REPORT_LINES, CHAT_TEXT_MAX, ratingKey } from "../src/shared";
 import { FEEDBACK_TOKEN } from "./feedbackToken";
 import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, seeded, test, showProfilePage } from "./helpers";
 
@@ -1165,6 +1165,34 @@ async function knowsTitles(page: Page) {
   });
 }
 
+/** A show the library knows, by a link of its own (its seasons and its episodes are asked about by it). */
+const SHOW = { id: "filmpire-tv-1399", title: "A Long Show", year: 2011, kind: "series", url: "https://films.example/watch/1399" };
+
+/**
+ * The server's answers about titles, a show's seasons and a season's episodes (no test asks the real library): it knows The Matrix and the show, which has two
+ * seasons, of three and six episodes, each with a link that plays the fixture.
+ */
+async function knowsShow(page: Page) {
+  await page.route(/\/api\/library\/title\?/, (route) => {
+    const id = new URL(route.request().url()).searchParams.get("id");
+    return route.fulfill({ json: { item: id === MATRIX.id ? MATRIX : id === SHOW.id ? SHOW : null } });
+  });
+  await page.route(/\/api\/library\/seasons\?/, (route) => route.fulfill({ json: { seasons: [1, 2] } }));
+  await page.route(/\/api\/library\/about\?/, (route) => route.fulfill({ json: { about: null } })); // (nothing asked of the movie database)
+  await page.route(/\/api\/library\/episodes\?/, (route) => {
+    const season = Number(new URL(route.request().url()).searchParams.get("season"));
+    const episodes = Array.from({ length: season === 2 ? 6 : 3 }, (_, at) => ({ season, episode: at + 1, title: `Chapter ${at + 1}`, runtime: 45, url: `/fixtures/sample.mp4?s=${season}&e=${at + 1}` }));
+    return route.fulfill({ json: { episodes } });
+  });
+}
+
+/** A rating of a title, as a screen keeps one (the page is not loaded anew: `saves` does that). */
+async function rates(page: Page, title: typeof SHOW, score: number) {
+  const now = Date.now();
+  const ratings = [{ key: ratingKey(title.url), at: now, title: title.title, url: title.url, kind: title.kind, score, ratedAt: now }];
+  expect((await page.request.post(`/api/profiles/${await profileOf(page)}/sync`, { data: { since: 0, ratings } })).ok()).toBe(true);
+}
+
 /** Titles saved in the profile's first list, as a screen saves them; the page is loaded anew to have them (a phone starts at its home screen, a screen at its library). */
 async function saves(page: Page, titles: typeof SAVED) {
   const now = Date.now();
@@ -1237,13 +1265,18 @@ test.describe("a title sent in a chat", () => {
     await expect(panel.locator("[data-tab='titles'][role='tab']")).toBeFocused();
     const picks = ann.page.getByTestId("tv-chat-pick");
     await expect(picks).toHaveCount(2);
-    // (Up lands on the title above the tab, as the arrows do anywhere: the rows of titles are a few to a line, the tabs in the middle under them)
+    // (Up lands on the title above the tab, or the button beside it, as the arrows do anywhere: the rows of titles are a few to a line, the tabs in the middle under them)
     await ann.page.keyboard.press("ArrowUp");
-    await expect.poll(() => picks.evaluateAll((all) => all.findIndex((one) => one === document.activeElement))).toBeGreaterThanOrEqual(0);
-    if (await picks.nth(1).evaluate((pick) => pick === document.activeElement)) await ann.page.keyboard.press("ArrowLeft");
+    const inTitles = () => panel.locator("[data-testid='tv-chat-pick'], [data-testid='tv-chat-pick-more']").evaluateAll((all) => all.some((one) => one === document.activeElement));
+    await expect.poll(inTitles).toBe(true);
+    for (let press = 0; press < 4 && !(await picks.first().evaluate((pick) => pick === document.activeElement)); press++) await ann.page.keyboard.press("ArrowLeft");
     await expect(picks.first()).toBeFocused();
+    // (Right is the button of the title's send step, beside it; Right again the next title)
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(panel.getByTestId("tv-chat-pick-more").first()).toBeFocused();
     await ann.page.keyboard.press("ArrowRight");
     await expect(picks.nth(1)).toBeFocused();
+    await ann.page.keyboard.press("ArrowLeft");
     await ann.page.keyboard.press("ArrowLeft");
     await expect(picks.first()).toBeFocused();
     await ann.page.keyboard.press("Enter");
@@ -1257,6 +1290,21 @@ test.describe("a title sent in a chat", () => {
     await ann.page.keyboard.press("Enter");
     await expect(panel).toHaveAttribute("data-tab", "titles");
     await expect(picks.first()).toBeFocused();
+    // (OK on the button beside a title opens its send step in the pane, the remote on its first step; Back goes back to the titles, onto that button, before
+    // it shuts the panel)
+    await ann.page.keyboard.press("ArrowRight");
+    const more = panel.locator("[data-testid='tv-chat-pick-more'][data-address='movie-603']");
+    await expect(more).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    const step = panel.getByTestId("tv-chat-extras");
+    await expect(step.locator("[data-testid='tv-chat-extras-time'][data-minutes='1']")).toBeFocused(); // (a film: no episode to choose)
+    await expect(step.getByTestId("tv-chat-extras-from")).toContainText("From the beginning");
+    await ann.page.keyboard.press("Enter");
+    await expect(step.getByTestId("tv-chat-extras-from")).toContainText("From 1:00");
+    await ann.page.keyboard.press("Escape");
+    await expect(step).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await expect(more).toBeFocused();
     await ann.page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
@@ -1294,6 +1342,119 @@ test.describe("a title sent in a chat", () => {
     await ann.page.getByTestId("tv-chat-takeback").click();
     await expect(card).toHaveCount(0, SOON);
     await expect(bob.page.getByTestId("tv-chat-lines")).toBeFocused();
+  });
+
+  test("on the phone: the button beside a title opens its send step - one episode, from a time, with the rating - and the friend's card says them and opens the title at that episode", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const { ann, bob } = await twoFriends(browser);
+    for (const page of [ann.page, bob.page]) await knowsShow(page);
+    await rates(ann.page, SHOW, 8);
+    await saves(ann.page, [{ id: SHOW.id, title: SHOW.title, year: SHOW.year, url: SHOW.url }, SAVED[0]!]);
+    await expect.poll(() => atHome(ann.page)).toBe(true);
+    await openChat(ann.page);
+    const panel = await openPanel(ann.page, "titles");
+    await expect(panel.getByTestId("chat-pick")).toHaveCount(2);
+    // (a film's step has no episode to choose; its arrow, and Back, go back to the titles - not out of the panel)
+    await panel.locator("[data-testid='chat-pick-more'][data-address='movie-603']").click();
+    const step = panel.getByTestId("chat-extras");
+    await expect(step).toContainText("The Matrix (1999)");
+    await expect(step.getByTestId("chat-extras-whole")).toHaveCount(0);
+    await expect(step.getByTestId("chat-extras-from")).toContainText("From the beginning");
+    await expect(step.getByTestId("chat-extras-rating"), "not rated: nothing to add").toHaveCount(0);
+    await step.getByTestId("chat-extras-back").click();
+    await expect(panel.getByTestId("chat-pick")).toHaveCount(2);
+    await panel.locator("[data-testid='chat-pick-more'][data-address='tv-1399']").click();
+    await expect(step).toContainText("A Long Show (2011)");
+    await ann.page.keyboard.press("Escape");
+    await expect(step).toHaveCount(0);
+    await expect(panel, "Back shut the step first").toBeVisible();
+    await panel.locator("[data-testid='chat-pick-more'][data-address='tv-1399']").click();
+    // (everything is off as it opens: Send would send what a plain press does)
+    await expect(step.getByTestId("chat-extras-whole")).toHaveAttribute("aria-checked", "true");
+    await expect(step.getByTestId("chat-extras-from"), "a whole show has no time to start at").toHaveCount(0);
+    await expect(step.getByTestId("chat-extras-rating")).toHaveAttribute("aria-pressed", "false");
+    await step.getByTestId("chat-extras-one").click();
+    await expect(step.getByTestId("chat-extras-season")).toContainText("Season 1");
+    await expect(step.getByTestId("chat-extras-episode")).toContainText("Episode 1");
+    await expect(step.getByTestId("chat-extras-season-back")).toHaveAttribute("aria-disabled", "true");
+    await step.getByTestId("chat-extras-season-on").click();
+    await expect(step.getByTestId("chat-extras-season")).toContainText("Season 2");
+    await expect(step.getByTestId("chat-extras-season-on"), "the show has two").toHaveAttribute("aria-disabled", "true");
+    for (let press = 0; press < 4; press++) await step.getByTestId("chat-extras-episode-on").click();
+    await expect(step.getByTestId("chat-extras-episode")).toContainText("Episode 5");
+    await step.locator("[data-testid='chat-extras-time'][data-minutes='10']").click();
+    await expect(step.getByTestId("chat-extras-from")).toContainText("From 10:00");
+    await step.getByTestId("chat-extras-typed").fill("12:34");
+    await expect(step.getByTestId("chat-extras-from")).toContainText("From 12:34");
+    await step.getByTestId("chat-extras-rating").click();
+    await expect(step.getByTestId("chat-extras-rating")).toHaveAttribute("aria-pressed", "true");
+    await step.getByTestId("chat-extras-go").click();
+    await expect(panel, "sent: the panel goes with it").toHaveCount(0);
+    await expect(texts(ann.page)).toHaveText(["A Long Show (2011)"]); // (the words of before: a page of before reads the name)
+    await expect(ann.page.getByTestId("chat-card-where")).toHaveText("2011 · S2:E5 · from 12:34");
+    await expect(ann.page.getByTestId("chat-card-score")).toContainText("You gave it 8/10");
+
+    await openChat(bob.page);
+    const card = bob.page.getByTestId("chat-card");
+    await expect(card.getByTestId("chat-card-where")).toHaveText("2011 · S2:E5 · from 12:34");
+    await expect(card.getByTestId("chat-card-score")).toContainText(`${ann.name} gave it 8/10`);
+    await card.click();
+    await expect(bob.page.getByTestId("title-sheet")).toBeVisible();
+    await expect(bob.page.getByTestId("title-season-2")).toHaveAttribute("aria-selected", "true");
+    await expect(bob.page.locator("[data-testid='title-episode'][data-episode='5']")).toHaveAttribute("data-target", "true");
+  });
+
+  test("on the TV: a link and a card open the title at the episode and the time they name, Play says so and starts there; a film's card from its time", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await knowsShow(bob.page);
+    await meet(ann, bob);
+    const origin = new URL(bob.page.url()).origin;
+    await writes(ann.page, bob.page, `The Matrix (1999) ${origin}/tv?title=movie-603&t=3600`);
+    await writes(ann.page, bob.page, `A Long Show (2011) ${origin}/tv?title=tv-1399&s=2&e=5&t=754&r=8`);
+    const played: string[] = [];
+    bob.page.on("websocket", (socket) =>
+      socket.on("framesent", (frame) => {
+        if (typeof frame.payload === "string" && frame.payload.includes('"TV_PLAY_URL"')) played.push(frame.payload);
+      }),
+    );
+    // A link: the page opens at the episode, and Play says which and from when (it waits while the episode is looked up)
+    await bob.page.goto(`${origin}/tv?title=tv-1399&s=2&e=5&t=754&r=8`);
+    await expect(bob.page.getByTestId("tv-detail")).toContainText("A Long Show");
+    await expect(bob.page.getByTestId("tv-detail-play")).toHaveText("Play S2:E5 from 12:34");
+    await expect(bob.page.getByTestId("tv-detail-play")).not.toHaveAttribute("aria-disabled", "true");
+    await expect(bob.page.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true");
+    await expect(bob.page.locator("[data-testid='tv-episode'][data-episode='5']")).toHaveAttribute("data-target", "true");
+    await bob.page.getByTestId("tv-detail-close").click();
+    await expect(bob.page.getByTestId("tv-detail")).toHaveCount(0);
+
+    // A card: the film's from its time
+    await openFriendsView(bob.page);
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    const cards = bob.page.getByTestId("tv-chat-lines").getByTestId("chat-card");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first().getByTestId("chat-card-where")).toHaveText("1999 · from 1:00:00");
+    await expect(cards.nth(1).getByTestId("chat-card-where")).toHaveText("2011 · S2:E5 · from 12:34");
+    await expect(cards.nth(1).getByTestId("chat-card-score")).toContainText(`${ann.name} gave it 8/10`);
+    await cards.first().click();
+    await expect(bob.page.getByTestId("tv-detail")).toContainText("The Matrix");
+    await expect(bob.page.getByTestId("tv-detail-play")).toHaveText("Play from 1:00:00");
+    await bob.page.getByTestId("tv-detail-close").click();
+
+    // The show's card: OK opens it at the episode, and Play starts that episode from 12:34
+    await bob.page.getByTestId("friend-chat").click();
+    await cards.nth(1).click();
+    await expect(bob.page.getByTestId("tv-detail")).toContainText("A Long Show");
+    await expect(bob.page.getByTestId("tv-detail-play")).toHaveText("Play S2:E5 from 12:34");
+    await expect(bob.page.locator("[data-testid='tv-episode'][data-episode='5']")).toHaveAttribute("data-target", "true");
+    await bob.page.getByTestId("tv-detail-play").click();
+    await expect.poll(() => played.length).toBe(1);
+    const command = JSON.parse(played[0]!) as { url: string; startAt?: number };
+    expect(command.startAt).toBe(754);
+    expect(new URL(command.url).search).toBe("?s=2&e=5");
   });
 
   test("a title the server could say nothing about is the text it was sent as, and a card once it is asked about again a minute later, with the chat open all along", async ({ browser }) => {

@@ -13,11 +13,21 @@ import { DWELL_MS, EdgeScroll, type Edge, type EdgeHint, type EdgeWorld, type Pa
 const NOT_A_PAGE = "textarea, input, select, video";
 /** A box with less than this to scroll is a row going sideways, or a rounding, not a page. */
 const WORTH_SCROLLING = 12;
+/** The menu rail opens under a pointer that rests on it: a pointer there is not waiting for a page. */
+const RAIL = ".tv-rail";
+/** What a pointer presses. */
+const PRESSABLE = "button, a[href], input, select, textarea, [role='button'], [role='tab'], [tabindex]:not([tabindex='-1'])";
+
 /**
- * The menu rail opens under a pointer that rests on it, and the buttons of the top corner (the bell, the profile, full screen) are in the top strip, where
- * a pointer is on its way to press one: a pointer on either is not waiting for a page.
+ * Whether the pointer is on something it is on its way to press that is no part of a page that scrolls: a button of the top corner (the bell, the profile,
+ * full screen), the ⋯ at the top of a chat, the box and the buttons at its foot, a sheet's buttons. Those stay where they are while what is under them
+ * scrolls, and a pointer that rests on one is about to press it (a chat's list moved under a pointer resting on its ⋯, the advisor, 17 Nov). A tile of the
+ * library's rows is part of the page that scrolls: a pointer pushed onto the half-shown row at the foot of the screen is waiting for it.
  */
-const RAIL = ".tv-rail, .tv-browse-corner";
+function onAFixedControl(target: Element): boolean {
+  const control = target.closest(PRESSABLE);
+  return control !== null && scrollerFrom(control) === null;
+}
 
 /** The nearest box, from `start` outwards, that scrolls up and down. */
 function scrollerFrom(start: Element | null): HTMLElement | null {
@@ -77,7 +87,7 @@ export function EdgeScrollHint() {
     const onMove = (event: PointerEvent) => {
       pointerX.current = event.clientX;
       root.current?.style.setProperty("--tv-edge-x", `${event.clientX}px`);
-      const busy = () => event.buttons !== 0 || (event.target instanceof Element && event.target.closest(RAIL) !== null);
+      const busy = () => event.buttons !== 0 || (event.target instanceof Element && (event.target.closest(RAIL) !== null || onAFixedControl(event.target)));
       if (machine.move({ x: event.clientX, y: event.clientY, height: window.innerHeight, mouse: event.pointerType === "mouse", busy })) run();
     };
     // (A key, a press, or the wheel: whoever turns it is scrolling with it, and a pointer that lies at the edge meanwhile is not to scroll as well.)

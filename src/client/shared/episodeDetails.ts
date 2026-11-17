@@ -51,6 +51,26 @@ const learned = new Map<string, SeasonDetails | null>();
 
 const keyOf = (link: string, season: number) => `${season}|${link}`;
 
+/** The questions on their way: two parts of a page that want the same season (a title's page opened at an asked episode, say) share one. */
+const asking = new Map<string, Promise<SeasonDetails | null>>();
+
+function askSeason(key: string, link: string, season: number): Promise<SeasonDetails | null> {
+  const going = asking.get(key);
+  if (going) return going;
+  const question = fetch(`/api/library/episodes?season=${season}&url=${encodeURIComponent(link)}`)
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .then((body: unknown): SeasonDetails | null => {
+      const parsed = EpisodeDetailsSchema.safeParse(body);
+      const details = parsed.success && parsed.data.episodes.length > 0 ? new Map(parsed.data.episodes.map((detail) => [detail.episode, detail])) : null;
+      if (details) learned.set(key, details);
+      return details;
+    })
+    .catch(() => null)
+    .finally(() => asking.delete(key));
+  asking.set(key, question);
+  return question;
+}
+
 /**
  * What the server's library knows about each episode of one season of a show (a still, a line about it, how long it
  * runs), asked for with the link of any episode in that season. `undefined` while it is being asked, `null` when
@@ -63,15 +83,7 @@ export function useEpisodeDetails(link: string | undefined, season: number | und
   useEffect(() => {
     if (key === undefined || link === undefined || season === undefined || learned.has(key)) return;
     let live = true;
-    fetch(`/api/library/episodes?season=${season}&url=${encodeURIComponent(link)}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((body: unknown) => {
-        const parsed = EpisodeDetailsSchema.safeParse(body);
-        const details = parsed.success && parsed.data.episodes.length > 0 ? new Map(parsed.data.episodes.map((detail) => [detail.episode, detail])) : null;
-        if (details) learned.set(key, details);
-        if (live) setAnswer({ key, details });
-      })
-      .catch(() => live && setAnswer({ key, details: null }));
+    void askSeason(key, link, season).then((details) => live && setAnswer({ key, details }));
     return () => {
       live = false;
     };

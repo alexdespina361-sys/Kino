@@ -103,7 +103,7 @@ export function ChatPanel({ id: panelId, session, tv, nav, land, pointer, gifKey
     <div className={`${prefix}-panel`} ref={root} id={panelId} role="group" aria-label={t("chat.panel")} data-tab={tab} data-testid={`${prefix}-panel`}>
       <div className={`${prefix}-panel-pane`} role="tabpanel" id={`${id}-pane`} aria-labelledby={`${id}-${tab}`} data-testid={`${prefix}-panel-pane`}>
         {tab === "titles" ? (
-          <TitleList key="titles" session={session} tv={tv} nav={nav} onSent={onSent} />
+          <TitleList key="titles" session={session} tv={tv} nav={nav} pointer={pointer} onSent={onSent} />
         ) : tab === "gifs" && gifKey ? (
           <GifPane key="gifs" gifKey={gifKey} session={session} tv={tv} nav={nav} onSent={onSent} />
         ) : (

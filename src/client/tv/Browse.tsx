@@ -50,7 +50,7 @@ import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, kee
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter } from "../account/ratingFilter";
 import { useCardSections } from "./cardSections";
-import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, ratingSectionIn, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
+import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, openedAt, overviewActions, playLabel, ratingSectionIn, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
@@ -679,7 +679,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       if (detailRef.current) return; // (a page is open: the address is its own)
       // (A child's profile opens a link only to a title for children: any other says so over its Home.)
       const mayOpen = item && (!childRef.current || forChildren(item));
-      if (wanted && mayOpen) return openDetail({ entry: entryOfItem(item), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
+      // (At the episode and the time the link asks for, if it asks: `/tv?title=tv-1399&s=2&e=5&t=754`.)
+      if (wanted && mayOpen) return openDetail({ entry: openedAt(entryOfItem(item), linked.extras), label: t(item.kind === "series" ? "tv.series" : "tv.movies") });
       showTitle(null);
       if (wanted) setOwnNotice(t(item ? "notice.notForChild" : "notice.noSuchTitle"));
     });
@@ -1156,7 +1157,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
   };
   /** "Play on TV" on a phone or a tablet that is the screen: what Play would start here, on the TV this device is the remote of (see `playOnTv`). */
-  const playEntryOnTv = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => playOnTv(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href);
+  const playEntryOnTv = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => {
+    // (From where Play would start it here: where it was left, or the time a friend's message asked for. It used to start from the beginning.)
+    const startAt = at ? at.startAt : entry.startAt;
+    playOnTv(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, startAt);
+  };
   /**
    * Asks a friend to watch together: they get a request with a button that starts a party and invites us. `ended` is the invitation to a party
    * that is over, if that is where this was pressed: once the friend is asked it is of no more use.
@@ -1285,11 +1290,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /** What a button says for a title; a title's own page spells out what the list button does, where the banner has room for the name only. */
   const labelOf = (action: HeroAction, entry: Entry, spelled: boolean): ReactNode => {
     if (action === "play") {
-      // A show's own page says which episode: "Play S1:E1", "Resume S2:E5".
-      const at = spelled ? series.start : undefined;
+      // A show's own page says which episode: "Play S1:E1", "Resume S2:E5", "Play S2:E5 from 12:34" (see `playLabel`).
       return (
         <>
-          <PlayIcon /> {at ? t(at.startAt !== undefined ? "series.resume" : "series.play", { season: at.season, episode: at.episode }) : entry.startAt !== undefined ? t("rows.resume") : t("rows.play")}
+          <PlayIcon /> {playLabel(entry, spelled ? series.said : undefined)}
         </>
       );
     }
@@ -2091,7 +2095,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       aria-pressed={action === "list" ? isSaved(detail.entry) : undefined}
                       aria-haspopup={action === "lists" || (action === "list" && tapOf(detail.entry) === "pick") ? "dialog" : undefined}
                       aria-label={action === "list" && several ? listSpelled(detail.entry) : undefined}
-                      onClick={() => doAction(action, detail.entry, { zone: "detail", row: 0, col }, series.start)}
+                      // (Play waits while the episode a friend's message asked for is looked up: it would start another one.)
+                      aria-disabled={series.holding && (action === "play" || action === "tv") ? true : undefined}
+                      onClick={() => !(series.holding && (action === "play" || action === "tv")) && doAction(action, detail.entry, { zone: "detail", row: 0, col }, series.start)}
                     >
                       {labelOf(action, detail.entry, true)}
                     </button>
@@ -2178,7 +2184,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           friendId={overlay.friend}
           narrow={narrow}
           onClose={closeOverlay}
-          onOpenTitle={(entry) => openDetail({ entry, label: t(entry.kind === "series" ? "tv.series" : "tv.movies") })}
+          // (A film this profile left part way is picked up where it was, as from any of its tiles, unless the message asked for a time.)
+          onOpenTitle={(entry) => openDetail({ entry: resumable(entry, progress), label: t(entry.kind === "series" ? "tv.series" : "tv.movies") })}
         />
       )}
       {overlay?.kind === "bell" && (

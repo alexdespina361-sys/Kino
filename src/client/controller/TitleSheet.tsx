@@ -10,7 +10,7 @@ import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { CheckIcon, ListIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
-import { entryOfItem, resumable, type Entry } from "../tv/pages";
+import { entryOfItem, playLabel, resumable, type Entry } from "../tv/pages";
 import { Page } from "./AccountScreen";
 import { RecommendButton } from "./Friends";
 import { Tile } from "./Library";
@@ -58,7 +58,9 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
   const several = lists.length > 1;
 
   const at = series.isShow ? series.start : undefined;
-  const playLabel = at ? t(at.startAt !== undefined ? "series.resume" : "series.play", { season: at.season, episode: at.episode }) : entry.startAt !== undefined ? t("rows.resume") : t("rows.play");
+  // (Play waits while the episode a friend's message asked for is looked up: it would start another one.)
+  const holding = series.isShow && series.holding;
+  const label = playLabel(entry, series.isShow ? series.said : undefined);
   // The button says which list it is about, short enough to share a line with Play (the icon says whether the title is in it); what a tap does is its name for a screen reader.
   const listLabel = toggle.asks ? t("rows.inLists") : t(toggle.inList ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
   const listText = toggle.asks ? t("rows.myList") : listName(lists[0]!);
@@ -81,8 +83,13 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
           )}
           <div className="title-actions">
             {play && (
-              <button className="btn btn-red title-play" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
-                <PlayIcon /> {playLabel}
+              <button
+                className="btn btn-red title-play"
+                data-testid="title-play"
+                aria-disabled={holding || undefined}
+                onClick={() => (holding ? undefined : at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}
+              >
+                <PlayIcon /> {label}
               </button>
             )}
             <div className="title-secondary">

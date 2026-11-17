@@ -21,6 +21,9 @@ export interface Playback {
 export const reachedEnd = ({ currentTime, duration }: Playback) => duration > 0 && currentTime >= duration - Math.min(FINISHED_S, duration * 0.1);
 
 /** Where to pick up from, or undefined when it is not started, or as good as finished. */
+/** The latest a title of this length can start and still be watched: a start any later counts as its end at once (`reachedEnd`). */
+export const lastStartAt = (duration: number): number => Math.max(0, Math.floor(duration - Math.min(FINISHED_S, duration * 0.1)) - 1);
+
 export function resumeAt(item: Pick<LiveProgress, "position" | "duration" | "done">): number | undefined {
   if (item.done || item.duration <= 0 || item.position < STARTED_S) return undefined;
   if (reachedEnd({ currentTime: item.position, duration: item.duration })) return undefined;

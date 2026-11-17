@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type ChatReaction } from "../../shared";
+import type { OpenTitle } from "./titles";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
 import { BellIcon, BellOffIcon, ImageIcon, KeyboardIcon, MoreIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
@@ -32,7 +33,7 @@ export interface ChatPhoneProps {
   receiving?: boolean;
   onClose: () => void;
   /** A title a message names was pressed (see titles.ts). */
-  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
+  onOpenTitle?: OpenTitle | undefined;
   /** The time that "today" is measured against (tests give theirs). */
   now?: number;
 }

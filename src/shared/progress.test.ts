@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { LiveProgress, LiveWatched } from "./account";
 import type { NormalizedMedia } from "./media";
-import { fractionOf, progressFor, progressKeyOf, resumeAt, watchedFor } from "./progress";
+import { fractionOf, lastStartAt, progressFor, progressKeyOf, reachedEnd, resumeAt, watchedFor } from "./progress";
+
+describe("lastStartAt", () => {
+  it("is the last second a title can start at without counting as its end at once", () => {
+    for (const duration of [30, 600, 2_700, 5_700, 10_000]) {
+      const last = lastStartAt(duration);
+      expect(reachedEnd({ currentTime: last, duration }), `${duration}`).toBe(false);
+      expect(reachedEnd({ currentTime: last + 2, duration }), `${duration}`).toBe(true);
+    }
+    expect(lastStartAt(5_700)).toBe(5_639); // (a 95-minute film: up to its last minute)
+    expect(lastStartAt(0)).toBe(0);
+  });
+});
 
 const MIN = 60;
 const stream = { url: "https://cdn.example/x.m3u8", type: "hls" as const };

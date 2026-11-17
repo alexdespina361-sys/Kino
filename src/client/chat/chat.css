@@ -91,6 +91,11 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .chat-card-name { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
 .chat-card-text small { color: var(--muted); font-size: 0.78em; }
+/* (What the address asks for besides the title - the episode, the time - and the rating its writer gave it: one line each, cut short rather than wrapped.) */
+.chat-card-where, .chat-card-score { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-card-text small.chat-card-score { color: var(--text); }
+.chat-card-score svg { width: 1em; height: 1em; margin-right: 2px; color: #f5c518; vertical-align: -0.12em; }
+.chat-card-text[data-full] .chat-card-name { -webkit-line-clamp: 1; }
 .chat-card-open { color: var(--accent); font-size: 0.8em; font-weight: 700; }
 .chat-card-loading .chat-card-art { animation: chat-card-wait 1.2s ease-in-out infinite alternate; }
 @keyframes chat-card-wait { from { opacity: 0.45; } to { opacity: 1; } }
@@ -270,6 +275,45 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-pick-art .poster-initial, .tv-chat-pick-art .poster-initial { font-weight: 700; color: rgba(255, 255, 255, 0.85); }
 .chat-pick-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .chat-pick-year { color: var(--muted); font-size: 0.85em; }
+/* (Beside each title, the button of its send step: an episode, a time, the rating - TitlePick.tsx.) */
+.chat-pick-row { display: flex; flex: none; align-items: stretch; gap: 6px; }
+.chat-pick-row > .chat-pick { flex: 1 1 auto; min-width: 0; }
+.chat-pick-more { display: grid; flex: none; place-items: center; width: 44px; padding: 0; border-radius: 12px; background: var(--surface-2); color: var(--muted); font-size: 1.2rem; }
+.chat-pick-more:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); color: var(--text); }
+.chat-pick-more:focus-visible, .chat-pick:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+/* The send step: in the pane, in place of the titles; it scrolls, and Send stays at its foot. */
+.chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 56px; font-size: 0.85rem; }
+/* (The scroll padding: what the keys land on is scrolled clear of Send, which stays over the step's foot.) */
+.chat-extras-head { display: flex; flex: none; align-items: center; gap: 10px; }
+.chat-extras-back { display: grid; flex: none; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 1.15rem; }
+.chat-extras-art { position: relative; display: grid; flex: none; place-items: center; width: 28px; height: 42px; border-radius: 4px; overflow: hidden; }
+.chat-extras-art img { width: 100%; height: 100%; object-fit: cover; }
+.chat-extras-name { min-width: 0; overflow: hidden; font-size: 0.95rem; text-overflow: ellipsis; white-space: nowrap; }
+.chat-extras-line { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chat-extras-chip, .chat-extras-step, .chat-extras-go { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 14px; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; }
+.chat-extras-chip { color: var(--muted); }
+.chat-extras-chip[aria-checked="true"], .chat-extras-chip[aria-pressed="true"] { background: var(--text); color: #0b0b0c; }
+.chat-extras-step { min-width: 44px; padding: 8px 10px; }
+.chat-extras-step[aria-disabled="true"], .chat-extras-chip[aria-disabled="true"], .chat-extras-go[aria-disabled="true"] { opacity: 0.4; }
+/* (The panel is taller while a title's send step is in it: the step is what is being looked at, and the messages give it room.) */
+.chat-panel:has(.chat-extras) { height: min(60vh, 440px); }
+/* (On a short phone the empty chat's words gave way to nothing and left the step 135px, and shrunk they were cut mid-line: while the step is open they
+   wait, and the step has the room.) */
+.chat:has(.chat-extras) .chat-empty { display: none; }
+.chat:has(.chat-extras) > .chat-panel { flex-grow: 1; }
+.chat-extras-stepper { display: inline-flex; align-items: center; border-radius: 999px; background: var(--surface-2); }
+.chat-extras-stepper .chat-extras-step { min-width: 40px; padding: 0; background: transparent; font-size: 1.05rem; }
+.chat-extras-value { min-width: 6.2em; text-align: center; font-weight: 600; }
+.chat-extras-label { flex: none; margin: 2px 0 0; color: var(--muted); }
+.chat-extras-label b { color: var(--text); }
+.chat-extras-typed { display: flex; flex: none; align-items: center; gap: 8px; color: var(--muted); }
+.chat-extras-typed input { width: 7.5em; min-height: 40px; padding: 6px 10px; border: 1px solid var(--line, rgba(255, 255, 255, 0.14)); border-radius: 10px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 16px; } /* (16px: a phone does not zoom into it) */
+.chat-extras-typed input[aria-invalid="true"] { border-color: #e5484d; }
+.chat-extras-note { flex: none; margin: 0; color: var(--muted); }
+.chat-extras-rating { flex: none; align-self: flex-start; }
+.chat-extras-rating:not([aria-pressed="true"]) svg { color: #f5c518; }
+.chat-extras-go { position: sticky; bottom: 0; flex: none; margin-top: auto; background: var(--accent); color: var(--accent-ink, #fff); box-shadow: 0 -8px 12px var(--sheet-bg, rgba(20, 20, 24, 0.9)); }
+.chat-extras button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 /* ------------------------------ the TV ------------------------------ */
 
@@ -475,6 +519,40 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-pick:hover { background: rgba(255, 255, 255, 0.09); }
 .tv-chat-pick:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; }
 .tv-chat-pick:disabled { opacity: 0.5; }
+/* (Beside each title, the button of its send step - TitlePick.tsx: the remote's Right from the title.) */
+.tv-chat-picks:has(.tv-chat-pick-row) { grid-template-columns: repeat(auto-fill, minmax(20em, 1fr)); }
+.tv-chat-pick-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.35em; }
+.tv-chat-pick-more { display: grid; place-items: center; width: 2.6em; padding: 0; border-radius: 0.8em; background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.7); font: inherit; font-size: 1.15em; }
+.tv-chat-pick-more:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
+.tv-chat-pick-more:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; color: #fff; }
+/* The send step on the TV's pages: as the phone's, in the TV's sizes. */
+.tv-chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.5em; width: 100%; min-height: 0; padding: 0.2em 0.6em 0; overflow-y: auto; scrollbar-width: none; scroll-padding-bottom: 3.2em; color: #fff; font-size: 1.25em; }
+/* (Taller while the step is in it, as on the phone: read from the couch, its words are the size of the titles'.) */
+.tv-chat-panel:has(.tv-chat-extras) { height: min(52vh, 30em); }
+.tv-chat-extras::-webkit-scrollbar { display: none; }
+.tv-chat-extras-head { display: flex; flex: none; align-items: center; gap: 0.7em; }
+.tv-chat-extras-back { display: grid; flex: none; place-items: center; width: 2.4em; height: 2.4em; padding: 0; border-radius: 50%; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font: inherit; }
+.tv-chat-extras-art { position: relative; display: grid; flex: none; place-items: center; width: 1.8em; height: 2.7em; border-radius: 0.25em; overflow: hidden; }
+.tv-chat-extras-art img { width: 100%; height: 100%; object-fit: cover; }
+.tv-chat-extras-name { min-width: 0; overflow: hidden; font-size: 1.1em; text-overflow: ellipsis; white-space: nowrap; }
+.tv-chat-extras-line { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 0.45em; }
+.tv-chat-extras-chip, .tv-chat-extras-step, .tv-chat-extras-go { display: inline-flex; align-items: center; justify-content: center; gap: 0.4em; min-height: 2.4em; padding: 0.4em 1em; border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #fff; font: inherit; font-weight: 600; }
+.tv-chat-extras-chip { color: rgba(255, 255, 255, 0.75); }
+.tv-chat-extras-chip[aria-checked="true"], .tv-chat-extras-chip[aria-pressed="true"] { background: #fff; color: #0b0b0c; }
+.tv-chat-extras-step { min-width: 2.6em; padding: 0.4em 0.7em; }
+.tv-chat-extras-step[aria-disabled="true"], .tv-chat-extras-chip[aria-disabled="true"], .tv-chat-extras-go[aria-disabled="true"] { opacity: 0.4; }
+.tv-chat-extras-stepper { display: inline-flex; align-items: center; border-radius: 999px; background: rgba(255, 255, 255, 0.06); }
+.tv-chat-extras-stepper .tv-chat-extras-step { min-width: 2.4em; padding: 0; background: transparent; }
+.tv-chat-extras-value { min-width: 6.4em; text-align: center; font-weight: 600; }
+.tv-chat-extras-label { flex: none; margin: 0.1em 0 0; color: rgba(255, 255, 255, 0.7); }
+.tv-chat-extras-label b { color: #fff; }
+.tv-chat-extras-note { flex: none; margin: 0; color: rgba(255, 255, 255, 0.7); }
+.tv-chat-extras-rating { flex: none; align-self: flex-start; }
+.tv-chat-extras-rating:not([aria-pressed="true"]) svg { color: #f5c518; }
+.tv-chat-extras-go { position: sticky; bottom: 0; flex: none; margin-top: auto; background: var(--accent); color: var(--accent-ink, #fff); box-shadow: 0 -0.6em 0.8em #16161a; }
+.tv-chat-extras button:hover:not([aria-disabled="true"]) { filter: brightness(1.15); }
+/* (A ring outside: inside one would not be seen on a chosen chip, which is white.) */
+.tv-chat-extras button:focus-visible { outline: 0.15em solid #fff; outline-offset: 0.15em; }
 /* (The way back, which the stylesheet puts in the top corner on every page that fills the screen, as before.) */
 
 /*
@@ -737,6 +815,12 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv-chat-screen .tv-chat-pick { grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; min-height: 72px; padding: 6px 12px 6px 6px; border-radius: 12px; }
   .tv-chat-screen .tv-chat-pick-name { font-size: 15px; }
   .tv-chat-screen .tv-chat-pick-year { font-size: 13px; }
+  .tv-chat-screen .tv-chat-picks:has(.tv-chat-pick-row) { grid-template-columns: 1fr; }
+  .tv-chat-screen .tv-chat-pick-row { gap: 6px; }
+  .tv-chat-screen .tv-chat-pick-more { width: 44px; border-radius: 12px; font-size: 18px; }
+  .tv-chat-screen .tv-chat-extras { gap: 8px; padding: 0 8px; scroll-padding-bottom: 56px; font-size: 14px; }
+  .tv-chat-screen .tv-chat-panel:has(.tv-chat-extras) { height: min(60vh, 440px); }
+  .tv-chat-screen .tv-chat-extras button { min-height: 40px; }
   .tv-chat-screen .tv-chat-gif-pane { gap: 8px; }
   .tv-chat-screen .tv-chat-gif-search { width: calc(100% - 16px); }
   .tv-chat-gifs { grid-template-columns: repeat(auto-fill, minmax(7em, 1fr)); }
