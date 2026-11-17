@@ -9,7 +9,13 @@ import { handHeld } from "../shared/backButton";
  */
 export const COMPACT_MAX_WIDTH = 599;
 export const COMPACT_MIN_HEIGHT = 480;
-const COMPACT = `(max-width: ${COMPACT_MAX_WIDTH}px) and (min-height: ${COMPACT_MIN_HEIGHT}px)`;
+/**
+ * Narrower than this, a screen is a phone held upright whatever its height: no phone on its side is this narrow (the smallest are 568 px). It keeps the
+ * page the phone's when the keyboard takes half the screen away (the owner, 17 Nov: in the search "the page reverts to the TV version with the left side
+ * menu", as the Android app's page is made lower by the keyboard, under 480 px).
+ */
+export const UPRIGHT_MAX_WIDTH = 479;
+const COMPACT = `(max-width: ${COMPACT_MAX_WIDTH}px) and (min-height: ${COMPACT_MIN_HEIGHT}px), (max-width: ${UPRIGHT_MAX_WIDTH}px)`;
 
 export const isCompact = (): boolean => typeof matchMedia === "function" && matchMedia(COMPACT).matches;
 
@@ -20,7 +26,7 @@ export const isCompact = (): boolean => typeof matchMedia === "function" && matc
  * window as low keeps its menu: only a device held in the hand (see `handHeld`) is one of these. polish/tv.css answers it as the menu's `data-flat`.
  */
 export const FLAT_MAX_HEIGHT = 520;
-const FLAT = `(max-height: ${FLAT_MAX_HEIGHT}px) and (orientation: landscape)`;
+const FLAT = `(max-height: ${FLAT_MAX_HEIGHT}px) and (orientation: landscape) and (min-width: ${UPRIGHT_MAX_WIDTH + 1}px)`;
 
 export const isFlatHand = (): boolean => typeof matchMedia === "function" && matchMedia(FLAT).matches && handHeld();
 

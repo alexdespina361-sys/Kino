@@ -11,7 +11,8 @@
  * Play button; the player's buttons are as big as a thumb needs, in rows; and what is chosen over the film (speed, language, episodes) comes up from the bottom as a sheet.
  */
 
-@media (max-width: 599px) and (min-height: 480px) {
+/* (Narrower than 480 px it is a phone held upright whatever its height: the keyboard open in the app's page leaves it lower than 480 - compact.ts.) */
+@media (max-width: 599px) and (min-height: 480px), (max-width: 479px) {
   /* ------------------------------ tokens ------------------------------ */
 
   /* Every text at least 14 px (the bar's four names, and the numbers on the player's bar, are the exceptions the plan names), every button as tall as a thumb. */
@@ -231,6 +232,13 @@
   :root[data-ui="polish"] .tv .tv-grid { gap: 14px 10px; margin: 0 calc(var(--page-r) * -1) 0 calc(var(--gutter) * -1); padding: 12px var(--page-r) 24px var(--gutter); }
   :root[data-ui="polish"] .tv .tv-grid .tv-tile { width: auto; }
   :root[data-ui="polish"] .tv .tv-grid .tv-tile-category { width: auto; height: 92px; }
+  /* A category's posters, as on the TV (the owner, 17 Nov): a smaller fan at the right of the card, the name beside it. */
+  :root[data-ui="polish"] .tv .tv-tile-fan { width: 232px; height: 104px; }
+  :root[data-ui="polish"] .tv .tv-grid .tv-tile-fan { width: auto; height: 108px; }
+  :root[data-ui="polish"] .tv .tv-category-fan { right: 4px; }
+  :root[data-ui="polish"] .tv .tv-category-fan img { width: 42px; margin-left: -28px; border-radius: 5px; transform: rotate(calc((var(--at) - 1) * 7deg)) translateY(calc((var(--at) - 1) * (var(--at) - 1) * 4px)); }
+  :root[data-ui="polish"] .tv .tv-tile-fan .tv-category-name { max-width: 56%; font-size: var(--fs-2); -webkit-line-clamp: 3; }
+  :root[data-ui="polish"] .tv .tv-tile-fan .tv-category-count { max-width: 56%; }
   :root[data-ui="polish"] .tv .tv-grid .tv-tile-person { height: auto; }
   :root[data-ui="polish"] .tv .tv-view-foot { padding: 4px 0 16px; }
   /* The head of a page of titles and a friend's foot are in the grid that scrolls (Browse.tsx `headInGrid`: the owner, 17 Nov, "only the titles under Chat
@@ -508,21 +516,21 @@
 @keyframes polish-sheet-rise {
   from { opacity: 0; transform: translateY(24px); }
 }
-@media (prefers-reduced-motion: reduce) and (max-width: 599px) and (min-height: 480px) {
+@media (prefers-reduced-motion: reduce) and (max-width: 599px) and (min-height: 480px), (prefers-reduced-motion: reduce) and (max-width: 479px) {
   :root[data-ui="polish"] .tv .tv-menu { animation: none; }
 }
 
 /* The narrowest phones have posters a little smaller (three across at 320 would be thumbnails; the grids are two across there), the widest a little larger. */
-@media (max-width: 359px) and (min-height: 480px) {
+@media (max-width: 359px) {
   :root[data-ui="polish"] .tv { --poster: 104px; --card: 176px; }
   :root[data-ui="polish"] .tv .tv-set .tv-swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; gap: 8px; }
 }
-@media (min-width: 412px) and (max-width: 599px) and (min-height: 480px) {
+@media (min-width: 412px) and (max-width: 599px) and (min-height: 480px), (min-width: 412px) and (max-width: 479px) {
   :root[data-ui="polish"] .tv { --poster: 120px; --card: 216px; }
 }
 /* On the profile's own page the corner is crowded on a narrow phone (the wordmark, the way back, the chip and full screen share 320 px, and "Autentifică-te" is cut to "Autentif…"):
    the chip is its picture there, ringed as the page you are on, and the page says the rest (its name is the heading under it, its way in a button). The chip keeps its name for a screen reader. */
-@media (max-width: 380px) and (min-height: 480px) {
+@media (max-width: 380px) {
   :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] { justify-content: center; min-width: var(--tap); padding-right: 4px; }
   :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] > span { display: none; }
 }

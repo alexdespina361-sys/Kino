@@ -246,6 +246,8 @@ export const it: Dictionary = {
   "library.kindMovie": "Film",
   "library.unavailable": "Non ancora disponibile",
   "library.unavailableFilm": "Nessuna fonte aveva questo film agli ultimi tentativi. Puoi riprovare.",
+  "library.aboutMore": "Mostra di più…",
+  "library.aboutLess": "Mostra di meno",
   "library.kindSeries": "Serie",
 
   /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */

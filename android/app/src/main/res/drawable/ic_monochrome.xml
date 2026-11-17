@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The themed icon: the notification's play sign, in the middle of the icon's safe zone. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_notify"
-    android:inset="27%" />
+<!-- The themed icon: Kino's mark (the wordmark's "o", a ring with a play), in the phone's own colours, inside the icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9.7"
+        android:pathData="M54,31.85a22.15,22.15 0 1,1 0,44.3a22.15,22.15 0 1,1 0,-44.3z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M49.15,45L49.15,63L63.7,54Z" />
+</vector>

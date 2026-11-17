@@ -56,6 +56,8 @@ function SkipPill({
   seconds,
   total,
   fresh,
+  goesIn,
+  shownFor,
   onPress,
   onDismiss,
 }: {
@@ -65,23 +67,29 @@ function SkipPill({
   seconds: number | null;
   total: number;
   fresh: boolean;
+  /** A Skip button that goes by itself: seconds left (of `shownFor`), shown as the bar running out. */
+  goesIn?: number;
+  shownFor?: number;
   onPress: () => void;
   onDismiss: () => void;
 }) {
   const t = useT();
   const counting = seconds !== null;
+  const fading = !counting && goesIn !== undefined && (shownFor ?? 0) > 0;
   const next = kind === "next";
-  const target = counting && total > 0 ? Math.max(0, Math.min(1, (total - seconds + 1) / total)) : 0;
-  // (The fill grows to where it will be at the next second, in a second: it starts from where it was, also the first time, so it is never a jump.)
-  const [fill, setFill] = useState(() => (counting && total > 0 ? Math.max(0, Math.min(1, (total - seconds) / total)) : 0));
+  const clamp = (n: number) => Math.max(0, Math.min(1, n));
+  // (The bar goes to where it will be at the next second, in a second: it starts from where it was, also the first time, so it is never a jump. Counting, it
+  // fills up; going, it runs out.)
+  const target = counting && total > 0 ? clamp((total - seconds + 1) / total) : fading ? clamp((goesIn! - 1) / shownFor!) : 0;
+  const [fill, setFill] = useState(() => (counting && total > 0 ? clamp((total - seconds) / total) : fading ? clamp(goesIn! / shownFor!) : 0));
   useEffect(() => {
     const frame = requestAnimationFrame(() => setFill(target));
     return () => cancelAnimationFrame(frame);
   }, [target]);
   return (
-    <div className="hud-skip" data-kind={kind} data-testid={next ? "netflix-upnext" : "tv-skip"} data-counting={counting} data-fresh={fresh || undefined} role="group" aria-label={label}>
+    <div className="hud-skip" data-kind={kind} data-testid={next ? "netflix-upnext" : "tv-skip"} data-counting={counting} data-fading={fading || undefined} data-fresh={fresh || undefined} role="group" aria-label={label}>
       <button type="button" className="hud-skip-btn" onClick={onPress} aria-label={sub ? `${label}: ${sub}` : label} data-testid={next ? "upnext-play-btn" : "tv-skip-btn"}>
-        <span className="hud-skip-fill" style={{ transform: `scaleX(${counting ? fill : 0})` }} aria-hidden="true" />
+        <span className="hud-skip-fill" style={{ transform: `scaleX(${counting || fading ? fill : 0})` }} aria-hidden="true" />
         {next ? <NextIcon /> : <FastForwardIcon />}
         <span className="hud-skip-words">
           <span className="hud-skip-label">{label}</span>
@@ -629,7 +637,7 @@ export function Hud(p: HudProps) {
         />
       )}
       {!p.upNext && p.skip && (
-        <SkipPill kind={p.skip.kind} label={t(SKIP_WORDS[p.skip.kind])} seconds={p.skip.seconds} total={p.skip.total} fresh={p.skip.fresh} onPress={p.onSkipPart} onDismiss={p.onDismissSkip} />
+        <SkipPill kind={p.skip.kind} label={t(SKIP_WORDS[p.skip.kind])} seconds={p.skip.seconds} total={p.skip.total} fresh={p.skip.fresh} goesIn={p.skip.goesIn} shownFor={p.skip.shownFor} onPress={p.onSkipPart} onDismiss={p.onDismissSkip} />
       )}
 
       {/* Outside the overlay too: waiting is shown, and given up on, whether or not the controls are up. OK or Back does it from the remote (Tv.tsx). (A screen that watches along shows its wait as FollowStatus does.) */}
