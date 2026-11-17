@@ -86,7 +86,13 @@ describe("a personal sticker's picture", () => {
   });
 
   it("turns away what is not such a picture, before unpacking it when its header says so", () => {
-    const rows = (width: number, height: number) => deflateSync(Buffer.alloc((width * 4 + 1) * height));
+    // (rows of white pixels that are seen, each with its filter byte: a picture that is good in every way but the one each case is about)
+    const rows = (width: number, height: number) => {
+      const data = Buffer.alloc((width * 4 + 1) * height, 0xff);
+      for (let row = 0; row < height; row++) data[row * (width * 4 + 1)] = 0;
+      return deflateSync(data);
+    };
+    expect(makeSticker(handMade({ width: 32, height: 32 }, rows(32, 32))).ok, "the pictures the cases are made of are good ones").toBe(true);
     const cases: Array<[string, Buffer, string]> = [
       ["nothing", Buffer.alloc(0), "not_a_picture"],
       ["a JPEG", Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...Buffer.alloc(60)]), "not_a_picture"],
