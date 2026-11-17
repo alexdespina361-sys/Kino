@@ -1,5 +1,6 @@
 import { activityVerb, isLive, listOf, ratingKey, resolveLists, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type ListInfo, type LiveListItem, type LiveRating, type Message } from "../../shared";
 import { ago, formatDay } from "../account/time";
+import { dayOf, stampOf } from "../chat/state";
 import { getLanguage, t } from "../i18n";
 import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 
@@ -29,6 +30,21 @@ export function presenceLine(friend: Friend, now: number): string {
   const then = Math.min(friend.lastOnline, now);
   if (now - then < 60_000) return t("friends.lastOnlineNow"); // (not "Last online now": they are not, and it was a moment ago)
   return now - then < LAST_ONLINE_AGO_MS ? t("friends.lastOnline", { when: ago(then, now, getLanguage()) }) : t("friends.lastOnlineDay", { day: formatDay(then, getLanguage()) });
+}
+
+/**
+ * The same, at the top of a chat with them, by the clock as in any messenger ("Last online today at 14:32", "Last online yesterday at 21:05", "Last online
+ * 12 Nov at 09:10": the owner, 17 Nov); nothing when the server does not say, as in `presenceLine`.
+ */
+export function presenceInChat(friend: Friend, now: number): string {
+  if (!friend.on) return "";
+  if (friend.online) return t("friends.online");
+  if (friend.lastOnline === undefined) return "";
+  const then = Math.min(friend.lastOnline, now);
+  if (now - then < 60_000) return t("friends.lastOnlineNow");
+  const language = getLanguage();
+  const [day, time] = [dayOf(then, now, language), stampOf(then, language)];
+  return day && time ? t("chat.lastOnlineAt", { day, time }) : presenceLine(friend, now);
 }
 
 /** The small line under a friend's name: that they have turned friends off, else what they are watching or last watched, else whether they are online or when they last were. */

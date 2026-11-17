@@ -194,6 +194,7 @@ export function ReadTv({
   /** A computer or a hand-held screen: a message is clicked or touched, and its reactions (and Take back, for one's own) come under it. */
   const [picked, setPicked] = useState<number | null>(null);
   const pointer = desk || narrow;
+  const status = [presence || (online ? t("friends.online") : null), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
   const [menu, setMenu] = useState(false);
   const more = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -319,9 +320,12 @@ export function ReadTv({
             <h1 className="tv-chat-name" data-testid="tv-chat-name">
               {name}
             </h1>
-            <p className="tv-chat-status" data-testid="tv-chat-status">
-              {[presence || (online ? t("friends.online") : t("chat.open")), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ")}
-            </p>
+            {/* (When they were last online, by the clock, and not the word "Chat" when that is not told: the owner, 17 Nov. Nothing told, nothing said.) */}
+            {status && (
+              <p className="tv-chat-status" data-testid="tv-chat-status">
+                {status}
+              </p>
+            )}
           </div>
           {/* (What can be done with the message that is selected, beside the ⋯, as in any messenger: the owner, 17 Nov. Once done, the keys are the ⋯'s.) */}
           {pointer && (

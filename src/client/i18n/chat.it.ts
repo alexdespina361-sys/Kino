@@ -70,6 +70,7 @@ export const chatIt: ChatDictionary = {
   "chat.mute": "Silenzia",
   "chat.unmute": "Riattiva",
   "chat.more": "Altro",
+  "chat.lastOnlineAt": "Ultimo accesso {day} alle {time}",
   "chat.mutedShort": "Silenziato",
   "chat.muted": "Silenziata: non ricevi avvisi per i nuovi messaggi di {name}, e {name} non ne sa niente.",
   "chat.closed": "{name} non riceve messaggi.",

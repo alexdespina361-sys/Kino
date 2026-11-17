@@ -70,6 +70,7 @@ export const chatRo: ChatDictionary = {
   "chat.mute": "Dă pe mut",
   "chat.unmute": "Scoate de pe mut",
   "chat.more": "Mai multe",
+  "chat.lastOnlineAt": "Ultima dată online {day} la {time}",
   "chat.mutedShort": "Fără notificări",
   "chat.muted": "Pe mut: nu primești notificări despre mesajele noi de la {name}, iar {name} nu află asta.",
   "chat.closed": "{name} nu primește mesaje.",

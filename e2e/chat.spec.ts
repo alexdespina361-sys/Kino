@@ -498,7 +498,8 @@ test.describe("the chat on the phone", () => {
     // the chat with nothing in it says what a chat is kept as, and its two buttons keep clear of each other
     await openChat(bob.page);
     await expect(bob.page.getByTestId("chat-privacy")).toBeVisible();
-    await expect(bob.page.getByTestId("chat-presence")).toContainText(lastOnline); // (under the sheet's title: when she was last online)
+    // (under the sheet's title: when she was last online, by the day and the clock: "Ultima dată online 7 nov. la 13:10")
+    await expect(bob.page.getByTestId("chat-presence")).toHaveText(new RegExp(`^${ro["chat.lastOnlineAt"].replace("{day}", ".+").replace("{time}", "\\d\\d[:.]\\d\\d")}$`));
     await fit(["chat-sheet", "chat", "chat-presence", "chat-empty", "chat-privacy", "chat-mute", "chat-report", "chat-compose", "chat-input", "chat-send"], "the empty chat");
     for (const width of widths) {
       await bob.page.setViewportSize({ width, height: 700 });
@@ -1021,7 +1022,7 @@ test.describe("the chat on the TV", () => {
       // the chat, with the messages (and at the top, under his name, when he was last online)
       await expect(page.getByTestId("tv-chat")).toBeVisible();
       await expect(tvLines(page)).toHaveCount(4);
-      await expect(page.getByTestId("tv-chat-status")).toContainText(lastOnline);
+      await expect(page.getByTestId("tv-chat-status")).toHaveText(new RegExp(`^${words["chat.lastOnlineAt"].replace("{day}", ".+").replace("{time}", "\\d\\d[:.]\\d\\d")}$`)); // (by the clock)
       await fits("tv-chat", "the chat");
       // (and with the ⋯ open: what it holds, inside the screen too; Back shuts it and the chat stays)
       await page.getByTestId("tv-chat-more").click();

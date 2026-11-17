@@ -73,6 +73,7 @@ export const chatEn = {
   "chat.mute": "Mute",
   "chat.unmute": "Unmute",
   "chat.more": "More",
+  "chat.lastOnlineAt": "Last online {day} at {time}",
   "chat.mutedShort": "Muted",
   "chat.muted": "Muted: you aren't told about new messages from {name}. {name} isn't told.",
   "chat.closed": "{name} isn't taking messages.",
