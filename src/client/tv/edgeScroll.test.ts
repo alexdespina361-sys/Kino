@@ -59,32 +59,34 @@ function setup(page: FakePage | null = new FakePage()) {
 }
 
 describe("the strip", () => {
-  it("is thin, and as thick as the screen is tall within limits", () => {
-    expect(stripOf(720)).toBe(18);
-    expect(stripOf(1080)).toBe(27);
-    expect(stripOf(2160)).toBe(40);
-    expect(stripOf(4320)).toBe(40);
-    expect(stripOf(200)).toBe(16);
+  it("is thin, and as thick as the screen is tall within limits (thick enough for a browser's window to be held in)", () => {
+    expect(stripOf(720)).toBe(32);
+    expect(stripOf(800)).toBe(36);
+    expect(stripOf(1080)).toBe(48);
+    expect(stripOf(2160)).toBe(48);
+    expect(stripOf(4320)).toBe(48);
+    expect(stripOf(200)).toBe(24);
   });
 
   it("is at the top and at the bottom of the screen, and nowhere else", () => {
     expect(edgeAt(0, 720)).toBe("top");
-    expect(edgeAt(18, 720)).toBe("top");
-    expect(edgeAt(19, 720)).toBeNull();
+    expect(edgeAt(32, 720)).toBe("top");
+    expect(edgeAt(33, 720)).toBeNull();
     expect(edgeAt(360, 720)).toBeNull();
-    expect(edgeAt(701, 720)).toBeNull();
-    expect(edgeAt(702, 720)).toBe("bottom");
+    expect(edgeAt(687, 720)).toBeNull();
+    expect(edgeAt(688, 720)).toBe("bottom");
     expect(edgeAt(719, 720)).toBe("bottom");
   });
 
   it("is left only when the pointer is well out of it (a hand shakes)", () => {
-    expect(edgeAt(690, 720, "bottom")).toBe("bottom");
-    expect(edgeAt(684, 720, "bottom")).toBe("bottom");
-    expect(edgeAt(683, 720, "bottom")).toBeNull();
-    expect(edgeAt(30, 720, "top")).toBe("top");
-    expect(edgeAt(37, 720, "top")).toBeNull();
+    expect(edgeAt(670, 720, "bottom")).toBe("bottom");
+    expect(edgeAt(656, 720, "bottom")).toBe("bottom");
+    expect(edgeAt(655, 720, "bottom")).toBeNull();
+    expect(edgeAt(50, 720, "top")).toBe("top");
+    expect(edgeAt(64, 720, "top")).toBe("top");
+    expect(edgeAt(65, 720, "top")).toBeNull();
     // (and one that was in the other is no more in this one than a new pointer would be)
-    expect(edgeAt(690, 720, "top")).toBeNull();
+    expect(edgeAt(670, 720, "top")).toBeNull();
   });
 });
 
@@ -237,7 +239,7 @@ describe("a pointer that does not stay", () => {
     const s = setup();
     s.moveTo(715);
     s.run(600);
-    s.moveTo(690); // (out of the strip, not out of its slack)
+    s.moveTo(670); // (out of the strip, not out of its slack)
     s.run(600);
     expect(s.world.page!.top).toBeGreaterThan(0);
   });
@@ -331,38 +333,40 @@ describe("what else is in use", () => {
     expect(s.world.page!.top).toBeGreaterThan(0);
   });
 
-  it("a wheel ends it for good: what was moving stops, and nothing the pointer does after starts it again", () => {
+  it("a wheel (as a key) stops what was moving; the pointer out of the strip and in again starts it anew, a screen with a wheel too", () => {
     const s = setup();
     s.moveTo(719);
     s.run(DWELL_MS + 500);
     const at = s.world.page!.top;
     expect(at).toBeGreaterThan(0);
-    s.machine.retire();
+    s.machine.other(); // (what the binding does on a wheel)
     s.look();
     expect(s.after()).toBeNull();
     s.run(2000);
     expect(s.world.page!.top).toBe(at);
-    const looked = s.world.asked;
-    // out of the strip and in again, in the other strip, with a finger between: none of it counts
+    // moving about in the strip is not coming back...
+    s.moveTo(715);
+    s.run(DWELL_MS + 500);
+    expect(s.world.page!.top).toBe(at);
+    // ...out and in again is, and the other strip too
     s.moveTo(300);
     s.moveTo(719);
-    s.moveTo(300, { mouse: false });
+    expect(s.after()).toEqual({ edge: "bottom", moving: false });
+    s.run(DWELL_MS + 500);
+    expect(s.world.page!.top).toBeGreaterThan(at);
+    s.moveTo(300);
     s.moveTo(2);
-    s.run(DWELL_MS + 2000);
-    expect(s.after()).toBeNull();
-    expect(s.world.page!.top).toBe(at);
-    expect(s.world.asked).toBe(looked); // (and it did not so much as look)
+    expect(s.after()).toEqual({ edge: "top", moving: false });
   });
 
-  it("a wheel before the pointer ever rests means it never does", () => {
+  it("a wheel before the pointer ever rests changes nothing: it rests as it would have", () => {
     const s = setup();
-    s.machine.retire();
+    s.machine.other();
     s.moveTo(300);
     s.moveTo(719);
-    expect(s.after()).toBeNull();
-    s.run(DWELL_MS + 2000);
-    expect(s.world.page!.top).toBe(0);
-    expect(s.world.asked).toBe(0);
+    expect(s.after()).toEqual({ edge: "bottom", moving: false });
+    s.run(DWELL_MS + 500);
+    expect(s.world.page!.top).toBeGreaterThan(0);
   });
 
   it("a move to where the pointer already is (a page that moves under a pointer that rests makes the browser say so) starts nothing, and puts nothing off", () => {

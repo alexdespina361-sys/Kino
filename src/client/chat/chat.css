@@ -46,7 +46,12 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer; }
 /* What can be done with the selected message (ChatLines `PickedActions`), at the top of the chat: the phone's sheet draws them as its Mute and Report, on the
    right; the TV's pages as round buttons beside the ⋯, their words for a screen reader only. Take back is the red of undoing, Save is not. */
-.chat-tools-picked { display: flex; flex: none; gap: 8px; margin-left: auto; }
+/* (They wrap among themselves, at the right, rather than leave the screen: the longest words of a narrow phone, the screenshots, 17 Nov.) */
+.chat-tools-picked { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; margin-left: auto; }
+/* (Save of a GIF or one of Kino's stickers: a round star, filled once it is saved; its words are for a screen reader, and the note under the chat says what it
+   did. With words, Reply, Save and Take back did not fit a narrow phone's row in Romanian.) */
+.chat-tool.chat-act-picture { position: relative; justify-content: center; width: 40px; padding: 0; }
+.chat-tool.chat-act-picture .chat-act-words { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .chat-tools-picked:empty { display: none; }
 .chat-tool.chat-act-takeback { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .chat-act:disabled { opacity: 0.6; }
@@ -228,7 +233,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 /* (The phone's sheets are at most 70% of the screen, for a short choice with the page above it; the chat's grows to the sheets' old 86% while the panel is
    open, the panel being where the keyboard was. Where even that is short, the panel gives up room before the bar: it never pushes its tabs out of sight.) */
 :root[data-ui="polish"] .phone-ui .sheet[data-testid="chat-sheet"]:has(.chat[data-panel]) { max-height: 86%; }
-.chat-panel { display: flex; flex: 0 1 auto; flex-direction: column; height: min(38vh, 320px); min-height: 190px; margin: 0 -4px; padding-top: 8px; border-top: 1px solid var(--line, rgba(255, 255, 255, 0.1)); }
+/* (No side margins: 4px outside the sheet's body made the body slide 4px sideways when a button at the panel's right edge took focus.) */
+.chat-panel { display: flex; flex: 0 1 auto; flex-direction: column; height: min(38vh, 320px); min-height: 190px; padding-top: 8px; border-top: 1px solid var(--line, rgba(255, 255, 255, 0.1)); }
 .chat-panel-pane { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
 .chat-panel-tabs { display: flex; flex: none; justify-content: center; gap: 6px; padding-top: 6px; }
 .chat-panel-tab { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 8px 14px; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 0.85rem; font-weight: 600; }
@@ -236,6 +242,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-panel-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-panel-tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); }
 .chat-panel-tab:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+/* (A 320px phone in Romanian: the three tabs' words fit whole only with narrower insides.) */
+@media (max-width: 360px) { .chat-panel-tab { padding-inline: 10px; } }
 /* (What scrolls is the pane's list: the titles, the stickers, the GIFs under their search.) */
 .chat-picks, .chat-sticker-list, .chat-gif-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-picks { display: flex; flex-direction: column; gap: 6px; }
@@ -572,6 +580,25 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }
 
 /*
+ * The pictures the profile saved from its chats (saved.ts, SavedPick.tsx): "Saved", first in the GIFs tab and in the Stickers tab, a grid like the one under
+ * it, with Edit and its crosses as "Yours" has. On a TV the GIFs' heading and grid are as wide as KLIPY's grid under them.
+ */
+.chat-saved { display: flex; flex: none; flex-direction: column; gap: 6px; width: 100%; }
+.chat-saved .chat-stickers-head { width: auto; }
+.tv .chat-saved .chat-stickers-head { width: auto; margin: 0.3em 0.45em 0.1em; }
+.tv-chat-gif-list > .chat-saved { width: min(100%, 74em); }
+.tv-chat-gif-list > .chat-saved .tv-chat-gifs { width: 100%; }
+.chat-saved-one { position: relative; display: block; min-width: 0; }
+.chat-saved-one > button:first-child { width: 100%; }
+.tv-chat-gifs .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
+/* (A saved GIF that KLIPY took away: its place, quietly, until it is let go.) */
+.chat-saved-gone { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; }
+.tv .chat-saved-gone { color: rgba(255, 255, 255, 0.45); font-size: 1em; }
+.chat-gif-head { flex: none; }
+/* (Save on a message that is saved: its star filled.) */
+.chat-act-kept svg { color: var(--accent); }
+
+/*
  * Reactions (Reactions.tsx): what is on a message, small and under it on its side, a little over the bubble's edge as a messenger draws them; the bar of
  * six that comes under a pressed message; on a TV that is only a remote, a page of six big buttons. Each is its sticker's picture (the emoji if it did not come).
  */
@@ -719,6 +746,11 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv-chat-screen .tv-chat-stickers, .tv-chat-screen .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: 100%; padding: 0 8px 8px; gap: 0.45em; }
   .tv-chat-screen .tv-chat-sticker-list.with-yours { align-items: center; width: 100%; margin: 0; }
   .tv-chat-screen .tv-chat-sticker-list .chat-stickers-head { width: 100%; margin: 0.3em auto 0.1em; padding-inline: 8px; font-size: 1em; }
+  /* (Saved, in the GIFs' tab and the stickers': its heading and Edit inside the grids' edges, as KLIPY's heading under it; Edit off the screen's edge.) */
+  .tv-chat-screen .chat-saved > .chat-stickers-headrow { padding-inline: 8px; }
+  .tv-chat-screen .chat-stickers-yours > .chat-stickers-headrow { padding-right: 8px; }
+  .tv-chat-screen .chat-saved .chat-stickers-head, .tv-chat-screen .tv-chat-sticker-list .chat-saved .chat-stickers-head { width: auto; margin: 0.3em 0 0.1em; padding-inline: 0; font-size: 1em; }
+  .tv-chat-screen .tv-chat-gif-list > .chat-gif-head { width: 100%; margin: 0.3em 0 0.1em; padding-inline: 8px; font-size: 1em; }
   /* The gallery's page (ChatMedia.tsx): the whole screen, as the chat - the arrow and the name at the top, the squares one list that scrolls and fills the rest. */
   .tv-screen.tv-gif-screen { background: #0f0f12; }
   .tv-gif-head { display: flex; flex: none; align-items: center; gap: 0.5em; width: 100%; padding: max(0.6em, env(safe-area-inset-top)) 0.8em 0.6em 0.4em; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }

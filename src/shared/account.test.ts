@@ -243,7 +243,7 @@ describe("what people type", () => {
   });
 
   it("accepts a sync with nothing to send", () => {
-    expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] });
+    expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], saved: [] });
   });
 
   it("reads an answer from a newer server whole: a setting this build has never heard of is left out, not a reason to refuse everything", () => {

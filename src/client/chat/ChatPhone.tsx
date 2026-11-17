@@ -12,6 +12,7 @@ import { useShutOnPressBeside } from "./pressBeside";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { backLetsAnswerGo, ReplyStrip } from "./Reply";
 import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
+import { KEPT_NOTE, SAVED_MAX, useKeptNote } from "./saved";
 import { afterSent, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { CHAT_FACTS } from "./state";
@@ -51,6 +52,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const gifKey = useGifKey();
   const blocked = whyNotWrite(session);
   const personal = usePersonalLines(session, true);
+  const [kept, sayKept] = useKeptNote();
   // (A sheet over the chat - the gallery, a report - lets the selection go: else Escape would let it go behind the sheet before shutting the sheet, the
   // judge, 17 Nov.)
   /** The sheet of the chat's GIFs and stickers is open (ChatMedia.tsx). */
@@ -131,6 +133,8 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
                   void session.takeBack(id);
                 }}
                 onSaved={() => setPicked(null)}
+                gifs={gifKey !== null}
+                onKept={sayKept}
                 className="chat-tool"
               />
             </span>
@@ -204,6 +208,11 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
           {personal.note && (
             <p className="chat-note" role="status" data-testid="chat-sticker-note">
               {t(SAVE_NOTE[personal.note])}
+            </p>
+          )}
+          {kept && (
+            <p className="chat-note" role="status" data-testid="chat-saved-note">
+              {t(KEPT_NOTE[kept], { max: SAVED_MAX })}
             </p>
           )}
 

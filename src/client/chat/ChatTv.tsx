@@ -14,6 +14,7 @@ import { ChatPanel } from "./ChatPanel";
 import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
 import { useShutOnPressBeside } from "./pressBeside";
 import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
+import { KEPT_NOTE, SAVED_MAX, useKeptNote } from "./saved";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import { lastTheirs, ReactTv } from "./Reactions";
@@ -215,6 +216,7 @@ export function ReadTv({
   const theirs = lastTheirs(state.lines);
   /** A computer or a hand-held screen: a message is clicked or touched, and its reactions (and Take back, for one's own) come under it. */
   const [picked, setPicked] = useState<number | null>(null);
+  const [kept, sayKept] = useKeptNote();
   const pointer = desk || narrow;
   const status = [presence || (online ? t("friends.online") : null), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
   const [menu, setMenu] = useState(false);
@@ -451,6 +453,8 @@ export function ReadTv({
                   setPicked(null);
                   more.current?.focus({ preventScroll: true });
                 }}
+                gifs={gifKey !== null}
+                {...(withPanel ? { onKept: sayKept } : {})}
                 className="tv-chat-more"
                 nav
               />
@@ -551,6 +555,11 @@ export function ReadTv({
           {personal?.note && (
             <p className="chat-note" role="status" data-testid="tv-chat-sticker-note">
               {t(SAVE_NOTE[personal.note])}
+            </p>
+          )}
+          {kept && (
+            <p className="chat-note" role="status" data-testid="tv-chat-saved-note">
+              {t(KEPT_NOTE[kept], { max: SAVED_MAX })}
             </p>
           )}
           <ChatNotices name={name} session={session} receiving={receiving} prefix="tv-chat" />
