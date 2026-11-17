@@ -230,9 +230,9 @@ export function Controller() {
               }
             } else if (launch.url && message.tv) {
               // Shared a link to this app: play it as soon as there is a TV to play it on.
-              launchRef.current = { ...launch, url: undefined };
+              launchRef.current = { ...launch, url: undefined, startAt: undefined };
               if (childRef.current) setError(t("notice.childNoLinks"));
-              else playLink(launch.url);
+              else playLink(launch.url, launch.startAt); // (from where the screen's Play would have started it: `&t=`, see role.ts `playOnTv`)
             }
             break;
           }

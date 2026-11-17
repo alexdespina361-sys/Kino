@@ -1134,6 +1134,8 @@
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 .tv-hero-button.is-primary { background: var(--accent); color: var(--accent-ink); }
+/* (Play while the episode a friend's message asked for is looked up: it waits, a moment - the remote stays on it.) */
+.tv-hero-button[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
 .tv-hero-button:hover { background: rgba(255, 255, 255, 0.28); }
 .tv-hero-button.is-primary:hover { background: var(--accent-hover); }
 .tv-hero-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }

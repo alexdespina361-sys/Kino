@@ -4,9 +4,10 @@ import { filterRatings, ownSection, type SectionOfRating } from "../account/rati
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
 import type { ChildGate } from "../shared/childGate";
+import { formatTime } from "../shared/format";
 import type { Because } from "../shared/recommend";
 import { landscapeRows } from "../shared/shapes";
-import { addressOf } from "../shared/titleAddress";
+import { addressOf, type TitleOpening } from "../shared/titleAddress";
 import type { GridSection } from "./browseNav";
 
 /**
@@ -113,6 +114,11 @@ export interface Entry {
   startAt?: number;
   /** The episode to pick a show up at, when it is not the one `url` names. */
   resumeUrl?: string;
+  /**
+   * What a link or a friend's message asked to open the title at (titleAddress.ts `TitleOpening`): a film from a time (then `startAt` is that time), a show at an
+   * episode and maybe a time in it (its page finds the episode: `useSeriesPage`). Only for the page it was opened with: it is gone when the page is opened again.
+   */
+  asked?: TitleOpening;
   /** 0..1, the thin bar across the picture of a title left unfinished. */
   progress?: number;
   /** A line under the title (the episode and what is left; how many titles a category has). */
@@ -279,14 +285,54 @@ export function resumable(entry: Entry, progress: readonly LiveProgress[]): Entr
   return { ...entry, resumeUrl: card.url, ...(startAt !== undefined ? { startAt } : {}) };
 }
 
-/** A title without what was known of how far it had got when it was opened: for opening its page again after more of it was watched (see `resumable`). */
+/**
+ * A title without what was known of how far it had got when it was opened, nor what a link or a message asked to open it at: for opening its page again after
+ * more of it was watched (see `resumable`). The episode or the time a friend sent was for the first press of Play, not for every time after it.
+ */
 export function asOpened(entry: Entry): Entry {
   const plain = { ...entry };
   delete plain.startAt;
   delete plain.resumeUrl;
   delete plain.progress;
   delete plain.note;
+  delete plain.asked;
   return plain;
+}
+
+/**
+ * A title as a link or a friend's message asks to open it (see `Entry.asked`): a film from the time it names, a show at the episode it names (its page finds that
+ * episode, and the time in it). One that asks for nothing is as it was.
+ */
+export function openedAt(entry: Entry, opening: TitleOpening | undefined): Entry {
+  const episode = opening?.season !== undefined && opening.episode !== undefined;
+  if (!opening || (!episode && opening.at === undefined)) return entry;
+  if (episode) return entry.kind === "movie" ? entry : { ...entry, asked: { season: opening.season, episode: opening.episode, ...(opening.at !== undefined ? { at: opening.at } : {}) } };
+  // (A time with no episode is a film's: a show's page would have nothing to start it in.)
+  return entry.kind === "series" ? entry : { ...entry, asked: { at: opening.at }, startAt: opening.at! };
+}
+
+/** What a show's Play says while the episode a link or a friend's message asked for is being looked up (see `SeriesPage.holding`): that episode, and the time. */
+export function heldStart(entry: Entry): Start | undefined {
+  const asked = entry.asked;
+  if (asked?.season === undefined || asked.episode === undefined) return undefined;
+  return { season: asked.season, episode: asked.episode, url: "", ...(asked.at !== undefined ? { startAt: asked.at, asked: true as const } : {}) };
+}
+
+/** The time a film was asked to be opened at (see `openedAt`): what its Play says ("Play from 12:34") while it is the time Play starts at. */
+export const askedTime = (entry: Entry): number | undefined => (entry.asked?.episode === undefined && entry.asked?.at !== undefined && entry.startAt === entry.asked.at ? entry.asked.at : undefined);
+
+/**
+ * What Play says on a title's page (the TV's and the phone's): a show's says which episode ("Play S1:E1", "Resume S2:E5"), and the time a link or a friend's
+ * message asked for ("Play S2:E5 from 12:34"); a film's "Play", "Resume", or "Play from 1:02:10". `at`: where a show's Play leads (`SeriesPage.said`).
+ */
+export function playLabel(entry: Entry, at: Start | undefined): string {
+  if (at) {
+    if (at.asked && at.startAt !== undefined) return t("series.playFrom", { season: at.season, episode: at.episode, time: formatTime(at.startAt) });
+    return t(at.startAt !== undefined ? "series.resume" : "series.play", { season: at.season, episode: at.episode });
+  }
+  const from = askedTime(entry);
+  if (from !== undefined) return t("rows.playFrom", { time: formatTime(from) });
+  return entry.startAt !== undefined ? t("rows.resume") : t("rows.play");
 }
 
 /** What this profile's watched episodes of a show are filed under: the name its card has (the show's, as the player gave it), else the title's own. */
@@ -297,8 +343,10 @@ export interface Start {
   season: number;
   episode: number;
   url: string;
-  /** Where the episode was left, when it was left part way. */
+  /** Where the episode was left, when it was left part way; or the time a link or a friend's message asked for (then `asked`). */
   startAt?: number;
+  /** `startAt` is the time a link or a friend's message asked for in this episode (`Entry.asked`), not where this profile left it: Play says "from 12:34". */
+  asked?: true;
 }
 
 /**

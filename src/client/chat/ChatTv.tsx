@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type SetStateAction } from "react";
-import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction } from "../../shared";
+import type { OpenTitle } from "./titles";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
 import { BellIcon, BellOffIcon, ChevronLeftIcon, HeartIcon, ImageIcon, KeyboardIcon, MoreIcon, ReplyIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
@@ -48,7 +49,7 @@ export interface ChatTvProps {
   /** Back from the chat itself. */
   onClose: () => void;
   /** A title a message names was pressed (see titles.ts). */
-  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
+  onOpenTitle?: OpenTitle | undefined;
   /** The time that "today" is measured against (tests give theirs). */
   now?: number;
 }
@@ -200,7 +201,7 @@ export function ReadTv({
   /** A message was picked to answer (Reply.tsx): where the answer is written next (none: the box here, which is given the keys). */
   onReplied?: (() => void) | undefined;
   onClose: () => void;
-  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
+  onOpenTitle?: OpenTitle | undefined;
   /** Personal stickers in the messages (see `usePersonalLines`): none while they are off. */
   personal?: { lines: PersonalLines | undefined; note: SaveNote | null } | undefined;
   /** "GIFs and stickers" behind the ⋯ opens the chat's gallery (none: neither it nor Search is there, a TV that is only a remote). */

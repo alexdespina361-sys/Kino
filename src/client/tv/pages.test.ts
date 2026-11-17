@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { backOf, cardOf, cardsToLookUp, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, ofSection, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
+import { askedTime, asOpened, backOf, cardOf, cardsToLookUp, freshSimilar, gridOf, hasRows, heldStart, heroActions, isProfilePage, isRowsPage, ofSection, openedAt, overviewActions, playLabel, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
 import type { ChildGate } from "../shared/childGate";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
@@ -538,6 +538,42 @@ describe("startOf", () => {
     expect(startOf({ id: "f", title: "Film", url: "https://x.example/watch/7" }, false, [])).toBeUndefined();
     const film = card("film", { url: "https://x.example/watch/7", position: 300, duration: 1000 });
     expect(startOf({ id: "f", title: "Film", url: "https://x.example/watch/7" }, false, [film])).toBeUndefined();
+  });
+});
+
+describe("a title opened at what a link or a friend's message asks for", () => {
+  const film = { id: "f", title: "Film", url: "https://x.example/watch/7", kind: "movie" as const };
+  const show = { id: "d", title: "Dark", url: "https://x.example/watch/9?s=1&e=1", kind: "series" as const };
+  const started = card("film", { url: "https://x.example/watch/7", position: 300, duration: 1000 });
+
+  it("is a film from the time asked for, which no card of this profile's takes the place of; Play says so", () => {
+    const opened = openedAt(film, { at: 754 });
+    expect(opened).toEqual({ ...film, asked: { at: 754 }, startAt: 754 });
+    expect(resumable(opened, [started])).toBe(opened);
+    expect(askedTime(opened)).toBe(754);
+    expect(playLabel(opened, undefined)).toBe(t("rows.playFrom", { time: "12:34" }));
+    expect(playLabel(resumable(film, [started]), undefined)).toBe(t("rows.resume")); // (not asked: where it was left)
+    expect(playLabel(film, undefined)).toBe(t("rows.play"));
+  });
+
+  it("is a show at the episode asked for, and the time in it; asks for nothing that is not there", () => {
+    expect(openedAt(show, { season: 2, episode: 5, at: 61 })).toEqual({ ...show, asked: { season: 2, episode: 5, at: 61 } });
+    expect(openedAt(show, { season: 2, episode: 5 })).toEqual({ ...show, asked: { season: 2, episode: 5 } });
+    expect(openedAt(show, { at: 61 })).toBe(show); // (a time in a whole show is in nothing)
+    expect(openedAt(film, { season: 2, episode: 5 })).toBe(film); // (a film has no episodes)
+    expect(openedAt(film, {})).toBe(film);
+    expect(openedAt(film, undefined)).toBe(film);
+  });
+
+  it("says the episode while it is looked up, and is forgotten when the page is opened again", () => {
+    const opened = openedAt(show, { season: 2, episode: 5, at: 61 });
+    expect(heldStart(opened)).toEqual({ season: 2, episode: 5, url: "", startAt: 61, asked: true });
+    expect(playLabel(opened, heldStart(opened))).toBe(t("series.playFrom", { season: 2, episode: 5, time: "1:01" }));
+    expect(playLabel(opened, { season: 2, episode: 5, url: "x" })).toBe(t("series.play", { season: 2, episode: 5 }));
+    expect(playLabel(opened, { season: 2, episode: 5, url: "x", startAt: 61 })).toBe(t("series.resume", { season: 2, episode: 5 })); // (where this profile left it)
+    expect(heldStart(show)).toBeUndefined();
+    expect(asOpened(opened)).toEqual(show);
+    expect(asOpened(openedAt(film, { at: 754 }))).toEqual(film);
   });
 });
 

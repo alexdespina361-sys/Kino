@@ -15,7 +15,8 @@ import { marked } from "./search";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
-import { onlyNames, titleIn, titleLabel, type TitleInText } from "./titles";
+import { onlyNames, titleIn, titleLabel, type OpenTitle, type TitleInText } from "./titles";
+import { formatTime } from "../shared/format";
 
 export interface ChatLinesProps {
   lines: readonly ChatLine[];
@@ -49,7 +50,7 @@ export interface ChatLinesProps {
    */
   keyboard?: boolean;
   /** A title a message names was pressed (see titles.ts). Without it the cards are only shown. */
-  onOpenTitle?: (item: LibraryItem) => void;
+  onOpenTitle?: OpenTitle;
   /**
    * Personal stickers (personalStickers.ts), while they are on: where the picture of one sent in this chat is, and (on a screen that is touched or clicked)
    * saving a friend's into one's own collection, `has` saying which are there already. Without it a message of one says that it is not available.
@@ -639,7 +640,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
               ) : sticker ? (
                 said(<StickerPicture sticker={sticker} />, null)
               ) : (
-                <Said line={line} found={found && cards.has(found.id) ? found : null} remote={remote} onOpenTitle={onOpenTitle}>
+                <Said line={line} found={found && cards.has(found.id) ? found : null} remote={remote} name={name} onOpenTitle={onOpenTitle}>
                   {said}
                 </Said>
               )}
@@ -939,7 +940,9 @@ type SaidProps = {
   /** The title the line names, when it is one of the chat's cards (see `cardsOf`). */
   found: TitleInText | null;
   remote: boolean;
-  onOpenTitle?: ((item: LibraryItem) => void) | undefined;
+  /** The friend's name: whose rating a card of theirs says. */
+  name: string;
+  onOpenTitle?: OpenTitle | undefined;
   /** The line, drawn with what its bubble says and the card that goes under it (if any). */
   children: (text: string, card: ReactNode) => ReactNode;
 };
@@ -953,7 +956,7 @@ function Said(props: SaidProps) {
  * A line that names a title: while the server is asked, the words and a card of the size it will have (the list does not move when it comes); then the poster
  * and the name. A title nobody knows, or one the server could not be asked about, is the text it is.
  */
-function WithTitle({ line, found, remote, onOpenTitle, children }: SaidProps & { found: TitleInText }) {
+function WithTitle({ line, found, remote, name, onOpenTitle, children }: SaidProps & { found: TitleInText }) {
   const t = useT();
   const title = useChatTitle(found.id);
   if (title.status === "none" || title.status === "failed") return <>{children(line.text, null)}</>;
@@ -966,18 +969,43 @@ function WithTitle({ line, found, remote, onOpenTitle, children }: SaidProps & {
     return <>{children(found.rest || found.link, waiting)}</>;
   }
   const { item } = title;
+  const { season, episode, at, score } = found.extras;
+  // (What the address asks for besides the title: the episode and from when, and the rating its writer gave it, said as theirs.)
+  const where = [season !== undefined && episode !== undefined ? t("chat.cardEpisode", { season, episode }) : "", at !== undefined ? t("chat.cardFrom", { time: formatTime(at) }) : ""].filter(Boolean).join(" · ");
+  const rated = score !== undefined ? (line.mine ? t("chat.cardScoreMine", { score }) : t("chat.cardScoreTheirs", { name, score })) : "";
+  // (The card keeps its size, the same as while it was asked for: with the episode or the time and a rating as well, the name has one line.)
   const inside = (
     <>
       <Poster className="chat-card-art" title={item.title} image={item.image} />
-      <span className="chat-card-text">
+      <span className="chat-card-text" data-full={(where && rated) || undefined}>
         <b className="chat-card-name">{item.title}</b>
-        {item.year && <small>{item.year}</small>}
+        {where ? (
+          <small className="chat-card-where" data-testid="chat-card-where">
+            {[item.year, where].filter(Boolean).join(" · ")}
+          </small>
+        ) : (
+          item.year && <small>{item.year}</small>
+        )}
+        {rated && (
+          <small className="chat-card-score" data-testid="chat-card-score">
+            <StarIcon filled /> {rated}
+          </small>
+        )}
         {onOpenTitle && <span className="chat-card-open">{t("rows.open")}</span>}
       </span>
     </>
   );
+  const opens = { ...(season !== undefined && episode !== undefined ? { season, episode } : {}), ...(at !== undefined ? { at } : {}) };
   const card = onOpenTitle ? (
-    <button type="button" className="chat-card" onClick={() => onOpenTitle(item)} tabIndex={remote ? -1 : undefined} aria-label={`${t("rows.open")} ${item.title}`} data-title={item.id} data-testid="chat-card">
+    <button
+      type="button"
+      className="chat-card"
+      onClick={() => onOpenTitle(item, opens)}
+      tabIndex={remote ? -1 : undefined}
+      aria-label={[`${t("rows.open")} ${item.title}`, where, rated].filter(Boolean).join(", ")}
+      data-title={item.id}
+      data-testid="chat-card"
+    >
       {inside}
     </button>
   ) : (

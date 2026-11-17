@@ -128,6 +128,21 @@ describe("a message that names a title", () => {
     expect(html).toMatch(/data-testid="chat-bubble"[^]*?<\/button><button[^>]*data-testid="chat-card"/);
   });
 
+  it("says the episode, the time and the rating the address asks for, the rating as its writer's", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ item: { ...matrix, id: "filmpire-tv-1399", title: "A Show", year: 2011 } })));
+    await askAbout("filmpire-tv-1399");
+    const asked = "https://kino.24-7.ro/tv?title=tv-1399&s=2&e=5&t=754&r=8";
+    const theirs = render({ lines: [line(1, false, `A Show (2011) ${asked}`)], onOpenTitle: () => {} });
+    expect(theirs).toMatch(/data-testid="chat-card-where">2011 · S2:E5 · from 12:34</);
+    expect(theirs).toMatch(/data-testid="chat-card-score">[^]*?Sam gave it 8\/10</);
+    expect(tagOf(theirs, "chat-card")).toContain('aria-label="Open A Show, S2:E5 · from 12:34, Sam gave it 8/10"');
+    expect(render({ lines: [line(1, true, `A Show (2011) ${asked}`)], onOpenTitle: () => {} })).toContain("You gave it 8/10");
+    // (an address that asks for nothing: the card as it was)
+    const plain = render({ lines: [line(1, false, "A Show (2011) https://kino.24-7.ro/tv?title=tv-1399")], onOpenTitle: () => {} });
+    expect(has(plain, "chat-card-where")).toBe(false);
+    expect(has(plain, "chat-card-score")).toBe(false);
+  });
+
   it("is only the text in a report, as it is sent, and the text for a title nobody knows", async () => {
     await known(matrix);
     const report = render({ lines: [line(1, false, `Tonight? ${LINK}`)], showWriter: true, onOpenTitle: () => {} });

@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { checkChatText } from "../../shared";
-import { messageOf, onlyNames, sendableTitles, titleIn, titleLabel, titleMessage } from "./titles";
+import { chosenExtras, messageOf, movedTime, onlyNames, sendableTitles, titleIn, titleLabel, titleMessage, typedTime } from "./titles";
 
 describe("a title in a chat message", () => {
   it("is found by the title its address names, whichever of the site's addresses it is", () => {
-    expect(titleIn("https://kino4tv.com/tv?title=movie-603")).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "" });
-    expect(titleIn("look https://kino.24-7.ro/?title=tv-1399 tonight?")).toEqual({ id: "filmpire-tv-1399", link: "https://kino.24-7.ro/?title=tv-1399", rest: "look tonight?" });
+    expect(titleIn("https://kino4tv.com/tv?title=movie-603")).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "", extras: {} });
+    expect(titleIn("look https://kino.24-7.ro/?title=tv-1399 tonight?")).toEqual({ id: "filmpire-tv-1399", link: "https://kino.24-7.ro/?title=tv-1399", rest: "look tonight?", extras: {} });
     expect(titleIn("http://localhost:8885/tv?x=1&title=movie-7#a")?.id).toBe("filmpire-movie-7");
   });
 
   it("leaves the end of a sentence out of the address", () => {
-    expect(titleIn("Watch this: https://kino4tv.com/tv?title=movie-603!")).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "Watch this:" });
+    expect(titleIn("Watch this: https://kino4tv.com/tv?title=movie-603!")).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "Watch this:", extras: {} });
     expect(titleIn("(https://kino4tv.com/tv?title=movie-603).")).toMatchObject({ id: "filmpire-movie-603", rest: "" }); // (no "(" left over the card: the judge, 16 Nov)
     expect(titleIn("Tonight (https://kino4tv.com/tv?title=movie-603)")).toMatchObject({ rest: "Tonight" });
   });
@@ -40,7 +40,7 @@ describe("sending a title", () => {
     expect(text).toBe("The Matrix (1999) https://kino4tv.com/tv?title=movie-603");
     const kept = checkChatText(text);
     expect(kept).toEqual({ ok: true, text }); // (the server keeps it as it is: the address still names the title)
-    expect(titleIn(text)).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "The Matrix (1999)" });
+    expect(titleIn(text)).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "The Matrix (1999)", extras: {} });
   });
 
   it("names a show by the link it plays, and has nothing for a link pasted on the phone", () => {
@@ -60,12 +60,47 @@ describe("sending a title", () => {
       { id: "filmpire-movie-7", at: 40, title: "Seven", url: "/x" },
     ];
     expect(sendableTitles(progress, saved)).toEqual([
-      { address: "movie-603", title: "The Matrix", year: 1999 },
-      { address: "tv-1399", title: "A Show", image: "https://image.example/s.jpg" },
-      { address: "movie-7", title: "Seven" },
+      { address: "movie-603", title: "The Matrix", url: "https://films.example/watch/603", year: 1999 },
+      { address: "tv-1399", title: "A Show", url: "https://films.example/watch/1399?s=2&e=3", image: "https://image.example/s.jpg" },
+      { address: "movie-7", title: "Seven", url: "/x" },
     ]);
     expect(sendableTitles(progress, saved, 2).map((title) => title.address)).toEqual(["movie-603", "tv-1399"]);
     expect(messageOf({ address: "tv-1399", title: "A Show" }, "https://kino.24-7.ro")).toBe("A Show https://kino.24-7.ro/tv?title=tv-1399");
+  });
+
+  it("sends an episode, a time and a rating in the address, the words as they were: kept as they are, and read back", () => {
+    const text = messageOf({ address: "tv-1399", title: "A Show", year: 2011 }, "https://kino4tv.com", { season: 2, episode: 5, at: 754, score: 8 });
+    expect(text).toBe("A Show (2011) https://kino4tv.com/tv?title=tv-1399&s=2&e=5&t=754&r=8");
+    expect(checkChatText(text)).toEqual({ ok: true, text });
+    expect(titleIn(text)).toEqual({ id: "filmpire-tv-1399", link: "https://kino4tv.com/tv?title=tv-1399&s=2&e=5&t=754&r=8", rest: "A Show (2011)", extras: { season: 2, episode: 5, at: 754, score: 8 } });
+    expect(onlyNames(titleIn(text)!.rest, { title: "A Show", year: 2011 })).toBe(true); // (the card says the name: not twice)
+    // (a film: a time and a rating; anything odd in a hand-typed one is as if it were not there)
+    expect(titleIn("https://kino4tv.com/tv?title=movie-603&t=95&r=10!")?.extras).toEqual({ at: 95, score: 10 });
+    expect(titleIn("https://kino4tv.com/tv?title=movie-603&t=-1&r=99&s=1&e=1")?.extras).toEqual({});
+  });
+
+  it("sends only what the send step chose: an episode of a show, a time in a film or an episode, a rating given", () => {
+    const episode = { season: 2, episode: 5 };
+    expect(chosenExtras({ show: false, episode: null, at: 0, score: undefined })).toEqual({}); // (nothing chosen: what a plain press sends)
+    expect(chosenExtras({ show: true, episode, at: 754.6, score: 8 })).toEqual({ season: 2, episode: 5, at: 754, score: 8 });
+    expect(chosenExtras({ show: true, episode: null, at: 754, score: undefined })).toEqual({}); // (a whole show has no time to start at)
+    expect(chosenExtras({ show: false, episode, at: 90, score: undefined })).toEqual({ at: 90 }); // (a film has no episodes)
+    expect(chosenExtras({ show: false, episode: null, at: 90_000, score: 3 })).toEqual({ score: 3 }); // (past what an address may say)
+  });
+
+  it("reads a time typed by hand, and moves one by minutes between the beginning and the end", () => {
+    expect(typedTime("1:02:10")).toBe(3730);
+    expect(typedTime("12:34")).toBe(754);
+    expect(typedTime(" 45 ")).toBe(2700);
+    expect(typedTime("0")).toBe(0);
+    expect(typedTime("0:00")).toBe(0);
+    for (const odd of ["", "abc", "1:60", "1:02:60", "1:2", "-5", "1.5", "12:34:56:7", "99999"]) expect(typedTime(odd), odd).toBeUndefined();
+    expect(typedTime("2:00:00", 3600)).toBeUndefined(); // (past the end of what is sent)
+    expect(typedTime("24:00:00")).toBe(86_400);
+    expect(typedTime("24:00:01")).toBeUndefined();
+    expect(movedTime(0, -10, 3600)).toBe(0);
+    expect(movedTime(300, 10, 3600)).toBe(900);
+    expect(movedTime(3500, 10, 3600)).toBe(3600);
   });
 
   it("does not say the name twice: words that only name the title are left to the card", () => {
