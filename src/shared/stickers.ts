@@ -35,6 +35,27 @@ export const PERSONAL_STICKER = {
 export const PERSONAL_STICKER_BASE64_MAX = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4;
 
 /**
+ * Stickers that move (the owner's ask of 17 Nov 2026: WhatsApp's stickers and GIFs): while the host has them on as well (env MOVING_STICKERS=on), a picture that
+ * moves (an animated WebP or GIF, or a short video such as WhatsApp keeps a GIF as) is made a sticker that moves, not only its first picture. The page sends its
+ * pictures one under the other as one PNG (`side` wide, `side` times as many as there are high) and how long each is shown; the server reads it as it reads a
+ * still one, and makes an animated WebP of its pixels (server/accounts/stickerImage.ts). Off, every picture is made of its first one, as before.
+ */
+export const MOVING_STICKER = {
+  /** The fewest and the most pictures one has. */
+  minFrames: 2,
+  maxFrames: 48,
+  /** How long a picture is shown, at the least and the most (ms), and how long all of them may be. */
+  minDelay: 20,
+  maxDelay: 1000,
+  maxDuration: 8000,
+  /** The most the pictures as sent may be (a PNG of photographs does not pack small), and the most what is kept may be. */
+  sentBytes: 4_000_000,
+  keptBytes: 600_000,
+} as const;
+
+export const MOVING_STICKER_BASE64_MAX = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4;
+
+/**
  * What a message that is a personal sticker says in words, wherever words are shown (the bell, the friends page, a page that is older than personal stickers,
  * a report): the framed-picture emoji. It is in no language, and it is not one of the built-in stickers (it would be drawn as one).
  */
@@ -50,8 +71,16 @@ export const MyStickersSchema = z.object({
 });
 export type MyStickers = z.infer<typeof MyStickersSchema>;
 
-/** A picture made into a sticker on the page: a PNG, as base64. */
-export const StickerMakeSchema = z.object({ data: z.string().max(PERSONAL_STICKER_BASE64_MAX) });
+/**
+ * A picture made into a sticker on the page: a PNG, as base64. One that moves says how long each of its pictures is shown (`delays`, in ms), and may be bigger;
+ * a still one is no bigger than a still one may be.
+ */
+export const StickerMakeSchema = z
+  .object({
+    data: z.string().max(MOVING_STICKER_BASE64_MAX),
+    delays: z.array(z.number().int().min(MOVING_STICKER.minDelay).max(MOVING_STICKER.maxDelay)).min(MOVING_STICKER.minFrames).max(MOVING_STICKER.maxFrames).optional(),
+  })
+  .refine((made) => made.delays !== undefined || made.data.length <= PERSONAL_STICKER_BASE64_MAX);
 /** Sending one of one's own in a chat, or saving one a friend sent. */
 export const StickerSendSchema = z.object({ id: StickerIdSchema });
 

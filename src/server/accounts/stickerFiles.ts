@@ -33,7 +33,10 @@ export class MemoryStickerFiles implements StickerFiles {
   }
 }
 
-/** A folder with a file for each picture. Only a sticker's name ever names a file (nothing a request says can name another place). */
+/**
+ * A folder with a file for each picture. Only a sticker's name ever names a file (nothing a request says can name another place). Each is `<name>.png`, one
+ * that moves too (an animated WebP): what kind of picture it is, is read from its first bytes when it is sent (stickerImage.ts `pictureType`).
+ */
 export class FileStickerFiles implements StickerFiles {
   constructor(private readonly dir: string) {}
 
@@ -107,6 +110,9 @@ export function stickerFilesFor(persistence: Persistence, kind: "postgres" | "fi
 
 /** Whether the host turned personal stickers on (env PERSONAL_STICKERS=on); off unless it did. */
 export const personalStickersOn = (env: NodeJS.ProcessEnv = process.env): boolean => /^(1|on|true|yes)$/i.test(env.PERSONAL_STICKERS ?? "");
+
+/** Whether the host turned stickers that move on as well (env MOVING_STICKERS=on: shared/stickers.ts `MOVING_STICKER`); off unless it did. */
+export const movingStickersOn = (env: NodeJS.ProcessEnv = process.env): boolean => /^(1|on|true|yes)$/i.test(env.MOVING_STICKERS ?? "");
 
 /** How many megabytes the site keeps of them (env PERSONAL_STICKERS_MB), or nothing when it is not set to a number above zero. */
 export function personalStickersMaxBytes(env: NodeJS.ProcessEnv = process.env): number | undefined {

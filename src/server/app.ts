@@ -309,7 +309,15 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   appReleaseRoutes(app, releases);
   const pushOn = pushHub?.on === true;
-  const features = { cat: catOn, ...(klipyKey ? { gifs: klipyKey } : {}), ...(stickersOn ? { stickers: true } : {}), ...(pushOn ? { push: true } : {}) };
+  // (Stickers that move: only while personal stickers are on, and the host turned them on as well: MOVING_STICKERS=on.)
+  const movingOn = accounts?.stickers.moving === true;
+  const features = {
+    cat: catOn,
+    ...(klipyKey ? { gifs: klipyKey } : {}),
+    ...(stickersOn ? { stickers: true } : {}),
+    ...(movingOn ? { movingStickers: true } : {}),
+    ...(pushOn ? { push: true } : {}),
+  };
   // (The team's side of them: a picture taken down everywhere, or all of one maker's. There whether they are on or off.)
   if (accounts) stickerAdminRoutes(app, { stickers: accounts.stickers, adminToken: options.feedbackAdminToken });
   app.get("/api/features", async (_request, reply) => reply.header("Cache-Control", "no-store").send(features));

@@ -59,21 +59,21 @@ describe("a personal sticker's picture", () => {
     const made = makeSticker(sent);
     expect(made.ok).toBe(true);
     if (!made.ok) return;
-    expect(made.png.includes(Buffer.from("secret words"))).toBe(false);
-    expect(made.png.includes(Buffer.from("tEXt"))).toBe(false);
-    const back = PNG.sync.read(made.png);
+    expect(made.data.includes(Buffer.from("secret words"))).toBe(false);
+    expect(made.data.includes(Buffer.from("tEXt"))).toBe(false);
+    const back = PNG.sync.read(made.data);
     expect([back.width, back.height]).toEqual([64, 64]);
     expect([...back.data.subarray(0, 4)]).toEqual([200, 40, 40, 255]);
-    expect(made.hash).toBe(createHash("sha256").update(made.png).digest("base64url"));
+    expect(made.hash).toBe(createHash("sha256").update(made.data).digest("base64url"));
   });
 
   it("keeps the see-through parts of a picture that has them, and leaves out the alpha of one that has none", () => {
     const opaque = makeSticker(picture(32));
     const cut = makeSticker(picture(32, undefined, (x) => (x < 16 ? [0, 0, 0, 0] : [10, 200, 10, 255])));
-    expect(opaque.ok && pngHeader(opaque.png)?.colour).toBe(2);
-    expect(cut.ok && pngHeader(cut.png)?.colour).toBe(6);
+    expect(opaque.ok && pngHeader(opaque.data)?.colour).toBe(2);
+    expect(cut.ok && pngHeader(cut.data)?.colour).toBe(6);
     if (!cut.ok) return;
-    const back = PNG.sync.read(cut.png);
+    const back = PNG.sync.read(cut.data);
     expect([back.data[3], back.data[(31 * 4) + 3]]).toEqual([0, 255]);
   });
 
@@ -129,7 +129,7 @@ describe("a personal sticker's picture", () => {
       for (let row = 0; row < 32; row++) data[row * (32 * bytesPerPixel + 1)] = 0;
       const made = makeSticker(handMade({ width: 32, height: 32, colour, depth }, deflateSync(data)));
       expect(made.ok, `colour ${colour} depth ${depth}`).toBe(true);
-      if (made.ok) expect([pngHeader(made.png)?.depth, pngHeader(made.png)?.colour], `colour ${colour} depth ${depth}`).toEqual([8, colour === 4 || colour === 6 ? 6 : 2]); // (its alpha, 0xc0, is kept)
+      if (made.ok) expect([pngHeader(made.data)?.depth, pngHeader(made.data)?.colour], `colour ${colour} depth ${depth}`).toEqual([8, colour === 4 || colour === 6 ? 6 : 2]); // (its alpha, 0xc0, is kept)
     }
   });
 
@@ -207,7 +207,7 @@ describe("the book of personal stickers", () => {
     expect(stickers.of("sam").stickers).toEqual([{ id: sams, mine: true }]);
     expect(stickers.of("nobody").stickers).toEqual([]);
     expect((await files.ids()).sort()).toEqual([first, second, sams].sort());
-    expect(await stickers.picture(first)).toEqual((makeSticker(nth(1)) as { png: Buffer }).png);
+    expect(await stickers.picture(first)).toEqual((makeSticker(nth(1)) as { data: Buffer }).data);
   });
 
   it("is the sticker a profile made already when it makes the same picture again; another profile's same picture is a sticker of its own", async () => {
@@ -235,7 +235,7 @@ describe("the book of personal stickers", () => {
     host.now += 24 * 3600 * 1000 + 1;
     expect(await stickers.make("alex", "alexs-account", nth(97))).toEqual({ ok: false, error: "full" });
 
-    const one = (makeSticker(nth(1)) as { png: Buffer }).png.length;
+    const one = (makeSticker(nth(1)) as { data: Buffer }).data.length;
     const small = book({ maxBytes: one + 10 }).stickers;
     await make(small, "alex", nth(1));
     expect(await small.make("alex", "alexs-account", nth(2))).toEqual({ ok: false, error: "site_full" });

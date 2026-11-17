@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { friendChoices, isStickerId, PERSONAL_STICKER, StickerMakeSchema, type StickerProblem } from "../../shared";
+import { friendChoices, isStickerId, MOVING_STICKER, PERSONAL_STICKER, StickerMakeSchema, type StickerProblem } from "../../shared";
 import { teamGuard } from "../feedback/routes";
 import type { FriendRouteHelpers } from "./friendRoutes";
 import { RateLimiter } from "./rateLimit";
+import { pictureType } from "./stickerImage";
 import type { StickerBook } from "./stickers";
 
 const MINUTE = 60_000;
@@ -26,12 +27,12 @@ export function stickerRefusal(reply: FastifyReply, error: StickerProblem | "gon
 }
 
 /**
- * A sticker's picture, as it is sent: always a PNG (it is one this server made), never guessed at by the browser, nothing in it run or embedded elsewhere,
- * kept by the browser of the one who asked for a few minutes only (a sticker taken down is gone from screens soon after).
+ * A sticker's picture, as it is sent: a PNG, or an animated WebP for one that moves (either way one this server made), never guessed at by the browser, nothing
+ * in it run or embedded elsewhere, kept by the browser of the one who asked for a few minutes only (a sticker taken down is gone from screens soon after).
  */
 export function sendStickerPicture(reply: FastifyReply, data: Buffer): FastifyReply {
   return reply
-    .header("Content-Type", "image/png")
+    .header("Content-Type", pictureType(data))
     .header("X-Content-Type-Options", "nosniff")
     .header("Content-Security-Policy", "default-src 'none'; sandbox")
     .header("Cross-Origin-Resource-Policy", "same-origin")
@@ -46,7 +47,8 @@ type Asked = FastifyRequest & { params: { id: string } };
  * A profile's own personal stickers, under /api/profiles/:id/stickers (the profile is the one asking, and one of the signed-in account's, with friends on):
  *
  *   GET    /stickers          the collection, the newest first
- *   POST   /stickers          make one of a picture the page made ({ data }: a PNG as base64): answers with the collection and the new one's name
+ *   POST   /stickers          make one of a picture the page made ({ data }: a PNG as base64; one that moves says `delays` too): answers with the collection and
+ *                             the new one's name
  *   GET    /stickers/:sid     the picture of one in the collection
  *   DELETE /stickers/:sid     let one go: answers with the collection
  *
@@ -96,10 +98,13 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
     return reply.header("Cache-Control", "no-store").send(stickers.of(me.profileId));
   });
 
+  // (A still picture's body, and the most one that moves may be: only while those are on. One that moves has three times as long to arrive, being bigger.)
+  const stillBody = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096;
+  const movingBody = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4096;
   app.post<{ Params: { id: string } }>(
     base,
     {
-      bodyLimit: Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096,
+      bodyLimit: stickers.moving ? movingBody : stillBody,
       onRequest: async (request, reply) => {
         const me = asker(request as Asked, reply, writesByAccount);
         if (!me) return reply;
@@ -108,10 +113,14 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
         }
         uploading.add(me.accountId);
         // (A picture that has not come by then is let go, and its request ended.)
-        const deadline = setTimeout(() => {
-          done(request);
-          request.raw.destroy();
-        }, uploadMs);
+        const big = Number(request.headers["content-length"]) > stillBody;
+        const deadline = setTimeout(
+          () => {
+            done(request);
+            request.raw.destroy();
+          },
+          big ? uploadMs * 3 : uploadMs,
+        );
         letIn.set(request, { ...me, deadline });
         reply.raw.once("close", () => done(request));
         return undefined;
@@ -126,7 +135,7 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
       clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
       const parsed = StickerMakeSchema.safeParse(request.body);
       if (!parsed.success) return stickerRefusal(reply, "too_big");
-      const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"));
+      const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
       if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
       return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
     },

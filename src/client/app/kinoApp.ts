@@ -17,9 +17,9 @@ import { t } from "../i18n";
  * folders. It updates itself to a newer one.
  */
 
-/** The folders of the phone the app can open a file chooser in. */
-export type AppFolder = "whatsapp-stickers";
-const FOLDERS: readonly AppFolder[] = ["whatsapp-stickers"];
+/** The folders of the phone the app can open a file chooser in: WhatsApp's stickers, and its GIFs (kept as short videos). */
+export type AppFolder = "whatsapp-stickers" | "whatsapp-gifs";
+const FOLDERS: readonly AppFolder[] = ["whatsapp-stickers", "whatsapp-gifs"];
 
 /** What the app said of itself. */
 export interface KinoAppState {

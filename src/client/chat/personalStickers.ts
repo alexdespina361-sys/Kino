@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { MyStickersSchema, PERSONAL_STICKER, StickerIdSchema, type MyStickers } from "../../shared";
+import { MOVING_STICKER, MyStickersSchema, PERSONAL_STICKER, StickerIdSchema, type MyStickers } from "../../shared";
 import { ApiError, ask } from "../account/api";
 import { useProfileData } from "../account/store";
 import type { Key } from "../i18n";
@@ -14,14 +14,20 @@ export type PersonalSticker = MyStickers["stickers"][number];
 
 /* ------------------------------ on or off ------------------------------ */
 
-let offered: Promise<boolean | null> | undefined;
+/** What the host has on: personal stickers, and stickers that move (shared/stickers.ts `MOVING_STICKER`: only with the others). */
+interface Offered {
+  stickers: boolean;
+  moving: boolean;
+}
+let offered: Promise<Offered | null> | undefined;
 /** Whether the host has them on (`/api/features`), null when it did not answer. Asked once a page; a host that did not answer is asked again the next time. */
-function askOffered(): Promise<boolean | null> {
+function askOffered(): Promise<Offered | null> {
   offered ??= (async () => {
     try {
       const answer = await fetch("/api/features", { cache: "no-store" });
       if (!answer.ok) throw new Error(String(answer.status));
-      return ((await answer.json()) as { stickers?: unknown }).stickers === true;
+      const said = (await answer.json()) as { stickers?: unknown; movingStickers?: unknown };
+      return { stickers: said.stickers === true, moving: said.stickers === true && said.movingStickers === true };
     } catch {
       offered = undefined;
       return null;
@@ -29,7 +35,20 @@ function askOffered(): Promise<boolean | null> {
   })();
   return offered;
 }
-export const personalStickersOffered = (): Promise<boolean> => askOffered().then((answer) => answer === true);
+export const personalStickersOffered = (): Promise<boolean> => askOffered().then((answer) => answer?.stickers === true);
+
+/** Whether the host makes stickers that move as well: a picture that moves is then made one that moves (else its first picture), and WhatsApp's GIFs are offered. */
+export function useMovingStickersOn(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void askOffered().then((answer) => live && setOn(answer?.moving === true));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return on;
+}
 
 /**
  * How long after a host that did not say whether they are on it is asked again (a moment's lost network is not "off" for as long as the page is open): soon at
@@ -47,7 +66,7 @@ export function usePersonalStickersOn(): boolean {
     const look = (tries: number) => {
       void askOffered().then((answer) => {
         if (!live) return;
-        if (answer !== null) return setOn(answer);
+        if (answer !== null) return setOn(answer.stickers);
         timer = window.setTimeout(() => look(tries + 1), ASK_AGAIN_MS[Math.min(tries, ASK_AGAIN_MS.length - 1)]);
       });
     };
@@ -68,8 +87,8 @@ const MadeSchema = MyStickersSchema.extend({ id: StickerIdSchema });
 
 export const personalStickerApi = {
   list: (profileId: string) => ask(MyStickersSchema, "GET", own(profileId)),
-  /** Make one of a picture (the base64 of a PNG: `stickerPicture`). The answer is the collection, and the new one's name. */
-  make: (profileId: string, data: string) => ask(MadeSchema, "POST", own(profileId), { data }),
+  /** Make one of a picture (the base64 of a PNG: `stickerPicture`; one that moves says how long each picture is shown). The answer is the collection, and the new one's name. */
+  make: (profileId: string, data: string, delays?: number[]) => ask(MadeSchema, "POST", own(profileId), delays ? { data, delays } : { data }),
   remove: (profileId: string, id: string) => ask(MyStickersSchema, "DELETE", `${own(profileId)}/${encodeURIComponent(id)}`),
   /** Keep one a friend sent in this chat. The answer is the collection. */
   save: (profileId: string, friendId: string, id: string) => ask(MyStickersSchema, "POST", `${inChat(profileId, friendId)}/stickers/${encodeURIComponent(id)}/save`),
@@ -181,6 +200,250 @@ export class StickerError extends Error {
   }
 }
 
+/* ------------------------------ a picture that moves ------------------------------ */
+
+/** A picture that moves, made into what the server takes (shared/stickers.ts `MOVING_STICKER`): its pictures one under the other, how long each is shown, and its first picture alone (made a still sticker when the host makes only those). */
+export interface MovingPicture {
+  data: string;
+  delays: number[];
+  still: string;
+}
+/** A picture that does not move after all (a video whose pictures are all the same): its picture alone. */
+export interface StillPicture {
+  still: string;
+  data?: undefined;
+  delays?: undefined;
+}
+
+/** How long a picture is shown at the least: 15 a second at the most. */
+const FRAME_MS = Math.ceil(1000 / 15);
+
+interface Frames {
+  pictures: ImageData[];
+  delays: number[];
+}
+
+/** What kind of file it is, by its first bytes (a phone's chooser does not always say): a picture that may move, or a video. */
+async function movingKind(file: Blob): Promise<"image/gif" | "image/webp" | "image/png" | "video" | null> {
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  if (ascii(head, 0, 4) === "GIF8") return "image/gif";
+  if (ascii(head, 0, 4) === "RIFF" && ascii(head, 8, 4) === "WEBP") return "image/webp";
+  if (head[0] === 0x89 && ascii(head, 1, 3) === "PNG") return "image/png";
+  if (ascii(head, 4, 4) === "ftyp" || (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3)) return "video";
+  return file.type.startsWith("video/") ? "video" : null;
+}
+
+/**
+ * A picture that moves, made into a sticker that moves: an animated GIF, WebP or PNG (read with the browser's ImageDecoder, where it has one), or a short video
+ * such as WhatsApp keeps a GIF as (a picture taken at each step of it). Its first 8 seconds, at most 48 pictures and 15 a second, each fitted whole in the
+ * square (what is left over is see-through); the same picture twice in a row is one shown longer. Null for a picture that does not move, or that this browser
+ * cannot read as one: it is made a still sticker as any picture is. A video whose pictures are all the same is its picture (`still`); one that this browser
+ * cannot play, or that is all black, is not a picture (the judge's guard of 17 Nov: nothing of it can be tried on a phone here). One too big to send is sent
+ * with every other picture, and so on; at the last, as its first picture.
+ */
+export async function movingPicture(file: Blob): Promise<MovingPicture | StillPicture | null> {
+  if (file.size > OPEN_BYTES) throw new StickerError("too_big");
+  const kind = await movingKind(file).catch(() => null);
+  if (!kind) return null;
+  let frames: Frames | null;
+  if (kind === "video") {
+    frames = await videoFrames(file).catch(() => null);
+    if (!frames) throw new StickerError("not_a_picture");
+  } else {
+    frames = await decodedFrames(file, kind).catch(() => null);
+    if (!frames) return null;
+  }
+  if (frames.pictures.every(blank)) throw new StickerError("not_a_picture");
+  const first = await pngOf([frames.pictures[0]!]);
+  if (first.size > PERSONAL_STICKER.sentBytes) throw new StickerError("too_big");
+  const still = base64Of(new Uint8Array(await first.arrayBuffer()));
+  for (let step = 1; ; step *= 2) {
+    const now = everyOther(frames, step);
+    if (!now || now.pictures.length < MOVING_STICKER.minFrames) return { still };
+    const strip = await pngOf(now.pictures);
+    if (strip.size <= MOVING_STICKER.sentBytes) return { data: base64Of(new Uint8Array(await strip.arrayBuffer())), delays: now.delays, still };
+  }
+}
+
+/** The times (ms) its pictures are taken at, and how long each is shown: of its first 8 seconds, at most 48 pictures and 15 a second, each in the middle of its time. */
+function steps(duration: number): { at: number[]; delay: number } {
+  const total = Math.min(duration, MOVING_STICKER.maxDuration);
+  const count = Math.max(MOVING_STICKER.minFrames, Math.min(MOVING_STICKER.maxFrames, Math.ceil(total / FRAME_MS)));
+  const delay = Math.min(MOVING_STICKER.maxDelay, Math.max(MOVING_STICKER.minDelay, Math.floor(total / count)));
+  return { at: Array.from({ length: count }, (_, step) => (step + 0.5) * (total / count)), delay };
+}
+
+/** A square of the sticker's side to draw on, read back often. */
+function square(): CanvasRenderingContext2D {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = PERSONAL_STICKER.side;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new StickerError("failed");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  return context;
+}
+
+/** A picture fitted whole in the square, in its middle; what is left over is see-through. */
+function fitted(context: CanvasRenderingContext2D, source: CanvasImageSource, width: number, height: number): ImageData {
+  const side = PERSONAL_STICKER.side;
+  context.clearRect(0, 0, side, side);
+  const scale = Math.min(side / width, side / height);
+  const drawnWidth = Math.max(1, Math.round(width * scale));
+  const drawnHeight = Math.max(1, Math.round(height * scale));
+  context.drawImage(source, 0, 0, width, height, Math.round((side - drawnWidth) / 2), Math.round((side - drawnHeight) / 2), drawnWidth, drawnHeight);
+  return context.getImageData(0, 0, side, side);
+}
+
+/** (What the page needs of the browser's ImageDecoder: its types are not in every TypeScript's.) */
+interface DecodedPicture {
+  image: CanvasImageSource & { displayWidth: number; displayHeight: number; duration: number | null; close(): void };
+}
+interface PictureDecoder {
+  tracks: { ready: Promise<void>; selectedTrack: { animated: boolean; frameCount: number } | null };
+  completed: Promise<void>;
+  decode(options: { frameIndex: number }): Promise<DecodedPicture>;
+  close(): void;
+}
+interface PictureDecoderClass {
+  new (init: { data: ArrayBuffer; type: string }): PictureDecoder;
+  isTypeSupported(type: string): Promise<boolean>;
+}
+
+/** The pictures of an animated GIF, WebP or PNG, by the browser's ImageDecoder: null where there is none, or the picture does not move. */
+async function decodedFrames(file: Blob, type: string): Promise<Frames | null> {
+  const Decoder = (globalThis as { ImageDecoder?: PictureDecoderClass }).ImageDecoder;
+  if (!Decoder || !(await Decoder.isTypeSupported(type))) return null;
+  const decoder = new Decoder({ data: await file.arrayBuffer(), type });
+  try {
+    await decoder.tracks.ready;
+    await decoder.completed;
+    const track = decoder.tracks.selectedTrack;
+    if (!track?.animated || track.frameCount < MOVING_STICKER.minFrames) return null;
+    // (When each picture starts: read first, each let go at once. One that says less than 20 ms is shown for 100, as browsers show it.)
+    const starts: number[] = [];
+    let time = 0;
+    for (let index = 0; index < track.frameCount && time < MOVING_STICKER.maxDuration; index++) {
+      const { image } = await decoder.decode({ frameIndex: index });
+      const shown = image.duration ? image.duration / 1000 : 0;
+      image.close();
+      starts.push(time);
+      time += shown >= MOVING_STICKER.minDelay ? shown : 100;
+    }
+    const { at, delay } = steps(time);
+    const context = square();
+    const pictures: ImageData[] = [];
+    for (const when of at) {
+      let index = 0;
+      while (index + 1 < starts.length && starts[index + 1]! <= when) index++;
+      const { image } = await decoder.decode({ frameIndex: index });
+      try {
+        pictures.push(fitted(context, image, image.displayWidth, image.displayHeight));
+      } finally {
+        image.close();
+      }
+    }
+    return { pictures, delays: at.map(() => delay) };
+  } finally {
+    decoder.close();
+  }
+}
+
+/** `start`, then whether the video said `event` (within 5 seconds, and not that it failed). */
+function videoSays(video: HTMLVideoElement, event: string, start: () => void): Promise<boolean> {
+  return new Promise((resolve) => {
+    const done = (ok: boolean) => {
+      window.clearTimeout(timer);
+      video.removeEventListener(event, yes);
+      video.removeEventListener("error", no);
+      resolve(ok);
+    };
+    const yes = () => done(true);
+    const no = () => done(false);
+    const timer = window.setTimeout(() => done(false), 5000);
+    video.addEventListener(event, yes);
+    video.addEventListener("error", no);
+    start();
+  });
+}
+
+/** The pictures of a video, a picture taken at each step (the video is not played, nor heard): null when this browser cannot play it. */
+async function videoFrames(file: Blob): Promise<Frames | null> {
+  const address = URL.createObjectURL(file);
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  try {
+    if (!(await videoSays(video, "loadeddata", () => (video.src = address)))) return null;
+    // (A video that does not say how long it is (one a browser recorded) says so once it has been to its end.)
+    if (video.duration === Infinity && !(await videoSays(video, "seeked", () => (video.currentTime = 1e6)))) return null;
+    const duration = video.duration * 1000;
+    if (!Number.isFinite(duration) || !(duration > 0) || !video.videoWidth || !video.videoHeight) return null;
+    const { at, delay } = steps(duration);
+    const context = square();
+    const pictures: ImageData[] = [];
+    for (const when of at) {
+      if (!(await videoSays(video, "seeked", () => (video.currentTime = when / 1000)))) return null;
+      pictures.push(fitted(context, video, video.videoWidth, video.videoHeight));
+    }
+    return { pictures, delays: at.map(() => delay) };
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(address);
+  }
+}
+
+/** A picture with nothing to see: every pixel see-through or black. */
+function blank(picture: ImageData): boolean {
+  const data = picture.data;
+  for (let at = 0; at < data.length; at += 4) if (data[at + 3]! > 0 && (data[at]! > 8 || data[at + 1]! > 8 || data[at + 2]! > 8)) return false;
+  return true;
+}
+
+const samePicture = (a: ImageData, b: ImageData) => {
+  const x = new Uint32Array(a.data.buffer, a.data.byteOffset, a.data.byteLength / 4);
+  const y = new Uint32Array(b.data.buffer, b.data.byteOffset, b.data.byteLength / 4);
+  if (x.length !== y.length) return false;
+  for (let at = 0; at < x.length; at++) if (x[at] !== y[at]) return false;
+  return true;
+};
+
+/**
+ * Every `step`-th picture, each shown for the time of those it stands for, and the same picture twice in a row one shown longer: null when a picture would be
+ * shown longer than a picture may be.
+ */
+function everyOther({ pictures, delays }: Frames, step: number): Frames | null {
+  const kept: ImageData[] = [];
+  const shown: number[] = [];
+  for (let at = 0; at < pictures.length; at += step) {
+    const time = delays.slice(at, at + step).reduce((all, delay) => all + delay, 0);
+    if (time > MOVING_STICKER.maxDelay) return null;
+    const last = kept.length - 1;
+    if (last >= 0 && shown[last]! + time <= MOVING_STICKER.maxDelay && samePicture(kept[last]!, pictures[at]!)) shown[last] = shown[last]! + time;
+    else {
+      kept.push(pictures[at]!);
+      shown.push(time);
+    }
+  }
+  return { pictures: kept, delays: shown };
+}
+
+/** The pictures one under the other, as one PNG. */
+async function pngOf(pictures: ImageData[]): Promise<Blob> {
+  const side = PERSONAL_STICKER.side;
+  const canvas = document.createElement("canvas");
+  canvas.width = side;
+  canvas.height = side * pictures.length;
+  const context = canvas.getContext("2d");
+  if (!context) throw new StickerError("failed");
+  pictures.forEach((picture, at) => context.putImageData(picture, 0, at * side));
+  const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!png) throw new StickerError("failed");
+  return png;
+}
+
 /** The picture, drawn the right way up (a phone's photo says which way that is: both ways of opening it follow what it says). */
 async function openPicture(file: Blob): Promise<{ source: CanvasImageSource; width: number; height: number; close: () => void }> {
   if (typeof createImageBitmap === "function") {
@@ -269,8 +532,8 @@ export interface MyStickersView {
   /** The collection, the newest first (null until the server has answered). */
   stickers: PersonalSticker[] | null;
   status: "loading" | "ready" | "failed";
-  /** Make a sticker of a picture file: null when it was made, else why not. */
-  add: (file: Blob) => Promise<StickerAddProblem | null>;
+  /** Make a sticker of a picture file (`moving`: one that moves, while the host makes those): null when it was made, else why not. */
+  add: (file: Blob, moving?: boolean) => Promise<StickerAddProblem | null>;
   remove: (id: string) => Promise<boolean>;
   retry: () => void;
 }
@@ -310,16 +573,29 @@ export function useMyStickers(profileId: string, on: boolean, fresh = false): My
     else if (fresh && now.status === "ready") void lookAgain(profileId);
   }, [on, profileId, load, fresh]);
   const add = useCallback(
-    async (file: Blob): Promise<StickerAddProblem | null> => {
-      try {
-        const picture = await stickerPicture(file);
-        const made = await personalStickerApi.make(profileId, picture).catch(async (error: unknown) => {
-          // (The site takes a few pictures at once, and one at a time from an account: one that comes while another is on its way waits as long as it is told,
-          // once, and goes again.)
+    async (file: Blob, moving = false): Promise<StickerAddProblem | null> => {
+      // (The site takes a few pictures at once, and one at a time from an account: one that comes while another is on its way waits as long as it is told,
+      // once, and goes again.)
+      const make = (picture: string, delays?: number[]) =>
+        personalStickerApi.make(profileId, picture, delays).catch(async (error: unknown) => {
           if (!(error instanceof ApiError && error.status === 503 && error.code === "busy")) throw error;
           await new Promise((resolve) => setTimeout(resolve, Math.min(10, Math.max(1, error.retryAfter ?? 5)) * 1000));
-          return personalStickerApi.make(profileId, picture);
+          return personalStickerApi.make(profileId, picture, delays);
         });
+      try {
+        // (While the host makes stickers that move: a picture that moves is made one, and its first picture when the server could not; the collection full,
+        // the day's made, or the site without room, are said as they are.)
+        const picture = moving ? await movingPicture(file) : null;
+        let made: Awaited<ReturnType<typeof make>>;
+        if (picture && picture.delays !== undefined) {
+          made = await make(picture.data, picture.delays).catch((error: unknown) => {
+            const problem = addProblemOf(error);
+            if (problem === "full" || problem === "too_many" || problem === "site_full") throw error;
+            return make(picture.still);
+          });
+        } else {
+          made = await make(picture ? picture.still : await stickerPicture(file));
+        }
         tookCollection(profileId, made);
         return null;
       } catch (error) {

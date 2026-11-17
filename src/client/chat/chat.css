@@ -405,6 +405,8 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-sticker-btn .chat-sticker-add-plus { font-size: 2.4em; }
 .chat-sticker-add-icon { font-size: 1.45rem; margin-bottom: 2px; } /* (From WhatsApp, in the Android app) */
 .tv-chat-sticker-btn .chat-sticker-add-icon { font-size: 2em; }
+/* (WhatsApp GIFs, in the Android app while stickers that move are on: a GIF badge in the icon's place) */
+.chat-sticker-add-gif { margin-bottom: 4px; padding: 1px 5px; border: 2px solid currentColor; border-radius: 5px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1.2; }
 .chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }

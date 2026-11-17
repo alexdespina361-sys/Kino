@@ -39,6 +39,7 @@ export const chatIt: ChatDictionary = {
   "chat.stickerAdd": "Aggiungi una foto",
   "chat.stickerAdding": "Creo lo sticker…",
   "chat.stickerFromWhatsApp": "Da WhatsApp",
+  "chat.stickerWhatsAppGifs": "GIF di WhatsApp",
   "chat.stickerYours": "Manda il tuo sticker",
   "chat.stickerSavedOne": "Manda uno sticker salvato",
   "chat.stickerRemove": "Elimina questo sticker",

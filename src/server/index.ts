@@ -1,7 +1,7 @@
 import { googleFromEnv } from "./accounts/google";
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
-import { personalStickersMaxBytes, personalStickersOn, stickerFilesFor } from "./accounts/stickerFiles";
+import { movingStickersOn, personalStickersMaxBytes, personalStickersOn, stickerFilesFor } from "./accounts/stickerFiles";
 import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
 import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FcmSender, fcmFromEnv } from "./push/fcm";
@@ -31,7 +31,7 @@ const { persistence, describe, kind } = await persistenceFromEnv();
 const accounts = await AccountStore.open({
   persistence,
   log: console,
-  stickers: { files: stickerFilesFor(persistence, kind), on: personalStickersOn(), ...(personalStickersMaxBytes() ? { maxBytes: personalStickersMaxBytes()! } : {}) },
+  stickers: { files: stickerFilesFor(persistence, kind), on: personalStickersOn(), moving: movingStickersOn(), ...(personalStickersMaxBytes() ? { maxBytes: personalStickersMaxBytes()! } : {}) },
 });
 // Which phone goes with which TV is kept in the same place, so a restart (a free host sleeps when nobody is using it) does not undo every pairing.
 const registry = new Registry();

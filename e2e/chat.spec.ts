@@ -1,5 +1,6 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
+import sharp from "sharp";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -1766,6 +1767,36 @@ const pictureAt = async (page: Page, address: string) => {
 /** Pictures are kept by the browser for a few minutes (`private, max-age=300`): a page that must ask again is told to (a page whose asks are routed keeps nothing). */
 const askAfresh = (page: Page) => page.route(/\/stickers\//, (route) => route.continue());
 
+/** A picture that moves, made here as a messenger's is (an animated WebP or GIF): a circle of 64 by 64, see-through around, of each colour in turn, each shown its own time (ms). */
+async function movingFile(format: "webp" | "gif", colours: Array<[number, number, number]>, delays: number[]): Promise<Buffer> {
+  const side = 64;
+  const raw = Buffer.alloc(side * side * 4 * colours.length);
+  colours.forEach(([r, g, b], page) => {
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) raw.set((x - 31.5) ** 2 + (y - 31.5) ** 2 <= 30 ** 2 ? [r, g, b, 255] : [0, 0, 0, 0], ((page * side + y) * side + x) * 4);
+    }
+  });
+  const pictures = sharp(raw, { raw: { width: side, height: side * colours.length, channels: 4, pageHeight: side } });
+  return (format === "webp" ? pictures.webp({ lossless: true, loop: 0, delay: delays }) : pictures.gif({ loop: 0, delay: delays })).toBuffer();
+}
+
+/** A sticker as the server gives it to `page`, a still one or one that moves: its type, its pictures (each 192 by 192), how long each is shown, how often it plays. */
+async function movingAt(page: Page, address: string) {
+  const answer = await page.request.get(address);
+  expect(answer.status(), address).toBe(200);
+  const body = await answer.body();
+  const about = await sharp(body, { animated: true }).metadata();
+  const { data, info } = await sharp(body, { animated: true }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const pages = about.pages ?? 1;
+  const height = info.height / pages;
+  const size = info.width * height * 4;
+  const pictures = Array.from({ length: pages }, (_, at) => ({ width: info.width, height, data: data.subarray(at * size, (at + 1) * size) }) as unknown as PNG);
+  return { type: answer.headers()["content-type"], pages, delays: about.delay ?? [], loop: about.loop, pictures };
+}
+
+/** Whether the pixel at (x, y) of a sticker's picture is see-through (a lossy WebP keeps it all but so). */
+const seeThrough = (picture: PNG, x: number, y: number) => picture.data[(y * picture.width + x) * 4 + 3]! < 16;
+
 test.describe("personal stickers in a chat", () => {
   test("while the host has them off (every host, until its owner turns them on): the phone's sheet and a computer's page are Kino's alone, as they were, and nothing is asked about them", async ({ browser }) => {
     test.setTimeout(240_000);
@@ -2032,6 +2063,186 @@ test.describe("personal stickers in a chat", () => {
     await plain.setFiles({ name: "wide.png", mimeType: "image/png", buffer: widePicture() });
     await expect(mine).toHaveCount(3);
     expect(await ann.page.evaluate(() => (window as unknown as { e2eFolders: string[] }).e2eFolders)).toEqual(["whatsapp-stickers"]);
+  });
+
+  test("stickers that move (MOVING_STICKERS on): an animated WebP is made one that moves, each picture shown as long as it was and its see-through kept, seen moving by the friend and reported as the WebP it is; an animated GIF moves too; a GIF whose pictures are all the same is a still", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const mine = sheet.getByTestId("chat-sticker-mine");
+    const file = ann.page.getByTestId("chat-sticker-file");
+    await expect(sheet.getByTestId("chat-stickers-none")).toBeVisible();
+    const ids = () => mine.evaluateAll((all) => all.map((each) => each.getAttribute("data-personal")!));
+    const madeAfter = async (had: string[]) => {
+      const id = (await ids()).find((each) => !had.includes(each))!;
+      return movingAt(ann.page, (await sheet.locator(`[data-personal="${id}"] img`).getAttribute("src"))!);
+    };
+
+    // red, green and blue, 200 ms each: taken 15 times a second, the same picture in a row put together, three pictures of 198 ms (none of the steps falls on
+    // the moment one picture gives way to the next)
+    await file.setInputFiles({ name: "moving.webp", mimeType: "image/webp", buffer: await movingFile("webp", [[220, 30, 30], [30, 200, 30], [30, 30, 220]], [200, 200, 200]) });
+    await expect(mine).toHaveCount(1);
+    await expect(sheet.getByTestId("chat-sticker-problem")).toHaveCount(0);
+    const made = await madeAfter([]);
+    expect(made.type).toBe("image/webp");
+    expect([made.pages, made.loop, made.delays]).toEqual([3, 0, [198, 198, 198]]);
+    expect(made.pictures.map((picture) => [picture.width, picture.height, colourAt(picture, 96, 96)])).toEqual([
+      [192, 192, "red"],
+      [192, 192, "green"],
+      [192, 192, "blue"],
+    ]);
+    expect(made.pictures.map((picture) => seeThrough(picture, 2, 2)), "its corners stay see-through").toEqual([true, true, true]);
+    await expect.poll(() => stickerLoaded(mine.locator("img"))).toBe(192);
+
+    // sent: the friend's moves as well
+    await mine.click();
+    await expect(sheet).toHaveCount(0);
+    await expect.poll(() => stickerLoaded(lines(ann.page).first().getByTestId("chat-personal-sticker"))).toBe(192);
+    await openChat(bob.page);
+    const theirs = lines(bob.page).first().getByTestId("chat-personal-sticker");
+    await expect.poll(() => stickerLoaded(theirs)).toBe(192);
+    const seen = await movingAt(bob.page, (await theirs.getAttribute("src"))!);
+    expect([seen.type, seen.pages]).toEqual(["image/webp", 3]);
+
+    // a report has it as the WebP it is
+    await bob.page.getByTestId("chat-report").click();
+    await bob.page.getByTestId("chat-report-send").click();
+    await expect(bob.page.getByTestId("chat-report-sent")).toHaveText(en["chat.reportSent"]);
+    await bob.page.getByTestId("chat-report-done").click();
+    const [report] = await reportsAbout(bob.page, bob.name);
+    expect(report?.attachments.map((each) => `${each.name} ${each.role}`)).toEqual(["chat.txt file", "sticker1.webp photo"]);
+    const reported = await (await bob.page.request.get(`/api/admin/feedback/${report!.id}/files/${report!.attachments[1]!.id}`, { headers: AUTH })).body();
+    expect((await sharp(reported, { animated: true }).metadata()).pages).toBe(3);
+
+    // an animated GIF, red for 400 ms and blue for 200: it moves too, as two pictures
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    let had = await ids();
+    await file.setInputFiles({ name: "moving.gif", mimeType: "image/gif", buffer: await movingFile("gif", [[220, 30, 30], [30, 30, 220]], [400, 200]) });
+    await expect(mine).toHaveCount(2);
+    const gif = await madeAfter(had);
+    expect([gif.type, gif.pages, gif.delays]).toEqual(["image/webp", 2, [396, 198]]);
+    expect(gif.pictures.map((picture) => colourAt(picture, 96, 96))).toEqual(["red", "blue"]);
+
+    // a GIF whose pictures are all the same does not move: a still, as any picture
+    had = await ids();
+    await file.setInputFiles({ name: "still.gif", mimeType: "image/gif", buffer: await movingFile("gif", [[30, 200, 30], [30, 200, 30]], [300, 300]) });
+    await expect(mine).toHaveCount(3);
+    await expect(sheet.getByTestId("chat-sticker-problem")).toHaveCount(0);
+    const still = await madeAfter(had);
+    expect([still.type, still.pages, colourAt(still.pictures[0]!, 96, 96)]).toEqual(["image/png", 1, "green"]);
+  });
+
+  test("in the Android app with stickers that move on: WhatsApp GIFs opens the chooser in WhatsApp's GIFs folder, and a short video (as WhatsApp keeps a GIF) is made a sticker that moves; with the host's moving off there is no such button, and a picture that moves is made its first picture", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const { ann } = await twoFriends(browser);
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const mine = sheet.getByTestId("chat-sticker-mine");
+    const gifs = sheet.getByTestId("chat-sticker-whatsapp-gifs");
+    const file = ann.page.getByTestId("chat-sticker-file");
+
+    // a browser: no WhatsApp GIFs
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible();
+    await expect(gifs).toHaveCount(0);
+
+    // the app from 0.2.0 (as in the test above: messages, the folders Bridge.java says)
+    await ann.page.context().addInitScript(() => {
+      const folders: string[] = [];
+      const app: Record<string, unknown> = {
+        onmessage: null,
+        postMessage(text: string) {
+          const said = JSON.parse(text) as { call: string; folder?: string };
+          const answer = (message: object) => setTimeout(() => (app.onmessage as ((event: { data: string }) => void) | null)?.({ data: JSON.stringify(message) }), 5);
+          if (said.call === "hello") answer({ kind: "hello", version: "0.2.0", folders: ["whatsapp-stickers", "whatsapp-gifs"], notify: false, token: "" });
+          if (said.call === "pickFrom") {
+            folders.push(said.folder ?? "");
+            answer({ kind: "picking", folder: said.folder, known: true });
+          }
+        },
+      };
+      Object.assign(window, { KinoApp: app, e2eFolders: folders });
+    });
+    await ann.page.reload();
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await expect(gifs).toContainText(en["chat.stickerWhatsAppGifs"]);
+    await expect(sheet.getByTestId("chat-sticker-whatsapp")).toBeVisible();
+    expect(await gridFaults(sheet.locator('[data-testid="chat-sticker-add"], [data-testid="chat-sticker-whatsapp"], [data-testid="chat-sticker-whatsapp-gifs"], [data-testid="chat-sticker-pick"]')), "the three buttons are squares of the grid").toEqual([]);
+
+    // a video of 160 by 120, red then blue, recorded here (a WebM: this browser plays no MP4 of H.264, WhatsApp's kind, which a phone's does)
+    const video = await ann.page.evaluate(async () => {
+      const canvas = Object.assign(document.createElement("canvas"), { width: 160, height: 120 });
+      const context = canvas.getContext("2d")!;
+      const paint = (colour: string) => {
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 160, 120);
+      };
+      paint("rgb(220, 30, 30)");
+      const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: "video/webm;codecs=vp8" });
+      const parts: Blob[] = [];
+      recorder.ondataavailable = (event) => parts.push(event.data);
+      const stopped = new Promise((done) => (recorder.onstop = done));
+      recorder.start();
+      const began = performance.now();
+      await new Promise<void>((done) => {
+        const timer = setInterval(() => {
+          const past = performance.now() - began;
+          paint(past < 700 ? "rgb(220, 30, 30)" : "rgb(30, 30, 220)");
+          if (past > 1400) {
+            clearInterval(timer);
+            done();
+          }
+        }, 40);
+      });
+      recorder.stop();
+      await stopped;
+      return [...new Uint8Array(await new Blob(parts).arrayBuffer())];
+    });
+    const [chooser] = await Promise.all([ann.page.waitForEvent("filechooser"), gifs.click()]);
+    expect(await ann.page.evaluate(() => (window as unknown as { e2eFolders: string[] }).e2eFolders), "the app was asked for WhatsApp's GIFs folder").toEqual(["whatsapp-gifs"]);
+    await expect(file, "the chooser offers videos and GIFs").toHaveAttribute("accept", "video/mp4,image/gif");
+    await chooser.setFiles({ name: "VID-20261117-WA0001.webm", mimeType: "video/webm", buffer: Buffer.from(video) });
+    await expect(mine).toHaveCount(1, { timeout: 30_000 });
+    await expect(sheet.getByTestId("chat-sticker-problem")).toHaveCount(0);
+    const made = await movingAt(ann.page, (await mine.locator("img").getAttribute("src"))!);
+    expect(made.type).toBe("image/webp");
+    expect(made.pages).toBeGreaterThanOrEqual(2);
+    expect([...new Set(made.pictures.map((picture) => colourAt(picture, 96, 96)))].sort(), "red, then blue").toEqual(["blue", "red"]);
+    expect(colourAt(made.pictures[0]!, 96, 96)).toBe("red");
+    expect(
+      made.pictures.every((picture) => seeThrough(picture, 96, 5) && seeThrough(picture, 96, 186) && !seeThrough(picture, 96, 96)),
+      "fitted whole: the strips above and below a video wider than high are see-through",
+    ).toBe(true);
+    const shown = made.delays.reduce((all, delay) => all + delay, 0);
+    expect(shown, "as long as the video, about").toBeGreaterThan(900);
+    expect(shown).toBeLessThanOrEqual(2000);
+
+    // Add after it offers pictures again
+    const [plain] = await Promise.all([ann.page.waitForEvent("filechooser"), sheet.getByTestId("chat-sticker-add").click()]);
+    await expect(file).toHaveAttribute("accept", "image/*");
+    await plain.setFiles({ name: "wide.png", mimeType: "image/png", buffer: widePicture() });
+    await expect(mine).toHaveCount(2);
+
+    // the host's moving off (as the live site is until its owner turns it on): no WhatsApp GIFs, and a picture that moves is its first picture, a still
+    await ann.page.route("**/api/features", async (route) => {
+      const answer = await route.fetch();
+      const { movingStickers: _on, ...features } = (await answer.json()) as Record<string, unknown>;
+      await route.fulfill({ response: answer, json: features });
+    });
+    await ann.page.reload();
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await expect(sheet.getByTestId("chat-sticker-whatsapp")).toBeVisible();
+    await expect(gifs).toHaveCount(0);
+    const had = await mine.evaluateAll((all) => all.map((each) => each.getAttribute("data-personal")!));
+    await file.setInputFiles({ name: "moving.webp", mimeType: "image/webp", buffer: await movingFile("webp", [[220, 30, 30], [30, 30, 220]], [200, 200]) });
+    await expect(mine).toHaveCount(3);
+    const id = (await mine.evaluateAll((all) => all.map((each) => each.getAttribute("data-personal")!))).find((each) => !had.includes(each))!;
+    const first = await movingAt(ann.page, (await sheet.locator(`[data-personal="${id}"] img`).getAttribute("src"))!);
+    expect([first.type, first.pages, colourAt(first.pictures[0]!, 96, 96)]).toEqual(["image/png", 1, "red"]);
   });
 
   test("in a chat that stays open: a picture that did not come for a moment is asked for again, not called gone; a friend's can still be saved once they take no messages; one the team takes down goes within five minutes (the judge, 17 Nov)", async ({ browser }) => {
