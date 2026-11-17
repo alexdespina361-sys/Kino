@@ -185,10 +185,11 @@ export async function getHostToken(
   return cached?.token || "";
 }
 
-export interface BuzzResolvedStream {
+export interface VixSrcResolvedStream {
   streamUrl: string;
-  alternates: Array<{ name: string; url: string; type: "hls" | "mp4" }>;
   embedUrl: string;
+  type: "hls";
+  subtitles: SubtitleTrack[];
 }
 
 function isSecurityBlock(err: unknown): boolean {
@@ -307,69 +308,103 @@ export async function resolveVidLinkStream(
   }
 }
 
-export async function resolveBuzzStream(
+export async function resolveVixSrcStream(
   get: typeof fetch,
   tmdbId: string,
   isTv: boolean,
   season?: string | null,
   episode?: string | null,
-): Promise<BuzzResolvedStream | null> {
+  timeoutMs: number = 5000,
+): Promise<VixSrcResolvedStream | null> {
   const s = season || "1";
   const e = episode || "1";
-  const embedUrl = isTv
-    ? `https://vidsrc.buzz/embed/tv/${tmdbId}/${s}/${e}`
-    : `https://vidsrc.buzz/embed/movie/${tmdbId}`;
+  const apiUrl = isTv
+    ? `https://vixsrc.to/api/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(s)}/${encodeURIComponent(e)}`
+    : `https://vixsrc.to/api/movie/${encodeURIComponent(tmdbId)}`;
 
   try {
-    const res = await get(embedUrl, {
+    const apiRes = await get(apiUrl, {
       headers: {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        referer: "https://www.2embed.cc/",
+        "user-agent": UA,
+        referer: "https://vixsrc.to/",
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const qMatch = html.match(/var\s+Q\s*=\s*(\{[\s\S]*?\});/);
-    if (!qMatch?.[1]) return null;
-    const q = JSON.parse(qMatch[1]) as {
-      t: string;
-      ssr?: { servers?: Array<{ ref: string; name?: string }> };
-    };
-    const servers = q.ssr?.servers || [];
-    if (servers.length === 0) return null;
+    if (!apiRes.ok) return null;
+    const apiData = (await apiRes.json().catch(() => null)) as { src?: string } | null;
+    if (!apiData?.src) return null;
 
-    const playStreams: Array<{ name: string; url: string; type: "hls" | "mp4" }> = [];
-    for (const srv of servers.slice(0, 3)) {
-      try {
-        const playUrl = `https://vidsrc.buzz/pl/api.php?a=play&ref=${encodeURIComponent(srv.ref)}&t=${encodeURIComponent(q.t)}`;
-        const pRes = await get(playUrl, {
-          headers: {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            referer: embedUrl,
-          },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!pRes.ok) continue;
-        const pData = (await pRes.json()) as { url?: string; type?: string };
-        if (pData?.url) {
-          const fullStream = new URL(pData.url, "https://vidsrc.buzz/").href;
-          playStreams.push({
-            name: srv.name || "Server",
-            url: fullStream,
-            type: pData.type === "mp4" ? "mp4" : "hls",
-          });
+    const embedUrl = new URL(apiData.src, "https://vixsrc.to").href;
+    const embedRes = await get(embedUrl, {
+      headers: {
+        "user-agent": UA,
+        referer: "https://vixsrc.to/",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!embedRes.ok) return null;
+    const html = await embedRes.text();
+
+    const masterMatch = html.match(/window\.masterPlaylist\s*=\s*(\{[\s\S]*?\});/);
+    if (!masterMatch?.[1]) return null;
+
+    let playlistBase = "";
+    let token = "";
+    let expires = "";
+
+    const urlMatch = masterMatch[1].match(/(?:['"]?url['"]?)\s*:\s*['"]([^'"]+)['"]/);
+    if (urlMatch?.[1]) playlistBase = urlMatch[1];
+
+    const tokenMatch = masterMatch[1].match(/(?:['"]?token['"]?)\s*:\s*['"]([^'"]+)['"]/);
+    if (tokenMatch?.[1]) token = tokenMatch[1];
+
+    const expiresMatch = masterMatch[1].match(/(?:['"]?expires['"]?)\s*:\s*['"]([^'"]+)['"]/);
+    if (expiresMatch?.[1]) expires = expiresMatch[1];
+
+    if (!playlistBase || !token || !expires) return null;
+
+    const masterPlaylistUrl = `${playlistBase}?ub=1&token=${encodeURIComponent(token)}&expires=${encodeURIComponent(expires)}&h=1`;
+    if (!isHttpUrl(masterPlaylistUrl)) return null;
+
+    const subtitles: SubtitleTrack[] = [];
+    try {
+      const plRes = await get(masterPlaylistUrl, {
+        headers: {
+          "user-agent": UA,
+          referer: embedUrl,
+          Origin: "https://vixsrc.to",
+        },
+        signal: AbortSignal.timeout(Math.min(timeoutMs, 3000)),
+      });
+      if (plRes.ok) {
+        const m3u8 = await plRes.text();
+        const subMatches = [...m3u8.matchAll(/#EXT-X-MEDIA:TYPE=SUBTITLES[^\n]*?NAME="([^"]+)"[^\n]*?LANGUAGE="([^"]+)"[^\n]*?URI="([^"]+)"/g)];
+        let subIdx = 0;
+        for (const match of subMatches) {
+          const name = match[1] ?? "";
+          const rawLang = match[2] ?? "";
+          const uri = match[3] ?? "";
+          if (uri) {
+            const fullUri = new URL(uri, playlistBase).href;
+            const normLang = normalizeLang(rawLang) || rawLang;
+            subtitles.push({
+              id: 7000 + subIdx++,
+              url: `/api/proxy?url=${encodeURIComponent(fullUri)}&referer=${encodeURIComponent(embedUrl)}&format=vtt`,
+              label: name,
+              lang: normLang,
+            });
+          }
         }
-      } catch {
-        // ignore individual server fail
       }
+    } catch {
+      // Subtitle parse failure should not block video playback
     }
 
-    if (playStreams.length === 0) return null;
     return {
-      streamUrl: playStreams[0]!.url,
-      alternates: playStreams.slice(1),
+      streamUrl: masterPlaylistUrl,
       embedUrl,
+      type: "hls",
+      subtitles,
     };
   } catch {
     return null;
@@ -1041,13 +1076,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       };
 
-      const buildBuzzResult = async (buzz: BuzzResolvedStream): Promise<ResolveResult> => {
+      const buildVixSrcResult = async (vx: VixSrcResolvedStream): Promise<ResolveResult> => {
         const imdbId = tmdbImdbId;
         pendingExtras ??= askExtras(imdbId);
         const [listed, roSubs, dub] = pendingExtras
           ? await extrasByThen(pendingExtras, extrasGraceMs)
           : [[], [], undefined];
-        const subList = finalSubtitles([...roSubs, ...listed]);
+        const subList = finalSubtitles([...roSubs, ...vx.subtitles, ...listed]);
 
         let sInfo: SeriesInfo | undefined;
         if (isTv) {
@@ -1064,30 +1099,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         }
 
-        const proxiedUrl = streamAddress(buzz.streamUrl, buzz.embedUrl, process.env, false);
-        const alternates: AlternateSource[] = buzz.alternates.map((alt) => ({
-          label: alt.name.slice(0, 60),
-          stream: {
-            url: streamAddress(alt.url, buzz.embedUrl, process.env, false),
-            type: alt.type,
-            directUrl: alt.url,
-          },
-          subtitles: subList,
-        }));
-
-        if (rawShowTitle && isTv && alternates.length < 2) {
-          try {
-            const altAnime = await fallbackAnime();
-            if (altAnime?.status === "success") {
-              alternates.push({
-                label: `Server ${alternates.length + 2} (AnimeHeaven)`.slice(0, 60),
-                stream: altAnime.media.stream,
-              });
-            }
-          } catch {
-            // ignore
-          }
-        }
+        const proxiedUrl = streamAddress(vx.streamUrl, vx.embedUrl, process.env, false);
+        const alternates: AlternateSource[] = [];
 
         if (dub) alternates.unshift(dub);
         const cappedAlternates = alternates.slice(0, MAX_ALTERNATES);
@@ -1100,7 +1113,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             stream: {
               url: proxiedUrl,
               type: "hls",
-              directUrl: buzz.streamUrl,
+              directUrl: vx.streamUrl,
             },
             ...(subList ? { subtitles: subList } : {}),
             ...(cappedAlternates.length > 0 ? { alternates: cappedAlternates } : {}),
@@ -1238,6 +1251,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           // ignore
         }
 
+        // Priority #2 for Western Movies & Series: VixSrc
+        try {
+          const vx = await resolveVixSrcStream(get, id, isTv, s, e);
+          if (vx) return await buildVixSrcResult(vx);
+        } catch {
+          // ignore
+        }
+
         // Secondary fallback for animated titles
         if (animated === true) {
           try {
@@ -1259,7 +1280,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
       // Special-case titles and fast-path resolution:
       // For all Kino titles (filmpire.sc), cartoons, anime, and clean-release titles (1400837):
-      // Resolve immediately via fast providers (HiAnime for anime, VidLink for Western content), bypassing slow 15s upstream retries
+      // Resolve immediately via fast providers (HiAnime for anime, VidLink & VixSrc for Western content), bypassing slow 15s upstream retries
       if (id === "1400837" || isAnimeOrCartoon || url.hostname === "filmpire.sc") {
         const fastResult = await runFallback();
         if (fastResult) return fastResult;

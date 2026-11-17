@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createHiAnimeAdapter } from "./adapters/hianime";
-import { createFilmpireAdapter, resolveVidLinkStream } from "./adapters/filmpire";
+import { createFilmpireAdapter, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 
 describe("adapters streaming proxy configuration", () => {
@@ -880,6 +880,113 @@ describe("HiAnime provider and multi-season anime fallback", () => {
       expect(res.media.stream.type).toBe("hls");
       expect(res.media.subtitles).toHaveLength(1);
     }
+  });
+});
+
+describe("VixSrc provider and Western content fallback", () => {
+  it("resolves stream and parses subtitles via resolveVixSrcStream", async () => {
+    const mockM3u8 = `#EXTM3U
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="en",URI="https://vixsrc.to/sub/en.vtt"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Romanian",DEFAULT=NO,AUTOSELECT=NO,LANGUAGE="ro",URI="https://vixsrc.to/sub/ro.vtt"
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720
+https://vixsrc.to/720p.m3u8`;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("vixsrc.to/api/movie/671")) {
+        return { ok: true, status: 200, json: async () => ({ src: "https://vixsrc.to/embed/movie/671" }) };
+      }
+      if (u.includes("vixsrc.to/embed/movie/671")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `<html><script>window.masterPlaylist = { url: "https://vixsrc.to/playlist/671", token: "tok123", expires: "999999" };</script></html>`,
+        };
+      }
+      if (u.includes("vixsrc.to/playlist/671")) {
+        return { ok: true, status: 200, text: async () => mockM3u8 };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const res = await resolveVixSrcStream(fakeFetch, "671", false);
+    expect(res).not.toBeNull();
+    expect(res?.streamUrl).toBe("https://vixsrc.to/playlist/671?ub=1&token=tok123&expires=999999&h=1");
+    expect(res?.type).toBe("hls");
+    expect(res?.subtitles).toHaveLength(2);
+    expect(res?.subtitles[0]?.lang).toBe("en");
+    expect(res?.subtitles[1]?.lang).toBe("ro");
+  });
+
+  it("filmpireAdapter falls back to VixSrc when VidLink has no stream", async () => {
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/movie/671")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            title: "Harry Potter and the Philosopher's Stone",
+            original_language: "en",
+            genres: [{ id: 12 }, { id: 14 }], // Adventure, Fantasy (not animated)
+          }),
+        };
+      }
+      // VidLink returns 404
+      if (u.includes("vidlink.pro")) {
+        return { ok: false, status: 404 };
+      }
+      // VixSrc succeeds
+      if (u.includes("vixsrc.to/api/movie/671")) {
+        return { ok: true, status: 200, json: async () => ({ src: "https://vixsrc.to/embed/movie/671" }) };
+      }
+      if (u.includes("vixsrc.to/embed/movie/671")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `<html><script>window.masterPlaylist = { url: "https://vixsrc.to/playlist/671", token: "tok456", expires: "999999" };</script></html>`,
+        };
+      }
+      if (u.includes("vixsrc.to/playlist/671")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="https://vixsrc.to/sub/en.vtt"\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nhttps://vixsrc.to/720.m3u8`,
+        };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/671"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.title).toBe("Harry Potter and the Philosopher's Stone");
+      expect(res.media.stream.directUrl).toContain("vixsrc.to/playlist/671");
+      expect(res.media.stream.type).toBe("hls");
+    }
+  });
+
+  it("filmpireAdapter handles when both VidLink and VixSrc miss", async () => {
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/movie/999999")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            title: "Missing Film",
+            original_language: "en",
+            genres: [{ id: 18 }],
+          }),
+        };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/999999"));
+    expect(res.status).toBe("temporary_failure");
   });
 });
 
