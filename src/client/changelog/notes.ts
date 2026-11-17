@@ -4,6 +4,13 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.3",
+    date: "2026-11-17",
+    en: ["Child profiles leave out cartoons rated for older viewers, such as The Simpsons Movie (PG-13)."],
+    ro: ["Profilurile de copil nu mai arată desenele cu o vârstă recomandată mai mare, ca The Simpsons Movie (PG-13)."],
+    it: ["I profili bambino non mostrano più i cartoni con un'età consigliata più alta, come The Simpsons Movie (PG-13)."],
+  },
+  {
     version: "0.4.2",
     date: "2026-11-17",
     en: [

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AGE_COUNTRIES, sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
 import { remember } from "../boundedMap";
+import { overChildAge } from "./childAges";
 import { hasRomanianDub, hasRomanianDubSync, romanianDubsOn } from "../dubs/romanian";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
@@ -89,8 +90,18 @@ export interface FilmpireSourceOptions {
   /** Whether to probe data.vidsrc.sh during search and drop 404/unplayable items. Default: true when no custom fetch is passed or when probeFetch is given. */
   verifyPlayback?: boolean;
   filterTrash?: boolean;
+  /** Whether a cartoon marked for children is checked against its age ratings first (`overChildAge`). Default: true when no custom fetch is passed. */
+  rateForChildren?: boolean;
+  /** How many age-rating questions go to TMDB at once (`CHILD_AGES_AT_ONCE` unless set). */
+  childAgesAtOnce?: number;
   now?: () => number;
 }
+
+/** How many age-rating questions go to TMDB at once: a first Home after a start asks one for each cartoon for children on it (about 120), and TMDB takes some 40 a second. */
+export const CHILD_AGES_AT_ONCE = 6;
+/** How long a title's age-rating verdict is kept (ratings do not change), and how many are kept. */
+const CHILD_AGE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const MAX_CHILD_VERDICTS = 5000;
 
 export interface ProbeRecord {
   status: 200 | 404;
@@ -343,6 +354,16 @@ function ageIn(country: string, doc: z.infer<typeof TmdbAboutSchema>, type: "mov
   return (releases.find((one) => one.certification && one.type === 3) ?? releases.find((one) => one.certification))?.certification?.trim();
 }
 
+/** The age rating each of `AGE_COUNTRIES` gives a title (a country that gives none is not there). */
+function agesOf(doc: z.infer<typeof TmdbAboutSchema>, type: "movie" | "tv"): Record<string, string> {
+  const ages: Record<string, string> = {};
+  for (const country of AGE_COUNTRIES) {
+    const age = ageIn(country, doc, type);
+    if (age) ages[country] = age.slice(0, 20);
+  }
+  return ages;
+}
+
 /** Today as TMDB writes a date, to tell what has not come out yet. */
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -449,6 +470,57 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const probeTimeout = options.probeTimeoutMs ?? 1500;
   const probeSlots = new Slots(options.probesAtOnce ?? PROBES_AT_ONCE);
 
+  /**
+   * A cartoon marked for children keeps the mark only once its age ratings are known to be under the line (`overChildAge`): one question to TMDB per title,
+   * kept 14 days, shared by those who ask at once. A title whose ratings cannot be had just now loses the mark this time (a child's profile does not see
+   * it until they can), and is asked again next time.
+   */
+  const rateForChildren = options.rateForChildren ?? !options.fetch;
+  const childSlots = new Slots(options.childAgesAtOnce ?? CHILD_AGES_AT_ONCE);
+  const childVerdicts = new Map<string, { over: boolean; at: number }>();
+  const childAsking = new Map<string, Promise<boolean>>();
+  const overAge = (type: "movie" | "tv", id: string): Promise<boolean> => {
+    const key = `${type}:${id}`;
+    const known = childVerdicts.get(key);
+    if (known && now() - known.at < CHILD_AGE_TTL_MS) return Promise.resolve(known.over);
+    let pending = childAsking.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const done = await childSlots.take(timeoutMs);
+        if (!done) return true;
+        try {
+          const res = await get(`${BASE_URL}/${type}/${id}/${type === "movie" ? "release_dates" : "content_ratings"}?api_key=${apiKey}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+          if (!res.ok) return true;
+          const body: unknown = await res.json();
+          const parsed = TmdbAboutSchema.safeParse(type === "movie" ? { release_dates: body } : { content_ratings: body });
+          if (!parsed.success) return true;
+          const over = overChildAge(agesOf(parsed.data, type));
+          remember(childVerdicts, key, { over, at: now() }, MAX_CHILD_VERDICTS);
+          return over;
+        } catch {
+          return true;
+        } finally {
+          done();
+        }
+      })().finally(() => childAsking.delete(key));
+      childAsking.set(key, pending);
+    }
+    return pending;
+  };
+  /** The titles, each cartoon marked for children only when its age ratings allow (the others as they were: an anime's mark does not open it to a child, `forChildren`). */
+  const askedForChildren = (item: LibraryItem) => item.kids === true && item.section === "cartoon";
+  const ratedForChildren = async (items: LibraryItem[]): Promise<LibraryItem[]> => {
+    if (!rateForChildren || !items.some(askedForChildren)) return items;
+    return Promise.all(
+      items.map(async (item) => {
+        const own = askedForChildren(item) ? /^filmpire-(movie|tv)-(\d{1,10})$/.exec(item.id) : null;
+        if (!own || !(await overAge(own[1] as "movie" | "tv", own[2]!))) return item;
+        const { kids: _kids, ...rest } = item;
+        return rest;
+      }),
+    );
+  };
+
   const shelfGroups = options.shelves ?? SHELF_GROUPS;
   const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => {
     const section = sectionOfCategory(cat);
@@ -472,7 +544,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     const data = TmdbSearchSchema.parse(await res.json());
     const results = tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results;
     const section = sectionOfCategory(cat);
-    const items = results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null && sectionOf(item) === section);
+    const items = await ratedForChildren(results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null && sectionOf(item) === section));
     return { items, last: data.results.length === 0 || page >= Math.min(data.total_pages ?? MAX_PAGE, MAX_PAGE) };
   };
   const loadCategory = async (cat: FilmpireCategory): Promise<LibraryRow> => rowOf(cat, (await askPage(cat, 1, false)).items);
@@ -530,7 +602,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           return !seen.has(item.id) && seen.add(item.id) && !(record?.status === 404 && now() - record.checkedAt < PROBE_TTL_MS);
         });
 
-        if (!shouldVerify || items.length === 0) return [...items, ...further];
+        if (!shouldVerify || items.length === 0) return await ratedForChildren([...items, ...further]);
 
         const probeResults = await Promise.all(
           items.map(async (item) => {
@@ -546,7 +618,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           }),
         );
 
-        return [...probeResults.filter((item): item is LibraryItem => item !== null), ...further];
+        return await ratedForChildren([...probeResults.filter((item): item is LibraryItem => item !== null), ...further]);
       } catch {
         return [];
       }
@@ -570,7 +642,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         .map((item) => toLibraryItem(item, title.type))
         .filter((item): item is LibraryItem => item !== null);
 
-      if (!shouldVerify || items.length === 0) return items;
+      if (!shouldVerify || items.length === 0) return ratedForChildren(items);
 
       const probeResults = await Promise.all(
         items.map(async (item) => {
@@ -586,7 +658,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         }),
       );
 
-      return probeResults.filter((item): item is LibraryItem => item !== null);
+      return ratedForChildren(probeResults.filter((item): item is LibraryItem => item !== null));
     },
     /**
      * What TMDB knows of the title a link plays besides its tile, in one question (`append_to_response`), and a second for a film that is part of a collection: that
@@ -601,7 +673,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const res = await get(`${BASE_URL}/${type}/${match[2]}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`title: HTTP ${res.status}`);
-      return toLibraryItem(await res.json(), type);
+      const item = toLibraryItem(await res.json(), type);
+      return item ? (await ratedForChildren([item]))[0]! : null;
     },
     async about(link: string): Promise<TitleAbout | null> {
       let title = parseWatchLink(link);
@@ -629,16 +702,13 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       let parts: LibraryItem[] = [];
       if (title.type === "movie" && doc.belongs_to_collection) {
         const collection = await ask(`/collection/${doc.belongs_to_collection.id}`);
-        if (collection.ok) parts = listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts);
+        if (collection.ok) parts = await ratedForChildren(listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts));
         else if (collection.status !== 404) throw new Error(`about: collection HTTP ${collection.status}`);
       }
-      const similar = listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id))); // (a sequel is among the parts, not among the titles like it as well)
+      const similar = await ratedForChildren(listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id)))); // (a sequel is among the parts, not among the titles like it as well)
 
-      const ages: Record<string, string> = {};
-      for (const country of AGE_COUNTRIES) {
-        const age = ageIn(country, doc, title.type);
-        if (age) ages[country] = age.slice(0, 20);
-      }
+      const ages = agesOf(doc, title.type);
+      remember(childVerdicts, `${title.type}:${title.id}`, { over: overChildAge(ages), at: now() }, MAX_CHILD_VERDICTS); // (its page asked: its tile need not ask again)
       const rawDate = doc.release_date || doc.first_air_date;
       const releaseYear = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
       const hasRoDub = romanianDubsOn() && await hasRomanianDub({

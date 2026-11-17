@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryItem, LibraryRow } from "../../shared";
 import { onlyForChildren } from "../tv/librarySearch";
-import { childTitlesOfRows, ownTitles } from "./childGate";
+import { childTitlesOfRows, ownTitles, readYes, writeYes, YES_KEEP_MS } from "./childGate";
 
 const item = (id: string, extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/watch/${id.replace(/\D/g, "")}`, ...extra });
 const row = (id: string, items: LibraryItem[], section?: "cartoon" | "anime"): LibraryRow => ({ id, title: id, source: "Test", items, ...(section ? { section } : {}) });
@@ -28,6 +28,33 @@ describe("what the rows say of their titles, for a child's profile", () => {
       { id: "filmpire-tv-2", url: "https://x.example/watch/2" },
       { id: "rate:x", url: "https://x.example/watch/3", kind: "series" },
     ]);
+  });
+});
+
+describe("the titles a device remembers as for children", () => {
+  const now = 1_800_000_000_000;
+
+  it("are believed for two weeks after the server said so, then asked about again; a time to come, or anything else, is not believed", () => {
+    const kept = JSON.stringify([
+      ["movie-1", now - 1000],
+      ["movie-2", now - YES_KEEP_MS - 1],
+      ["tv-3", now + 60_000],
+      "movie-4", // (the form kept until 17 Nov: an address alone)
+      ["movie-5"],
+      [6, now],
+    ]);
+    expect([...readYes(kept, now)]).toEqual([["movie-1", now - 1000]]);
+    expect(readYes(null, now).size).toBe(0);
+    expect(readYes("not json", now).size).toBe(0);
+    expect(readYes(JSON.stringify({ "movie-1": now }), now).size).toBe(0);
+  });
+
+  it("are kept as the newest six hundred, and read back as they were written", () => {
+    const yes = new Map(Array.from({ length: 650 }, (_, at) => [`movie-${at}`, now - YES_KEEP_MS / 2 + at] as const));
+    const back = readYes(writeYes(yes), now);
+    expect(back.size).toBe(600);
+    expect(back.has("movie-49")).toBe(false);
+    expect(back.get("movie-649")).toBe(now - YES_KEEP_MS / 2 + 649);
   });
 });
 

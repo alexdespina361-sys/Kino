@@ -11,9 +11,17 @@ import { addressOf, askTitle, titleIdOf } from "./titleAddress";
  * then it is not shown, and a title that has no such address (a pasted link) is never shown: a child's profile shows what is known to be for children.
  */
 
-const STORE = "kino.childTitles";
+/**
+ * Where this device keeps the titles it was told are for children, each with when it was told. (Until 17 Nov they were kept for good, by address alone, in
+ * `kino.childTitles`, which is let go: since then a cartoon TMDB calls for families is not for children when its age rating says otherwise, so a "yes" from
+ * before, The Simpsons Movie's, is not one now.)
+ */
+const STORE = "kino.childTitles.2";
+const OLD_STORE = "kino.childTitles";
 /** How many titles this device remembers as for children (the newest). */
 const KEEP = 600;
+/** How long a "yes" is believed before the server is asked again (a rating can change; the server keeps its own answer as long: see filmpire.ts). */
+export const YES_KEEP_MS = 14 * 24 * 3600 * 1000;
 /**
  * How many titles one look asks the server about at most, and how long the next look waits after it: an address may ask 120 questions about titles a minute (the
  * server's `fetchLimits`), the whole household's screens together, and a title's own page needs some of them. This is 60 a minute at most.
@@ -35,19 +43,41 @@ export interface ChildGate {
   allows(entry: OwnTitle): boolean;
 }
 
-/** The titles this device was told are for children. Only a yes is kept for good: no answer is not a no (the server may not have been reached). */
-function rememberedYes(): Set<string> {
+/**
+ * What was kept (`STORE`), read: the titles this device was told are for children, with when, as long as that is less than `YES_KEEP_MS` ago. Only a yes is
+ * kept: no answer is not a no (the server may not have been reached). Anything else in it (an older form, a time to come) is not believed.
+ */
+export function readYes(kept: string | null, now: number): Map<string, number> {
+  const out = new Map<string, number>();
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(STORE) ?? "[]");
-    return new Set(Array.isArray(raw) ? raw.filter((each): each is string => typeof each === "string") : []);
+    const raw: unknown = JSON.parse(kept ?? "[]");
+    if (!Array.isArray(raw)) return out;
+    for (const each of raw) {
+      if (!Array.isArray(each) || typeof each[0] !== "string" || typeof each[1] !== "number") continue;
+      const [address, at] = each as [string, number];
+      if (at <= now && now - at < YES_KEEP_MS) out.set(address, at);
+    }
   } catch {
-    return new Set();
+    // (Nothing that can be read: nothing is believed.)
+  }
+  return out;
+}
+
+/** What is kept of the yes answers: the newest `KEEP`, oldest first. */
+export const writeYes = (yes: ReadonlyMap<string, number>): string => JSON.stringify([...yes].sort((a, b) => a[1] - b[1]).slice(-KEEP));
+
+function rememberedYes(): Map<string, number> {
+  try {
+    localStorage.removeItem(OLD_STORE);
+    return readYes(localStorage.getItem(STORE), Date.now());
+  } catch {
+    return new Map();
   }
 }
 
-function keepYes(addresses: ReadonlySet<string>): void {
+function keepYes(yes: ReadonlyMap<string, number>): void {
   try {
-    localStorage.setItem(STORE, JSON.stringify([...addresses].slice(-KEEP)));
+    localStorage.setItem(STORE, writeYes(yes));
   } catch {
     // (A device that keeps nothing asks again on its next visit.)
   }
@@ -63,7 +93,7 @@ interface Known {
 }
 let known: Known | null = null;
 const listeners = new Set<() => void>();
-const currentKnown = (): Known => (known ??= { yes: rememberedYes(), looks: 0 });
+const currentKnown = (): Known => (known ??= { yes: new Set(rememberedYes().keys()), looks: 0 });
 const subscribeKnown = (listener: () => void) => {
   listeners.add(listener);
   return () => void listeners.delete(listener);
@@ -73,9 +103,11 @@ const tell = () => listeners.forEach((listener) => listener());
 function looked(found: readonly string[], unanswered: readonly string[]): void {
   if (found.length > 0) {
     const before = currentKnown();
-    const yes = new Set([...rememberedYes(), ...before.yes, ...found]);
-    keepYes(yes);
-    known = { ...before, yes };
+    const kept = rememberedYes();
+    const now = Date.now();
+    for (const address of found) kept.set(address, now);
+    keepYes(kept);
+    known = { ...before, yes: new Set([...before.yes, ...found]) };
     tell();
   }
   setTimeout(() => {

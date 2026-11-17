@@ -341,6 +341,78 @@ describe("filmpireSource sections", () => {
     for (const one of results) expect(LibraryItemSchema.safeParse(one).data, one.title).toEqual(one); // (the flag goes through the schema the client reads with)
   });
 
+  describe("a cartoon for children, checked against its age ratings (`rateForChildren`)", () => {
+    const FAMILY = 10751;
+    const familyToon = (id: number, title: string) => film(id, title, { genre_ids: [ANIMATION, FAMILY], original_language: "en" });
+    const familyShow = (id: number, title: string) => show(id, title, { genre_ids: [ANIMATION, FAMILY], original_language: "en", origin_country: ["US"] });
+    const releases = (ratings: Record<string, string>) => ({ id: 1, results: Object.entries(ratings).map(([country, certification]) => ({ iso_3166_1: country, release_dates: [{ certification, type: 3 }] })) });
+    const tvRatings = (ratings: Record<string, string>) => ({ id: 1, results: Object.entries(ratings).map(([country, rating]) => ({ iso_3166_1: country, rating })) });
+    /** TMDB: a title's ratings come from `ages` (one not there: 500), a title's own path from `titles`, and any other question (a search, a list) is answered `docs`. */
+    const tmdb = (docs: unknown[], ages: Record<string, unknown>, titles: Record<string, unknown> = {}) => {
+      const asked: string[] = [];
+      const get = vi.fn(async (url: string) => {
+        const path = new URL(url).pathname.replace(/^\/3/, "");
+        const ratings = /^\/(movie|tv)\/(\d+)\/(release_dates|content_ratings)$/.exec(path);
+        if (!ratings) return json(titles[path] ?? { results: docs });
+        asked.push(`${ratings[1]}:${ratings[2]}`);
+        const answer = ages[`${ratings[1]}:${ratings[2]}`];
+        return answer === undefined ? json({}, 500) : json(answer);
+      });
+      return { get, asked };
+    };
+    const kidsOf = (items: readonly { title: string; kids?: true }[]) => Object.fromEntries(items.map((one) => [one.title, one.kids === true]));
+
+    it("keeps the mark of one rated for children, takes it off one rated over the line, and off one whose ratings could not be had", async () => {
+      const { get, asked } = tmdb([familyToon(30, "Toy Film"), familyToon(31, "The Big Toon Movie"), familyShow(32, "Bluey-ish"), familyShow(33, "Late Toon Show"), familyToon(34, "Unreachable Toon"), familyToon(35, "Unrated Toon"), film(36, "A Drama", { genre_ids: [18] })], {
+        "movie:30": releases({ US: "G", GB: "U" }),
+        "movie:31": releases({ US: "PG-13", GB: "PG", RO: "12" }),
+        "tv:32": tvRatings({ US: "TV-Y" }),
+        "tv:33": tvRatings({ US: "TV-14" }),
+        "movie:35": releases({}),
+      });
+      const results = await filmpireSource({ fetch: get as never, rateForChildren: true }).search!("toon");
+      expect(kidsOf(results)).toEqual({ "Toy Film": true, "The Big Toon Movie": false, "Bluey-ish": true, "Late Toon Show": false, "Unreachable Toon": false, "Unrated Toon": true, "A Drama": false });
+      expect(results.filter((one) => forChildren(one)).map((one) => one.title)).toEqual(["Toy Film", "Bluey-ish", "Unrated Toon"]);
+      expect(asked.sort()).toEqual(["movie:30", "movie:31", "movie:34", "movie:35", "tv:32", "tv:33"]); // (only cartoons marked for children are asked about)
+      for (const one of results) expect(LibraryItemSchema.safeParse(one).data, one.title).toEqual(one); // (one that lost its mark has no `kids` at all)
+    });
+
+    it("asks once for a title, keeps the answer, asks again for one that could not be had, and asks nothing when it is off", async () => {
+      const ages: Record<string, unknown> = { "movie:30": releases({ US: "PG" }) };
+      const { get, asked } = tmdb([familyToon(30, "Toy Film"), familyToon(34, "Unreachable Toon")], ages);
+      const source = filmpireSource({ fetch: get as never, rateForChildren: true });
+      await Promise.all([source.search!("toon"), source.search!("toon")]); // (two at once share the question)
+      expect(asked.sort()).toEqual(["movie:30", "movie:34"]);
+      ages["movie:34"] = releases({ US: "G" }); // (TMDB answers now)
+      expect(kidsOf(await source.search!("toon"))).toEqual({ "Toy Film": true, "Unreachable Toon": true });
+      expect(asked.sort()).toEqual(["movie:30", "movie:34", "movie:34"]);
+
+      const off = tmdb([familyToon(30, "Toy Film")], {});
+      expect(kidsOf(await filmpireSource({ fetch: off.get as never }).search!("toon"))).toEqual({ "Toy Film": true }); // (a fetch of one's own: off unless asked for, as in the other tests)
+      expect(off.asked).toEqual([]);
+    });
+
+    it("checks a row, a title by its id and a title page's titles like it too, and a title page's own ratings spare its tile the question", async () => {
+      const categories: FilmpireCategory[] = [{ id: "cartoon-family-movies", title: "Family Cartoon Movies", path: "/discover/movie?with_genres=16", type: "movie", section: "cartoon" }];
+      const titles = {
+        "/movie/40": familyToon(40, "Rated Toon"),
+        // (a title page's one question brings its ratings and the titles like it)
+        "/movie/50": { ...familyToon(50, "Page Toon"), release_dates: releases({ US: "PG-13" }), recommendations: { results: [familyToon(31, "The Big Toon Movie"), familyToon(30, "Toy Film")] } },
+      };
+      const { get, asked } = tmdb([familyToon(30, "Toy Film"), familyToon(31, "The Big Toon Movie")], { "movie:30": releases({ US: "G" }), "movie:31": releases({ US: "PG-13" }), "movie:40": releases({ GB: "15" }) }, titles);
+      const source = filmpireSource({ categories, fetch: get as never, rateForChildren: true });
+      const [row] = await source.load();
+      expect(kidsOf(row!.items)).toEqual({ "Toy Film": true, "The Big Toon Movie": false });
+      expect((await source.title!("filmpire-movie-40"))?.kids).toBeUndefined();
+
+      const about = await source.about!("https://filmpire.sc/watch/50");
+      expect(about?.ages).toEqual({ US: "PG-13" });
+      expect(kidsOf(about!.similar)).toEqual({ "The Big Toon Movie": false, "Toy Film": true }); // (known from the row: not asked again)
+      expect((await source.title!("filmpire-movie-50"))?.kids).toBeUndefined();
+      expect(asked.sort()).toEqual(["movie:30", "movie:31", "movie:40"]); // (50's ratings came with its page)
+    });
+  });
+
   it("puts only the titles of a category's own section in its row: the film that is a cartoon is not among the movies, nor the anime among the cartoons", async () => {
     const categories: FilmpireCategory[] = [
       { id: "pop", title: "Pop", path: "/movie/popular", type: "movie" },
