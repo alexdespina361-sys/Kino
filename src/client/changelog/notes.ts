@@ -7,16 +7,19 @@ export const CHANGELOG: readonly ChangeNote[] = [
     version: "0.4.9",
     date: "2026-11-17",
     en: [
-      "In a chat: hold a GIF or one of Kino's stickers and press Save; it comes first in its tab of the panel, on all your screens.",
-      "Saved ones are sent with one press; Edit removes them, or hold the message again and press Remove from saved.",
+      "In a chat: hold a GIF or one of Kino's stickers (right-click on a computer) and press the star; it comes first in its tab of the panel, on all your screens.",
+      "Saved ones are sent with one press; Edit, above them, lets you remove them, or hold the message again and press the star.",
+      "On a TV or a computer, resting the mouse at the top or bottom edge scrolls the page again, also after the mouse wheel was used.",
     ],
     ro: [
-      "În chat: ține apăsat pe un GIF sau pe un sticker Kino și apasă Salvează; apare primul în fila lui din panou, pe toate ecranele tale.",
-      "Cele salvate se trimit dintr-o apăsare; Editează le scoate, sau ține din nou mesajul și apasă Scoate din salvate.",
+      "În chat: ține apăsat pe un GIF sau pe un sticker Kino (clic dreapta pe calculator) și apasă steaua; apare primul în fila lui din panou, pe toate ecranele.",
+      "Cele salvate se trimit dintr-o apăsare; cu Editează, deasupra lor, le poți scoate, sau ține din nou mesajul și apasă steaua.",
+      "Pe TV sau pe calculator, mouse-ul ținut la marginea de sus sau de jos derulează din nou pagina, și după ce ai folosit rotița.",
     ],
     it: [
-      "In una chat: tieni premuta una GIF o uno sticker di Kino e premi Salva; compare per primo nella sua scheda del pannello, su tutti i tuoi schermi.",
-      "Quelli salvati si inviano con un tocco; Modifica li toglie, oppure tieni di nuovo premuto il messaggio e premi Togli dai salvati.",
+      "In chat: tieni premuta una GIF o uno sticker di Kino (clic destro sul computer) e premi la stella; va per primo nella sua scheda, su tutti i tuoi schermi.",
+      "Quelli salvati si inviano con un tocco; con Modifica, sopra di loro, puoi toglierli, oppure tieni di nuovo premuto il messaggio e premi la stella.",
+      "Su TV o computer, il mouse tenuto al bordo in alto o in basso fa di nuovo scorrere la pagina, anche dopo aver usato la rotellina.",
     ],
   },
   {

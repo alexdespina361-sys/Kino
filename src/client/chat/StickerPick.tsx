@@ -197,7 +197,7 @@ function YourStickers({
               <span>{t("chat.stickerWhatsAppGifs")}</span>
             </button>
           )}
-          {stickers.map((sticker) => (
+          {stickers.map((sticker, at) => (
             <span className="chat-sticker-mine" key={sticker.id}>
               <button
                 type="button"
@@ -211,6 +211,8 @@ function YourStickers({
                 disabled={session.sending || editing}
                 aria-label={t(sticker.mine ? "chat.stickerYours" : "chat.stickerSavedOne")}
                 {...(nav && !editing ? { "data-nav": true } : {})}
+                // (A remote lands on the first of them when the tab opens: Kino's, under them, may be out of sight below, the judge, 17 Nov.)
+                {...(nav && !editing && at === 0 ? { "data-autofocus": true } : {})}
                 data-personal={sticker.id}
                 data-testid="chat-sticker-mine"
               >

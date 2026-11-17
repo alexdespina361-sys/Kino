@@ -65,7 +65,7 @@ export const chatRo: ChatDictionary = {
   "chat.savedGifNote": "Salvat: e primul în fila GIF-uri.",
   "chat.savedStickerNote": "Salvat: e primul în fila Stickere.",
   "chat.unsavedNote": "Scos din salvate.",
-  "chat.savedFull": "Ai {max} salvate. Scoate unul ca să salvezi altul.",
+  "chat.savedFull": "Ai {max} GIF-uri și stickere salvate. Scoate unul (Editează, în fila GIF-uri sau Stickere) ca să salvezi altul.",
   "chat.react": "Reacționează",
   "chat.reacted": "{name} a reacționat {emoji}",
   "chat.reactedMine": "Ai reacționat {emoji}",

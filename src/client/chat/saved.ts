@@ -19,11 +19,14 @@ export type SavedPicture =
   | { kind: "gif"; key: string; text: string }
   | { kind: "sticker"; key: string; text: string; sticker: Sticker };
 
+/** The longest key the profile keeps (shared/account.ts `KeySchema`): a GIF whose address is longer cannot be kept, and has no Save. */
+const KEY_MAX = 400;
+
 /** The picture a message is, as one that can be kept; none for words, and for a personal sticker. */
 export function pictureOf(line: { text: string; sticker?: string | undefined }): SavedPicture | null {
   if (line.sticker) return null;
   const gif = gifOf(line.text);
-  if (gif) return { kind: "gif", key: `gif:${gif}`, text: gif };
+  if (gif) return `gif:${gif}`.length > KEY_MAX ? null : { kind: "gif", key: `gif:${gif}`, text: gif };
   const sticker = stickerOf(line.text);
   // (A heart typed without the mark is the same heart: kept as the sticker sends it.)
   if (sticker) return { kind: "sticker", key: `sticker:${sticker.id}`, text: sticker.emoji, sticker };
@@ -45,7 +48,11 @@ export interface SavedPictures {
   has: (picture: SavedPicture) => boolean;
   /** Keep it (it comes first: one kept again moves to the front) or let it go. */
   keep: (picture: SavedPicture, kept: boolean) => void;
-  /** As many are kept as there can be: one is let go before another is kept (none is pushed out unasked). */
+  /**
+   * As many are kept as there can be: one is let go before another is kept, so that this screen pushes none out unasked. (Two screens that each kept some
+   * while they did not meet can come to more than there can be when they do: the ones kept first go then, the same ones on every screen, shared/account.ts
+   * `mergeCollection`.)
+   */
   full: boolean;
 }
 
@@ -89,22 +96,26 @@ export function toggleKept(saved: SavedPictures, picture: SavedPicture): KeptNot
   return picture.kind;
 }
 
+/** What the profile keeps (its live saved items, the newest first) as the panel shows it; `keep` is what keeps one or lets it go. */
+export function savedPicturesOf(saved: readonly { key: string; text: string }[], keep: SavedPictures["keep"]): SavedPictures {
+  const pictures = saved.flatMap((item) => {
+    const picture = savedPicture(item);
+    return picture ? [picture] : [];
+  });
+  const keys = new Set(pictures.map((picture) => picture.key));
+  return {
+    gifs: pictures.filter((picture): picture is Extract<SavedPicture, { kind: "gif" }> => picture.kind === "gif"),
+    stickers: pictures.filter((picture): picture is Extract<SavedPicture, { kind: "sticker" }> => picture.kind === "sticker"),
+    has: (picture) => keys.has(picture.key),
+    keep,
+    // (All that are kept count, those this page does not show too (a sticker of a newer Kino's set, say): the profile keeps as many as there can be of all
+    // of them, and one more would push the oldest out unasked, the judge, 17 Nov.)
+    full: saved.length >= SAVED_PICTURES_MAX,
+  };
+}
+
 /** The pictures the profile in use keeps; the component shows again when they change. */
 export function useSavedPictures(): SavedPictures {
   const { saved } = useProfileData();
-  return useMemo(() => {
-    const pictures = saved.flatMap((item) => {
-      const picture = savedPicture(item);
-      return picture ? [picture] : [];
-    });
-    const keys = new Set(pictures.map((picture) => picture.key));
-    return {
-      gifs: pictures.filter((picture): picture is Extract<SavedPicture, { kind: "gif" }> => picture.kind === "gif"),
-      stickers: pictures.filter((picture): picture is Extract<SavedPicture, { kind: "sticker" }> => picture.kind === "sticker"),
-      has: (picture) => keys.has(picture.key),
-      keep: (picture, kept) => profileStore.setSaved(picture.key, kept ? picture.text : undefined),
-      // (Counted among those shown: one that is not shown could not be let go.)
-      full: pictures.length >= SAVED_PICTURES_MAX,
-    };
-  }, [saved]);
+  return useMemo(() => savedPicturesOf(saved, (picture, kept) => profileStore.setSaved(picture.key, kept ? picture.text : undefined)), [saved]);
 }

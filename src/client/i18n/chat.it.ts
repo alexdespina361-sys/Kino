@@ -65,7 +65,7 @@ export const chatIt: ChatDictionary = {
   "chat.savedGifNote": "Salvata: è la prima nella scheda GIF.",
   "chat.savedStickerNote": "Salvato: è il primo nella scheda Sticker.",
   "chat.unsavedNote": "Tolto dai salvati.",
-  "chat.savedFull": "Hai {max} salvati. Togline uno per salvarne un altro.",
+  "chat.savedFull": "Hai {max} GIF e sticker salvati. Togline uno (Modifica, nella scheda GIF o Sticker) per salvarne un altro.",
   "chat.react": "Reagisci",
   "chat.reacted": "{name} ha reagito {emoji}",
   "chat.reactedMine": "Hai reagito {emoji}",

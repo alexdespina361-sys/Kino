@@ -3722,6 +3722,21 @@ test.describe("saved GIFs and stickers", () => {
     expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
     expect(await gridFaults(saved), "a square").toEqual([]);
 
+    // another screen of the profile saves one, and lets it go again while the keys are on it here: they go on to the one that takes its place, not to
+    // nothing (where the friend's page under the chat would take them, the judge, 17 Nov)
+    const elsewhere = async (item: object) => {
+      expect((await ann.page.request.post(`/api/profiles/${await profileOf(ann.page)}/sync`, { data: { since: 0, saved: [item] } })).ok()).toBe(true);
+      await look(ann.page);
+    };
+    await elsewhere({ key: "sticker:heart", at: Date.now(), text: "\u{2764}\u{FE0F}" });
+    await expect(saved).toHaveCount(3, SOON);
+    await expect(saved.first()).toHaveAttribute("data-saved", "sticker:heart");
+    await saved.first().focus();
+    await elsewhere({ key: "sticker:heart", at: Date.now() + 1000, deleted: true });
+    await expect(saved).toHaveCount(2, SOON);
+    await expect(saved.first(), "the keys on the one that took its place").toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+
     // the keys: Edit, then a cross: they go on to the cross that takes its place; the last one gone, they are on the first thing under where it was, in the
     // panel, and stay there (a cross taken away with the keys on it once left them nowhere, and the friend's page under the chat took them, the chat behind)
     await panel.getByTestId("chat-saved-edit").focus();

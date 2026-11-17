@@ -69,7 +69,7 @@ export const chatEn = {
   "chat.savedGifNote": "Saved: it's first in the GIFs tab.",
   "chat.savedStickerNote": "Saved: it's first in the Stickers tab.",
   "chat.unsavedNote": "Removed from saved.",
-  "chat.savedFull": "You have {max} saved. Remove one to save another.",
+  "chat.savedFull": "You have {max} GIFs and stickers saved. Remove one (Edit, in the GIFs or Stickers tab) to save another.",
   "chat.react": "React",
   "chat.reacted": "{name} reacted {emoji}",
   "chat.reactedMine": "You reacted {emoji}",

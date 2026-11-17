@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pictureOf, savedPicture, toggleKept, type SavedPicture, type SavedPictures } from "./saved";
+import { pictureOf, SAVED_MAX, savedPicture, savedPicturesOf, toggleKept, type SavedPicture, type SavedPictures } from "./saved";
 
 const GIF = "https://static.klipy.com/ii/abc/de/sm/x.webp";
 
@@ -26,6 +26,37 @@ describe("which messages are pictures that can be saved", () => {
     expect(savedPicture({ key: "sticker:popcorn", text: "\u{1F3AC}" })).toBeNull();
     expect(savedPicture({ key: "gif:https://static.klipy.com/other.webp", text: GIF })).toBeNull();
     expect(savedPicture({ key: "gif:https://evil.example/x.gif", text: "https://evil.example/x.gif" })).toBeNull();
+  });
+
+  it("has no Save for a GIF whose address is too long for the profile to keep (it would have said Saved and kept nothing)", () => {
+    const address = (length: number) => {
+      const head = "https://static.klipy.com/ii/";
+      return `${head}${"a".repeat(length - head.length - ".webp".length)}.webp`;
+    };
+    expect(address(396)).toHaveLength(396);
+    expect(pictureOf({ text: address(396) })?.key).toHaveLength(400);
+    expect(pictureOf({ text: address(397) })).toBeNull();
+  });
+});
+
+describe("what the panel shows", () => {
+  const keep = () => undefined;
+  const gifs = (count: number) => Array.from({ length: count }, (_, n) => ({ key: `gif:https://static.klipy.com/ii/g${n}.webp`, text: `https://static.klipy.com/ii/g${n}.webp` }));
+
+  it("is the kept ones that are pictures, GIFs and stickers apart, the newest first", () => {
+    const shown = savedPicturesOf([{ key: "sticker:popcorn", text: "\u{1F37F}" }, ...gifs(2), { key: "sticker:nothing", text: "x" }], keep);
+    expect(shown.stickers.map((picture) => picture.key)).toEqual(["sticker:popcorn"]);
+    expect(shown.gifs.map((picture) => picture.key)).toEqual(["gif:https://static.klipy.com/ii/g0.webp", "gif:https://static.klipy.com/ii/g1.webp"]);
+    expect(shown.has(pictureOf({ text: "\u{1F37F}" })!)).toBe(true);
+    expect(shown.full).toBe(false);
+  });
+
+  it("is full when as many are kept as there can be, the ones it does not show counted too (one more would push the oldest out)", () => {
+    expect(savedPicturesOf(gifs(SAVED_MAX - 1), keep).full).toBe(false);
+    expect(savedPicturesOf(gifs(SAVED_MAX), keep).full).toBe(true);
+    const withHidden = savedPicturesOf([...gifs(SAVED_MAX - 1), { key: "sticker:of-a-newer-set", text: "\u{1F9CB}" }], keep);
+    expect(withHidden.gifs).toHaveLength(SAVED_MAX - 1);
+    expect(withHidden.full).toBe(true);
   });
 });
 
