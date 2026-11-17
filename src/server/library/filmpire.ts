@@ -94,6 +94,8 @@ export interface FilmpireSourceOptions {
   rateForChildren?: boolean;
   /** How many age-rating questions go to TMDB at once (`CHILD_AGES_AT_ONCE` unless set). */
   childAgesAtOnce?: number;
+  /** The first pause before an age-rating question TMDB did not answer is asked again (500 ms unless set: tests make it short). */
+  childAgesRetryMs?: number;
   now?: () => number;
 }
 
@@ -477,8 +479,36 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
    */
   const rateForChildren = options.rateForChildren ?? !options.fetch;
   const childSlots = new Slots(options.childAgesAtOnce ?? CHILD_AGES_AT_ONCE);
+  const childRetryMs = options.childAgesRetryMs ?? 500;
   const childVerdicts = new Map<string, { over: boolean; at: number }>();
   const childAsking = new Map<string, Promise<boolean>>();
+  /**
+   * A title's ratings, asked of TMDB: whether they put it over the line, or undefined when they could not be had. A refusal for asking too fast (429), a fault
+   * of TMDB's (5xx) or a lost connection is asked again, three times at most in `timeoutMs`, after the pause TMDB asks for (3 s at most) or a growing one: a
+   * start asks for some 120 at once beside the shelves' own questions, and a burst of refusals then must not hide cartoons from children for the hours the
+   * library keeps its rows (`LIBRARY_TTL_MS`).
+   */
+  const askAges = async (type: "movie" | "tv", id: string): Promise<boolean | undefined> => {
+    const until = Date.now() + timeoutMs;
+    for (let attempt = 1; ; attempt++) {
+      let pause = childRetryMs * attempt;
+      try {
+        const res = await get(`${BASE_URL}/${type}/${id}/${type === "movie" ? "release_dates" : "content_ratings"}?api_key=${apiKey}`, { signal: AbortSignal.timeout(Math.max(1, until - Date.now())), headers: { accept: "application/json" } });
+        if (res.ok) {
+          const body: unknown = await res.json();
+          const parsed = TmdbAboutSchema.safeParse(type === "movie" ? { release_dates: body } : { content_ratings: body });
+          return parsed.success ? overChildAge(agesOf(parsed.data, type)) : undefined;
+        }
+        if (res.status !== 429 && res.status < 500) return undefined; // (nothing that waiting would change)
+        const asked = Number(res.headers?.get?.("retry-after"));
+        if (asked > 0) pause = Math.min(3000, asked * 1000);
+      } catch {
+        // (a lost connection, or out of time)
+      }
+      if (attempt >= 3 || Date.now() + pause >= until) return undefined;
+      await new Promise((resolve) => setTimeout(resolve, pause));
+    }
+  };
   const overAge = (type: "movie" | "tv", id: string): Promise<boolean> => {
     const key = `${type}:${id}`;
     const known = childVerdicts.get(key);
@@ -489,12 +519,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         const done = await childSlots.take(timeoutMs);
         if (!done) return true;
         try {
-          const res = await get(`${BASE_URL}/${type}/${id}/${type === "movie" ? "release_dates" : "content_ratings"}?api_key=${apiKey}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-          if (!res.ok) return true;
-          const body: unknown = await res.json();
-          const parsed = TmdbAboutSchema.safeParse(type === "movie" ? { release_dates: body } : { content_ratings: body });
-          if (!parsed.success) return true;
-          const over = overChildAge(agesOf(parsed.data, type));
+          const over = await askAges(type, id);
+          if (over === undefined) return true; // (not for children this time: asked again next time)
           remember(childVerdicts, key, { over, at: now() }, MAX_CHILD_VERDICTS);
           return over;
         } catch {

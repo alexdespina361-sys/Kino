@@ -347,7 +347,10 @@ describe("filmpireSource sections", () => {
     const familyShow = (id: number, title: string) => show(id, title, { genre_ids: [ANIMATION, FAMILY], original_language: "en", origin_country: ["US"] });
     const releases = (ratings: Record<string, string>) => ({ id: 1, results: Object.entries(ratings).map(([country, certification]) => ({ iso_3166_1: country, release_dates: [{ certification, type: 3 }] })) });
     const tvRatings = (ratings: Record<string, string>) => ({ id: 1, results: Object.entries(ratings).map(([country, rating]) => ({ iso_3166_1: country, rating })) });
-    /** TMDB: a title's ratings come from `ages` (one not there: 500), a title's own path from `titles`, and any other question (a search, a list) is answered `docs`. */
+    /**
+     * TMDB: a title's ratings come from `ages` (one not there: 404, which is not asked again; a number there: that status, which may be), a title's own path
+     * from `titles`, and any other question (a search, a list) is answered `docs`.
+     */
     const tmdb = (docs: unknown[], ages: Record<string, unknown>, titles: Record<string, unknown> = {}) => {
       const asked: string[] = [];
       const get = vi.fn(async (url: string) => {
@@ -356,7 +359,7 @@ describe("filmpireSource sections", () => {
         if (!ratings) return json(titles[path] ?? { results: docs });
         asked.push(`${ratings[1]}:${ratings[2]}`);
         const answer = ages[`${ratings[1]}:${ratings[2]}`];
-        return answer === undefined ? json({}, 500) : json(answer);
+        return answer === undefined ? json({}, 404) : typeof answer === "number" ? json({}, answer) : json(answer);
       });
       return { get, asked };
     };
@@ -390,6 +393,28 @@ describe("filmpireSource sections", () => {
       const off = tmdb([familyToon(30, "Toy Film")], {});
       expect(kidsOf(await filmpireSource({ fetch: off.get as never }).search!("toon"))).toEqual({ "Toy Film": true }); // (a fetch of one's own: off unless asked for, as in the other tests)
       expect(off.asked).toEqual([]);
+    });
+
+    it("asks again when TMDB refused for asking too fast or failed, three times at most, and keeps only an answer", async () => {
+      const ages: Record<string, unknown> = { "movie:30": 429, "movie:31": 503 };
+      const { get, asked } = tmdb([familyToon(30, "Busy Toon"), familyToon(31, "Down Toon")], ages);
+      const answers = new Map<string, unknown[]>([["movie:30", [429, releases({ US: "G" })]]]);
+      get.mockImplementation(async (url: string) => {
+        const path = new URL(url).pathname.replace(/^\/3/, "");
+        const ratings = /^\/(movie|tv)\/(\d+)\/(release_dates|content_ratings)$/.exec(path);
+        if (!ratings) return json({ results: [familyToon(30, "Busy Toon"), familyToon(31, "Down Toon")] });
+        const key = `${ratings[1]}:${ratings[2]}`;
+        asked.push(key);
+        const next = answers.get(key)?.shift() ?? ages[key];
+        return typeof next === "number" ? json({}, next) : json(next);
+      });
+      const source = filmpireSource({ fetch: get as never, rateForChildren: true, childAgesRetryMs: 1 });
+      expect(kidsOf(await source.search!("toon"))).toEqual({ "Busy Toon": true, "Down Toon": false });
+      expect(asked.filter((key) => key === "movie:30")).toHaveLength(2); // (refused once, then answered: kept)
+      expect(asked.filter((key) => key === "movie:31")).toHaveLength(3); // (three tries, then not for children this time)
+      ages["movie:31"] = releases({ US: "PG" });
+      expect(kidsOf(await source.search!("toon"))).toEqual({ "Busy Toon": true, "Down Toon": true }); // (asked again next time; 30 is known)
+      expect(asked.filter((key) => key === "movie:30")).toHaveLength(2);
     });
 
     it("checks a row, a title by its id and a title page's titles like it too, and a title page's own ratings spare its tile the question", async () => {
