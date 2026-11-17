@@ -4,6 +4,28 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.11",
+    date: "2026-11-17",
+    en: [
+      "A long season lists 24 episodes at a time; “Show more episodes” under them adds the next 24, and so on.",
+      "A show you have started opens its list at the episode you are at, with “Show earlier episodes” above it.",
+      "A season of more than 500 episodes, as some long anime have, is now listed instead of saying it can't be.",
+      "In the Android app, “Continue with Google” now goes through to Google instead of stopping at an error page.",
+    ],
+    ro: [
+      "Un sezon lung arată câte 24 de episoade; „Arată încă 24 de episoade” de sub ele le adaugă pe următoarele 24, și tot așa.",
+      "Un serial început deschide lista la episodul la care ai rămas, cu „Arată episoadele anterioare” deasupra.",
+      "Un sezon de peste 500 de episoade, cum au unele anime lungi, se afișează acum, în loc să spună că nu se poate.",
+      "În aplicația Android, „Continuă cu Google” te duce acum la Google, în loc să se oprească la o pagină de eroare.",
+    ],
+    it: [
+      "Una stagione lunga mostra 24 episodi alla volta; “Mostra altri episodi” sotto aggiunge i 24 successivi, e così via.",
+      "Una serie iniziata apre l'elenco all'episodio a cui sei arrivato, con “Mostra episodi precedenti” sopra.",
+      "Una stagione di oltre 500 episodi, come in alcuni anime lunghi, ora viene elencata invece di dire che non si può.",
+      "Nell'app Android, “Continua con Google” ora porta a Google invece di fermarsi su una pagina di errore.",
+    ],
+  },
+  {
     version: "0.4.10",
     date: "2026-11-17",
     en: [

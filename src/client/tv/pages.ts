@@ -335,6 +335,38 @@ export function playLabel(entry: Entry, at: Start | undefined): string {
   return entry.startAt !== undefined ? t("rows.resume") : t("rows.play");
 }
 
+/** How many of a season's episodes a show's page lists at once, and how many more each press of its Show more (or Show earlier) adds. */
+export const EPISODES_AT_ONCE = 24;
+
+/** The part of a season's episodes that is listed: places `from` (the first listed) to `to` (the one after the last) in the season's list. */
+export interface EpisodeWindow {
+  from: number;
+  to: number;
+}
+
+/**
+ * The episodes a show's page lists first, of `count` (the owner, 17 Nov: an anime's season of hundreds was hundreds of cards). A season of 24 or fewer is listed
+ * whole. A longer one: 24, from the one Play leads to (`anchor`, its place in the list; -1 for none) - the episode this profile is at, or the one a friend sent -
+ * moved back so that the 24 are full when it is among the last; else the first 24. Show earlier and Show more add 24 at a time on either side.
+ */
+export function episodeWindow(count: number, anchor: number): EpisodeWindow {
+  if (count <= EPISODES_AT_ONCE || anchor < 0) return { from: 0, to: Math.min(count, EPISODES_AT_ONCE) };
+  const from = Math.max(0, Math.min(anchor, count - EPISODES_AT_ONCE));
+  return { from, to: from + EPISODES_AT_ONCE };
+}
+
+/**
+ * The window a page lists now: the one pressed for (`paged`: Show more and Show earlier only widen it, so the episode Play leads to stays in it), within the season's
+ * `count`, else `episodeWindow`'s. A window that no longer has the episode Play leads to in it (that episode was played to its end, and Play leads to the next) is
+ * `episodeWindow`'s again.
+ */
+export function listedWindow(count: number, anchor: number, paged: EpisodeWindow | undefined): EpisodeWindow {
+  if (!paged) return episodeWindow(count, anchor);
+  const window = { from: Math.min(paged.from, count), to: Math.min(paged.to, count) };
+  if (window.to <= window.from || (anchor >= 0 && (anchor < window.from || anchor >= window.to))) return episodeWindow(count, anchor);
+  return window;
+}
+
 /** What this profile's watched episodes of a show are filed under: the name its card has (the show's, as the player gave it), else the title's own. */
 export const showKeyOf = (entry: Entry, progress: readonly LiveProgress[]): string => cardOf(entry, progress)?.title ?? entry.title;
 

@@ -120,7 +120,11 @@ export const EpisodeDetailSchema = z.object({
 });
 export type EpisodeDetail = z.infer<typeof EpisodeDetailSchema>;
 
-export const EpisodeDetailsSchema = z.object({ episodes: z.array(EpisodeDetailSchema).max(500) });
+/**
+ * (As many as an episode's number can be: a season of more than 500 - a long anime's one season, as TMDB lists some - was refused whole, and its page said the
+ * episodes could not be listed. The page lists 24 of them at a time, see the TV's Episodes.tsx.)
+ */
+export const EpisodeDetailsSchema = z.object({ episodes: z.array(EpisodeDetailSchema).max(5000) });
 
 /**
  * What no source had of one title, as the screens mark it "Not available yet" (the server's `library/unavailable.ts`): the film itself, or episodes of the

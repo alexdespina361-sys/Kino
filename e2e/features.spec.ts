@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
+import { chromium, expect, type Browser, type BrowserContext, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -3162,6 +3162,91 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("title-play")).toHaveText("Resume S2:E3");
     await expect(phone.getByTestId("title-season-2")).toHaveAttribute("aria-selected", "true");
     await expect(phone.getByTestId("title-episode").nth(2)).toHaveAttribute("data-target", "true");
+  });
+
+  /** A first season of a hundred episodes (an anime's kind), and a second of three: asked for by the page or the context given, before `connect`'s answer. */
+  const longSeason = (on: Page | BrowserContext, baseURL: string) =>
+    on.route(/\/api\/library\/episodes/, (route) => {
+      const season = Number(new URL(route.request().url()).searchParams.get("season"));
+      const episodes = Array.from({ length: season === 1 ? 100 : 3 }, (_, i) => ({ season, episode: i + 1, title: `Chapter ${i + 1}`, runtime: 24, url: `${baseURL}/fixtures/pages/video.html?e=${i + 1}` }));
+      return route.fulfill({ json: { episodes } });
+    });
+  /** This profile is part way through episode 40 of the long season. */
+  const atForty = () => guestStorage({ progress: [{ key: progressKey({ show: "The Long Night", url: episodeLink(40) }), at: Date.now(), title: "The Long Night", url: episodeLink(40), season: 1, episode: 40, position: 600, duration: 1440 }] });
+
+  test("a long season lists 24 episodes at a time, from the one this profile is at; Show earlier and Show more add 24 more, and a short season is whole", async ({ browser, baseURL }) => {
+    const { phone } = await connect(browser, baseURL!, { seed: atForty() });
+    await longSeason(phone, baseURL!);
+    await tile(phone, "The Long Night").click();
+    await expect(phone.getByTestId("title-play")).toHaveText("Resume S1:E40");
+    const episodes = phone.getByTestId("title-episode");
+    const earlier = phone.getByTestId("title-episodes-earlier");
+    const more = phone.getByTestId("title-episodes-more");
+    await expect(episodes).toHaveCount(24);
+    await expect(episodes.first()).toHaveAttribute("data-episode", "40");
+    await expect(episodes.first()).toHaveAttribute("data-target", "true");
+    await expect(episodes.last()).toHaveAttribute("data-episode", "63");
+    await expect(earlier).toHaveText("Show 24 earlier episodes");
+    await expect(more).toHaveText("Show 24 more episodes");
+
+    await earlier.click();
+    await expect(episodes).toHaveCount(48);
+    await expect(episodes.first()).toHaveAttribute("data-episode", "16");
+    await expect(earlier).toHaveText("Show 15 earlier episodes");
+    await earlier.click();
+    await expect(episodes.first()).toHaveAttribute("data-episode", "1");
+    await expect(earlier).toHaveCount(0);
+    await more.click();
+    await expect(episodes).toHaveCount(87);
+    await expect(more).toHaveText("Show 13 more episodes");
+    await more.click();
+    await expect(episodes).toHaveCount(100);
+    await expect(more).toHaveCount(0);
+
+    await phone.getByTestId("title-season-2").click();
+    await expect(episodes).toHaveCount(3);
+    await expect(earlier).toHaveCount(0);
+    await expect(more).toHaveCount(0);
+    // (Back on the long season, the page keeps what was listed of it while it is open.)
+    await phone.getByTestId("title-season-1").click();
+    await expect(episodes).toHaveCount(100);
+  });
+
+  test("on the TV the remote walks a long season: into the episodes on the one it is at, Up to Show earlier, OK lands on the last that came; Show more on the first", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(
+      browser,
+      async (context) => {
+        await withLibrary(libraryOf(baseURL!))(context);
+        await context.route(/\/api\/library\/seasons/, (route) => route.fulfill({ json: { seasons: [1, 2] } }));
+        await longSeason(context, baseURL!);
+      },
+      undefined,
+      atForty(),
+    );
+    await tv.locator("[data-testid='tv-browse-tile'][title='The Long Night']").first().click();
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Resume S1:E40");
+    const episodes = tv.getByTestId("tv-episode");
+    await expect(episodes).toHaveCount(24);
+    await expect(episodes.first()).toHaveAttribute("data-episode", "40");
+    const focused = () => tv.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.episode ?? document.activeElement?.getAttribute("data-testid"));
+
+    await tv.getByTestId("tv-season-1").focus();
+    await tv.keyboard.press("ArrowDown"); // (into the episodes: on the one Play leads to)
+    await expect.poll(focused).toBe("40");
+    await tv.keyboard.press("ArrowUp");
+    await expect.poll(focused).toBe("tv-episodes-earlier");
+    await tv.keyboard.press("Enter");
+    await expect(episodes).toHaveCount(48);
+    await expect.poll(focused).toBe("39"); // (the last that came, over where the remote was)
+    await tv.keyboard.press("ArrowDown");
+    await expect.poll(focused).toBe("41"); // (two across: 39 is on the right, under it 41)
+
+    await tv.getByTestId("tv-episodes-more").focus();
+    await tv.keyboard.press("Enter");
+    await expect(episodes).toHaveCount(72);
+    await expect.poll(focused).toBe("64"); // (the first that came)
+    await tv.keyboard.press("ArrowUp");
+    await expect.poll(focused).toBe("62");
   });
 
   test("at twelve lists there is no New list, and the sheets say why; a list deleted gives the button back", async ({ browser, baseURL }) => {
