@@ -942,7 +942,7 @@ test.describe("the chat on the TV", () => {
     await expect(ann.page.getByTestId("tv-chat-reporting")).toHaveCount(0);
   });
 
-  // (the chat's pages and the friend's page with the Chat chip on them, in the longest words and on the narrowest screens: a hand-held one has its pages in one column and slides the row of chips)
+  // (the chat's pages and the friend's page with the Chat chip on them, in the longest words and on the narrowest screens: a hand-held one has its pages in one column, and a phone held upright wraps the row of chips)
   for (const screen of [
     { name: "720p", width: 1280, height: 720, language: "en" as Language },
     { name: "720p in Romanian", width: 1280, height: 720, language: "ro" as Language },
@@ -969,7 +969,26 @@ test.describe("the chat on the TV", () => {
 
       // the row of chips: every one of them, the Chat chip with the number it has now, inside the screen when the remote is on it
       await look(page);
+      const upright = screen.width < 600;
+      if (upright) {
+        // (a phone held upright: the friends' page goes down, never sideways, every tile of it inside the screen (the owner, 17 Nov))
+        await expect(tile(page, words["friends.add"])).toBeVisible();
+        const offTheSide = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>('.tv-browse[data-view="friends"] .tv-tile')]
+            .filter((one) => one.getBoundingClientRect().left < -0.5 || one.getBoundingClientRect().right > innerWidth + 0.5)
+            .map((one) => one.title),
+        );
+        expect(offTheSide, "the friends' page, off the screen sideways").toEqual([]);
+      }
       await tile(page, bob.name).click();
+      if (upright) {
+        // (and the friend's page wraps its row of chips: each is in view at once, none to slide to)
+        await expect(page.getByTestId("friend-chat")).toBeVisible();
+        for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-plan", "friend-chat"]) {
+          const at = (await page.getByTestId(id).boundingBox())!;
+          expect(at.x >= -0.5 && at.x + at.width <= screen.width + 0.5, `${id} in view without sliding`).toBe(true);
+        }
+      }
       await expect(page.getByTestId("friend-chat-unread")).toContainText("3");
       // the top of his page: when he was last online and since when they are friends, inside the screen and not cut (it wraps)
       const lastOnline = words["friends.lastOnlineDay"].replace("{day}", "").trim();
