@@ -1,0 +1,5 @@
+// The Kino Android app (docs/android-app.md). The same versions as the other Android project on the build machine, so nothing new is needed to build it.
+plugins {
+    id 'com.android.application' version '8.13.0' apply false
+    id 'com.google.gms.google-services' version '4.4.4' apply false
+}

@@ -1,0 +1,77 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Firebase's file for this app (google-services.json) is never in the repository: it is put next to this file on the machine that builds a release
+// (docs/android-app.md). Without it the app is built all the same, and has no notifications.
+def firebaseFile = file('google-services.json')
+if (firebaseFile.exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
+// The release key and its passwords live outside the repository too: a `signing.properties` (storeFile, storePassword, keyAlias, keyPassword) in the folder that
+// KINO_ANDROID_KEYS names, or in ~/dev-tools/kino-android-keys. Losing that key means every phone has to take the app off and put it on again.
+def keysDir = System.getenv('KINO_ANDROID_KEYS') ?: "${System.getProperty('user.home')}/dev-tools/kino-android-keys"
+def signingFile = new File(keysDir, 'signing.properties')
+def signing = new Properties()
+if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+
+android {
+    namespace 'com.kino4tv.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.kino4tv.app'
+        minSdk 24
+        targetSdk 36
+        // (The release script passes the next numbers: scripts/android-release.mjs.)
+        versionCode((project.findProperty('kinoVersionCode') ?: '1') as int)
+        versionName(project.findProperty('kinoVersionName') ?: '0.1.0')
+        // The site the app shows, and the other address it is served at. A build for the e2e server on this machine can say another one.
+        buildConfigField 'String', 'SITE', "\"${project.findProperty('kinoSite') ?: 'https://kino4tv.com'}\""
+        buildConfigField 'String', 'OTHER_HOSTS', '"kino4tv.com,www.kino4tv.com,kino.24-7.ro"'
+        buildConfigField 'boolean', 'FIREBASE', firebaseFile.exists() ? 'true' : 'false'
+    }
+
+    signingConfigs {
+        release {
+            if (signing.getProperty('storeFile')) {
+                storeFile new File(keysDir, signing.getProperty('storeFile'))
+                storePassword signing.getProperty('storePassword')
+                keyAlias signing.getProperty('keyAlias')
+                keyPassword signing.getProperty('keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (signing.getProperty('storeFile')) signingConfig signingConfigs.release
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // (A release is not built with an error lint finds: the judge, 17 Nov.)
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.17.0'
+    implementation 'androidx.activity:activity:1.11.0'
+    implementation 'androidx.webkit:webkit:1.14.0'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'androidx.work:work-runtime:2.10.0'
+    implementation 'com.google.firebase:firebase-messaging:24.1.0'
+}

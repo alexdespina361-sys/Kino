@@ -38,6 +38,8 @@ export interface FriendHost {
   touch(key: string): void;
   drop(key: string): void;
   now(): number;
+  /** Something new was put in `to`'s inbox by `from` (what the app's notifications are told of: push/push.ts). Not called for the same thing again while it is unread. */
+  delivered?(to: string, from: string, what: "recommend" | "party" | "together" | "plan" | "planYes" | "planNo"): void;
 }
 
 export type FriendError = "invite_gone" | "own_invite" | "already_friends" | "friends_full" | "own_request" | "request_gone" | "plan_soon" | "plan_far" | "plan_full" | "plan_gone";
@@ -384,6 +386,10 @@ export class FriendBook {
     let theirs = 1; // (this one is the first of the friend's)
     const kept = items.filter((old) => !sameThing(old) && (old.kind === "plan" || old.from !== from || ++theirs <= INBOX_PER_SENDER));
     this.setInbox(to, [item, ...kept].slice(0, INBOX_MAX));
+    if (!before || before.read) {
+      const what = message.kind === "plan" && "answer" in message ? (message.answer === "yes" ? "planYes" : "planNo") : message.kind;
+      this.host.delivered?.(to, from, what);
+    }
     return item;
   }
 

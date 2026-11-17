@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { COLLECTIONS, MeSchema, type AvatarId, type ChildPinChange, type DeviceKind, type GoogleOutcome, type Me, type Profile, type Registration } from "../../shared";
+import { useKinoAppNotifications } from "../app/kinoApp";
 import { readStorage, writeStorage } from "../shared/format";
 import { screenLanguage, setLanguage, t, type Key } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
@@ -203,6 +204,8 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
   useEffect(() => {
     setLanguage(settings.lang ?? screenLanguage(), false);
   }, [settings.lang]);
+  // In the Android app, the phone is told of this profile's friends (client/app/kinoApp.ts), in the profile's words.
+  useKinoAppNotifications(status === "ready" && me && profile ? profile.id : null, settings.lang ?? screenLanguage());
   useEffect(() => {
     applyAccent(settings.accent);
   }, [settings.accent]);

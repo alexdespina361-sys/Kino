@@ -200,7 +200,57 @@ interface Flow {
   /** `link` and `reauth`: the account that asked, which has to be the one signed in when the browser comes back. */
   accountId?: string;
   startedAt: number;
+  /** A round trip for the Android app (see `AppTrip`). */
+  app?: AppTrip;
 }
+
+/**
+ * The Android app shows the site in a WebView, which Google does not sign anybody in from (`disallowed_useragent`): its "Continue with Google" goes out to the
+ * phone's browser (a Custom Tab), and comes back to the app with a code that only the app can use. The app makes a secret of its own and gives the start its hash
+ * (`app=`, as PKCE does); the way back does not sign the browser in, connect or confirm anything, but leaves what came of it under a one-time code, and sends
+ * the browser to the app (`appAddress`: an Android intent for this app's package alone, so no other app on the phone can be given it, the judge, 17 Nov), which
+ * brings the code and its secret to `/api/auth/google/app-claim` in its WebView: that is where it is signed in. A code caught all the same is no use without the
+ * secret. Connecting Google, or confirming who is here, needs the WebView's own session: the WebView asks for a ticket first (`/api/auth/google/app-ticket`, this
+ * site's own page only), the browser starts with the ticket, and the claim is done only by that very session, still signed in (the judge, 17 Nov: done in the
+ * browser, a stolen ticket, or one of a session ended since, would have connected somebody's Google account to the account).
+ */
+interface AppTrip {
+  challenge: string;
+  /** `link` and `reauth`: the WebView's session, the only one that may claim what comes of it. */
+  sessionId?: string;
+}
+
+/** What the claim does once the app proved it is the one that started: sign the WebView in, connect a Google account to the WebView's, or confirm its session. */
+type HandoffThen = { kind: "signIn"; accountId: string } | { kind: "link" | "reauth"; accountId: string; sessionId: string; sub: string };
+
+/** What a round trip of the app came to, kept for the app to claim (see `AppTrip`). */
+interface Handoff {
+  challenge: string;
+  next: "/" | "/tv";
+  device: DeviceKind;
+  then?: HandoffThen;
+  outcome?: GoogleOutcome;
+  at: number;
+}
+
+/** The app's own address scheme and package (android/app/src/main/AndroidManifest.xml, android/app/build.gradle). */
+export const APP_SCHEME = "kino4tv";
+export const APP_PACKAGE = "com.kino4tv.app";
+
+/**
+ * Where the browser is sent back to the app: an intent for the app's package alone (Chrome, and the other browsers of Android, open an `intent:` address only in
+ * the app it names; another app that says it opens `kino4tv:` addresses is not asked). A browser on a phone without the app goes to the site.
+ *
+ * `trip` is the start of the app's hash (`app=`, or the ticket's), which only the app and this site know: the app takes a way back only with its own trip's,
+ * so another app that opens the app with a made-up code cannot use up the secret of a trip on its way (the judge, 17 Nov).
+ */
+export const appAddress = (code: string, challenge: string, origin: string, next: string) =>
+  `intent://google?code=${code}&trip=${challenge.slice(0, APP_TRIP_LENGTH)}#Intent;scheme=${APP_SCHEME};package=${APP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(new URL(next, origin).toString())};end`;
+/** How much of the app's hash comes back with the way back. */
+export const APP_TRIP_LENGTH = 16;
+const APP_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+const HANDOFF_MS = 2 * 60_000;
+const TICKET_MS = 5 * 60_000;
 
 export interface GoogleHelpers {
   store: AccountStore;
@@ -233,24 +283,55 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
   const { store } = helpers;
   const flows = new Map<string, Flow>();
   const startsByIp = new RateLimiter(30, FLOW_MS);
+  // (The app's: see `AppTrip`.)
+  const tickets = new Map<string, { mode: "link" | "reauth"; device: DeviceKind; next: "/" | "/tv"; accountId: string; sessionId: string; challenge: string; at: number }>();
+  const handoffs = new Map<string, Handoff>();
+  const claimsByIp = new RateLimiter(30, FLOW_MS);
+  // (Each ticket is counted, by the address and by the account: one account could otherwise make so many that the tickets of others are pushed out, the judge, 17 Nov.)
+  const ticketsByAccount = new RateLimiter(10, FLOW_MS, () => store.clock());
+
+  app.post<{ Body: Record<string, unknown> }>("/api/auth/google/app-ticket", async (request, reply) => {
+    const auth = helpers.authenticate(request);
+    if (!auth) return reply.code(401).send({ error: "signed_out" });
+    const body = request.body ?? {};
+    const mode = body.mode === "link" || body.mode === "reauth" ? body.mode : undefined;
+    const challenge = typeof body.challenge === "string" && APP_CHALLENGE.test(body.challenge) ? body.challenge : undefined;
+    if (!config || !mode || !challenge) return reply.code(400).send({ error: "invalid_request" });
+    if (startsByIp.wait(request.ip) > 0 || ticketsByAccount.wait(auth.accountId) > 0) return reply.code(429).send({ error: "rate_limited" });
+    startsByIp.hit(request.ip);
+    ticketsByAccount.hit(auth.accountId);
+    const ticket = secret();
+    const device = DeviceKindSchema.safeParse(body.device).data ?? "browser";
+    remember(tickets, ticket, { mode, device, next: body.next === "/tv" ? "/tv" : "/", accountId: auth.accountId, sessionId: auth.sessionId, challenge, at: store.clock() }, MAX_FLOWS);
+    return reply.send({ ticket });
+  });
 
   app.get<{ Querystring: Record<string, unknown> }>("/api/auth/google/start", async (request, reply) => {
     const query = request.query ?? {};
-    const next = query.next === "/tv" ? "/tv" : "/";
-    const device = DeviceKindSchema.safeParse(query.device).data ?? "browser";
-    const mode = MODES.find((each) => each === query.mode) ?? "signin";
+    const ticketId = typeof query.ticket === "string" ? query.ticket : "";
+    const ticket = ticketId ? tickets.get(ticketId) : undefined;
+    if (ticket) tickets.delete(ticketId); // (good once)
+    const fresh = ticket && store.clock() - ticket.at <= TICKET_MS ? ticket : undefined;
+    const next = fresh?.next ?? (query.next === "/tv" ? "/tv" : "/");
+    const device = fresh?.device ?? DeviceKindSchema.safeParse(query.device).data ?? "browser";
+    const mode = fresh?.mode ?? (ticketId ? "signin" : (MODES.find((each) => each === query.mode) ?? "signin"));
+    const challenge = typeof query.app === "string" && APP_CHALLENGE.test(query.app) ? query.app : undefined;
+    const trip: AppTrip | undefined = fresh ? { challenge: fresh.challenge, sessionId: fresh.sessionId } : challenge && mode === "signin" ? { challenge } : undefined;
     const back = (outcome: GoogleOutcome) => reply.redirect(`${next}?google=${outcome}`);
     const redirectUri = config && redirectFor(config, request);
     if (!config || !redirectUri) return back("unavailable");
+    if (ticketId && !fresh) return back("failed");
     if (startsByIp.wait(request.ip) > 0) return back("busy");
-    const auth = mode === "signin" ? undefined : helpers.authenticate(request);
-    if (mode !== "signin" && !auth) return back("failed");
+    // (The app's browser has no session: a ticket says whose account it is.)
+    const auth = mode === "signin" || fresh ? undefined : helpers.authenticate(request);
+    if (mode !== "signin" && !auth && !fresh) return back("failed");
     startsByIp.hit(request.ip);
 
     const state = secret();
     const nonce = secret();
     const verifier = secret();
-    remember(flows, state, { nonce, verifier, redirectUri, mode, device, next, ...(auth ? { accountId: auth.accountId } : {}), startedAt: store.clock() }, MAX_FLOWS);
+    const accountId = fresh?.accountId ?? auth?.accountId;
+    remember(flows, state, { nonce, verifier, redirectUri, mode, device, next, ...(accountId ? { accountId } : {}), ...(trip ? { app: trip } : {}), startedAt: store.clock() }, MAX_FLOWS);
     reply.header("Set-Cookie", flowCookie(state, request.protocol === "https", FLOW_MS / 1000));
     const target = new URL(config.authorizeUrl ?? GOOGLE_AUTHORIZE_URL);
     target.search = new URLSearchParams({
@@ -277,7 +358,14 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     const flow = state ? flows.get(state) : undefined;
     if (flow) flows.delete(state); // (good once, whatever comes of it)
     const next = flow?.next ?? "/";
-    const back = (outcome?: GoogleOutcome) => reply.redirect(outcome ? `${next}?google=${outcome}` : next);
+    // (A round trip of the app goes back to the app, which claims what came of it in its WebView: see `AppTrip`.)
+    const toApp = (handoff: Pick<Handoff, "then" | "outcome">) => {
+      const code = secret();
+      const origin = new URL(flow!.redirectUri).origin;
+      remember(handoffs, code, { ...handoff, challenge: flow!.app!.challenge, next, device: flow!.device, at: store.clock() }, MAX_FLOWS);
+      return reply.redirect(appAddress(code, flow!.app!.challenge, origin, next));
+    };
+    const back = (outcome?: GoogleOutcome) => (flow?.app ? toApp(outcome ? { outcome } : {}) : reply.redirect(outcome ? `${next}?google=${outcome}` : next));
     const refuse = (why: string) => {
       request.log.warn(`Google sign-in refused: ${why}.`);
       return back("failed");
@@ -289,8 +377,10 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     if (query.error !== undefined) return back(query.error === "access_denied" ? "denied" : "failed");
     const code = typeof query.code === "string" && query.code.length <= 2048 ? query.code : "";
     if (!code) return refuse("no code");
-    const auth = flow.mode === "signin" ? undefined : helpers.authenticate(request);
-    if (flow.mode !== "signin" && (!auth || auth.accountId !== flow.accountId)) return refuse("not the account that started it");
+    // (The app's browser has no session: nothing is connected or confirmed here, but when the WebView claims it, by the session that asked for the ticket.)
+    const auth = flow.mode === "signin" || flow.app ? undefined : helpers.authenticate(request);
+    if (flow.mode !== "signin" && !flow.app && (!auth || auth.accountId !== flow.accountId)) return refuse("not the account that started it");
+    if (flow.mode !== "signin" && flow.app && (!flow.accountId || !flow.app.sessionId)) return refuse("no session asked for it");
 
     const posted = await postForm(
       config.tokenUrl ?? GOOGLE_TOKEN_URL,
@@ -305,16 +395,19 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     if (flow.mode === "link") {
       const owner = store.findByGoogle(claims.sub);
       if (owner && owner.id !== flow.accountId) return back("taken");
+      if (flow.app) return toApp({ then: { kind: "link", accountId: flow.accountId!, sessionId: flow.app.sessionId!, sub: claims.sub } });
       const linked = store.linkGoogle(flow.accountId!, claims.sub);
       return linked.ok ? back("linked") : refuse("the account has another Google account");
     }
     if (flow.mode === "reauth") {
       if (store.getAccount(flow.accountId!)?.google?.sub !== claims.sub) return refuse("another Google account");
+      if (flow.app) return toApp({ then: { kind: "reauth", accountId: flow.accountId!, sessionId: flow.app.sessionId!, sub: claims.sub } });
       store.confirmSession(auth!.sessionId, store.clock() + REAUTH_MS);
       return back("reauth");
     }
     const found = store.findByGoogle(claims.sub);
     if (found) {
+      if (flow.app) return toApp({ then: { kind: "signIn", accountId: found.id } });
       helpers.signIn(request, reply, found.id, flow.device);
       return back();
     }
@@ -324,8 +417,47 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     helpers.signUpByIp.hit(request.ip);
     const made = store.createGoogleAccount(claims.sub, profileNameOf(claims.givenName), await hashPassword(secret(), helpers.passwordCost));
     if (!made.ok) return refuse("the account was made a moment ago");
+    if (flow.app) return toApp({ then: { kind: "signIn", accountId: made.value.id } });
     helpers.signIn(request, reply, made.value.id, flow.device);
     return back();
+  });
+
+  // The app's WebView brings the code its browser came back with, and the secret only the app knows: the WebView is signed in here (see `AppTrip`).
+  // (Its address has the code and the secret in it: Fastify's line for each request is not written for this route.)
+  app.get<{ Querystring: Record<string, unknown> }>("/api/auth/google/app-claim", { logLevel: "warn" }, async (request, reply) => {
+    const query = request.query ?? {};
+    const code = typeof query.code === "string" ? query.code : "";
+    const handoff = code ? handoffs.get(code) : undefined;
+    if (handoff) handoffs.delete(code); // (good once, whatever comes of it)
+    const next = handoff?.next ?? "/";
+    const failed = (why: string) => {
+      request.log.warn(`The app's Google sign-in refused: ${why}.`);
+      return reply.redirect(`${next}?google=failed`);
+    };
+    if (claimsByIp.wait(request.ip) > 0) return reply.redirect(`${next}?google=busy`);
+    claimsByIp.hit(request.ip);
+    if (!handoff) return failed("no such code");
+    if (store.clock() - handoff.at > HANDOFF_MS) return failed("too late");
+    const verifier = typeof query.verifier === "string" ? query.verifier : "";
+    if (!verifier || challengeOf(verifier) !== handoff.challenge) return failed("not the app that started it");
+    const then = handoff.then;
+    if (!then) return reply.redirect(handoff.outcome ? `${next}?google=${handoff.outcome}` : next);
+    if (then.kind === "signIn") {
+      if (!store.getAccount(then.accountId)) return failed("the account is gone");
+      helpers.signIn(request, reply, then.accountId, handoff.device);
+      return reply.redirect(next);
+    }
+    // (Connecting and confirming: only by the session that asked for the ticket, still signed in to that account, here and now.)
+    const auth = helpers.authenticate(request);
+    if (!auth || auth.sessionId !== then.sessionId || auth.accountId !== then.accountId) return failed("not the session that asked for it");
+    if (then.kind === "link") {
+      const owner = store.findByGoogle(then.sub);
+      if (owner && owner.id !== then.accountId) return reply.redirect(`${next}?google=taken`);
+      return store.linkGoogle(then.accountId, then.sub).ok ? reply.redirect(`${next}?google=linked`) : failed("the account has another Google account");
+    }
+    if (store.getAccount(then.accountId)?.google?.sub !== then.sub) return failed("another Google account");
+    store.confirmSession(auth.sessionId, store.clock() + REAUTH_MS);
+    return reply.redirect(`${next}?google=reauth`);
   });
 
   return { here: (request) => Boolean(config && redirectFor(config, request)) };

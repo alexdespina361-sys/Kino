@@ -21,6 +21,9 @@ import { createLibrary, type LibrarySource } from "./library/library";
 import { playKeyOf, UnavailableStore } from "./library/unavailable";
 import { MemoryPersistence } from "./accounts/persistence";
 import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
+import { AppReleases, appReleaseRoutes } from "./push/appRelease";
+import type { PushSender } from "./push/fcm";
+import { PushHub } from "./push/push";
 import { isOwnPage, looksLikePage, requestForLog } from "./requestLog";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
@@ -69,6 +72,10 @@ export interface AppOptions {
   passwordCost?: PasswordCost;
   /** Signing in with Google (env GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS: see accounts/google.ts and docs/google-sign-in.md). Off unless set. */
   google?: GoogleConfig;
+  /** What sends the Android app's notifications (Firebase: env FCM_SERVICE_ACCOUNT_FILE, see push/fcm.ts and docs/android-app.md). None unless set: the app is told of nothing. */
+  push?: PushSender;
+  /** Where the Android app's builds are kept (env ANDROID_APP_DIR: see push/appRelease.ts). None unless set: no app is offered. */
+  androidAppDir?: string;
   /** Built Vite app. Served at / and /tv. Omitted in tests/dev where Vite serves the UI. */
   clientDir?: string;
   /** Local test media served at /fixtures/. */
@@ -291,7 +298,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   if (klipyWritten && !klipyKey) app.log.warn("KLIPY_KEY does not look like a KLIPY key: the chats have no GIFs.");
   // Personal stickers: on only where the host turned them on (PERSONAL_STICKERS=on, read with the accounts: index.ts); taking it off is the kill switch.
   const stickersOn = accounts?.stickers.on === true;
-  const features = { cat: catOn, ...(klipyKey ? { gifs: klipyKey } : {}), ...(stickersOn ? { stickers: true } : {}) };
+  // The Android app (docs/android-app.md): its notifications go out when the host has a Firebase key, and its builds are offered when the host keeps them.
+  const pushHub = accounts ? new PushHub(accounts, options.push, app.log) : undefined;
+  const releases = options.androidAppDir ? new AppReleases(options.androidAppDir, pushHub, app.log) : undefined;
+  if (releases) {
+    await releases.start();
+    // (The apps hear of a new version once the site listens: each asks for it at once.)
+    app.addHook("onListen", async () => releases.listening());
+    app.addHook("onClose", async () => releases.stop());
+  }
+  appReleaseRoutes(app, releases);
+  const pushOn = pushHub?.on === true;
+  const features = { cat: catOn, ...(klipyKey ? { gifs: klipyKey } : {}), ...(stickersOn ? { stickers: true } : {}), ...(pushOn ? { push: true } : {}) };
   // (The team's side of them: a picture taken down everywhere, or all of one maker's. There whether they are on or off.)
   if (accounts) stickerAdminRoutes(app, { stickers: accounts.stickers, adminToken: options.feedbackAdminToken });
   app.get("/api/features", async (_request, reply) => reply.header("Cache-Control", "no-store").send(features));
@@ -324,9 +342,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
-    features: { cat: catOn, ...(klipyKey ? { gifs: true } : {}), ...(stickersOn ? { stickers: true } : {}) },
+    features: { cat: catOn, ...(klipyKey ? { gifs: true } : {}), ...(stickersOn ? { stickers: true } : {}), ...(pushOn ? { push: true } : {}) },
     // (`stickers`: how many personal stickers the site keeps, and how many bytes of pictures.)
     ...(accounts ? { stickers: accounts.stickers.size } : {}),
+    // (`push`: the devices with the app's notifications on, what became of the notifications since the start, and the newest version of the app offered.)
+    ...(pushHub ? { push: { devices: accounts!.countPushDevices(), ...pushHub.counts, app: releases?.latest?.versionCode ?? 0 } } : {}),
   });
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());

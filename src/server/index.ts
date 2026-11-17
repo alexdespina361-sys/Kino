@@ -4,6 +4,7 @@ import { AccountStore } from "./accounts/store";
 import { personalStickersMaxBytes, personalStickersOn, stickerFilesFor } from "./accounts/stickerFiles";
 import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
 import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
+import { FcmSender, fcmFromEnv } from "./push/fcm";
 import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
@@ -67,6 +68,11 @@ const unavailable = await UnavailableStore.open({ persistence: unavailablePersis
 // "Continue with Google" is on once GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS are all set (docs/google-sign-in.md); what is wrong with them is said, never the secret.
 const google = googleFromEnv(process.env, (message) => console.warn(message));
 
+// The Android app (docs/android-app.md): its notifications go through Firebase once FCM_SERVICE_ACCOUNT_FILE names the key of a service account (on the host only),
+// and its builds are offered from ANDROID_APP_DIR (outside the checkout).
+const fcm = fcmFromEnv(process.env, (message) => console.warn(message));
+const androidAppDir = process.env.ANDROID_APP_DIR?.trim() || undefined;
+
 // DIRECT_STREAMING is "on" by default to bypass the server middleman and stream directly to viewers.
 if (process.env.DIRECT_STREAMING === undefined) {
   process.env.DIRECT_STREAMING = "on";
@@ -97,6 +103,8 @@ const app = await buildApp({
   // (Phones paired with a TV from one address in an hour: 30 unless set, see MAX_NEW_PAIRS. The click-through tests pair hundreds from this machine.)
   ...(Number(process.env.PAIRINGS_PER_HOUR) > 0 ? { hub: { maxNewPairs: Number(process.env.PAIRINGS_PER_HOUR) } } : {}),
   ...(google ? { google } : {}),
+  ...(fcm ? { push: new FcmSender(fcm, Date.now, console) } : {}),
+  ...(androidAppDir ? { androidAppDir } : {}),
   trustProxy: trustProxy(process.env),
   // Website as middle man is toggled off by default so users cannot watch something if it uses website bandwidth.
   // Set PROXY_VIDEO=on to explicitly allow the server to proxy video.
@@ -108,6 +116,7 @@ keepRunning(app.log);
 app.log.info(`Accounts and pairings are kept in ${describe}.`);
 app.log.info(visits ? "Visitors are counted, a number for each day (docs/stats.md)." : "Visitors are not counted.");
 app.log.info(google ? `Google sign-in is on at ${google.redirectUris.map((address) => new URL(address).host).join(", ")}.` : "Google sign-in is off.");
+app.log.info(fcm ? `The app's notifications are on (Firebase project ${fcm.projectId}).` : "The app's notifications are off.");
 
 await app.listen({ port, host });
 

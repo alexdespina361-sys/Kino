@@ -67,7 +67,7 @@ const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/lib
  * own button, and each one keeps a flow and takes from the address's allowance of them.
  */
 const COUNTED_PREFIXES = ["/api/profiles/", "/api/link/"];
-const COUNTED_ROUTES = new Set(["/api/feedback/mine", "/api/auth/google/start"]);
+const COUNTED_ROUTES = new Set(["/api/feedback/mine", "/api/auth/google/start", "/api/auth/google/app-claim"]);
 const counts = (route: string) => COUNTED_ROUTES.has(route) || COUNTED_PREFIXES.some((prefix) => route.startsWith(prefix));
 
 /** Whether `origin`, as a browser writes it in `Origin` (an address without a path, or `null`), is the very host `host` (the `Host` header) names, with its port. */

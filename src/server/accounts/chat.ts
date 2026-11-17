@@ -35,6 +35,8 @@ export interface ChatHost {
   on(profileId: string): boolean;
   /** The profile takes messages: friends are on, and "Friends can message me" is (it is on until it is turned off). */
   takes(profileId: string): boolean;
+  /** `from` wrote to `to`, who has not muted them (what the app's notifications are told of: push/push.ts). */
+  wrote?(from: string, to: string): void;
 }
 
 export type ChatError = "not_friends" | "friends_off" | "chat_off" | ChatTextProblem | "rate_limited" | "gone";
@@ -300,6 +302,7 @@ export class ChatBook {
     doc.said = n;
     doc.seen[from] = n;
     this.host.touch(keyOf(from, to));
+    if (!doc.muted.includes(to)) this.host.wrote?.(from, to);
     return { ok: true, value: this.view(doc, from, to) };
   }
 

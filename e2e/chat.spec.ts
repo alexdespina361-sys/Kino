@@ -1948,6 +1948,92 @@ test.describe("personal stickers in a chat", () => {
     expect(fromWebp.data[3], "a see-through corner stays see-through").toBe(0);
   });
 
+  test("in the Android app (0.2.0 on): From WhatsApp opens the chooser in WhatsApp's stickers folder, and several chosen at once are each made a sticker; a browser and an app of 0.1.0 have no such button", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const { ann } = await twoFriends(browser);
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    const whatsapp = sheet.getByTestId("chat-sticker-whatsapp");
+    const mine = sheet.getByTestId("chat-sticker-mine");
+
+    // a browser: Add, and nothing of WhatsApp
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible();
+    await expect(whatsapp).toHaveCount(0);
+
+    // the app, as 0.1.0 is (an object of methods, no folders) and as 0.2.0 is (messages, as android/.../Bridge.java answers them): which one is said by the
+    // page's storage, read as each page opens. The 0.2.0 one has only what Android promises of it: `postMessage`, and an `onmessage` the page sets (the judge,
+    // 17 Nov: a fake with `addEventListener` hid a page that needed it). It says the folders Bridge.java says, GIFs too (a page that has no use for one has no
+    // button for it).
+    await ann.page.context().addInitScript(() => {
+      const folders: string[] = [];
+      const app: Record<string, unknown> =
+        localStorage.getItem("e2e-app-folders") === "yes"
+          ? {
+              onmessage: null,
+              postMessage(text: string) {
+                const said = JSON.parse(text) as { call: string; folder?: string };
+                const answer = (message: object) => setTimeout(() => (app.onmessage as ((event: { data: string }) => void) | null)?.({ data: JSON.stringify(message) }), 5);
+                if (said.call === "hello") answer({ kind: "hello", version: "0.2.0", folders: ["whatsapp-stickers", "whatsapp-gifs"], notify: false, token: "" });
+                if (said.call === "pickFrom") {
+                  folders.push(said.folder ?? "");
+                  answer({ kind: "picking", folder: said.folder, known: true });
+                }
+              },
+            }
+          : { version: () => "0.1.0", pushToken: () => "", setStrings: () => {} };
+      Object.assign(window, { KinoApp: app, e2eFolders: folders });
+    });
+    await ann.page.reload();
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible();
+    await expect(whatsapp, "an app of 0.1.0 cannot open the folder: no button").toHaveCount(0);
+
+    await ann.page.evaluate(() => localStorage.setItem("e2e-app-folders", "yes"));
+    // (this app's notifications are off: the server is told to forget the phone, and is told no token)
+    const told: string[] = [];
+    ann.page.on("request", (sent) => {
+      if (new URL(sent.url()).pathname === "/api/push") told.push(sent.method());
+    });
+    await ann.page.reload();
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await expect(whatsapp).toHaveText(en["chat.stickerFromWhatsApp"]);
+    expect(told, "notifications off: the phone is forgotten, once").toEqual(["DELETE"]);
+    expect(await gridFaults(sheet.locator('[data-testid="chat-sticker-add"], [data-testid="chat-sticker-whatsapp"], [data-testid="chat-sticker-pick"]')), "the two buttons are squares of the grid").toEqual([]);
+
+    // two of WhatsApp's stickers (WebP files of 512 by 512, see-through around), chosen at once
+    const stickers = await ann.page.evaluate(async () => {
+      const made: number[][] = [];
+      for (const colour of ["rgb(30, 30, 220)", "rgb(220, 30, 30)"]) {
+        const canvas = Object.assign(document.createElement("canvas"), { width: 512, height: 512 });
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = colour;
+        context.beginPath();
+        context.arc(256, 256, 200, 0, Math.PI * 2);
+        context.fill();
+        const blob = await new Promise<Blob>((done) => canvas.toBlob((one) => done(one!), "image/webp", 0.9));
+        made.push([...new Uint8Array(await blob.arrayBuffer())]);
+      }
+      return made;
+    });
+    const [chooser] = await Promise.all([ann.page.waitForEvent("filechooser"), whatsapp.click()]);
+    expect(await ann.page.evaluate(() => (window as unknown as { e2eFolders: string[] }).e2eFolders), "the app was asked for WhatsApp's folder").toEqual(["whatsapp-stickers"]);
+    expect(chooser.isMultiple(), "several can be chosen").toBe(true);
+    await chooser.setFiles(stickers.map((bytes, at) => ({ name: `STK-${at}.webp`, mimeType: "image/webp", buffer: Buffer.from(bytes) })));
+    await expect(mine).toHaveCount(2);
+    await expect(sheet.getByTestId("chat-sticker-problem")).toHaveCount(0);
+    const colours = await Promise.all((await mine.locator("img").all()).map(async (image) => colourAt(await pictureAt(ann.page, (await image.getAttribute("src"))!), 96, 96)));
+    expect(colours.sort()).toEqual(["blue", "red"]);
+
+    // Add is as it was: the app is not asked for a folder
+    const [plain] = await Promise.all([ann.page.waitForEvent("filechooser"), sheet.getByTestId("chat-sticker-add").click()]);
+    await plain.setFiles({ name: "wide.png", mimeType: "image/png", buffer: widePicture() });
+    await expect(mine).toHaveCount(3);
+    expect(await ann.page.evaluate(() => (window as unknown as { e2eFolders: string[] }).e2eFolders)).toEqual(["whatsapp-stickers"]);
+  });
+
   test("in a chat that stays open: a picture that did not come for a moment is asked for again, not called gone; a friend's can still be saved once they take no messages; one the team takes down goes within five minutes (the judge, 17 Nov)", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await phoneWithFriends(browser, "Ann");
