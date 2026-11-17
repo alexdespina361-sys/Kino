@@ -3579,3 +3579,170 @@ test.describe("the chat's panel of titles, GIFs and stickers", () => {
     await expect(ann.page.getByTestId("chat-sheet")).toHaveCount(0);
   });
 });
+
+/** The saved pictures the server keeps of `page`'s profile (its keys, sorted: the server keeps them in no order of its own). */
+async function savedOnServer(page: Page): Promise<string[]> {
+  const answer = (await (await page.request.post(`/api/profiles/${await profileOf(page)}/sync`, { data: { since: 0 } })).json()) as { saved?: Array<{ key: string; deleted?: true }> };
+  return (answer.saved ?? [])
+    .filter((item) => !item.deleted)
+    .map((item) => item.key)
+    .sort();
+}
+
+/** A message held on the phone, as a finger does (the list let rest first: a press just after it scrolled holds nothing, ChatLines.tsx `SCROLL_REST_MS`). */
+async function hold(page: Page, line: ReturnType<Page["getByTestId"]>) {
+  const bubble = line.getByTestId("chat-bubble");
+  await bubble.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await bubble.click({ delay: 650 });
+}
+
+test.describe("saved GIFs and stickers", () => {
+  test("on the phone: Save on a held GIF or sticker, anybody's, puts it first in its tab (a note says which), apart from KLIPY's grid and not in a search; a press there sends it; Remove from saved and Edit's cross let it go; the server keeps them, and another screen of the profile has them", async ({ browser }) => {
+    test.setTimeout(200_000);
+    const { ann, bob } = await twoFriends(browser);
+    await fakeKlipy(ann.page);
+    await fakeKlipy(bob.page);
+    await writes(bob.page, ann.page, gifAddress("t2"));
+    await writes(bob.page, ann.page, "\u{1F37F}");
+    await openChat(ann.page);
+    await expect(lines(ann.page)).toHaveCount(2);
+    const save = ann.page.getByTestId("chat-picture-save");
+    const note = ann.page.getByTestId("chat-saved-note");
+
+    // Bob's GIF, then his sticker: each saved, the note saying where it is, the selection let go
+    await hold(ann.page, lines(ann.page).nth(0));
+    await expect(save).toHaveAttribute("aria-label", en["chat.pictureSave"]);
+    await save.click();
+    await expect(note).toHaveText(en["chat.savedGifNote"]);
+    await expect(save, "the selection went").toHaveCount(0);
+    await hold(ann.page, lines(ann.page).nth(1));
+    await save.click();
+    await expect(note).toHaveText(en["chat.savedStickerNote"]);
+    await expect.poll(() => savedOnServer(ann.page), SOON).toEqual([`gif:${gifAddress("t2")}`, "sticker:popcorn"].sort());
+
+    // the GIFs' tab: Saved first, a grid of its own; KLIPY's Trending after it under its heading, all of it in its order; a search is KLIPY's answer alone
+    const panel = await openPanel(ann.page, "gifs");
+    const saved = panel.getByTestId("chat-saved-pick");
+    await expect(panel.getByTestId("chat-saved-gifs")).toBeVisible();
+    await expect(saved).toHaveCount(1);
+    expect(await srcs(saved)).toEqual([gifAddress("t2")]);
+    const picks = panel.getByTestId("chat-gif-pick");
+    await expect(picks).toHaveCount(3);
+    expect(await srcs(picks)).toEqual(["t1", "t2", "t3"].map(gifAddress));
+    expect((await where(saved.first())).y, "Saved is over Trending").toBeLessThan((await where(picks.first())).y);
+    expect(await outsideTheScreen(ann.page, "chat-sheet", false)).toEqual([]);
+    await panel.getByTestId("chat-gif-search").fill("cat");
+    await expect(picks).toHaveCount(1);
+    await expect(panel.getByTestId("chat-saved-gifs")).toHaveCount(0);
+    await panel.getByTestId("chat-gif-search").fill("");
+    await expect(saved).toHaveCount(1);
+    // a press sends it, as any GIF of the grid
+    await saved.first().click();
+    await expect(panel).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(3);
+    await expect(lines(ann.page).nth(2).getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t2"));
+
+    // the Stickers tab: Saved first, then Kino's under their heading
+    await openPanel(ann.page, "stickers");
+    const savedStickers = panel.getByTestId("chat-saved-stickers");
+    await expect(savedStickers.getByTestId("chat-saved-pick")).toHaveAttribute("data-saved", "sticker:popcorn");
+    await expect(panel.getByRole("heading", { name: en["chat.stickersBuiltIn"] })).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+
+    // one's own GIF that is saved says Remove from saved; the sticker let go from its message
+    await hold(ann.page, lines(ann.page).nth(2));
+    await expect(save).toHaveAttribute("aria-label", en["chat.pictureUnsave"]);
+    await ann.page.keyboard.press("Escape");
+    await hold(ann.page, lines(ann.page).nth(1));
+    await expect(save).toHaveAttribute("aria-label", en["chat.pictureUnsave"]);
+    await save.click();
+    await expect(note).toHaveText(en["chat.unsavedNote"]);
+    await openPanel(ann.page, "stickers");
+    await expect(savedStickers).toHaveCount(0);
+
+    // Edit's cross lets the GIF go: the picture waits while it is shown, and KLIPY's grid stays as it was
+    await openPanel(ann.page, "gifs");
+    await panel.getByTestId("chat-saved-edit").click();
+    await expect(saved.first()).toBeDisabled();
+    await panel.getByTestId("chat-saved-remove").click();
+    await expect(panel.getByTestId("chat-saved-gifs")).toHaveCount(0);
+    await expect(picks).toHaveCount(3);
+    await expect.poll(() => savedOnServer(ann.page), SOON).toEqual([]);
+
+    // words have no Save
+    await ann.page.keyboard.press("Escape");
+    await write(ann.page, "hi");
+    await expect(lines(ann.page)).toHaveCount(4);
+    await hold(ann.page, lines(ann.page).nth(3));
+    await expect(ann.page.getByTestId("chat-reply")).toBeVisible();
+    await expect(save).toHaveCount(0);
+
+    // another screen of Bob's saved a GIF: his phone has it, once the server has told it
+    const sent = await bob.page.request.post(`/api/profiles/${await profileOf(bob.page)}/sync`, { data: { since: 0, saved: [{ key: `gif:${gifAddress("t3")}`, at: Date.now(), text: gifAddress("t3") }] } });
+    expect(sent.ok()).toBe(true);
+    await bob.page.reload();
+    await openChat(bob.page);
+    const theirs = await openPanel(bob.page, "gifs");
+    await expect(theirs.getByTestId("chat-saved-pick")).toHaveCount(1);
+    expect(await srcs(theirs.getByTestId("chat-saved-pick"))).toEqual([gifAddress("t3")]);
+  });
+
+  test("on a computer: Save on a sticker clicked with the right button; the saved ones come first in the Stickers tab, and the keys stay in the panel when Edit's cross lets the last one go", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "\u{1F37F}");
+    await writes(bob.page, ann.page, "\u{1F3AC}");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    const save = ann.page.getByTestId("chat-picture-save");
+    for (const at of [0, 1]) {
+      // (the list let rest first, as for a hold: a press just after it scrolled selects nothing)
+      await tvLines(ann.page).nth(at).getByTestId("chat-bubble").scrollIntoViewIfNeeded();
+      await ann.page.waitForTimeout(300);
+      await tvLines(ann.page).nth(at).getByTestId("chat-bubble").click({ button: "right" });
+      await expect(save).toHaveAttribute("aria-label", en["chat.pictureSave"]);
+      await save.click();
+      await expect(ann.page.getByTestId("tv-chat-saved-note")).toHaveText(en["chat.savedStickerNote"]);
+      await expect(ann.page.getByTestId("tv-chat-more"), "the keys go to the ⋯, as after any of these").toBeFocused();
+    }
+
+    await ann.page.getByTestId("tv-chat-panel-btn").click();
+    const panel = ann.page.getByTestId("tv-chat-panel");
+    await expect(panel).toHaveAttribute("data-tab", "stickers");
+    const saved = panel.getByTestId("chat-saved-pick");
+    await expect(saved).toHaveCount(2);
+    expect(await saved.evaluateAll((all) => all.map((one) => one.getAttribute("data-saved"))), "the one saved last first").toEqual(["sticker:clapper", "sticker:popcorn"]);
+    expect((await where(saved.first())).y, "Saved is over Kino's").toBeLessThan((await where(panel.getByTestId("chat-sticker-pick").first())).y);
+    expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
+    expect(await gridFaults(saved), "a square").toEqual([]);
+
+    // the keys: Edit, then a cross: they go on to the cross that takes its place; the last one gone, they are on the first thing under where it was, in the
+    // panel, and stay there (a cross taken away with the keys on it once left them nowhere, and the friend's page under the chat took them, the chat behind)
+    await panel.getByTestId("chat-saved-edit").focus();
+    await ann.page.keyboard.press("Enter");
+    await expect(panel.getByTestId("chat-saved-edit")).toHaveAttribute("aria-pressed", "true");
+    const crosses = panel.getByTestId("chat-saved-remove");
+    await expect(crosses).toHaveCount(2);
+    await crosses.first().focus();
+    await ann.page.keyboard.press("Enter");
+    await expect(saved).toHaveCount(1);
+    await expect(crosses.first()).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(panel.getByTestId("chat-saved-stickers")).toHaveCount(0);
+    const keysOn = () =>
+      ann.page.evaluate(() => {
+        const on = document.activeElement;
+        return on?.closest("[data-testid='tv-chat-panel']") && on.tagName === "BUTTON" ? "a button of the panel" : `${on?.tagName} ${on?.getAttribute("data-testid")}`;
+      });
+    await ann.page.waitForTimeout(600);
+    expect(await keysOn()).toBe("a button of the panel");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect.poll(() => savedOnServer(ann.page), SOON).toEqual([]);
+  });
+});

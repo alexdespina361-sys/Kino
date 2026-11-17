@@ -4,6 +4,22 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.9",
+    date: "2026-11-17",
+    en: [
+      "In a chat: hold a GIF or one of Kino's stickers and press Save; it comes first in its tab of the panel, on all your screens.",
+      "Saved ones are sent with one press; Edit removes them, or hold the message again and press Remove from saved.",
+    ],
+    ro: [
+      "În chat: ține apăsat pe un GIF sau pe un sticker Kino și apasă Salvează; apare primul în fila lui din panou, pe toate ecranele tale.",
+      "Cele salvate se trimit dintr-o apăsare; Editează le scoate, sau ține din nou mesajul și apasă Scoate din salvate.",
+    ],
+    it: [
+      "In una chat: tieni premuta una GIF o uno sticker di Kino e premi Salva; compare per primo nella sua scheda del pannello, su tutti i tuoi schermi.",
+      "Quelli salvati si inviano con un tocco; Modifica li toglie, oppure tieni di nuovo premuto il messaggio e premi Togli dai salvati.",
+    ],
+  },
+  {
     version: "0.4.8",
     date: "2026-11-17",
     en: [

@@ -113,7 +113,7 @@ const RETRY_MS = 10_000;
  * dozens of MB for one account. These are far above what anybody keeps (400 titles in the lists, or 500 ratings, of a kilobyte each use 60% and 75% of theirs), so they
  * only ever hold back a profile that is filled with text on purpose.
  */
-const BYTE_BUDGET: Record<CollectionName, number> = { progress: 192 * 1024, watched: 256 * 1024, list: 640 * 1024, listNames: 32 * 1024, ratings: 640 * 1024, settings: 64 * 1024 };
+const BYTE_BUDGET: Record<CollectionName, number> = { progress: 192 * 1024, watched: 256 * 1024, list: 640 * 1024, listNames: 32 * 1024, ratings: 640 * 1024, settings: 64 * 1024, saved: 32 * 1024 };
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString("base64url")}`;
@@ -834,6 +834,7 @@ export class AccountStore {
       listNames: answer("listNames") as SyncResponse["listNames"],
       ratings: answer("ratings") as SyncResponse["ratings"],
       settings: answer("settings") as SyncResponse["settings"],
+      saved: answer("saved") as SyncResponse["saved"],
     };
   }
 

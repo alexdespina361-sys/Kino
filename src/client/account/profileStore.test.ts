@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LIST, listOf, MAX_LISTS, type NormalizedMedia } from "../../shared";
+import { DEFAULT_LIST, listOf, MAX_LISTS, SyncRequestSchema, SyncResponseSchema, type NormalizedMedia } from "../../shared";
 import { AccountStore } from "../../server/accounts/store";
 import { MemoryPersistence } from "../../server/accounts/persistence";
 import { GUEST, ProfileStore, type StorageLike } from "./profileStore";
@@ -484,7 +484,7 @@ describe("signing in on a screen that was used as a guest", () => {
     const d = device(10_000_000);
     d.store.playbackStarted(film(1));
     d.store.openScope("pro_a");
-    d.store.accept({ rev: 4, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] }, new Map());
+    d.store.accept({ rev: 4, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], saved: [] }, new Map());
     d.advance(60_000);
     d.store.adoptGuest();
     expect(d.store.pending().request.progress).toHaveLength(1);
@@ -499,6 +499,74 @@ describe("signing in on a screen that was used as a guest", () => {
     d.store.openScope(GUEST);
     d.store.openScope("pro_a");
     expect(d.store.getSnapshot().progress).toEqual([]);
+  });
+});
+
+describe("the chat's saved pictures", () => {
+  const GIF = "https://static.klipy.com/ii/abc/de/sm/x.webp";
+
+  it("keeps them newest first, a saved one saved again comes first, and one let go is gone", () => {
+    const d = device(1_000_000);
+    d.store.setSaved("sticker:popcorn", "\u{1F37F}");
+    d.advance(1000);
+    d.store.setSaved(`gif:${GIF}`, GIF);
+    expect(d.store.getSnapshot().saved.map((item) => item.key)).toEqual([`gif:${GIF}`, "sticker:popcorn"]);
+    d.advance(1000);
+    d.store.setSaved("sticker:popcorn", "\u{1F37F}");
+    expect(d.store.getSnapshot().saved.map((item) => item.key)).toEqual(["sticker:popcorn", `gif:${GIF}`]);
+    d.advance(1000);
+    d.store.setSaved(`gif:${GIF}`, undefined);
+    expect(d.store.getSnapshot().saved.map((item) => item.key)).toEqual(["sticker:popcorn"]);
+  });
+
+  it("refuses what the server would refuse (and the whole exchange with it)", () => {
+    const d = device(1_000_000);
+    d.store.setSaved(`gif:${"x".repeat(400)}`, "x");
+    d.store.setSaved("sticker:popcorn", "");
+    d.store.setSaved("sticker:popcorn", "y".repeat(401));
+    expect(d.store.getSnapshot().saved).toEqual([]);
+    expect(d.store.pending().request.saved).toEqual([]);
+  });
+
+  it("goes along to another screen through the server, a removal too, and a copy kept before there were saved pictures reads as none", async () => {
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => Date.now() });
+    const created = accounts.createAccount("s@example.com", "hash");
+    if (!created.ok) throw new Error("no account");
+    const profile = accounts.profilesOf(created.value.id)[0]!;
+    // (Through the schemas, as the route and the page read them.)
+    const sync = (d: ReturnType<typeof device>) => {
+      const { request, sent } = d.store.pending();
+      d.store.accept(SyncResponseSchema.parse(accounts.sync(profile.id, SyncRequestSchema.parse(request))), sent);
+    };
+    const old = new MemoryStorage();
+    old.setItem(`kino.data.${profile.id}`, JSON.stringify({ v: 1, data: { progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] }, rev: 0, dirty: [] }));
+    const tv = device(Date.now() - 100_000, old);
+    const phone = device(Date.now() - 100_000);
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+    expect(tv.store.getSnapshot().saved).toEqual([]);
+
+    phone.store.setSaved(`gif:${GIF}`, GIF);
+    phone.advance(10);
+    phone.store.setSaved("sticker:heart", "\u{2764}\u{FE0F}");
+    sync(phone);
+    sync(tv);
+    expect(tv.store.getSnapshot().saved.map((item) => item.key)).toEqual(["sticker:heart", `gif:${GIF}`]);
+
+    tv.advance(5000);
+    tv.store.setSaved(`gif:${GIF}`, undefined);
+    sync(tv);
+    sync(phone);
+    expect(phone.store.getSnapshot().saved.map((item) => item.key)).toEqual(["sticker:heart"]);
+  });
+
+  it("is read by a page that came before it without failing, and the server leaves out one that cannot be read", () => {
+    const answer = { rev: 3, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], saved: [{ key: "sticker:popcorn", at: 1, text: "\u{1F37F}" }, { key: "words:hi", at: 2, text: "hi" }, { nonsense: true }] };
+    expect(SyncResponseSchema.parse(answer).saved).toEqual([{ key: "sticker:popcorn", at: 1, text: "\u{1F37F}" }]);
+    const { saved: _none, ...before } = answer;
+    expect(SyncResponseSchema.parse(before).saved).toEqual([]);
+    expect(SyncRequestSchema.parse({ since: 0 }).saved).toEqual([]);
+    expect(SyncRequestSchema.safeParse({ since: 0, saved: [{ key: "words:hi", at: 1, text: "hi" }] }).success).toBe(false);
   });
 });
 
