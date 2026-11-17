@@ -1,0 +1,58 @@
+Kino's chat stickers (public/stickers/*.webp)
+
+The pictures are Microsoft's Fluent Emoji, 3D style, from https://github.com/microsoft/fluentui-emoji
+(branch main at commit 1ffb34c752ecf5d402f04cfb4b392c77f57c54bc, fetched 17 Nov 2026), scaled to 192 x 192 and saved as WebP (ffmpeg libwebp, quality 82).
+Their licence is MIT, copied below.
+
+popcorn.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Popcorn/3D/popcorn_3d.png  (png sha256 28ef7634d377bd78856b9ce45ba252e4455bf82988ce7e468a89042a4d805f6c; webp sha256 caa136e1b4c599460cc5dd559e0a121edea87cc6d4d4ad6450c852c412639d4e)
+clapper.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Clapper%20board/3D/clapper_board_3d.png  (png sha256 1a6e2d6681865c8834b29576398f82045b170177e4e745d7bce210e80cc98561; webp sha256 9c75b4d2c08e683ed2bb749d3441f625b5ad0b070493d2c051012fc488824702)
+camera.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Movie%20camera/3D/movie_camera_3d.png  (png sha256 1a62dfdbca5a6a9e90aeacd9a0b3781ff588f4cb96025155fb55829f4020dd0c; webp sha256 29a1d164980e1efca95496ee553220b8ed6b45ba5da272b042df1d4eb9f46721)
+tv.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Television/3D/television_3d.png  (png sha256 a6b7ba810428f99aed9c59b89ce16727ee61d3b61b2434977a0836ef6a7c12f2; webp sha256 0a8992ef7ad8129af5bfdae7596d69b5ee73b9f0ea0e8049b726076d451951af)
+tickets.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Admission%20tickets/3D/admission_tickets_3d.png  (png sha256 e9b2b406070c40ec04f03ef3e5b8f6ce3cdef642e9fe25d4570af3514827f3fa; webp sha256 54ccadb08a51032852906a58c5d75ff4d79797361dfbc00021f312d1ea2d33e1)
+couch.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Couch%20and%20lamp/3D/couch_and_lamp_3d.png  (png sha256 8b1cd45d95963e750c58f5a97c15a9d2cc6e30794a94ba5fdbffa259c689350f; webp sha256 68820b6c054d060f1713239ecfa022ce3e91ade5aeec07f15cc0b69cc2492e77)
+joy.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Face%20with%20tears%20of%20joy/3D/face_with_tears_of_joy_3d.png  (png sha256 8af20fb0c64c44a8d8c8d047c1410c5e529a37c3158d496832b380198ed2e9c3; webp sha256 693a7948c3111276f70996b1e9b9a3b527fa4b8a7edf1a2da83682bfe0fbfcc8)
+rofl.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Rolling%20on%20the%20floor%20laughing/3D/rolling_on_the_floor_laughing_3d.png  (png sha256 22ebfd950c4df297e784babe1e31bc1713144615f78cb0262c8dc2ce0da90ca0; webp sha256 615dbaf022e78c5c0b5b1283ec6b25f98d43ce69df5665f0fad193e4e5f99cd4)
+heart-eyes.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Smiling%20face%20with%20heart-eyes/3D/smiling_face_with_heart-eyes_3d.png  (png sha256 2b5ab00dd73673faa86463eac8787b7fc366935c4d82a54451df33443190b9cc; webp sha256 272980b7519685150849188a0b581721e0471483da009f5bd406ea65a6f79679)
+star-struck.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Star-struck/3D/star-struck_3d.png  (png sha256 89a14e242892cbe067095b75eb51cd55692841bceb384a45a90f8f3f8b9b2e9b; webp sha256 7d3a9e9a5d945c36e56dcdee0ebfe6c921dbf16f9032071a75df4bf4cdb44014)
+scream.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Face%20screaming%20in%20fear/3D/face_screaming_in_fear_3d.png  (png sha256 fe82efcca47346ff85d85b6e947f9c70dcb9e8ba463b1900053b23f1faf37789; webp sha256 fc37dd2ec2491774ce16aa9b6f94415f9cc6d8b77665a9a0d57c73297754afa9)
+sob.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Loudly%20crying%20face/3D/loudly_crying_face_3d.png  (png sha256 9e7b740110d12731e7416c8958b88bfadd75e0e7121ab0245e581e8f70491e02; webp sha256 976367f10b92fe25cdeead10ce96833216b244da4a38e9479137986c2e2c4053)
+mind-blown.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Exploding%20head/3D/exploding_head_3d.png  (png sha256 a915d5b325dbe3130fed54ebaf793777ab88b54c130560f8f3c17ad1af2bcdaf; webp sha256 aa856542b5855c0426ec03eac5809ffac03eedce990083cc8eb7b8c7cef01888)
+thinking.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Thinking%20face/3D/thinking_face_3d.png  (png sha256 cd29da5c3886e1e25726d3cf6ff79faa2f0d631b1c0873b115be287d358fc4be; webp sha256 db186d1a405596d5d487efdb6f795e9f714f7156396920eac674ebf46ed058a5)
+yawn.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Yawning%20face/3D/yawning_face_3d.png  (png sha256 3a6f9f61b703d0a21c67eeabde6771fd8916ed18e3c49f96942675b76e566a7a; webp sha256 845706a2c11c09a05d98466272addf3d319c60b1ccde034347d914a658dd1c77)
+sleeping.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Sleeping%20face/3D/sleeping_face_3d.png  (png sha256 c7d1cd5d04ae7214b6ae92b9802b6c860729c755da0020ccec22c7c8171f18fa; webp sha256 15e1bb77bcb94d9d26b3bc7b758e4c70656ef787ebf958ecab788f05e1b3753f)
+pleading.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Pleading%20face/3D/pleading_face_3d.png  (png sha256 7dfc89c51118f0adecf886063b5eafce140a613075394ebe22ed9dd2bd9e9c4f; webp sha256 412affc169d02fde76a924d9d23f969e20162e7f49d05a16d5828e31dea18bff)
+ghost.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Ghost/3D/ghost_3d.png  (png sha256 2a07c00a4af13532717a201e201b7219f02ce91232ea86abd7e74cbf1b5fb42f; webp sha256 fb2e5ab00ef4102e01cff0f47dc8a93f2e6c3ae3fd8503cf75002acd88b68b42)
+skull.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Skull/3D/skull_3d.png  (png sha256 9920d9e79017306b7af9eef09117070ff7fde28d7711fdb4861c14c446b5bf45; webp sha256 4ba7cf3ea4333d9596e6d40aedf9f8f07813aa8b9ac3caaf147297b49a290b74)
+fire.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Fire/3D/fire_3d.png  (png sha256 d56355132d73df1741edcf37cb4e21ad54f1c46eeb76fa17224607abf4128c3f; webp sha256 41efdfad935a3fad05e38d0b6a93fda66cb22b054ba7bcd1e761ffb1706bd482)
+heart.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Red%20heart/3D/red_heart_3d.png  (png sha256 7218cb9f08ed1ef38fcd83fe699a1125d07f50725f4c87a68cb7c9f4efb3c32b; webp sha256 04c94dae3bf8c143743fdaf489bd9bb4e1de6940067c3f00869f3a42886e552b)
+thumbs-up.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Thumbs%20up/Default/3D/thumbs_up_3d_default.png  (png sha256 a48dbe89a1a16969593db76f5bec45e9e537e0f090e7609caa8d9a3ff598d1d2; webp sha256 04c7a000596759c65fce6a6f7befa08aaa6bbff043402167266fbc953d4d0460)
+clap.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Clapping%20hands/Default/3D/clapping_hands_3d_default.png  (png sha256 54075bd39fd3e1860ba39898d73e61096c0e0e633ac5e9840beefddaf1d75113; webp sha256 8d6fb94592b920676c1e2bb017d1df85ecfbd1dd0e528e760b62d3485cc2c263)
+party.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Party%20popper/3D/party_popper_3d.png  (png sha256 70a8e2f9daf1646be9e773751b7f3b6b281a2415cf29c3c3aeebd9c923cdc3e0; webp sha256 e672cdab30cd5c0a11b4f084a89b12f2de57a68728107a3de83d1ba1da7a1625)
+wave.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Waving%20hand/Default/3D/waving_hand_3d_default.png  (png sha256 fd8d684a2dd4bca71b53eea530ffa226fdd9a17a50b9bebec2788447477f0d39; webp sha256 789210eb42b8a124b4344064db4ee040e2bf18d2b38203fc30c143ee08ecf36e)
+alarm.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Alarm%20clock/3D/alarm_clock_3d.png  (png sha256 1aa6929e1baa440db535fd321868dc76ddd888bf3e4f4333d37800ff2ec41c74; webp sha256 c91b9e71039fed7f549c2c9036b25b7d91196d2f179c1791c603c9c7c52ae851)
+pizza.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Pizza/3D/pizza_3d.png  (png sha256 beb2d1ac000003d96711ea8364815641442523285fa59007dd5b589059c74b9a; webp sha256 19029319c7a4d5af333c1aec96c503fc2e0d76ebee4480b142e954eab1bcda71)
+eyes.webp  from https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Eyes/3D/eyes_3d.png  (png sha256 b3049f399cb0947b423610f5876077efa86bc640fba5cb9d138b149773d4c793; webp sha256 e044fe3b2f335e83c9f240de007af15b059a70d949c82eb49e796e3ffbdceece)
+
+----- LICENSE (github.com/microsoft/fluentui-emoji) -----
+
+    MIT License
+
+    Copyright (c) Microsoft Corporation.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE

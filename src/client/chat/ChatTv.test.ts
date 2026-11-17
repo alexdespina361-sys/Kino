@@ -47,6 +47,34 @@ describe("the chat on the TV", () => {
     }
   });
 
+  it("shows a sticker's emoji sent alone as the sticker, on a child's profile too; words with the emoji in them stay words, and a report shows the emoji as it was sent", () => {
+    const html = read({ session: fakeSession({ state: { lines: [line(1, false, "\u{1F37F}"), line(2, true, " \u{2764} "), line(3, false, "\u{1F37F} tonight?")] } }) });
+    expect(count(html, "chat-sticker")).toBe(2);
+    expect(tagOf(html, "chat-sticker")).toContain('src="/stickers/popcorn.webp"');
+    expect(tagOf(html, "chat-sticker")).toContain('alt="\u{1F37F}"');
+    expect(html).toContain('src="/stickers/heart.webp"');
+    expect(html).toContain("\u{1F37F} tonight?");
+    expect(html.split("chat-bubble chat-bubble-sticker").length - 1, "no bubble around them").toBe(2);
+    profileStore.setSetting("child", true);
+    try {
+      expect(count(read({ session: fakeSession({ state: { lines: [line(1, false, "\u{1F37F}")] } }) }), "chat-sticker")).toBe(1);
+    } finally {
+      profileStore.setSetting("child", undefined);
+    }
+    const report = renderToStaticMarkup(createElement(ReportTv, { name: "Sam", report: fakeReport({ stage: "preview", preview: { rev: 1, lines: [line(1, false, "\u{1F37F}")] } }), now: NOW }));
+    expect(has(report, "chat-sticker")).toBe(false);
+    expect(report).toContain("\u{1F37F}");
+  });
+
+  it("has the sticker button nearest the box on every screen, a TV that is only a remote too", () => {
+    for (const screen of [{}, { desk: true }, { narrow: true }]) {
+      const html = read({ ...screen, onPickTitle: () => {}, onPickSticker: () => {} });
+      expect(tagOf(html, "tv-chat-sticker-btn"), JSON.stringify(screen)).toContain("data-nav");
+      expect(html.indexOf('data-testid="tv-chat-title-btn"')).toBeLessThan(html.indexOf('data-testid="tv-chat-sticker-btn"'));
+    }
+    expect(has(read(), "tv-chat-sticker-btn")).toBe(false);
+  });
+
   it("on a TV, the box at the bottom opens the page that writes, and shows what was typed and not sent", () => {
     expect(read()).toContain("Write a message");
     expect(read({ draft: "See you at eight" })).toContain("See you at eight");

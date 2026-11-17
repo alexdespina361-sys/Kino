@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormE
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, MoreIcon, SendIcon, ShieldIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, MoreIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
@@ -13,6 +13,8 @@ import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
 import { gifOf } from "./gifs";
 import { GifPickTv } from "./GifPick";
+import { StickerPickTv } from "./StickerPick";
+import { stickerOf } from "./stickers";
 import { afterSent, cutTo, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
@@ -63,12 +65,15 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   const [gifPicking, setGifPicking] = useState(false);
   const gifKey = useGifKey();
   const gifs = (desk || narrow) && gifKey ? gifKey : null;
+  /** The page of stickers is open (see StickerPick.tsx): on every screen, a TV that is only a remote too (they are picked, not typed). */
+  const [stickerPicking, setStickerPicking] = useState(false);
   /** What has been typed and not sent stays while the chat is open: Back from the writing does not lose it. */
   const [draft, setDraft] = useState("");
 
   if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} />;
   if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
   if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
+  if (stickerPicking && !whyNotWrite(session)) return <StickerPickTv name={name} session={session} narrow={narrow} onBack={() => setStickerPicking(false)} />;
   if (writing) {
     return (
       <WriteTv
@@ -102,6 +107,7 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       onWrite={() => setWriting(true)}
       onPickTitle={() => setPicking(true)}
       {...(gifs ? { onPickGif: () => setGifPicking(true) } : {})}
+      onPickSticker={() => setStickerPicking(true)}
       onClose={onClose}
       onOpenTitle={onOpenTitle}
     />
@@ -124,6 +130,7 @@ export function ReadTv({
   onWrite,
   onPickTitle,
   onPickGif,
+  onPickSticker,
   onClose,
   onOpenTitle,
 }: {
@@ -145,6 +152,8 @@ export function ReadTv({
   onPickTitle?: (() => void) | undefined;
   /** The button beside it that sends a GIF (none: the site has no KLIPY key, or the screen only has a remote). */
   onPickGif?: (() => void) | undefined;
+  /** The button nearest the box, that sends a sticker (none: no such button). */
+  onPickSticker?: (() => void) | undefined;
   onClose: () => void;
   onOpenTitle?: ((item: LibraryItem) => void) | undefined;
 }) {
@@ -295,6 +304,11 @@ export function ReadTv({
                   <GifIcon />
                 </button>
               )}
+              {onPickSticker && (
+                <button type="button" className="tv-chat-title-btn tv-chat-sticker-btn-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-nav data-testid="tv-chat-sticker-btn">
+                  <StickerIcon />
+                </button>
+              )}
               {desk || narrow ? (
                 // A computer or a hand-held screen: the box itself, Enter sends.
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
@@ -397,7 +411,7 @@ export function WriteTv({
       <h1 className="tv-headline tv-headline-small">{t("chat.writeTitle", { name })}</h1>
       {last && (
         <p className="tv-chat-quote" data-testid="tv-chat-quote">
-          <b>{last.mine ? t("chat.you") : name}</b> {gifOf(last.text) ? t("chat.gifAlt") : last.text}
+          <b>{last.mine ? t("chat.you") : name}</b> {gifOf(last.text) ? t("chat.gifAlt") : stickerOf(last.text) ? t("chat.stickerSaid", { emoji: last.text.trim() }) : last.text}
         </p>
       )}
       <form className="profile-editor profile-editor-tv list-editor-tv chat-editor-tv" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-form">

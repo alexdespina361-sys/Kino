@@ -323,6 +323,15 @@ export const GifIcon = (props: Props) => (
   </Icon>
 );
 
+/** A sticker with its corner peeled up and a smile on it: the chat's button that sends one (chat/StickerPick.tsx). */
+export const StickerIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M20 12.5V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h5.5z" />
+    <path d="M12.5 20v-3.5a4 4 0 0 1 4-4H20" />
+    <path d="M9 9.5h.01M14.5 9.5h.01M8.6 13.3a4 4 0 0 0 3.2 1.5" />
+  </Icon>
+);
+
 /** A face with a wide grin: cartoons. */
 export const CartoonIcon = (props: Props) => (
   <Icon {...props}>

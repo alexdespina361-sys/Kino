@@ -40,7 +40,9 @@ export function pickNeighbour(boxes: Box[], from: number, direction: Direction):
   const ahead = candidates.filter((candidate) => candidate.ahead);
   if (ahead.length > 0) {
     const nearest = Math.min(...ahead.map(({ gap }) => gap));
-    return ahead.filter(({ gap }) => gap < nearest + extent / 2).reduce((a, b) => (b.across < a.across ? b : a)).index;
+    // (Of those as much in line, the nearest: Left from a wide box lands on the button next to it, not on the first of a row of buttons of one size.)
+    const better = (a: (typeof ahead)[number], b: (typeof ahead)[number]) => b.across < a.across - 0.5 || (Math.abs(b.across - a.across) <= 0.5 && b.gap < a.gap);
+    return ahead.filter(({ gap }) => gap < nearest + extent / 2).reduce((a, b) => (better(a, b) ? b : a)).index;
   }
   return candidates.reduce((a, b) => (b.along + b.across * 3 < a.along + a.across * 3 ? b : a)).index;
 }

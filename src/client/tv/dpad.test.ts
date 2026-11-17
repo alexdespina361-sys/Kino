@@ -58,6 +58,16 @@ describe("pickNeighbour", () => {
     expect(pickNeighbour(sides, 0, "down")).toBe(1);
     expect(pickNeighbour(sides, 1, "up")).toBe(0);
   });
+
+  it("from a wide box, lands on the button next to it, not on the first of a row of buttons of one size (the chat's box and its round buttons)", () => {
+    const row = [box(0, 0, 4, 4), box(6, 0, 4, 4), box(12, 0, 4, 4), box(18, 0, 60, 4)];
+    expect(pickNeighbour(row, 3, "left")).toBe(2);
+    expect(pickNeighbour(row, 2, "left")).toBe(1);
+    expect(pickNeighbour(row, 0, "right")).toBe(1);
+    // (and in line still counts first: a button a little lower, though nearer, loses to one in line)
+    const offLine = [box(0, 0, 4, 4), box(12, 2, 4, 4), box(18, 0, 60, 4)];
+    expect(pickNeighbour(offLine, 2, "left")).toBe(0);
+  });
 });
 
 describe("pickInRows", () => {
