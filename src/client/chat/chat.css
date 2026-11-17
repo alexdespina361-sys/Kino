@@ -480,9 +480,11 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-window { width: 100%; height: auto; max-height: none; }
   .tv-chat-window > .chat-lines { max-height: 50vh; font-size: 1.4em; }
   .tv-chat-name { font-size: 1.7em; }
-  /* (the ⋯ as wide as the screen allows, its lines wrapping: "Reacționează la ultimul mesaj al lui <a long name>" is wider than the narrowest phone) */
-  .tv-chat-menu { min-width: 0; max-width: calc(100vw - 2rem); }
-  .tv-chat-menu button { font-size: 1.25em; white-space: normal; overflow-wrap: anywhere; }
+  /* (the ⋯ as wide as what it says, and at most as the screen allows, its lines wrapping then: "Reacționează la ultimul mesaj al lui <a long name>" is wider
+     than the narrowest phone. As wide as what it says is said outright: it hangs from the ⋯, which is a button wide, and a box that may break its words
+     anywhere was made no wider than that, a letter to a line: the owner, 17 Nov.) */
+  .tv-chat-menu { min-width: 0; width: max-content; max-width: calc(100vw - 2rem); }
+  .tv-chat-menu button { font-size: 1.25em; white-space: normal; overflow-wrap: break-word; }
   .tv .chat-lines { width: 100%; max-height: 38vh; font-size: 1.5em; }
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }

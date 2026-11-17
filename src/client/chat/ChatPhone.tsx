@@ -8,7 +8,7 @@ import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
 import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
 import { StickerPickSheet } from "./StickerPick";
-import { afterSent, keepTheBox, MessageBox } from "./MessageBox";
+import { afterSent, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { CHAT_FACTS } from "./state";
 import { TitlePickSheet } from "./TitlePick";
@@ -131,6 +131,7 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
   useEffect(() => {
     if (text === "") setTools(false);
   }, [text]);
+  const unfold = useUnfold(tools, () => setTools(true));
   const input = useRef<HTMLDivElement>(null);
   const checked = checkChatText(text);
 
@@ -148,12 +149,12 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
   const folded = text !== "" && !tools;
   return (
     <form className="chat-compose" onSubmit={(event) => void submit(event)} noValidate data-testid="chat-compose">
-      <div className="chat-pill" data-testid="chat-pill">
+      <div className="chat-pill" ref={unfold.bar} data-testid="chat-pill">
         {folded ? (
           <button
             type="button"
             className="chat-title-btn"
-            onClick={() => setTools(true)}
+            onClick={unfold.press}
             onMouseDown={keepTheBox}
             aria-label={t("chat.moreToSend")}
             aria-expanded={false}

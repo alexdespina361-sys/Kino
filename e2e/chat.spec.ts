@@ -1027,6 +1027,13 @@ test.describe("the chat on the TV", () => {
       await page.getByTestId("tv-chat-more").click();
       await expect(page.getByTestId("tv-chat-report")).toBeVisible();
       await fits("tv-chat", "the chat with the ⋯ open");
+      // (and it is read in lines, not a letter to a line: it hangs from the ⋯, and on the owner's phone, 17 Nov, it was a column as wide as that button)
+      const menu = await page.getByTestId("tv-chat-menu").evaluate((box) => ({
+        width: box.getBoundingClientRect().width,
+        tall: [...box.querySelectorAll("button")].filter((button) => button.getBoundingClientRect().height > parseFloat(getComputedStyle(button).fontSize) * 5.5).map((button) => button.textContent),
+      }));
+      expect(menu.width, "the ⋯ is as wide as what it says").toBeGreaterThan(Math.min(200, screen.width - 40));
+      expect(menu.tall, "a line of the ⋯ that takes more than three lines").toEqual([]);
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("tv-chat-menu")).toBeHidden();
       await expect(page.getByTestId("tv-chat")).toBeVisible();
@@ -1130,8 +1137,11 @@ test.describe("a title sent in a chat", () => {
     await ann.page.getByTestId("chat-input").fill("half typed");
     // (with something typed the buttons are folded into one +, so the words have the bar; a press of it brings them back)
     await expect(ann.page.getByTestId("chat-title-btn")).toHaveCount(0);
-    await ann.page.getByTestId("chat-tools").click();
+    // (pressed with the keys, the + is gone under them: the first of the buttons it brought back has the focus, not nothing)
+    await ann.page.getByTestId("chat-tools").focus();
+    await ann.page.keyboard.press("Enter");
     await expect(ann.page.getByTestId("chat-tools")).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-title-btn")).toBeFocused();
     await ann.page.getByTestId("chat-title-btn").click();
     const picks = ann.page.getByTestId("chat-pick");
     await expect(picks).toHaveCount(2);
@@ -1395,6 +1405,7 @@ test.describe("stickers in a chat", () => {
     await ann.page.getByTestId("chat-send").click();
     await expect.poll(() => hold !== undefined).toBe(true);
     await ann.page.getByTestId("chat-tools").click(); // (the message is still in the box while it goes: the buttons are behind the +)
+    await expect(ann.page.getByTestId("chat-input"), "a finger's press of the + leaves the box the focus, and the keyboard up").toBeFocused();
     await ann.page.getByTestId("chat-sticker-btn").click();
     const picks = ann.page.getByTestId("chat-sticker-pick");
     await expect(picks.first()).toBeDisabled();

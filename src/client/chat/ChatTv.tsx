@@ -15,7 +15,7 @@ import { TitlePickTv } from "./TitlePick";
 import { GifPickTv } from "./GifPick";
 import { lastTheirs, ReactTv } from "./Reactions";
 import { StickerPickTv } from "./StickerPick";
-import { afterSent, cutTo, keepTheBox, MessageBox } from "./MessageBox";
+import { afterSent, cutTo, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
@@ -224,6 +224,7 @@ export function ReadTv({
   useEffect(() => {
     if (draft === "") setTools(false);
   }, [draft]);
+  const unfold = useUnfold(tools, () => setTools(true));
   const type = (text: string) => {
     setDraft(cutTo(text, CHAT_TEXT_MAX));
     setTools(false);
@@ -389,12 +390,12 @@ export function ReadTv({
                 // hand-held screen the bar is the screen's width, so while something is typed the buttons fold into one + (a press of it brings them back),
                 // and the words have the bar to themselves (the owner, 17 Nov: three round buttons left the box a column a few words wide).
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
-                  <div className="tv-chat-pill" data-testid="tv-chat-pill">
+                  <div className="tv-chat-pill" ref={unfold.bar} data-testid="tv-chat-pill">
                     {folded ? (
                       <button
                         type="button"
                         className="tv-chat-title-btn tv-chat-tools-btn"
-                        onClick={() => setTools(true)}
+                        onClick={unfold.press}
                         onMouseDown={keepTheBox}
                         aria-label={t("chat.moreToSend")}
                         aria-expanded={false}

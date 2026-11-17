@@ -238,3 +238,23 @@ export const MessageBox = forwardRef<HTMLDivElement | null, MessageBoxProps>(fun
 export function keepTheBox(event: { preventDefault: () => void; button?: number }) {
   if ((event.button ?? 0) === 0) event.preventDefault();
 }
+
+/**
+ * The + that brings back the buttons folded away while something is typed (`shown`: whether they are back; `show` brings them). Pressed with the keys it
+ * had the focus (a finger's or a mouse's press never gives it, see `keepTheBox`), and it is gone the moment it is pressed: the focus then goes to the first
+ * of the buttons that took its place in the bar (`bar`), not to nothing. Pressed with a finger, the box keeps it, and the keyboard stays up.
+ */
+export function useUnfold(shown: boolean, show: () => void) {
+  const bar = useRef<HTMLDivElement>(null);
+  const withKeys = useRef(false);
+  useEffect(() => {
+    if (!shown || !withKeys.current) return;
+    withKeys.current = false;
+    bar.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [shown]);
+  const press = (event: { currentTarget: Element }) => {
+    withKeys.current = document.activeElement === event.currentTarget;
+    show();
+  };
+  return { bar, press };
+}
