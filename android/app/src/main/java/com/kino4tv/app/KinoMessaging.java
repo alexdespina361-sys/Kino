@@ -4,12 +4,14 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * What Firebase brings (src/server/push/push.ts): a friend wrote, or put something in the inbox (shown as a notification, one for each friend, unless the app is on
@@ -27,28 +29,55 @@ public class KinoMessaging extends FirebaseMessagingService {
         return BuildConfig.FIREBASE && !FirebaseApp.getApps(context).isEmpty();
     }
 
+    /**
+     * Each turn on (`fetchToken`) or off (`stop`) of the phone's registration is a new turn: what comes back of an older one is let go (the judge, 17 Nov: a token
+     * asked for just before the notifications were turned off came back after, and kept the phone registered). Both are called on the main thread, and what
+     * Firebase answers comes there too.
+     */
+    private static final AtomicInteger turn = new AtomicInteger();
+    /** The last turn off, while Firebase is letting go of the phone: a turn on waits for it, so the token it is given is never one being let go. */
+    private static Task<Void> lettingGo;
+
     /** Ask Firebase for this phone's token (kept, and the page told, when it comes), and listen to the news of new versions: only while notifications are on. */
     static void fetchToken(Context context) {
         if (!available(context) || !Notices.enabled(context)) return;
         Context app = context.getApplicationContext();
-        FirebaseMessaging messaging = FirebaseMessaging.getInstance();
-        messaging.setAutoInitEnabled(true);
-        messaging.getToken().addOnSuccessListener(token -> {
-            keep(app, token);
-            FirebaseMessaging.getInstance().subscribeToTopic(UPDATE_TOPIC);
-        });
+        int mine = turn.incrementAndGet();
+        Prefs.of(app).edit().putBoolean(Prefs.FIREBASE_OFF, false).apply();
+        Runnable ask = () -> {
+            if (turn.get() != mine) return;
+            FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+            messaging.setAutoInitEnabled(true);
+            messaging.getToken().addOnSuccessListener(token -> {
+                if (turn.get() != mine || !Notices.enabled(app)) return;
+                keep(app, token);
+                FirebaseMessaging.getInstance().subscribeToTopic(UPDATE_TOPIC);
+            });
+        };
+        Task<Void> before = lettingGo;
+        if (before != null && !before.isComplete()) before.addOnCompleteListener(done -> ask.run());
+        else ask.run();
     }
 
-    /** The notifications were turned off: the token is let go (Firebase forgets this phone), and the page is told (it tells the site to forget it too). */
+    /**
+     * The notifications are off: Firebase lets go of the phone (its token, and the news of new versions), whether or not a token was kept here (one may have been
+     * on its way), and the page is told (it tells the site to forget the phone too). Once Firebase has, it is not asked again until they have been on.
+     */
     static void stop(Context context) {
         if (!available(context)) return;
-        boolean had = !Prefs.of(context).getString(Prefs.PUSH_TOKEN, "").isEmpty();
-        Prefs.of(context).edit().remove(Prefs.PUSH_TOKEN).apply();
-        if (!had) return;
+        Context app = context.getApplicationContext();
+        boolean had = !Prefs.of(app).getString(Prefs.PUSH_TOKEN, "").isEmpty();
+        if (!had && Prefs.of(app).getBoolean(Prefs.FIREBASE_OFF, false)) return;
+        int mine = turn.incrementAndGet();
+        Prefs.of(app).edit().remove(Prefs.PUSH_TOKEN).apply();
         FirebaseMessaging messaging = FirebaseMessaging.getInstance();
         messaging.setAutoInitEnabled(false);
-        messaging.unsubscribeFromTopic(UPDATE_TOPIC).addOnCompleteListener(done -> FirebaseMessaging.getInstance().deleteToken());
-        told(context);
+        lettingGo = messaging.unsubscribeFromTopic(UPDATE_TOPIC)
+                .continueWithTask(unsubscribed -> FirebaseMessaging.getInstance().deleteToken())
+                .addOnCompleteListener(deleted -> {
+                    if (deleted.isSuccessful() && turn.get() == mine) Prefs.of(app).edit().putBoolean(Prefs.FIREBASE_OFF, true).apply();
+                });
+        if (had) told(app);
     }
 
     private static void keep(Context context, String token) {

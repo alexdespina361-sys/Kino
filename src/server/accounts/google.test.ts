@@ -845,6 +845,8 @@ describe("signing in with Google from the Android app", () => {
     const url = new URL(where);
     expect(`${url.protocol}//${url.host}${url.pathname}`).toBe("intent://google");
     expect(url.hash.slice(1).split(";")).toEqual(["Intent", "scheme=kino4tv", "package=com.kino4tv.app", expect.stringMatching(/^S\.browser_fallback_url=https?%3A%2F%2F[^;%]+%2F(tv)?$/), "end"]);
+    // (and the start of the app's hash, which the app checks before it uses up its secret)
+    expect(url.searchParams.get("trip")).toMatch(/^[\w-]{16}$/);
     return url.searchParams.get("code") ?? "";
   };
 
@@ -854,6 +856,7 @@ describe("signing in with Google from the Android app", () => {
     const { tab, where } = await viaAppBrowser(app, `/api/auth/google/start?device=tv&next=%2Ftv&app=${challenge}`);
     const code = handoffOf(where);
     expect(code).toMatch(/^[\w-]{43}$/);
+    expect(new URL(where).searchParams.get("trip")).toBe(challenge.slice(0, 16));
     expect(await meOf(tab)).toBeNull(); // (the browser is not signed in)
 
     const webview = new Browser(app);

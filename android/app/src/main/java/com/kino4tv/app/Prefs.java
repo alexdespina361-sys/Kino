@@ -12,6 +12,8 @@ final class Prefs {
     static final String ASKED_NOTIFICATIONS = "push.asked";
     /** A page asked for the token (somebody is signed in): it is asked for again when the notifications are turned on. */
     static final String WANTS_PUSH = "push.wanted";
+    /** Firebase was told to forget this phone, and has (KinoMessaging.stop): it is not told again until the notifications have been on. */
+    static final String FIREBASE_OFF = "push.firebaseOff";
     static final String GOOGLE_VERIFIER = "google.verifier";
     static final String GOOGLE_ORIGIN = "google.origin";
     static final String GOOGLE_AT = "google.at";

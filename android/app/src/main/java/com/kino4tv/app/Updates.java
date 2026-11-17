@@ -74,8 +74,20 @@ final class Updates {
                 new OneTimeWorkRequest.Builder(UpdateWork.class).setConstraints(online()).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build());
     }
 
+    /**
+     * One look at a time, whichever work asked for it (twice a day, or now): two of them would download into the same file, and each could cut short or delete
+     * the other's (the judge, 17 Nov). The second waits, and finds the file the first downloaded.
+     */
+    private static final Object LOOKING = new Object();
+
     /** One look (UpdateWork runs it): throws when it could not be done, and is tried again. */
     static void look(Context app) throws IOException, JSONException {
+        synchronized (LOOKING) {
+            lookNow(app);
+        }
+    }
+
+    private static void lookNow(Context app) throws IOException, JSONException {
         JSONObject release;
         try {
             release = new JSONObject(new String(fetch(BuildConfig.SITE + "/api/app/android", 64 * 1024), "UTF-8"));

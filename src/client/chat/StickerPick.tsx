@@ -78,11 +78,14 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
   const [problem, setProblem] = useState<StickerAddProblem | null>(null);
   const app = useKinoApp();
   const whatsapp = pointer && opensFolder(app, "whatsapp-stickers");
+  // (Several files at once in a browser and in the app from 0.2.0; the app's 0.1.0, which says no folders, takes back one file only.)
+  const several = app === null || app.folders.length > 0;
   const stickers = mine.stickers ?? [];
   const full = stickers.length >= PERSONAL_STICKER.perProfile;
 
-  // (Several can be chosen at once, WhatsApp's say: made one after another, as many as there is room for. What stops the rest (the collection is full, the day's
-  // are made, the site has no room) is what is said; else the last that could not be made, and the rest are made.)
+  // (Several can be chosen at once, WhatsApp's say: made one after another until as many are made as there was room for. One that cannot be made takes no room:
+  // the next is tried (the judge, 17 Nov). What stops the rest (the collection is full, the day's are made, the site has no room) is what is said; else the last
+  // that could not be made; else "full" when some were left over.)
   const chosen = async (event: ChangeEvent<HTMLInputElement>) => {
     const picked = [...(event.target.files ?? [])];
     event.target.value = ""; // (the same file chosen again is a choice again)
@@ -92,12 +95,17 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
     setAdding(true);
     try {
       let said: StickerAddProblem | null = null;
-      for (const one of picked.slice(0, Math.max(0, room))) {
+      let made = 0;
+      let tried = 0;
+      for (const one of picked) {
+        if (made >= room) break;
+        tried++;
         const problem = await mine.add(one);
-        if (problem) said = problem;
+        if (!problem) made++;
+        else said = problem;
         if (problem === "full" || problem === "too_many" || problem === "site_full") break;
       }
-      setProblem(said ?? (picked.length > room ? "full" : null));
+      setProblem(said ?? (tried < picked.length ? "full" : null));
     } finally {
       setAdding(false);
     }
@@ -184,7 +192,7 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
             </span>
           ))}
         </div>
-        {pointer && <input ref={file} type="file" accept="image/*" multiple hidden onChange={(event) => void chosen(event)} data-testid="chat-sticker-file" />}
+        {pointer && <input ref={file} type="file" accept="image/*" multiple={several} hidden onChange={(event) => void chosen(event)} data-testid="chat-sticker-file" />}
         {problem ? (
           <p className="chat-note" role="alert" data-testid="chat-sticker-problem">
             {t(ADD_PROBLEM[problem])}

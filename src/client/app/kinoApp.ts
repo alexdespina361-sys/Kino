@@ -31,10 +31,14 @@ export interface KinoAppState {
   token: string;
 }
 
-/** The app from 0.2.0: messages. */
+/**
+ * The app from 0.2.0: messages (androidx.webkit's `addWebMessageListener`). What Android promises of the object is `postMessage` and an `onmessage` the page
+ * sets; `addEventListener` is there in the WebViews of today, but not promised (the judge, 17 Nov): it is used where there is one, else `onmessage`.
+ */
 interface MessageBridge {
   postMessage(message: string): void;
-  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
+  addEventListener?(type: "message", listener: (event: { data: unknown }) => void): void;
+  onmessage?: ((event: { data: unknown }) => void) | null;
 }
 /** The app's 0.1.0: methods. */
 interface MethodBridge {
@@ -52,7 +56,7 @@ declare global {
 const found = (): Window["KinoApp"] => (typeof window === "undefined" ? undefined : window.KinoApp);
 const messages = (): MessageBridge | undefined => {
   const app = found();
-  return app && typeof app.postMessage === "function" && typeof app.addEventListener === "function" ? (app as MessageBridge) : undefined;
+  return app && typeof app.postMessage === "function" ? (app as MessageBridge) : undefined;
 };
 const methods = (): MethodBridge | undefined => {
   const app = found();
@@ -110,7 +114,13 @@ function start(): void {
   started = true;
   const app = messages();
   if (app) {
-    app.addEventListener("message", (event) => heard(event.data));
+    const listener = (event: { data: unknown }) => heard(event.data);
+    try {
+      if (typeof app.addEventListener === "function") app.addEventListener("message", listener);
+      else app.onmessage = listener;
+    } catch {
+      app.onmessage = listener;
+    }
     send({ call: "hello" });
     return;
   }

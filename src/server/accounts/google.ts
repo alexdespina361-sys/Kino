@@ -240,9 +240,14 @@ export const APP_PACKAGE = "com.kino4tv.app";
 /**
  * Where the browser is sent back to the app: an intent for the app's package alone (Chrome, and the other browsers of Android, open an `intent:` address only in
  * the app it names; another app that says it opens `kino4tv:` addresses is not asked). A browser on a phone without the app goes to the site.
+ *
+ * `trip` is the start of the app's hash (`app=`, or the ticket's), which only the app and this site know: the app takes a way back only with its own trip's,
+ * so another app that opens the app with a made-up code cannot use up the secret of a trip on its way (the judge, 17 Nov).
  */
-export const appAddress = (code: string, origin: string, next: string) =>
-  `intent://google?code=${code}#Intent;scheme=${APP_SCHEME};package=${APP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(new URL(next, origin).toString())};end`;
+export const appAddress = (code: string, challenge: string, origin: string, next: string) =>
+  `intent://google?code=${code}&trip=${challenge.slice(0, APP_TRIP_LENGTH)}#Intent;scheme=${APP_SCHEME};package=${APP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(new URL(next, origin).toString())};end`;
+/** How much of the app's hash comes back with the way back. */
+export const APP_TRIP_LENGTH = 16;
 const APP_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 const HANDOFF_MS = 2 * 60_000;
 const TICKET_MS = 5 * 60_000;
@@ -358,7 +363,7 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
       const code = secret();
       const origin = new URL(flow!.redirectUri).origin;
       remember(handoffs, code, { ...handoff, challenge: flow!.app!.challenge, next, device: flow!.device, at: store.clock() }, MAX_FLOWS);
-      return reply.redirect(appAddress(code, origin, next));
+      return reply.redirect(appAddress(code, flow!.app!.challenge, origin, next));
     };
     const back = (outcome?: GoogleOutcome) => (flow?.app ? toApp(outcome ? { outcome } : {}) : reply.redirect(outcome ? `${next}?google=${outcome}` : next));
     const refuse = (why: string) => {

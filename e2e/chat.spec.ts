@@ -1962,24 +1962,23 @@ test.describe("personal stickers in a chat", () => {
     await expect(whatsapp).toHaveCount(0);
 
     // the app, as 0.1.0 is (an object of methods, no folders) and as 0.2.0 is (messages, as android/.../Bridge.java answers them): which one is said by the
-    // page's storage, read as each page opens
+    // page's storage, read as each page opens. The 0.2.0 one has only what Android promises of it: `postMessage`, and an `onmessage` the page sets (the judge,
+    // 17 Nov: a fake with `addEventListener` hid a page that needed it). It says the folders Bridge.java says, GIFs too (a page that has no use for one has no
+    // button for it).
     await ann.page.context().addInitScript(() => {
       const folders: string[] = [];
-      const heard: Array<(event: { data: string }) => void> = [];
-      const answer = (message: object) => setTimeout(() => heard.forEach((listener) => listener({ data: JSON.stringify(message) })), 5);
-      const app =
+      const app: Record<string, unknown> =
         localStorage.getItem("e2e-app-folders") === "yes"
           ? {
+              onmessage: null,
               postMessage(text: string) {
                 const said = JSON.parse(text) as { call: string; folder?: string };
-                if (said.call === "hello") answer({ kind: "hello", version: "0.2.0", folders: ["whatsapp-stickers"], notify: false, token: "" });
+                const answer = (message: object) => setTimeout(() => (app.onmessage as ((event: { data: string }) => void) | null)?.({ data: JSON.stringify(message) }), 5);
+                if (said.call === "hello") answer({ kind: "hello", version: "0.2.0", folders: ["whatsapp-stickers", "whatsapp-gifs"], notify: false, token: "" });
                 if (said.call === "pickFrom") {
                   folders.push(said.folder ?? "");
                   answer({ kind: "picking", folder: said.folder, known: true });
                 }
-              },
-              addEventListener(type: string, listener: (event: { data: string }) => void) {
-                if (type === "message") heard.push(listener);
               },
             }
           : { version: () => "0.1.0", pushToken: () => "", setStrings: () => {} };

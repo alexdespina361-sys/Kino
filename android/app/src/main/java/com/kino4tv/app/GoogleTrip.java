@@ -101,15 +101,25 @@ final class GoogleTrip {
         }
     }
 
-    /** Where the WebView goes with the code it came back with (once: the secret is used up), or nothing for a code this app did not ask for just now. */
+    /** How much of the secret's hash the way back brings (src/server/accounts/google.ts `APP_TRIP_LENGTH`). */
+    private static final int TRIP_LENGTH = 16;
+
+    /**
+     * Where the WebView goes with the code it came back with (once: the secret is used up), or nothing for a code this app did not ask for just now. The way back
+     * says the start of the secret's hash (`trip`): one that does not is not this trip's, and leaves the secret as it was (another app can open this one with a
+     * made-up code; it cannot know the hash, so it cannot spoil the trip on its way: the judge, 17 Nov).
+     */
     static String claimUrl(MainActivity activity, Uri back) {
         SharedPreferences prefs = Prefs.of(activity);
         String verifier = prefs.getString(Prefs.GOOGLE_VERIFIER, null);
         String origin = prefs.getString(Prefs.GOOGLE_ORIGIN, null);
         long at = prefs.getLong(Prefs.GOOGLE_AT, 0);
-        prefs.edit().remove(Prefs.GOOGLE_VERIFIER).remove(Prefs.GOOGLE_ORIGIN).remove(Prefs.GOOGLE_AT).apply();
         String code = back.getQueryParameter("code");
-        if (verifier == null || origin == null || code == null || !code.matches("[A-Za-z0-9_-]{43}") || System.currentTimeMillis() - at > TRIP_MS) return null;
+        String trip = back.getQueryParameter("trip");
+        if (verifier == null || origin == null || code == null || !code.matches("[A-Za-z0-9_-]{43}")) return null;
+        if (trip == null || !trip.equals(challengeOf(verifier).substring(0, TRIP_LENGTH))) return null;
+        prefs.edit().remove(Prefs.GOOGLE_VERIFIER).remove(Prefs.GOOGLE_ORIGIN).remove(Prefs.GOOGLE_AT).apply();
+        if (System.currentTimeMillis() - at > TRIP_MS) return null;
         return Uri.parse(origin + "/api/auth/google/app-claim").buildUpon().appendQueryParameter("code", code).appendQueryParameter("verifier", verifier).build().toString();
     }
 

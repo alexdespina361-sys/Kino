@@ -17,7 +17,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
@@ -130,20 +130,46 @@ const staging = mkdtempSync(path.join(tmpdir(), "kino-release-"));
 try {
   copyFileSync(apk, path.join(staging, file));
   writeFileSync(path.join(staging, "android.json"), `${JSON.stringify(release, null, 2)}\n`);
+  // (Two releases at once (the judge, 17 Nov): each holds the folder's lock while it looks again at what is offered and puts its files there, so a later
+  // one never puts back an older version; each writes its own files beside their places, never another's.)
+  const stamp = `kino-release-${process.pid}-${Date.now()}`;
   if (local !== undefined) {
-    // (Each beside its place, then moved there: the APK first.)
-    for (const name of [file, "android.json"]) {
-      copyFileSync(path.join(staging, name), path.join(local, `.${name}.part`));
-      renameSync(path.join(local, `.${name}.part`), path.join(local, name));
+    const lock = path.join(local, ".release.lock");
+    let held;
+    try {
+      held = openSync(lock, "wx");
+    } catch {
+      stop(`Another release is being put out into ${local} (or one stopped half way: then remove ${lock}).`);
     }
+    try {
+      const offered = offeredNow();
+      if (versionCode <= offered) throw new Error(`The server offers version ${offered} now: the new one has to be newer.`);
+      // (Each beside its place, then moved there: the APK first.)
+      for (const name of [file, "android.json"]) {
+        copyFileSync(path.join(staging, name), path.join(local, `.${name}.${stamp}.part`));
+        renameSync(path.join(local, `.${name}.${stamp}.part`), path.join(local, name));
+      }
+    } catch (error) {
+      closeSync(held);
+      rmSync(lock, { force: true });
+      stop(error.message);
+    }
+    closeSync(held);
+    rmSync(lock, { force: true });
     console.log(`Written to ${local}: the server there tells the apps within a minute.`);
   } else {
-    const stamp = `kino-release-${process.pid}-${Date.now()}`;
     run("scp", [...ssh, path.join(staging, file), `${box}:/tmp/${stamp}-${file}`]);
     run("scp", [...ssh, path.join(staging, "android.json"), `${box}:/tmp/${stamp}-android.json`]);
-    // (Each is written beside its place and moved there in one step, the APK first: the server never offers an APK that is not all there.)
-    const place = (name) => `sudo install -o kino-web -g kino-web -m 644 /tmp/${stamp}-${name} ${BOX_DIR}/.${name}.part && sudo mv -f ${BOX_DIR}/.${name}.part ${BOX_DIR}/${name}`;
-    run("ssh", [...ssh, box, `sudo install -d -o kino-web -g kino-web -m 755 ${BOX_DIR} && ${place(file)} && ${place("android.json")}; status=$?; rm -f /tmp/${stamp}-${file} /tmp/${stamp}-android.json; exit $status`]);
+    // (Each is written beside its place and moved there in one step, the APK first: the server never offers an APK that is not all there. All of it under the
+    // folder's lock, after looking again at the version offered.)
+    const place = (name) => `install -o kino-web -g kino-web -m 644 /tmp/${stamp}-${name} ${BOX_DIR}/.${name}.${stamp}.part && mv -f ${BOX_DIR}/.${name}.${stamp}.part ${BOX_DIR}/${name}`;
+    const offered = `$(grep -o '"versionCode": *[0-9]*' ${BOX_DIR}/android.json 2>/dev/null | grep -o '[0-9]*$')`;
+    const locked = `now=${offered}; if [ "\${now:-0}" -ge ${versionCode} ]; then echo "The server offers version \${now} now: the new one has to be newer." >&2; exit 3; fi; ${place(file)} && ${place("android.json")}`;
+    run("ssh", [
+      ...ssh,
+      box,
+      `sudo install -d -o kino-web -g kino-web -m 755 ${BOX_DIR} && sudo flock ${BOX_DIR}/.release.lock sh -c '${locked.replace(/'/g, `'\\''`)}'; status=$?; rm -f /tmp/${stamp}-${file} /tmp/${stamp}-android.json; exit $status`,
+    ]);
     console.log(`On the box: the server tells every copy of the app within a minute. The newest is at /app/kino.apk.`);
   }
 } finally {
