@@ -116,6 +116,13 @@ const MAX_PROBE_CACHE = 2000;
 export const MAX_PRELOADED_SEASONS = 2000;
 const preloadedSeasons = new Map<number, number[]>();
 const preloadedSeasonCounts = new Map<number, Record<number, number>>();
+/**
+ * The episodes of each season the video check last told of for a show, if it told: what the look-up of an episode (resolvers/adapters/filmpire.ts)
+ * goes by when its own check has no answer in time, so a part is played as the list cut it.
+ */
+export const playerSeasonCounts = (id: number): Record<number, number> | undefined => preloadedSeasonCounts.get(id);
+/** Notes down what the video check told of a show's seasons (see `playerSeasonCounts`). */
+export const rememberPlayerSeasons = (id: number, counts: Record<number, number>): void => void remember(preloadedSeasonCounts, id, counts, MAX_PRELOADED_SEASONS);
 export const knownTvIds = new Set<number>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 /** A film that came out this long ago or less is listed only once it has a home release (see `watchableNow`); an older one is taken to have one. */
@@ -590,6 +597,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     // (A check with no answer - no turn in time, a timeout, a bad answer - writes nothing down: the show is then cut as its last answer said.)
     const record = probeCache.get(`tv:${id}`);
     if (record && now() - record.checkedAt < PROBE_TTL_MS) {
+      if (record.status === 200 && record.seasonCounts) rememberPlayerSeasons(id, record.seasonCounts);
       const plan = planFrom(record.status === 200 ? record.seasonCounts : undefined, total);
       remember(plans, id, plan, MAX_PRELOADED_SEASONS);
       return plan;

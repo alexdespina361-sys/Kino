@@ -4,6 +4,22 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.15",
+    date: "2026-11-17",
+    en: [
+      "An anime that cannot be found no longer plays One Piece instead: it says it is not available.",
+      "Long anime cut into parts play the right episode of each part, and an anime film no longer plays its series or another film.",
+    ],
+    ro: [
+      "Un anime care nu poate fi găsit nu mai pornește One Piece în locul lui: spune că nu e disponibil.",
+      "Anime-urile lungi împărțite în părți pornesc episodul corect din fiecare parte, iar un film anime nu mai pornește serialul lui sau alt film.",
+    ],
+    it: [
+      "Un anime che non si trova non fa più partire One Piece al suo posto: dice che non è disponibile.",
+      "Gli anime lunghi divisi in parti avviano l'episodio giusto di ogni parte, e un film anime non avvia più la sua serie o un altro film.",
+    ],
+  },
+  {
     version: "0.4.14",
     date: "2026-11-17",
     en: [

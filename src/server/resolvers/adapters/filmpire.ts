@@ -1,7 +1,7 @@
 import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { withAnimeHint, sourceSkipTimes, type AnimeFacts } from "../../anime/hint";
 import { remember } from "../../boundedMap";
-import { FILMPIRE_TMDB_API_KEY, probePlayback, type ProbeRecord } from "../../library/filmpire";
+import { FILMPIRE_TMDB_API_KEY, playerSeasonCounts, probePlayback, type ProbeRecord } from "../../library/filmpire";
 import { noteExtrasWait } from "../lookup";
 import { providerFetch } from "../providerFetch";
 import type { ResolveResult, SiteAdapter } from "../types";
@@ -739,8 +739,9 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             const probe = await probePlayback(Number(id), "tv", get, resolverProbeCache, Date.now, 2000);
             if (probe.ok) counts = probe.seasonCounts;
           } catch {
-            // fall back to 24-episode parts
+            // (no answer: the seasons the library's check last told of, as the list was cut by them; else 24-episode parts)
           }
+          counts ??= playerSeasonCounts(Number(id));
           const told = Object.entries(counts ?? {})
             .map(([seasonNum, episodes]) => ({ season: Number(seasonNum), episodes }))
             .filter((part) => Number.isInteger(part.season) && part.season >= 1 && Number.isInteger(part.episodes) && part.episodes > 0)

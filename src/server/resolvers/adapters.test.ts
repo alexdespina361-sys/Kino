@@ -4,6 +4,7 @@ import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createHiAnimeAdapter } from "./adapters/hianime";
 import { createFilmpireAdapter, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
+import { rememberPlayerSeasons } from "../library/filmpire";
 
 describe("adapters streaming proxy configuration", () => {
   const originalEnv = { ...process.env };
@@ -1186,6 +1187,43 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     if (p3e1.status === "success") {
       expect(p3e1.media.stream.directUrl).toContain("cdn.hianime.test/single/88548/master.m3u8");
     }
+  });
+
+  it("with no answer from its own video check in time, a part is played as the library's last check cut it", async () => {
+    // The list was cut by the players' seasons of 20 and 23 (the library's check, remembered); the look-up's own check fails now.
+    rememberPlayerSeasons(88803, { 1: 20, 2: 23 });
+    const show = { id: 88803, name: "Another Long Show", original_language: "ja", genres: [{ id: 16 }], seasons: [{ season_number: 1, name: "Season 1", episode_count: 59 }] };
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/88803")) return { ok: true, status: 200, json: async () => show };
+      if (u.hostname === "data.vidsrc.sh") return { ok: false, status: 503, text: async () => "" };
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`<div class="film_list-wrap"><h3 class="film-name"><a href="/another-long-show-8883" title="Another Long Show">Another Long Show</a></h3></div>`);
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/8883")) {
+          const epHtml = Array.from({ length: 59 }, (_, i) => `<a class="ep-item" data-id="${88600 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "0";
+          const subEmbed = `https://zokoanime.video/stream/mal/88803/${epId}/sub`;
+          return text(JSON.stringify({ status: true, html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>` }));
+        }
+      }
+      if (u.hostname === "zokoanime.video") {
+        const epId = u.pathname.split("/")[4] || "0";
+        return text(`<html><script>window.__P="${makeZokoBlob({ src: `https://cdn.hianime.test/single/${epId}/master.m3u8`, subtitles: [] })}";</script></html>`);
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fetcher });
+    // Part 2 E3 -> 20 + 3 = 23 (data-id 88623), not 24 + 3 = 27
+    const p2e3 = await adapter.resolve(new URL("https://filmpire.sc/watch/88803?s=2&e=3"));
+    expect(p2e3.status).toBe("success");
+    if (p2e3.status === "success") expect(p2e3.media.stream.directUrl).toContain("cdn.hianime.test/single/88623/master.m3u8");
   });
 
   it("resolves direct ZokoAnime and HiAnime URLs via createHiAnimeAdapter", async () => {
