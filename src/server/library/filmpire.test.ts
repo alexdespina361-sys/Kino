@@ -115,17 +115,65 @@ describe("filmpireSource", () => {
     expect(rows[0]!.items[0]!.id).toBe("filmpire-movie-4");
   });
 
-  it("leaves out titles that have not come out yet, in the rows and in a search; one with no date is kept", async () => {
+  it("leaves out titles that have not come out yet, or have no date, in the rows and in a search (the owner, 17 Nov)", async () => {
     const results = [
       { id: 1, media_type: "movie", title: "Out Already", release_date: "2020-01-01" },
       { id: 2, media_type: "movie", title: "Not Yet", release_date: "2999-01-01" },
       { id: 3, media_type: "tv", name: "Show Not Yet", first_air_date: "2999-06-01" },
       { id: 4, media_type: "movie", title: "No Date At All" },
+      { id: 5, media_type: "tv", name: "Show Without A Date" },
     ];
     const get = vi.fn(async () => json({ results }));
     const source = filmpireSource({ categories: [mockCategories[0]!], fetch: get as never });
-    expect((await source.load())[0]!.items.map((item) => item.title)).toEqual(["Out Already", "No Date At All"]);
-    expect((await source.search!("anything")).map((item) => item.title)).toEqual(["Out Already", "No Date At All"]);
+    expect((await source.load())[0]!.items.map((item) => item.title)).toEqual(["Out Already"]);
+    expect((await source.search!("anything")).map((item) => item.title)).toEqual(["Out Already"]);
+  });
+
+  describe("a film of the last year (the owner, 17 Nov: the Madoka film, in Japan's cinemas and on no streaming service)", () => {
+    const NOW = Date.parse("2026-11-17T12:00:00Z");
+    const films = [
+      { id: 11, media_type: "movie", title: "Old Film", release_date: "2024-05-01" },
+      { id: 12, media_type: "movie", title: "Only In Cinemas", release_date: "2026-09-01" },
+      { id: 13, media_type: "movie", title: "Out At Home", release_date: "2026-08-01" },
+      { id: 14, media_type: "movie", title: "At Home Next Year", release_date: "2026-10-01" },
+      { id: 15, media_type: "movie", title: "TMDB Could Not Say", release_date: "2026-10-05" },
+      { id: 16, media_type: "tv", name: "New Show", first_air_date: "2026-10-01" },
+    ];
+    const releases: Record<number, unknown> = {
+      12: { results: [{ iso_3166_1: "JP", release_dates: [{ type: 3, release_date: "2026-09-01T00:00:00.000Z" }] }] },
+      13: { results: [{ iso_3166_1: "JP", release_dates: [{ type: 3, release_date: "2026-08-01T00:00:00.000Z" }] }, { iso_3166_1: "US", release_dates: [{ type: 4, release_date: "2026-11-01T00:00:00.000Z" }] }] },
+      14: { results: [{ iso_3166_1: "US", release_dates: [{ type: 3, release_date: "2026-10-01T00:00:00.000Z" }, { type: 4, release_date: "2027-01-16T00:00:00.000Z" }] }] },
+    };
+    const tmdb = () => {
+      const asked: string[] = [];
+      const get = vi.fn(async (url: string | URL) => {
+        const address = String(url);
+        asked.push(address);
+        const film = /\/movie\/(\d+)\/release_dates\?/.exec(address);
+        if (film) return Number(film[1]) === 15 ? json({}, 503) : json(releases[Number(film[1])] ?? { results: [] });
+        return json({ results: films });
+      });
+      return { get, asked };
+    };
+
+    it("is listed only once TMDB has a digital, physical or TV release of it by now, in any country; an older film and a show are not asked about", async () => {
+      const { get, asked } = tmdb();
+      const source = filmpireSource({ categories: [mockCategories[0]!], fetch: get as never, now: () => NOW });
+      const titles = ["Old Film", "Out At Home", "TMDB Could Not Say"];
+      expect((await source.load())[0]!.items.map((item) => item.title)).toEqual(titles); // (a row of films: the show is not among them anyway)
+      expect((await source.search!("anything")).map((item) => item.title)).toEqual([...titles, "New Show"]);
+      const checked = asked.filter((url) => url.includes("/release_dates")).map((url) => /\/movie\/(\d+)\//.exec(url)![1]);
+      // (asked once each in twelve hours, though two lists had them; the one TMDB could not answer is asked again, and kept meanwhile)
+      expect(checked.sort()).toEqual(["12", "13", "14", "15", "15"]);
+    });
+
+    it("leaves the titles like another and a collection's parts out the same way, but not the film looked up by its id", async () => {
+      const { get } = tmdb();
+      const source = filmpireSource({ fetch: get as never, now: () => NOW });
+      expect((await source.similar!("https://filmpire.sc/watch/603")).map((item) => item.title)).toEqual(["Old Film", "Out At Home", "TMDB Could Not Say", "New Show"]);
+      const one = filmpireSource({ fetch: (async () => json(films[1])) as never, now: () => NOW });
+      expect(await one.title!("filmpire-movie-12")).toMatchObject({ title: "Only In Cinemas" });
+    });
   });
 
   it("returns partial rows when one category fails", async () => {
@@ -795,13 +843,12 @@ describe("filmpireSource about", () => {
     expect(about!.cast).toEqual(["Jack Black", "Angelina Jolie", "Dustin Hoffman", "Extra 0", "Extra 1", "Extra 2", "Extra 3", "Extra 4"]); // (first billed first, eight at most)
   });
 
-  it("lists the other parts of the collection in the order they came out, without the film itself, one not out yet or one TMDB has no picture of; the undated last", async () => {
+  it("lists the other parts of the collection in the order they came out, without the film itself, one not out yet, one with no date (the owner, 17 Nov) or one TMDB has no picture of", async () => {
     const { source } = sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu));
     const about = await source.about!("https://filmpire.sc/watch/603");
     expect(about!.parts.map((part) => [part.id, part.title, part.year, part.url])).toEqual([
       ["filmpire-movie-78", "Kung Fu Panda 2", 2011, "https://filmpire.sc/watch/78"],
       ["filmpire-movie-79", "Kung Fu Panda 3", 2016, "https://filmpire.sc/watch/79"],
-      ["filmpire-movie-80", "Undated", undefined, "https://filmpire.sc/watch/80"],
     ]);
   });
 
@@ -852,7 +899,7 @@ describe("filmpireSource about", () => {
     const { source } = sourceWith(() =>
       json({
         genres: [{ name: "Animation" }],
-        recommendations: { results: [{ id: 5, title: "Spirited Away", media_type: "movie", poster_path: "/s.jpg", genre_ids: [16], original_language: "ja" }, { id: 6, title: "Shrek", media_type: "movie", poster_path: "/k.jpg", genre_ids: [16], original_language: "en" }] },
+        recommendations: { results: [{ id: 5, title: "Spirited Away", media_type: "movie", poster_path: "/s.jpg", genre_ids: [16], original_language: "ja", release_date: "2001-07-20" }, { id: 6, title: "Shrek", media_type: "movie", poster_path: "/k.jpg", genre_ids: [16], original_language: "en", release_date: "2001-05-18" }] },
       }),
     );
     expect((await source.about!("https://filmpire.sc/watch/603"))!.similar.map((one) => [one.title, one.section])).toEqual([["Spirited Away", "anime"], ["Shrek", "cartoon"]]);

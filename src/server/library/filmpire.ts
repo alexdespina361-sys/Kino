@@ -118,6 +118,14 @@ const preloadedSeasons = new Map<number, number[]>();
 const preloadedSeasonCounts = new Map<number, Record<number, number>>();
 export const knownTvIds = new Set<number>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
+/** A film that came out this long ago or less is listed only once it has a home release (see `watchableNow`); an older one is taken to have one. */
+export const RECENT_FILM_MS = 365 * 24 * 60 * 60 * 1000;
+const HOME_TTL_MS = 12 * 60 * 60 * 1000;
+const HOME_CHECKS_AT_ONCE = 8;
+const HOME_WAIT_MS = 4_000;
+const HOME_TIMEOUT_MS = 3_000;
+/** TMDB's release types a film can be watched at home from: digital (4), physical (5), TV (6). */
+const HOME_RELEASES: ReadonlySet<number> = new Set([4, 5, 6]);
 
 /** How many video checks run at once, for all the searches of a source together (a search checks its first page, twenty titles, at once). */
 export const PROBES_AT_ONCE = 16;
@@ -314,6 +322,9 @@ const TmdbSeasonSchema = z.object({
 
 const TmdbShowSchema = z.object({
   seasons: z.array(z.object({ season_number: z.number().int(), episode_count: z.number().int().optional(), air_date: z.string().nullable().optional() })),
+});
+const TmdbReleaseDatesSchema = z.object({
+  results: z.array(z.object({ release_dates: z.array(z.object({ type: z.number().optional(), release_date: z.string().nullish() })) })),
 });
 type TmdbEpisode = z.infer<typeof TmdbSeasonSchema>["episodes"][number];
 /** A season of a show, and how many episodes it has. */
@@ -515,6 +526,54 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
    * more than 30 episodes, parts of 24. Null for any other show, which is listed as TMDB lists it. `seasons` and `episodes` both go by this, so
    * the list of seasons and the episodes of each agree.
    */
+  /**
+   * Whether a film can be watched at home yet: TMDB has a digital, physical or TV release of it (types 4, 5, 6) dated by now, in any country.
+   * Remembered for twelve hours, for so many films. A question that has no answer says yes, and nothing is remembered: a bad moment of TMDB's
+   * does not empty the rows.
+   */
+  const atHome = new Map<number, { at: number; yes: boolean }>();
+  const homeSlots = new Slots(HOME_CHECKS_AT_ONCE);
+  const outAtHome = async (id: number): Promise<boolean> => {
+    const kept = atHome.get(id);
+    if (kept && now() - kept.at < HOME_TTL_MS) return kept.yes;
+    const over = await homeSlots.take(HOME_WAIT_MS);
+    if (!over) return true; // (no turn in time: no answer)
+    try {
+      const res = await get(`${BASE_URL}/movie/${id}/release_dates?api_key=${apiKey}`, { signal: AbortSignal.timeout(HOME_TIMEOUT_MS), headers: { accept: "application/json" } });
+      if (!res.ok) return true;
+      const parsed = TmdbReleaseDatesSchema.safeParse(await res.json());
+      if (!parsed.success) return true;
+      const by = new Date(now()).toISOString();
+      const yes = parsed.data.results.some((country) => country.release_dates.some((release) => release.type !== undefined && HOME_RELEASES.has(release.type) && !!release.release_date && release.release_date <= by));
+      remember(atHome, id, { at: now(), yes }, MAX_PRELOADED_SEASONS);
+      return yes;
+    } catch {
+      return true;
+    } finally {
+      over();
+    }
+  };
+  /**
+   * The titles of a list that can be watched now (the owner, 17 Nov: "content that isn't yet available isn't shown"): one with no date, or a date
+   * still to come, is left out; so is a film out in the last year that has had no home release yet (the Madoka film Walpurgisnacht: Rising, in
+   * Japan's cinemas and on no streaming service). Only for lists: one title looked up by its id is shown as it is.
+   */
+  const watchableNow = async (results: readonly unknown[], defaultType?: "movie" | "tv"): Promise<unknown[]> => {
+    const day = today();
+    const recent = new Date(now() - RECENT_FILM_MS).toISOString().slice(0, 10);
+    const kept = await Promise.all(
+      results.map(async (raw) => {
+        const parsed = TmdbItemSchema.safeParse(raw);
+        if (!parsed.success) return true; // (what is not a title is left out further on)
+        const doc = parsed.data;
+        const date = (doc.release_date || doc.first_air_date)?.slice(0, 10);
+        if (!date || date > day) return false;
+        const isFilm = doc.media_type ? doc.media_type === "movie" : defaultType ? defaultType === "movie" : !doc.first_air_date;
+        return !isFilm || date < recent || (await outAtHome(doc.id));
+      }),
+    );
+    return results.filter((_, at) => kept[at]);
+  };
   const partsOf = async (id: number, show: ShowPart[]): Promise<ShowPart[] | null> => {
     if (show.length !== 1 || show[0]!.season !== 1) return null;
     let counts = preloadedSeasonCounts.get(id);
@@ -561,7 +620,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     const res = await get(pageUrl(cat.path, page, apiKey), { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
     if (!res.ok) throw new Error(`${cat.id}: HTTP ${res.status}`);
     const data = TmdbSearchSchema.parse(await res.json());
-    const results = tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results;
+    const results = await watchableNow(tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results, cat.type);
     const section = sectionOfCategory(cat);
     const items = results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null && sectionOf(item) === section);
     return { items, last: data.results.length === 0 || page >= Math.min(data.total_pages ?? MAX_PAGE, MAX_PAGE) };
@@ -608,14 +667,14 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         // The rest of the pages are asked together once the first says there are any; one that cannot be had is left out.
         const rest = await Promise.all(Array.from({ length: Math.min(first.total_pages ?? 1, SEARCH_PAGES) - 1 }, (_, at) => askSearchPage(at + 2).catch(() => null)));
 
-        const toItems = (results: unknown[]) =>
-          (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)
+        const toItems = async (results: unknown[]) =>
+          (await watchableNow(shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results))
             .map((item) => toLibraryItem(item))
             .filter((item): item is LibraryItem => item !== null);
-        const items = toItems(first.results);
+        const items = await toItems(first.results);
         const seen = new Set(items.map((item) => item.id));
         // (Only the first page is asked about at the provider, as before; for the others, what it was already found to lack stays out.)
-        const further = toItems(rest.flatMap((page) => page?.results ?? [])).filter((item) => {
+        const further = (await toItems(rest.flatMap((page) => page?.results ?? []))).filter((item) => {
           const parsed = parseWatchLink(item.url);
           const record = shouldVerify && parsed ? probeCache.get(`${parsed.type}:${parsed.id}`) : undefined;
           return !seen.has(item.id) && seen.add(item.id) && !(record?.status === 404 && now() - record.checkedAt < PROBE_TTL_MS);
@@ -653,9 +712,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (!res.ok) throw new Error(`similar: HTTP ${res.status}`);
       const data = TmdbResponseSchema.parse(await res.json());
 
-      const candidateResults = shouldFilterTrash
-        ? data.results.filter((item) => !isTrashItem(item))
-        : data.results;
+      const candidateResults = await watchableNow(shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results, title.type);
 
       const items = candidateResults
         .map((item) => toLibraryItem(item, title.type))
@@ -711,8 +768,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (!res.ok) throw new Error(`about: HTTP ${res.status}`);
       const doc = TmdbAboutSchema.parse(await res.json());
       const own = `filmpire-${title.type}-${title.id}`;
-      const listed = (results: readonly unknown[], type: "movie" | "tv", max: number, skip: ReadonlySet<string> = new Set()) =>
-        (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)
+      const listed = async (results: readonly unknown[], type: "movie" | "tv", max: number, skip: ReadonlySet<string> = new Set()) =>
+        (await watchableNow(shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results, type))
           .map((item) => toLibraryItem(item, type))
           .filter((item): item is LibraryItem => item !== null && item.id !== own && !skip.has(item.id))
           .slice(0, max);
@@ -720,10 +777,10 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       let parts: LibraryItem[] = [];
       if (title.type === "movie" && doc.belongs_to_collection) {
         const collection = await ask(`/collection/${doc.belongs_to_collection.id}`);
-        if (collection.ok) parts = listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts);
+        if (collection.ok) parts = await listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts);
         else if (collection.status !== 404) throw new Error(`about: collection HTTP ${collection.status}`);
       }
-      const similar = listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id))); // (a sequel is among the parts, not among the titles like it as well)
+      const similar = await listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id))); // (a sequel is among the parts, not among the titles like it as well)
 
       const ages: Record<string, string> = {};
       for (const country of AGE_COUNTRIES) {
