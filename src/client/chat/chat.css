@@ -51,6 +51,8 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
   font-size: 0.8rem;
   font-weight: 600;
 }
+/* (Take back and Save are reached with a computer's keys too, from the message: see ChatLines `keyboard`.) */
+button.chat-takeback:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 /* A title a message names (titles.ts): its poster and name under the bubble. The same size while the server is asked as after, so the list does not move. */
 .chat-card {
   display: flex;

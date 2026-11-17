@@ -50,6 +50,25 @@ describe("the chat after an answer", () => {
     expect(applyThread(before, thread(10, [line(10, true)]))).toBe(before);
   });
 
+  it("ignores an answer at the same revision to a call that began before the one it took last: it could put back an `open` that is over (the judge, 17 Nov)", () => {
+    const before: ChatState = { rev: 20, open: false, muted: false, lines: [line(20, false)] };
+    expect(applyThread(before, thread(20, undefined, { open: true }), false, true)).toBe(before);
+    expect(applyThread(before, thread(20, undefined, { open: true }), false, false).open).toBe(true);
+    // (a newer revision is newer news, whenever its call began)
+    expect(applyThread(before, thread(21, undefined, { open: true }), false, true).open).toBe(true);
+  });
+
+  it("puts the reactions an answer says changed on its messages, as they are now, and keeps the others", () => {
+    const fire = "\u{1F525}";
+    const joy = "\u{1F602}";
+    const before: ChatState = { rev: 20, open: true, muted: false, lines: [{ ...line(5, false), myReaction: fire }, { ...line(6, true), theirReaction: joy }, line(7, false)] };
+    const after = applyThread(before, thread(25, undefined, { reactions: [{ id: 5 }, { id: 7, myReaction: joy, theirReaction: fire }, { id: 99, myReaction: fire }] }));
+    expect(after.rev).toBe(25);
+    expect(after.lines).toEqual([line(5, false), { ...line(6, true), theirReaction: joy }, { ...line(7, false), myReaction: joy, theirReaction: fire }]);
+    expect(after.lines[1]).toBe(before.lines[1]);
+    expect(applyThread(before, thread(25, undefined, { reactions: [] })).lines).toBe(before.lines);
+  });
+
   it("keeps its own idea of muting when a mute was answered after the reading began", () => {
     const before: ChatState = { rev: 10, open: true, muted: true, lines: [] };
     expect(applyThread(before, thread(11, [], { muted: false }), true).muted).toBe(true);

@@ -75,6 +75,19 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   /** Personal stickers in the messages, while they are on (personalStickers.ts): saved from a chat where a message can be clicked or touched. */
   const personal = usePersonalLines(session, desk || narrow);
 
+  // A chat that closes (the friend takes no messages now, or the friendship is over) forgets the pages it had open on it, and a message that goes takes its
+  // page of reactions: when the chat opens again, it is the chat that is shown, not a page coming back by itself with the remote on it (the judge, 17 Nov).
+  const blocked = whyNotWrite(session) !== null;
+  const reactingGone = reacting !== null && !reactingTo;
+  useEffect(() => {
+    if (!blocked && !reactingGone) return;
+    setReacting(null);
+    if (!blocked) return;
+    setPicking(false);
+    setGifPicking(false);
+    setStickerPicking(false);
+  }, [blocked, reactingGone]);
+
   if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} personal={personal.lines} />;
   if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
   if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
@@ -313,6 +326,7 @@ export function ReadTv({
             name={name}
             now={now}
             remote
+            keyboard={desk}
             onOpenTitle={onOpenTitle}
             {...(pointer
               ? {

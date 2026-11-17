@@ -12,6 +12,7 @@ import {
   type ChatNotice,
   type ChatReaction,
   type ChatTextProblem,
+  type ChatThread,
 } from "../../shared";
 import { RateLimiter } from "./rateLimit";
 
@@ -55,6 +56,8 @@ interface Written {
   text: string;
   /** The reactions on it: profile -> one of `CHAT_REACTIONS`. Not there when it has none. */
   r?: Record<string, string>;
+  /** The `rev` of the last change to its reactions (see `readSince`): a line from before it was kept has the chat's `rev` of when it was read in. */
+  rr?: number;
   /** A personal sticker (shared/stickers.ts): its name; the text is then `PERSONAL_STICKER_TEXT`. The line keeps no hold on the picture (stickers.ts). */
   s?: string;
 }
@@ -121,6 +124,9 @@ export class ChatBook {
     // (A sticker's name that is not one is let go: the line is then its words.)
     for (const line of doc.lines) if (line.s !== undefined && !isStickerId(line.s)) delete line.s;
     if (typeof doc.said !== "number") doc.said = doc.rev;
+    // (A line whose reactions last changed nobody knows when, as of now: a screen that has an older revision is told its reactions, which is a few bytes and
+    // never wrong. See `readSince`.)
+    for (const line of doc.lines) if (typeof line.rr !== "number" || line.rr > doc.rev) line.rr = doc.rev;
     this.chats.set(key, doc);
     for (const profile of [doc.a, doc.b]) this.of.set(profile, (this.of.get(profile) ?? new Set()).add(key));
     // (What ran out while the server was off is let go now, not whenever somebody next looks.)
@@ -227,6 +233,26 @@ export class ChatBook {
     return { ok: true, value: this.view(this.find(me, friend), me, friend) };
   }
 
+  /**
+   * The chat of `me` with `friend`, for a screen that has it at revision `since` (`ChatThread`): only its state when nothing changed since; when only
+   * reactions changed (nothing was said since: `said`) and the screen takes such an answer (`compact`), the messages whose reactions changed, with their
+   * reactions as they are now; else every message. (A friend who puts reactions on and takes them off again cannot make each of the other's looks bring
+   * the whole chat, two hundred messages, many times a minute: the judge, 17 Nov.)
+   */
+  readSince(me: string, friend: string, since: number | undefined, compact: boolean): ChatOutcome<ChatThread> {
+    const read = this.read(me, friend);
+    if (!read.ok) return read;
+    const { lines, ...state } = read.value;
+    if (since === state.rev) return { ok: true, value: state };
+    const doc = this.find(me, friend);
+    if (!compact || !doc || since === undefined || since < (doc.said ?? doc.rev) || since > doc.rev) return { ok: true, value: read.value };
+    const changed = new Set(doc.lines.filter((line) => (line.rr ?? doc.rev) > since).map((line) => line.n));
+    const reactions = lines
+      .filter((line) => changed.has(line.id))
+      .map(({ id, myReaction, theirReaction }) => ({ id, ...(myReaction ? { myReaction } : {}), ...(theirReaction ? { theirReaction } : {}) }));
+    return { ok: true, value: { ...state, reactions } };
+  }
+
   /** Everything in the chat has been looked at by `me`. */
   markSeen(me: string, friend: string): void {
     const doc = this.find(me, friend);
@@ -270,7 +296,7 @@ export class ChatBook {
     const doc = this.make(from, to);
     const n = this.next(doc);
     doc.rev = n;
-    doc.lines = [...doc.lines, { n, from, at: this.host.now(), ...said }].slice(-CHAT_KEEP_MAX);
+    doc.lines = [...doc.lines, { n, from, at: this.host.now(), ...said, rr: n }].slice(-CHAT_KEEP_MAX);
     doc.said = n;
     doc.seen[from] = n;
     this.host.touch(keyOf(from, to));
@@ -312,6 +338,7 @@ export class ChatBook {
     if (now.length > 0) line.r = Object.fromEntries(now);
     else delete line.r;
     doc.rev = this.next(doc); // (the screens that have the chat open see it at their next look; `said` does not move)
+    line.rr = doc.rev;
     this.host.touch(keyOf(me, friend));
     return { ok: true, value: this.view(doc, me, friend) };
   }

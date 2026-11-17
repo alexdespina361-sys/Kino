@@ -518,4 +518,59 @@ describe("reactions", () => {
     expect(value(chat.takeBack("sam", "alex", id)).lines).toEqual([]);
     expect(refusal(chat.react("alex", "sam", id, null))).toBe("gone");
   });
+
+  it("reach a screen that has the chat as only what changed: the messages whose reactions did, never the whole chat again (the judge, 17 Nov)", () => {
+    const { chat, clock } = trio();
+    const ids: number[] = [];
+    for (const text of ["one", "two", "three"]) {
+      clock.now += 1000;
+      ids.push(value(chat.send("sam", "alex", text)).lines.at(-1)!.id);
+    }
+    const seen = value(chat.read("alex", "sam")).rev;
+    // nothing changed: the state alone
+    expect(value(chat.readSince("alex", "sam", seen, true))).toEqual({ rev: seen, open: true, muted: false });
+    // Sam puts one on, takes it off, puts another on another message: only those two, as they are now
+    clock.now += 1000;
+    value(chat.react("sam", "alex", ids[0]!, "\u{1F525}"));
+    value(chat.react("sam", "alex", ids[0]!, null));
+    value(chat.react("sam", "alex", ids[2]!, "\u{1F602}"));
+    const now = value(chat.read("alex", "sam")).rev;
+    const answer = value(chat.readSince("alex", "sam", seen, true));
+    expect(answer).toEqual({ rev: now, open: true, muted: false, reactions: [{ id: ids[0] }, { id: ids[2], theirReaction: "\u{1F602}" }] });
+    // from a revision between them: only the last
+    const middle = value(chat.readSince("alex", "sam", now, true));
+    expect(middle.reactions).toBeUndefined();
+    // a page that does not take it is sent every message, as it always was
+    expect(value(chat.readSince("alex", "sam", seen, false)).lines).toHaveLength(3);
+    // something said since: every message
+    clock.now += 1000;
+    value(chat.send("sam", "alex", "four"));
+    const after = value(chat.readSince("alex", "sam", now, true));
+    expect(after.lines).toHaveLength(4);
+    expect(after.reactions).toBeUndefined();
+    // a revision the chat never had, or none: every message
+    expect(value(chat.readSince("alex", "sam", after.rev + 5, true)).lines).toHaveLength(4);
+    expect(value(chat.readSince("alex", "sam", undefined, true)).lines).toHaveLength(4);
+  });
+
+  it("of a chat kept before each message knew when its reactions changed are all told to a screen that has an older revision, once", () => {
+    const { chat, clock } = trio();
+    const at = clock.now - 1000;
+    chat.load("chat:alex:sam", {
+      v: 1,
+      a: "alex",
+      b: "sam",
+      rev: 9,
+      said: 5,
+      lines: [
+        { n: 5, from: "sam", at, text: "hi", r: { alex: "\u{1F525}" } },
+        { n: 4, from: "alex", at, text: "hey" },
+      ],
+      seen: {},
+      muted: [],
+    });
+    expect(value(chat.readSince("alex", "sam", 7, true)).reactions).toEqual([{ id: 5, myReaction: "\u{1F525}" }, { id: 4 }]);
+    expect(value(chat.readSince("alex", "sam", 9, true)).reactions).toBeUndefined();
+    expect(value(chat.readSince("alex", "sam", 4, true)).lines).toHaveLength(2); // (older than what was said)
+  });
 });
