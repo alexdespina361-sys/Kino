@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { LiveProgress, LiveWatched } from "../../shared";
-import { describeStatus, episodeName, episodeStatus } from "../../shared";
+import { describeStatus, episodeName, episodeStatus, lastStartAt } from "../../shared";
 import { t } from "../i18n";
 import { useEpisodeDetails, useSeasons } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
@@ -64,14 +64,17 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
   const ask = asked && entry.asked?.season !== undefined && entry.asked.episode !== undefined ? { season: entry.asked.season, episode: entry.asked.episode, at: entry.asked.at } : undefined;
   const askedSeason = ask && seasons.includes(ask.season) ? ask.season : undefined;
   const askedDetails = useEpisodeDetails(askedSeason === undefined ? undefined : entry?.url, askedSeason);
-  const askedUrl = ask && askedDetails ? askedDetails.get(ask.episode)?.url : undefined;
+  const askedEpisode = ask && askedDetails ? askedDetails.get(ask.episode) : undefined;
+  const askedUrl = askedEpisode?.url;
+  // (A time past the episode's end, as far as the library knows its length, is not one to start at: the episode would count as watched at once.)
+  const askedAt = ask?.at !== undefined && !(askedEpisode?.runtime && ask.at > lastStartAt(askedEpisode.runtime * 60)) ? ask.at : undefined;
   const holding = ask !== undefined && (found === undefined || (askedSeason !== undefined && askedDetails === undefined));
   const start: Start | undefined =
     ask && askedUrl
       ? // (No time asked for, and this profile left that very episode part way: it is picked up where it was left.)
-        ask.at === undefined && own?.season === ask.season && own.episode === ask.episode
+        askedAt === undefined && own?.season === ask.season && own.episode === ask.episode
         ? own
-        : { season: ask.season, episode: ask.episode, url: askedUrl, ...(ask.at !== undefined ? { startAt: ask.at, asked: true as const } : {}) }
+        : { season: ask.season, episode: ask.episode, url: askedUrl, ...(askedAt !== undefined ? { startAt: askedAt, asked: true as const } : {}) }
       : holding
         ? undefined
         : own;

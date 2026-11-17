@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { checkChatText, episodeStatus, resumeAt } from "../../shared";
+import { checkChatText, episodeStatus, lastStartAt, resumeAt } from "../../shared";
 import { ratingFor } from "../account/ratingText";
 import { useProfileData } from "../account/store";
 import { useT } from "../i18n";
@@ -70,6 +70,12 @@ export function TitleList({ session, tv, nav, pointer = false, onSent }: { sessi
   }, [step, prefix]);
 
   const open = titles.find((title) => title.address === step);
+  // (A title can leave the list while its step is open - another screen of this profile played something, and it is no longer among the newest: the step goes
+  // for good, rather than come back unasked if the title does, and the keys go to the first title, as the effect above gives them.)
+  const gone = step !== null && !open;
+  useEffect(() => {
+    if (gone) setStep(null);
+  }, [gone]);
   if (open) {
     return (
       <TitleSend
@@ -195,7 +201,9 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
   const [at, setAt] = useState(0);
   const runtime = shown && details ? details.get(shown.episode)?.runtime : undefined;
   const card = cardOf(entry, progress);
-  const max = runtime ? runtime * 60 : !show && card && card.duration > 0 ? Math.floor(card.duration) : TIME_MAX;
+  // (Up to a minute or so before the end, when its length is known: a start any later would be the end for the friend, and count it watched.)
+  const end = runtime ? runtime * 60 : !show && card && card.duration > 0 ? Math.floor(card.duration) : undefined;
+  const max = end ? Math.max(1, lastStartAt(end)) : TIME_MAX;
   const startAt = Math.min(at, max);
   const ownTime = !show
     ? card
@@ -209,6 +217,8 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
       : undefined;
   const [typed, setTyped] = useState<string | null>(null);
   const typedAt = typed === null ? undefined : typedTime(typed, max);
+  // (A time typed that is not one, or past the end: Send waits for it to be put right, rather than send the last one that was.)
+  const badTime = timed && typed !== null && typed.trim() !== "" && typedAt === undefined;
 
   // This profile's rating of the title, if it gave one: off until it is chosen.
   const rating = url ? ratingFor(ratings, url) : undefined;
@@ -321,7 +331,7 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
                 maxLength={9}
                 value={typed ?? (startAt > 0 ? formatTime(startAt) : "")}
                 placeholder="0:00"
-                aria-invalid={typed !== null && typed.trim() !== "" && typedAt === undefined}
+                aria-invalid={badTime}
                 onChange={(event) => {
                   setTyped(event.target.value);
                   const seconds = typedTime(event.target.value, max);
@@ -345,9 +355,9 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
       <button
         type="button"
         className={`${prefix}-extras-go`}
-        aria-disabled={session.sending || waiting || undefined}
+        aria-disabled={session.sending || waiting || badTime || undefined}
         onClick={() => {
-          if (session.sending || waiting) return;
+          if (session.sending || waiting || badTime) return;
           onSent();
           void send(session, title, extras);
         }}
