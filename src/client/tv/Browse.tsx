@@ -1,4 +1,4 @@
-import { Fragment, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { Fragment, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
 import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, tagLabel, titleLink, type Library, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -1668,6 +1668,18 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const intoGridView = (event: FocusEvent<HTMLElement>) => {
     if (gridRef.current) keepInView(gridRef.current, event.target as HTMLElement);
   };
+  // A head that moves (into the box that scrolls or out of it: the titles came or went, another list or half was chosen, the phone was turned) is drawn afresh,
+  // and the focus of the button the remote was on goes with the old one (the judge, 17 Nov): the remote is put back on that button, before the page's other
+  // effects look where it is (one of them would take it to the first title).
+  const headPlace = `${headInRows}:${headInGrid}`;
+  const headWas = useRef(headPlace);
+  useLayoutEffect(() => {
+    if (headWas.current === headPlace) return;
+    headWas.current = headPlace;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const at = remembered.focus[viewKey(view)];
+    if (at && (at.zone === "hero" || at.zone === "chips" || at.zone === "foot")) focusAt(at);
+  }, [headPlace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <section
