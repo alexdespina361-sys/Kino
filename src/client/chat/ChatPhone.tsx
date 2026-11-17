@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
@@ -47,6 +47,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const [picked, setPicked] = useState<number | null>(null);
   /** The panel of titles, GIFs and stickers is open under the box (ChatPanel.tsx); its GIFs only when the site has a KLIPY key. */
   const [panel, setPanel] = useState(false);
+  const panelId = useId();
   const gifKey = useGifKey();
   const blocked = whyNotWrite(session);
   const personal = usePersonalLines(session, true);
@@ -56,7 +57,10 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const [media, setMedia] = useState(false);
   const over = media || report.stage !== "closed";
   useEffect(() => {
-    if (over) setPicked(null);
+    if (!over) return;
+    setPicked(null);
+    // (The panel too: a sheet's Escape is heard after the panel's Back, which would shut the panel behind the sheet and leave the sheet: the judge, 17 Nov.)
+    setPanel(false);
   }, [over]);
   // (A chat one can no longer write in has no panel to send from, and it does not come back by itself when one can again.)
   useEffect(() => {
@@ -96,7 +100,9 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const search = useChatSearch(state.lines);
   const [showing, setShowing] = useState<{ id: number; seq: number } | null>(null);
   // (Back shuts the search when nothing is open over it: a selection, the ⋮, a sheet, or a picture shown larger - each of which Back shuts first.)
-  useBackFirst(search.open && picked === null && !menu && !over ? () => searchBack(session, search, "chat-input") : undefined);
+  // (Not stood down while a message is selected or the ⋮ is open: Back's stack - `useBackFirst` - shuts whichever came after it first. Stood down, it would
+  // come back on top of a panel opened meanwhile, and shut before it: the judge, 17 Nov. A sheet over the chat hears Escape after it, so it is stood down then.)
+  useBackFirst(search.open && !over ? () => searchBack(session, search, "chat-input") : undefined);
   const status = [presence, state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
 
   return (
@@ -210,9 +216,9 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
           ) : (
             <>
               {answering && <ReplyStrip line={answering} name={name} onCancel={() => session.setReplyTo(null)} />}
-              <Composer session={session} panel={panel} onPanel={openPanel} />
+              <Composer session={session} panel={panel} panelId={panelId} onPanel={openPanel} />
               {panel && (
-                <ChatPanel session={session} tv={false} nav={false} land={false} pointer gifKey={gifKey} onClose={() => setPanel(false)} onSent={() => setPanel(false)} />
+                <ChatPanel id={panelId} session={session} tv={false} nav={false} land={false} pointer gifKey={gifKey} onClose={() => setPanel(false)} onSent={() => setPanel(false)} />
               )}
             </>
           )}
@@ -238,7 +244,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
  * bar, the one button of what is sent besides words (ChatPanel.tsx): pressed, the keyboard goes down and the panel comes in its place, and the button is a
  * keyboard; pressed again (or the box pressed), the keyboard is back and the panel goes.
  */
-function Composer({ session, panel, onPanel }: { session: ChatSession; panel: boolean; onPanel: (open: boolean) => void }) {
+function Composer({ session, panel, panelId, onPanel }: { session: ChatSession; panel: boolean; panelId: string; onPanel: (open: boolean) => void }) {
   const t = useT();
   const [text, setText] = useState("");
   const input = useRef<HTMLDivElement>(null);
@@ -288,9 +294,10 @@ function Composer({ session, panel, onPanel }: { session: ChatSession; panel: bo
           type="button"
           className="chat-title-btn chat-panel-btn"
           onClick={toggle}
-          aria-label={t(panel ? "chat.panelKeyboard" : "chat.panel")}
+          aria-label={t("chat.panel")}
           aria-expanded={panel}
-          title={t(panel ? "chat.panelKeyboard" : "chat.panel")}
+          aria-controls={panel ? panelId : undefined}
+          title={t("chat.panel")}
           data-testid="chat-panel-btn"
         >
           {panel ? <KeyboardIcon /> : <StickerIcon />}

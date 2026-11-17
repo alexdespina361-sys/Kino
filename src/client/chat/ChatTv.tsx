@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type SetStateAction } from "react";
+import { useEffect, useId, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type SetStateAction } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
@@ -249,7 +249,9 @@ export function ReadTv({
   // selection, a picture shown larger: each Back shuts first); shut, the keys go back to the ⋯ it was opened from.
   const search = useChatSearch(state.lines);
   const searching = search.open && onMedia !== undefined;
-  useBackFirst(searching && picked === null && !menu ? () => searchBack(session, search, "tv-chat-box") : undefined);
+  // (Not stood down while a message is selected or the ⋯ is open: Back's stack - `useBackFirst` - shuts whichever of them came after it first. Stood down, it
+  // would come back on top of a panel opened meanwhile, and shut before it: the judge, 17 Nov.)
+  useBackFirst(searching ? () => searchBack(session, search, "tv-chat-box") : undefined);
   const wasSearching = useRef(false);
   useEffect(() => {
     const was = wasSearching.current;
@@ -305,7 +307,10 @@ export function ReadTv({
   // What is sent besides words: one button before the box, and the panel under it (ChatPanel.tsx), as a messenger's keyboard of stickers (the owner, 17 Nov).
   // It opens with nothing selected and the ⋯ shut, so that Back shuts the panel; on a hand-held screen the keyboard goes down, the panel in its place.
   const [panel, setPanel] = useState(false);
+  /** The keys go into the panel as it opens: a TV's remote, or the button pressed with a computer's keys; not a click, which leaves them where they were. */
+  const [panelLand, setPanelLand] = useState(false);
   const panelButton = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
   const panelOpen = panel && withPanel && !blocked;
   useEffect(() => {
     if (blocked) setPanel(false);
@@ -315,7 +320,7 @@ export function ReadTv({
     if (narrow) return;
     document.querySelector<HTMLElement>("[data-testid='tv-chat'] .tv-chat-compose-row [data-autofocus]")?.focus({ preventScroll: true });
   };
-  const togglePanel = () => {
+  const togglePanel = (event: MouseEvent<HTMLButtonElement>) => {
     if (panel) {
       setPanel(false);
       // (A screen that types has the box back, the keyboard with it; a TV's remote stays on the button.)
@@ -325,12 +330,21 @@ export function ReadTv({
     setPicked(null);
     setMenu(false);
     if (narrow && document.activeElement === area.current) area.current?.blur();
+    // (`detail` is 0 for a press made with the keys. A computer's click leaves the keys in the box: Enter there still sends what was typed, not the first
+    // sticker the keys would have landed on - the judge, 17 Nov.)
+    setPanelLand(!narrow && (!pointer || event.detail === 0));
     setPanel(true);
   };
-  /** Back: the panel shuts, and the keys go back to its button (a hand-held screen is given nothing: its keyboard would come up). */
+  /**
+   * Back: the panel shuts. The keys go back to its button when they were in the panel (or on nothing); typing in the box beside it, they stay there, so that
+   * the next Back lets go of an answer being written before it leaves the chat (the judge, 17 Nov). A hand-held screen is given nothing: its keyboard would
+   * come up.
+   */
   const shutPanel = () => {
+    const on = document.activeElement;
+    const fromPanel = !on || on === document.body || on.closest("[data-testid='tv-chat-panel']") !== null;
     setPanel(false);
-    if (!narrow) panelButton.current?.focus({ preventScroll: true });
+    if (!narrow && fromPanel) panelButton.current?.focus({ preventScroll: true });
   };
   /** The one button of what is sent besides words: a sticker's face while it is shut; while it is open, on a screen that types, a keyboard's (pressed, the box). */
   const panelToggle = withPanel && (
@@ -339,9 +353,12 @@ export function ReadTv({
       ref={panelButton}
       className="tv-chat-title-btn tv-chat-panel-btn"
       onClick={togglePanel}
-      aria-label={t(panelOpen && pointer ? "chat.panelKeyboard" : "chat.panel")}
+      // (A computer's click leaves the keys where they were, in the box: what is typed goes on, and Enter sends it - the judge, 17 Nov.)
+      {...(pointer && !narrow ? { onMouseDown: keepTheBox } : {})}
+      aria-label={t("chat.panel")}
       aria-expanded={panelOpen}
-      title={t(panelOpen && pointer ? "chat.panelKeyboard" : "chat.panel")}
+      aria-controls={panelOpen ? panelId : undefined}
+      title={t("chat.panel")}
       data-nav
       data-testid="tv-chat-panel-btn"
     >
@@ -629,10 +646,11 @@ export function ReadTv({
             </div>
             {panelOpen && (
               <ChatPanel
+                id={panelId}
                 session={session}
                 tv
                 nav
-                land={!narrow}
+                land={panelLand}
                 pointer={pointer}
                 gifKey={gifKey}
                 onClose={shutPanel}

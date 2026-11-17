@@ -16,7 +16,6 @@ export const chatIt: ChatDictionary = {
   "chat.writeTitle": "Messaggio per {name}",
   "chat.send": "Invia",
   "chat.panel": "Titoli, GIF e sticker",
-  "chat.panelKeyboard": "Tastiera",
   "chat.tabTitles": "Titoli",
   "chat.tabGifs": "GIF",
   "chat.tabStickers": "Sticker",

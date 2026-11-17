@@ -8,15 +8,15 @@ export const CHANGELOG: readonly ChangeNote[] = [
     date: "2026-11-17",
     en: [
       "In a chat: one button beside the box opens a panel like a keyboard, with tabs for titles, GIFs and stickers; it opens on the tab you used last.",
-      "In a chat: Back closes what you opened last first: a picture shown larger, then the panel, then the search.",
+      "In a chat: Back now closes the most recent thing first: a picture shown larger, then the panel, then the search.",
     ],
     ro: [
       "În chat: un buton lângă casetă deschide un panou ca o tastatură, cu file pentru titluri, GIF-uri și stickere; se deschide pe ultima filă folosită.",
-      "În chat: Înapoi închide mai întâi ce ai deschis ultimul: o imagine mărită, apoi panoul, apoi căutarea.",
+      "În chat: Înapoi închide întâi ce ai deschis cel mai recent: o imagine mărită, apoi panoul, apoi căutarea.",
     ],
     it: [
-      "In chat: un pulsante accanto alla casella apre un pannello come una tastiera, con schede per titoli, GIF e sticker; si apre sull'ultima scheda usata.",
-      "In chat: Indietro chiude prima ciò che hai aperto per ultimo: un'immagine ingrandita, poi il pannello, poi la ricerca.",
+      "In una chat: un pulsante accanto alla casella apre un pannello come una tastiera, con schede per titoli, GIF e sticker; si apre sull'ultima scheda usata.",
+      "In una chat: Indietro chiude prima ciò che hai aperto per ultimo: un'immagine ingrandita, poi il pannello, poi la ricerca.",
     ],
   },
   {

@@ -47,6 +47,8 @@ function saveTab(tab: PanelTab) {
 }
 
 export interface ChatPanelProps {
+  /** Its id: what the button that opens it names (`aria-controls`). */
+  id?: string | undefined;
   session: ChatSession;
   /** Drawn for the TV's pages (a TV, a computer, a hand-held screen showing them); else the phone's sheet. */
   tv: boolean;
@@ -64,10 +66,14 @@ export interface ChatPanelProps {
   onSent: () => void;
 }
 
-export function ChatPanel({ session, tv, nav, land, pointer, gifKey, onClose, onSent }: ChatPanelProps) {
+export function ChatPanel({ id: panelId, session, tv, nav, land, pointer, gifKey, onClose, onSent }: ChatPanelProps) {
   const t = useT();
-  const [chosen, setChosen] = useState<PanelTab>(savedTab);
-  /** (The GIFs remembered where there are none - a TV that is only a remote, a site without a key - open the stickers.) */
+  // (The GIFs remembered where there are none - a TV that is only a remote, a site without a key - open the stickers. Which tab opens is decided as it
+  // opens: a key that comes a moment later does not change the tab under the keys - the judge, 17 Nov.)
+  const [chosen, setChosen] = useState<PanelTab>(() => {
+    const saved = savedTab();
+    return saved === "gifs" && !gifKey ? "stickers" : saved;
+  });
   const tab: PanelTab = chosen === "gifs" && !gifKey ? "stickers" : chosen;
   const tabs = TABS.filter((one) => one.tab !== "gifs" || gifKey);
   const prefix = tv ? "tv-chat" : "chat";
@@ -94,7 +100,7 @@ export function ChatPanel({ session, tv, nav, land, pointer, gifKey, onClose, on
   };
 
   return (
-    <div className={`${prefix}-panel`} ref={root} role="group" aria-label={t("chat.panel")} data-tab={tab} data-testid={`${prefix}-panel`}>
+    <div className={`${prefix}-panel`} ref={root} id={panelId} role="group" aria-label={t("chat.panel")} data-tab={tab} data-testid={`${prefix}-panel`}>
       <div className={`${prefix}-panel-pane`} role="tabpanel" id={`${id}-pane`} aria-labelledby={`${id}-${tab}`} data-testid={`${prefix}-panel-pane`}>
         {tab === "titles" ? (
           <TitleList key="titles" session={session} tv={tv} nav={nav} onSent={onSent} />

@@ -16,7 +16,6 @@ export const chatRo: ChatDictionary = {
   "chat.writeTitle": "Mesaj pentru {name}",
   "chat.send": "Trimite",
   "chat.panel": "Titluri, GIF-uri și stickere",
-  "chat.panelKeyboard": "Tastatură",
   "chat.tabTitles": "Titluri",
   "chat.tabGifs": "GIF-uri",
   "chat.tabStickers": "Stickere",

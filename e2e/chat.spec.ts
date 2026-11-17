@@ -1422,7 +1422,7 @@ test.describe("stickers in a chat", () => {
     await expect(sheet).toBeVisible();
     await expect(sheet, "the first time: the stickers").toHaveAttribute("data-tab", "stickers");
     await expect(button).toHaveAttribute("aria-expanded", "true");
-    await expect(button).toHaveAttribute("aria-label", en["chat.panelKeyboard"]); // (open, the button is the keyboard's)
+    await expect(button).toHaveAttribute("aria-label", en["chat.panel"]); // (open, its picture is a keyboard's; its name stays, with aria-expanded)
     const picks = ann.page.getByTestId("chat-sticker-pick");
     await expect(picks).toHaveCount(STICKER_COUNT);
     await expect(picks.first()).toHaveAttribute("data-sticker", "popcorn");
@@ -2256,7 +2256,7 @@ test.describe("personal stickers in a chat", () => {
     const page = dee.page.getByTestId("tv-chat-panel");
     const picks = page.getByTestId("chat-sticker-pick");
     await expect(picks).toHaveCount(STICKER_COUNT);
-    await expect(picks.first()).toBeFocused();
+    await expect(dee.page.getByTestId("tv-chat-box"), "a click leaves the keys in the box").toBeFocused();
     expect(await gridFaults(picks), "the computer's stickers: squares, none over another").toEqual([]);
     expect(await outsideTheScreen(dee.page, "tv-chat")).toEqual([]);
     await expect(page.getByTestId("chat-stickers-yours")).toHaveCount(0);
@@ -3009,7 +3009,7 @@ test.describe("GIFs in a chat", () => {
     await expect(ann.page.getByTestId("tv-chat-gif-powered")).toHaveText("Powered by KLIPY");
     expect(await outsideTheScreen(ann.page, "tv-chat", false)).toEqual([]);
     await expect(ann.page.getByTestId("tv-chat-box"), "the bar stays over the panel").toBeInViewport();
-    await expect(button).toHaveAttribute("aria-label", en["chat.panelKeyboard"]);
+    await expect(button).toHaveAttribute("aria-label", en["chat.panel"]);
     // a full page of them is one list that scrolls under the search, which stays at the top, and KLIPY's line, which stays at the bottom (the owner's phone, 17 Nov:
     // the grid was squeezed into what the page had left, and the GIFs lay over each other)
     const picks = ann.page.getByTestId("chat-gif-pick");
@@ -3428,29 +3428,40 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
 /* ------------------------------ The panel of titles, GIFs and stickers (one button before the box) ------------------------------ */
 
 test.describe("the chat's panel of titles, GIFs and stickers", () => {
-  test("on a computer: the one button opens the panel under the box, the keys on its first; a tab shows its pane, the box can be typed in meanwhile, and the tab used last opens next; Back shuts what was opened last first - the panel, then the search", async ({ browser }) => {
-    test.setTimeout(180_000);
+  test("on a computer: the one button opens the panel under the box, a click leaving the keys in the box and the button pressed with the keys putting them in it; a tab shows its pane, the tab used last opens next; Back shuts what was opened last first - the panel, an answer being written, the search", async ({ browser }) => {
+    test.setTimeout(200_000);
     const ann = await screenWithFriends(browser, "Ann", { desk: true });
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
+    await writes(bob.page, ann.page, "Popcorn?");
     const asked = await fakeKlipy(ann.page);
     await look(ann.page);
     await tile(ann.page, bob.name).click();
     await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
     const box = ann.page.getByTestId("tv-chat-box");
     await expect(box).toBeFocused();
     const button = ann.page.getByTestId("tv-chat-panel-btn");
     const panel = ann.page.getByTestId("tv-chat-panel");
+
+    // a click: the panel opens, and the keys stay in the box - what is typed goes on, and Enter sends the words, not a sticker
+    await ann.page.keyboard.type("See you");
     await button.click();
     await expect(panel).toHaveAttribute("data-tab", "stickers");
-    await expect(panel.getByTestId("chat-sticker-pick").first()).toBeFocused();
+    await expect(box).toBeFocused();
     await expect(button).toHaveAttribute("aria-expanded", "true");
-    await expect(button).toHaveAttribute("aria-label", en["chat.panelKeyboard"]);
+    await expect(button).toHaveAttribute("aria-label", en["chat.panel"]);
+    await expect(button).toHaveAttribute("aria-controls", (await panel.getAttribute("id"))!);
     await expect(panel.getByTestId("tv-chat-panel-tab")).toHaveCount(3);
     expect(asked, "nothing asked of KLIPY before its tab is shown").toHaveLength(0);
     expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
     await expect(ann.page.getByTestId("tv-chat-name"), "the chat's head stays in view over the panel").toBeInViewport();
     expect(await gridFaults(panel.getByTestId("chat-sticker-pick")), "the stickers: squares, none over another").toEqual([]);
+    await ann.page.keyboard.type(" at nine");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    await expect(tvLines(ann.page).nth(1).getByTestId("chat-text")).toHaveText("See you at nine");
+    await expect(panel, "words sent from the box leave the panel open").toBeVisible();
 
     // the GIFs' tab: its pane, the keys left on the tab; KLIPY is asked now
     const gifsTab = panel.locator("[role='tab'][data-tab='gifs']");
@@ -3461,23 +3472,18 @@ test.describe("the chat's panel of titles, GIFs and stickers", () => {
     await expect(panel.getByTestId("chat-gif-pick")).toHaveCount(3);
     expect(asked.length).toBeGreaterThan(0);
     expect(await outsideTheScreen(ann.page, "tv-chat")).toEqual([]);
-
-    // the box is typed in with the panel open (a computer's keyboard covers nothing); Back shuts the panel, not the chat, and the words stay
-    await box.click();
-    await expect(panel).toBeVisible();
-    await ann.page.keyboard.type("hello");
+    // Back from inside the panel: it shuts, and the keys go to its button
     await ann.page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
-    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect(button).toBeFocused();
-    await expect(box).toHaveValue("hello");
 
-    // the tab used last opens next, the keys in its search; Escape in the search is Back
+    // the button pressed with the keys: the tab used last opens, the keys in its search; Escape in the search is Back
     await ann.page.keyboard.press("Enter");
     await expect(panel).toHaveAttribute("data-tab", "gifs");
     await expect(ann.page.getByTestId("tv-chat-gif-search")).toBeFocused();
     await ann.page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
+    await expect(button).toBeFocused();
 
     // the keyboard's button: the panel goes, and the box has the keys
     await button.click();
@@ -3486,13 +3492,35 @@ test.describe("the chat's panel of titles, GIFs and stickers", () => {
     await expect(panel).toHaveCount(0);
     await expect(box).toBeFocused();
 
-    // the search, then the panel opened over it: one Back shuts the panel, the next the search, and only the next would leave the chat
+    // an answer being written, then the panel: Back shuts the panel and leaves the keys in the box; the next lets the answer go, the words staying; only
+    // then would one leave the chat
+    await tvLines(ann.page).first().getByTestId("chat-bubble").click();
+    await ann.page.getByTestId("chat-reply").click();
+    const strip = ann.page.getByTestId("chat-reply-strip");
+    await expect(strip).toBeVisible();
+    await expect(box).toBeFocused();
+    await button.click();
+    await expect(panel).toBeVisible();
+    await ann.page.keyboard.type("Yes");
+    await ann.page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(box).toBeFocused();
+    await expect(strip).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(strip).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(box).toHaveValue("Yes");
+
+    // the search, then a message selected, then the panel (which lets the selection go): Back shuts the panel, then the search, and only then the chat
     await ann.page.getByTestId("tv-chat-more").click();
     await ann.page.getByTestId("tv-chat-search-open").click();
     const bar = ann.page.getByTestId("chat-search");
     await expect(bar).toBeVisible();
+    await tvLines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(ann.page.getByTestId("chat-reply")).toBeVisible();
     await button.click();
     await expect(panel).toBeVisible();
+    await expect(ann.page.getByTestId("chat-reply"), "the selection went").toHaveCount(0);
     await ann.page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(bar).toBeVisible();
@@ -3505,11 +3533,10 @@ test.describe("the chat's panel of titles, GIFs and stickers", () => {
     await panel.locator("[role='tab'][data-tab='stickers']").click();
     await panel.getByTestId("chat-sticker-pick").first().click();
     await expect(panel).toHaveCount(0);
-    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(tvLines(ann.page)).toHaveCount(3);
     await expect(box).toBeFocused();
-    await expect(box, "what was typed stays").toHaveValue("hello");
+    await expect(box, "what was typed stays").toHaveValue("Yes");
   });
-
   test("on the phone: a picture shown larger over the open panel is put away first, then the panel, then the chat (one Back each); a message held while it is open is let go first", async ({ browser }) => {
     test.setTimeout(150_000);
     const { ann, bob } = await twoFriends(browser);
@@ -3537,6 +3564,16 @@ test.describe("the chat's panel of titles, GIFs and stickers", () => {
     await expect(panel).toBeVisible();
     await ann.page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-sheet")).toBeVisible();
+    // (a sheet opened over the chat - the gallery, from the ⋮ - takes the panel away: Escape then shuts the sheet, not a panel behind it)
+    await openPanel(ann.page, "stickers");
+    await ann.page.getByTestId("chat-more").click();
+    await ann.page.getByTestId("chat-media-open").click();
+    const gallery = ann.page.getByTestId("chat-media-sheet");
+    await expect(gallery).toBeVisible();
+    await expect(panel).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+    await expect(gallery).toHaveCount(0);
     await expect(ann.page.getByTestId("chat-sheet")).toBeVisible();
     await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("chat-sheet")).toHaveCount(0);

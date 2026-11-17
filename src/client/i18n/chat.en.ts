@@ -18,7 +18,6 @@ export const chatEn = {
   "chat.writeTitle": "Message to {name}",
   "chat.send": "Send",
   "chat.panel": "Titles, GIFs and stickers",
-  "chat.panelKeyboard": "Keyboard",
   "chat.tabTitles": "Titles",
   "chat.tabGifs": "GIFs",
   "chat.tabStickers": "Stickers",
