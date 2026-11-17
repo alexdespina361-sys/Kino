@@ -9,7 +9,7 @@ export const CHANGELOG: readonly ChangeNote[] = [
     en: [
       "What's new: this list, on your profile's page and in the phone's account menu.",
       "In a chat: 28 stickers to send from any screen, a TV remote too, drawn big with no bubble.",
-      "In a chat: react to a message with one of six reactions; with a TV remote, use the ⋯ menu.",
+      "In a chat: react to a message with one of six reactions; with a TV remote use the ⋯ menu, on a computer the keyboard too.",
       "On an upright phone, friends pages fit the screen: two tiles across, nothing off the side.",
       "On a TV: the remote moves to the nearest button in line, not one further along.",
       "Skipping the credits by itself no longer skips a scene that comes after them.",
@@ -18,7 +18,7 @@ export const CHANGELOG: readonly ChangeNote[] = [
     ro: [
       "Noutăți: lista aceasta, pe pagina profilului și în meniul contului de pe telefon.",
       "În chat: 28 de stickere de trimis de pe orice ecran, și cu telecomanda TV, mari și fără bulă.",
-      "În chat: reacționezi la un mesaj cu una din șase reacții; cu telecomanda TV, din meniul ⋯.",
+      "În chat: reacționezi la un mesaj cu una din șase reacții; cu telecomanda TV din meniul ⋯, pe calculator și cu tastatura.",
       "Pe telefonul ținut vertical, paginile de prieteni încap: două carduri pe rând, nimic în afara ecranului.",
       "Pe TV: telecomanda trece la cel mai apropiat buton din rând, nu la unul mai departe.",
       "Sărirea automată a genericului nu mai sare și peste o scenă care vine după el.",
@@ -27,7 +27,7 @@ export const CHANGELOG: readonly ChangeNote[] = [
     it: [
       "Novità: questo elenco, nella pagina del profilo e nel menu dell'account sul telefono.",
       "In chat: 28 sticker da inviare da ogni schermo, anche col telecomando, grandi e senza fumetto.",
-      "In chat: reagisci a un messaggio con una di sei reazioni; col telecomando, dal menu ⋯.",
+      "In chat: reagisci a un messaggio con una di sei reazioni; col telecomando dal menu ⋯, al computer anche con la tastiera.",
       "Col telefono in verticale le pagine amici entrano nello schermo: due schede per riga, niente fuori.",
       "Su TV: il telecomando passa al tasto più vicino in fila, non a uno più in là.",
       "Il salto automatico dei titoli di coda non salta più una scena che viene dopo.",
