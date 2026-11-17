@@ -32,6 +32,12 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     const phone = await openDevice(browser, PHONE);
     await phone.goto("/");
     await phone.waitForLoadState("networkidle");
+    // (The site, as it really is, names the build of the page it served: the script of the real index.html is read, not nothing. A server that named none, or
+    // a page that read none, would never offer anything, and the step below would pass all the same: the advisor, 17 Nov.)
+    const real = await phone.evaluate(async () => ((await (await fetch("/api/build", { cache: "no-store" })).json()) as { build: unknown }).build);
+    const mine = await phone.evaluate(() => /\/assets\/(index-[\w-]+)\.js/.exec([...document.scripts].map((script) => script.src).find((src) => /\/assets\/index-/.test(src)) ?? "")?.[1]);
+    expect(real).toMatch(/^index-[\w-]+$/);
+    expect(real).toBe(mine);
     // (The site serves this page's own build: nothing.)
     await asks(phone);
     await phone.waitForTimeout(300);
