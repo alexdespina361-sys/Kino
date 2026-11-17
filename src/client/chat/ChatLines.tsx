@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
@@ -585,6 +585,10 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           // (The message it answers, over it, while that message is in the chat. A report sends the words alone, and shows no quote.)
           const quoted = !showWriter && line.replyTo !== undefined ? byId.get(line.replyTo) : undefined;
           const replyTo = line.replyTo;
+          const held = holds(canPress ? () => onPick?.(line.id) : null, answers && onReply ? () => onReply(line.id) : null);
+          // (A title's card is held and drawn aside as its message is - it is what a finger takes, the owner, 17 Nov: "replies work on movies too"; the press that
+          // ends a hold or a draw does not open the title, `onClickCapture`.)
+          const heldCard = (card: ReactNode) => (isValidElement<Record<string, unknown>>(card) ? cloneElement(card, held) : card);
           const said = (text: ReactNode, card: ReactNode) => (
             <>
               {quoted && replyTo !== undefined && (
@@ -596,7 +600,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   className={`chat-bubble${picture}${open ? " chat-picked" : ""}`}
                   {...(canPress ? { "aria-expanded": open } : {})}
                   onClick={pressed}
-                  {...holds(canPress ? () => onPick?.(line.id) : null, answers && onReply ? () => onReply(line.id) : null)}
+                  {...held}
                   {...(remote ? { tabIndex: keyboard && line.id === tabStop ? 0 : -1 } : {})}
                   data-testid={canPress ? "chat-bubble" : "chat-picture"}
                 >
@@ -605,7 +609,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
               ) : (
                 <div className={`chat-bubble${picture}`}>{bubble(text)}</div>
               )}
-              {card}
+              {heldCard(card)}
               {!showWriter && <Reactions line={line} name={name} />}
               {open && onReact && (
                 <ReactBar

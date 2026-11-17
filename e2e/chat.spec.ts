@@ -1234,6 +1234,41 @@ test.describe("a title sent in a chat", () => {
     await expect(bob.page.getByTestId("title-name")).toHaveText("The Matrix");
   });
 
+  test("on the phone a title's card is drawn aside to answer it and held to react, as its message is, and neither opens the title (the owner, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    for (const page of [ann.page, bob.page]) await knowsTitles(page);
+    await saves(ann.page, SAVED);
+    await expect.poll(() => atHome(ann.page)).toBe(true);
+    await openChat(ann.page);
+    await (await openPanel(ann.page, "titles")).getByTestId("chat-pick").first().click();
+    await openChat(bob.page);
+    const card = bob.page.getByTestId("chat-card");
+    await expect(card).toContainText("The Matrix", SOON);
+    const strip = bob.page.getByTestId("chat-reply-strip");
+    const cdp = await bob.page.context().newCDPSession(bob.page);
+    const touch = async (dx: number, rest = 0) => {
+      const spot = await where(card);
+      const from = { x: Math.round(spot.x + 30), y: Math.round(spot.y + spot.height / 2) };
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+      if (rest) await bob.page.waitForTimeout(rest);
+      for (const part of dx ? [0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1] : []) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: Math.round(from.x + dx * part), y: from.y }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    // drawn to the right: answered, and the title is not opened
+    await touch(100);
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText("The Matrix");
+    await bob.page.waitForTimeout(300);
+    await expect(bob.page.getByTestId("title-sheet")).toHaveCount(0);
+    await bob.page.getByTestId("chat-reply-cancel").click();
+    // held: the reactions come, and the title is not opened
+    await touch(0, 900);
+    await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible();
+    await bob.page.waitForTimeout(300);
+    await expect(bob.page.getByTestId("title-sheet")).toHaveCount(0);
+  });
+
   test("on the TV: the remote goes from the box to the panel's button, along its tabs to the posters, OK sends one; the friend's remote steps from the box onto the list and the card, and OK opens the title's page", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");

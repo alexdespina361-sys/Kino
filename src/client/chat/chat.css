@@ -762,7 +762,9 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
 .tv .chat-reply-cancel:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 .tv-chat-quote[data-replying] .tv-chat-quote-lead { color: #fff; font-weight: 700; }
 /* (A finger draws a message across, not the page: up and down still scroll the list from a message, and two fingers still zoom the page: the judge, 17 Nov.) */
-.chat-lines-swipe .chat-bubble { touch-action: pan-y pinch-zoom; }
+.chat-lines-swipe :is(.chat-bubble, .chat-card) { touch-action: pan-y pinch-zoom; }
+/* (A title's card is held as its message is: no long-press menu or picture callout of the phone's own.) */
+.chat-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* (What a line holds is drawn across, by `--swipe` (ChatLines.tsx), not the line: the day over its first message stays. Only while it is drawn, and as it
    goes back ("back"): a transform is no thing to leave on every message. The list never scrolls sideways for it: a message of one's own, on the right, goes
    past the edge as it is drawn.) */
