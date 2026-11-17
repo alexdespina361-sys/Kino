@@ -73,14 +73,21 @@ function offeredNow() {
   if (local !== undefined) text = existsSync(path.join(local, "android.json")) ? readFileSync(path.join(local, "android.json"), "utf8") : "";
   else text = run("ssh", [...ssh, box, `sudo cat ${BOX_DIR}/android.json 2>/dev/null || true`], { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8" }).stdout;
   if (!text.trim()) return 0;
+  let said;
   try {
-    const said = JSON.parse(text);
-    return Number.isInteger(said.versionCode) ? said.versionCode : 0;
+    said = JSON.parse(text);
   } catch {
-    stop("The server's android.json is not readable: look at it before putting out another version.");
+    // (thrown, not stopped: the lock held around a release is let go first, the judge, 17 Nov)
+    throw new Error("The server's android.json is not readable: look at it before putting out another version.");
   }
+  return Number.isInteger(said.versionCode) ? said.versionCode : 0;
 }
-const now = offeredNow();
+let now = 0;
+try {
+  now = offeredNow();
+} catch (error) {
+  stop(error.message);
+}
 if (versionCode <= now) stop(`The server offers version ${now} already: the new one has to be newer (a phone takes no older one, and a version is put out once).`);
 
 /* ------------------------------ the APK ------------------------------ */

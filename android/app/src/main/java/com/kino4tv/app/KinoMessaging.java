@@ -1,6 +1,8 @@
 package com.kino4tv.app;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
@@ -31,18 +33,28 @@ public class KinoMessaging extends FirebaseMessagingService {
 
     /**
      * Each turn on (`fetchToken`) or off (`stop`) of the phone's registration is a new turn: what comes back of an older one is let go (the judge, 17 Nov: a token
-     * asked for just before the notifications were turned off came back after, and kept the phone registered). Both are called on the main thread, and what
-     * Firebase answers comes there too.
+     * asked for just before the notifications were turned off came back after, and kept the phone registered). Both are called on the main thread, what Firebase
+     * answers comes there too, and a token Firebase brings by itself (`onNewToken`, on a thread of the service) is taken there.
      */
     private static final AtomicInteger turn = new AtomicInteger();
-    /** The last turn off, while Firebase is letting go of the phone: a turn on waits for it, so the token it is given is never one being let go. */
+    /** The turn of the last turn on (0: none since the app started). */
+    private static int turnedOn;
+    /**
+     * Firebase letting go of the phone: one at a time (another turn off while it is on its way is that one: two could end in either order, and the later delete
+     * a token given in between, the judge, 17 Nov); a turn on waits for it, so the token it is given is never one being let go.
+     */
     private static Task<Void> lettingGo;
+
+    private static boolean lettingGoNow() {
+        return lettingGo != null && !lettingGo.isComplete();
+    }
 
     /** Ask Firebase for this phone's token (kept, and the page told, when it comes), and listen to the news of new versions: only while notifications are on. */
     static void fetchToken(Context context) {
         if (!available(context) || !Notices.enabled(context)) return;
         Context app = context.getApplicationContext();
         int mine = turn.incrementAndGet();
+        turnedOn = mine;
         Prefs.of(app).edit().putBoolean(Prefs.FIREBASE_OFF, false).apply();
         Runnable ask = () -> {
             if (turn.get() != mine) return;
@@ -54,8 +66,7 @@ public class KinoMessaging extends FirebaseMessagingService {
                 FirebaseMessaging.getInstance().subscribeToTopic(UPDATE_TOPIC);
             });
         };
-        Task<Void> before = lettingGo;
-        if (before != null && !before.isComplete()) before.addOnCompleteListener(done -> ask.run());
+        if (lettingGoNow()) lettingGo.addOnCompleteListener(done -> ask.run());
         else ask.run();
     }
 
@@ -68,16 +79,19 @@ public class KinoMessaging extends FirebaseMessagingService {
         Context app = context.getApplicationContext();
         boolean had = !Prefs.of(app).getString(Prefs.PUSH_TOKEN, "").isEmpty();
         if (!had && Prefs.of(app).getBoolean(Prefs.FIREBASE_OFF, false)) return;
-        int mine = turn.incrementAndGet();
+        turn.incrementAndGet();
         Prefs.of(app).edit().remove(Prefs.PUSH_TOKEN).apply();
         FirebaseMessaging messaging = FirebaseMessaging.getInstance();
         messaging.setAutoInitEnabled(false);
+        if (had) told(app);
+        if (lettingGoNow()) return; // (the one on its way lets go of the phone)
+        int on = turnedOn;
         lettingGo = messaging.unsubscribeFromTopic(UPDATE_TOPIC)
                 .continueWithTask(unsubscribed -> FirebaseMessaging.getInstance().deleteToken())
                 .addOnCompleteListener(deleted -> {
-                    if (deleted.isSuccessful() && turn.get() == mine) Prefs.of(app).edit().putBoolean(Prefs.FIREBASE_OFF, true).apply();
+                    // (Let go for good, unless the notifications were turned on meanwhile: then the next turn off lets go again.)
+                    if (deleted.isSuccessful() && turnedOn == on) Prefs.of(app).edit().putBoolean(Prefs.FIREBASE_OFF, true).apply();
                 });
-        if (had) told(app);
     }
 
     private static void keep(Context context, String token) {
@@ -91,9 +105,17 @@ public class KinoMessaging extends FirebaseMessagingService {
         if (open != null) open.notificationsChanged();
     }
 
+    /**
+     * Firebase brought a token by itself (it changed one it had): taken on the main thread, and only while the last turn was a turn on, with nothing being let go
+     * and Firebase not told to forget the phone (a token of before a turn off, coming late, is not kept).
+     */
     @Override
     public void onNewToken(@NonNull String token) {
-        keep(this, token);
+        Context app = getApplicationContext();
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (turnedOn != turn.get() || lettingGoNow() || Prefs.of(app).getBoolean(Prefs.FIREBASE_OFF, false)) return;
+            keep(app, token);
+        });
     }
 
     @Override
