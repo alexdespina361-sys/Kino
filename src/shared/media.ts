@@ -86,6 +86,8 @@ export type AnimeHint = z.infer<typeof AnimeHintSchema>;
 /** The only thing the TV player ever consumes. Resolvers all produce this. */
 export const NormalizedMediaSchema = z.object({
   title: z.string().max(300).optional(),
+  /** What the main stream is called in the Source picker ("Japanese (Sub)", "English Dub"): empty for "Source 1". */
+  sourceLabel: z.string().max(60).optional(),
   stream: StreamSchema,
   /** The quality the main stream is in, when the alternates hold the same stream in others (see `AlternateSourceSchema.quality`). */
   quality: z.string().max(20).optional(),
@@ -171,6 +173,7 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
   const main = stream(media.stream);
   if (!main) return { media: null, unfit };
   const title = text(media.title, 300);
+  const sourceLabel = text(media.sourceLabel, 60);
   const subs = subtitles(media.subtitles);
   const alternates: AlternateSource[] = [];
   for (const alternate of Array.isArray(media.alternates) ? media.alternates : []) {
@@ -205,6 +208,7 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
   const fitted = NormalizedMediaSchema.safeParse({
     stream: main,
     ...(title ? { title } : {}),
+    ...(sourceLabel ? { sourceLabel } : {}),
     ...(text(media.quality, 20) ? { quality: text(media.quality, 20) } : {}),
     ...(subs ? { subtitles: subs } : {}),
     ...(series ? { series } : {}),
@@ -233,7 +237,7 @@ export interface PlayableSource {
 /** The main stream and then the alternates, in the order to try them. */
 export function sourcesOf(media: NormalizedMedia): PlayableSource[] {
   return [
-    { label: undefined, stream: media.stream, subtitles: media.subtitles, quality: media.quality?.trim() || undefined },
+    { label: media.sourceLabel?.trim() || undefined, stream: media.stream, subtitles: media.subtitles, quality: media.quality?.trim() || undefined },
     ...(media.alternates ?? []).map((alternate) => ({
       label: alternate.label?.trim() || undefined,
       stream: alternate.stream,
@@ -241,6 +245,22 @@ export function sourcesOf(media: NormalizedMedia): PlayableSource[] {
       quality: alternate.quality?.trim() || undefined,
     })),
   ];
+}
+
+/** Finds the source that matches the user's preferred anime audio language ("jp" vs "eng"). */
+export function preferredSourceIndex(media: NormalizedMedia, animeAudio: "jp" | "eng" | undefined): number {
+  const sources = sourcesOf(media);
+  if (sources.length <= 1) return 0;
+  if (animeAudio === "eng") {
+    const dubIndex = sources.findIndex((s) => /dub|english dub/i.test(s.label ?? ""));
+    if (dubIndex >= 0) return dubIndex;
+  } else {
+    const subIndex = sources.findIndex((s) => /sub|japanese/i.test(s.label ?? ""));
+    if (subIndex >= 0) return subIndex;
+    const nonDubIndex = sources.findIndex((s) => !/dub|english dub/i.test(s.label ?? ""));
+    if (nonDubIndex >= 0) return nonDubIndex;
+  }
+  return 0;
 }
 
 /** What the pickers list, as places in `sourcesOf`. */

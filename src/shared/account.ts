@@ -274,6 +274,11 @@ export const SETTING_SCHEMAS = {
    */
   autoSkip: z.boolean(),
   /**
+   * Preferred audio language for anime: "jp" for Japanese with subtitles, "eng" for English Dub.
+   * Defaults to "jp" when not set.
+   */
+  animeAudio: z.enum(["jp", "eng"]),
+  /**
    * A tap or click on the picture pauses and plays it. Off (until turned on) it only shows or hides the controls: the big button in the
    * middle, the bar's own and the remote's OK key pause either way. (A remote that points and clicks like a mouse is the one that notices.)
    */

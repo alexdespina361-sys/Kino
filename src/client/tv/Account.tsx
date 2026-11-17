@@ -626,6 +626,33 @@ export function TvAccountPanel({
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
               <SettingsSwitch label={t("settings.autoSkip")} on={autoSkip} onToggle={() => set("autoSkip", !autoSkip)} testId="tv-autoskip" />
+              <div className="tv-field">
+                <span className="tv-field-label" aria-hidden="true">
+                  {t("settings.animeAudio")}
+                </span>
+                <div className="tv-segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
+                  <button
+                    className="tv-choice"
+                    role="radio"
+                    aria-checked={(settings.animeAudio ?? "jp") === "jp"}
+                    onClick={() => set("animeAudio", "jp")}
+                    data-nav
+                    data-testid="tv-anime-audio-jp"
+                  >
+                    {t("settings.animeAudioJp")}
+                  </button>
+                  <button
+                    className="tv-choice"
+                    role="radio"
+                    aria-checked={settings.animeAudio === "eng"}
+                    onClick={() => set("animeAudio", "eng")}
+                    data-nav
+                    data-testid="tv-anime-audio-eng"
+                  >
+                    {t("settings.animeAudioEng")}
+                  </button>
+                </div>
+              </div>
               <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
             </SettingsGroup>
 
