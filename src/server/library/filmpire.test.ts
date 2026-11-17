@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import { forChildren, LibraryItemSchema, LibraryRowSchema } from "../../shared";
-import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, MAX_PRELOADED_SEASONS, PAGE_TITLES, Slots, probePlayback, type FilmpireCategory, type ProbeRecord } from "./filmpire";
+import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, MAX_PRELOADED_SEASONS, PAGE_TITLES, pageUrl, Slots, probePlayback, TODAY, type FilmpireCategory, type ProbeRecord } from "./filmpire";
+
+describe("the rows' date of today", () => {
+  it("is the day each page is asked for, not the day the server started", () => {
+    vi.useFakeTimers();
+    try {
+      const action = FILMPIRE_CATEGORIES.find((cat) => cat.id === "action-movies")!;
+      expect(action.path).toContain(`primary_release_date.lte=${TODAY}`);
+      vi.setSystemTime(new Date("2026-11-17T12:00:00Z"));
+      expect(pageUrl(action.path, 2, "k")).toContain("primary_release_date.lte=2026-11-17&");
+      vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
+      expect(pageUrl(action.path, 2, "k")).toContain("primary_release_date.lte=2026-11-20&");
+      expect(pageUrl(action.path, 2, "k")).not.toContain(TODAY);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 import type { LibrarySource } from "./library";
 import { sectionOfCategory } from "./shelves";
 

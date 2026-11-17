@@ -247,20 +247,20 @@ export function sourcesOf(media: NormalizedMedia): PlayableSource[] {
   ];
 }
 
-/** Finds the source that matches the user's preferred anime audio language ("jp" vs "eng"). */
-export function preferredSourceIndex(media: NormalizedMedia, animeAudio: "jp" | "eng" | undefined): number {
+/** The labels an anime's two audios have among its sources ("Japanese (Sub)", "English Dub", "Server 2 (English Dub)"): the only ones the setting picks between. */
+const JAPANESE_AUDIO = /\bjapanese\b/i;
+const ENGLISH_DUB = /\benglish\s+dub\b/i;
+
+/**
+ * Where the user's preferred anime audio ("jp", the default, or "eng") is among a title's sources: `undefined` when the title has no such source - any film or
+ * show that is not an anime offered in that audio. (Only these exact labels: a Romanian dub, "Română (Dublat)", or a source whose name says "sub" is not an anime's
+ * audio, and a title that has none is started from its first source, or left on the one it plays, as before.)
+ */
+export function preferredSourceIndex(media: NormalizedMedia, animeAudio: "jp" | "eng" | undefined): number | undefined {
   const sources = sourcesOf(media);
-  if (sources.length <= 1) return 0;
-  if (animeAudio === "eng") {
-    const dubIndex = sources.findIndex((s) => /dub|english dub/i.test(s.label ?? ""));
-    if (dubIndex >= 0) return dubIndex;
-  } else {
-    const subIndex = sources.findIndex((s) => /sub|japanese/i.test(s.label ?? ""));
-    if (subIndex >= 0) return subIndex;
-    const nonDubIndex = sources.findIndex((s) => !/dub|english dub/i.test(s.label ?? ""));
-    if (nonDubIndex >= 0) return nonDubIndex;
-  }
-  return 0;
+  const wanted = animeAudio === "eng" ? ENGLISH_DUB : JAPANESE_AUDIO;
+  const at = sources.findIndex((source) => wanted.test(source.label ?? ""));
+  return at >= 0 ? at : undefined;
 }
 
 /** What the pickers list, as places in `sourcesOf`. */

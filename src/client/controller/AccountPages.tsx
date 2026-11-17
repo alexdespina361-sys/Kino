@@ -304,7 +304,7 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           <Switch label={t("settings.autoSkip")} checked={settings.autoSkip ?? false} onChange={(on) => set("autoSkip", on)} testId="auto-skip" />
         </Rows>
         <p className="group-label">{t("settings.animeAudio")}</p>
-        <div className="segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
+        <div className="segmented pair" role="radiogroup" aria-label={t("settings.animeAudio")}>
           <button
             role="radio"
             aria-checked={(settings.animeAudio ?? "jp") === "jp"}

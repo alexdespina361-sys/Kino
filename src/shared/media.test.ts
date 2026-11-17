@@ -65,12 +65,31 @@ describe("preferredSourceIndex (anime audio preferred language)", () => {
     expect(preferredSourceIndex(animeMedia, undefined)).toBe(0);
   });
 
-  it("defaults to index 0 when only 1 source is available or media has no alternates", () => {
+  it("has no say over a title without an anime's audios: one source, a film's Romanian dub, a source whose name says sub", () => {
     const singleSourceMedia: NormalizedMedia = {
       title: "Solo",
       stream: { url: "https://films.example/video.mp4", type: "mp4" },
     };
-    expect(preferredSourceIndex(singleSourceMedia, "eng")).toBe(0);
-    expect(preferredSourceIndex(singleSourceMedia, "jp")).toBe(0);
+    expect(preferredSourceIndex(singleSourceMedia, "eng")).toBeUndefined();
+    expect(preferredSourceIndex(singleSourceMedia, "jp")).toBeUndefined();
+    const dubbed: NormalizedMedia = {
+      stream: { url: "https://films.example/a.m3u8", type: "hls" },
+      alternates: [
+        { label: "Română (Dublat)", stream: { url: "https://dub.example/a.m3u8", type: "hls" } },
+        { label: "Subtitled source", stream: { url: "https://other.example/a.m3u8", type: "hls" } },
+      ],
+    };
+    expect(preferredSourceIndex(dubbed, "eng")).toBeUndefined();
+    expect(preferredSourceIndex(dubbed, "jp")).toBeUndefined();
+    expect(preferredSourceIndex(dubbed, undefined)).toBeUndefined();
+  });
+
+  it("finds the dub of the HiAnime server's label too, and leaves an anime without the audio asked for alone", () => {
+    const server: NormalizedMedia = {
+      stream: { url: "https://films.example/sub.m3u8", type: "hls" },
+      alternates: [{ label: "Server 2 (English Dub)", stream: { url: "https://films.example/dub.m3u8", type: "hls" } }],
+    };
+    expect(preferredSourceIndex(server, "eng")).toBe(1);
+    expect(preferredSourceIndex(server, "jp")).toBeUndefined(); // (the main one is not labelled: it is what plays first anyway)
   });
 });
