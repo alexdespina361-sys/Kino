@@ -127,6 +127,11 @@ export class StickerBook {
     return wait;
   }
 
+  /** So long (ms) was spent on a picture outside the making itself (its body read and unpacked, stickerRoutes.ts): the site's time too. */
+  worked(ms: number): void {
+    this.work.spend(ms);
+  }
+
   get on(): boolean {
     return this.options.on;
   }
@@ -295,7 +300,8 @@ export class StickerBook {
       if (!this.holds(profileId, known.id)) this.hold(profileId, known);
       return { ok: true, value: known.id };
     }
-    if (this.docs.size + this.writing >= PERSONAL_STICKER.siteMax || this.bytesInAll + made.data.length > this.maxBytes) {
+    // (So many on their way to where they are kept is asked again here, where the write starts: several made at once had all passed the top.)
+    if (this.docs.size + this.writing >= PERSONAL_STICKER.siteMax || this.bytesInAll + made.data.length > this.maxBytes || this.writing >= PERSONAL_STICKER.writesAtOnce) {
       this.made.undo(accountId);
       return no("site_full");
     }
@@ -318,10 +324,15 @@ export class StickerBook {
         settle();
         throw error;
       }
-      void written
-        .then(() => this.files.remove(id))
-        .catch(() => {})
-        .finally(settle);
+      // (A write that failed in the end wrote nothing: it is counted no more. One that was written is counted until what it wrote is removed; if that
+      // fails it stays counted, a picture nobody has being there, until the next start removes it: `reconcile`.)
+      void written.then(
+        () =>
+          this.files.remove(id).then(settle, (failed: unknown) => {
+            this.options.log?.warn(`Personal stickers: a picture written too late could not be removed (${(failed as Error).message}); it is removed at the next start.`);
+          }),
+        settle,
+      );
       throw new Error("Personal stickers: a picture was not written in time.");
     }
     settle(); // (its bytes are counted again as the document's, below)

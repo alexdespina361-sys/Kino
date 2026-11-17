@@ -513,6 +513,21 @@ describe("what the whole site gives to making stickers (the judge, 17 Nov: every
     // (and it was not one of its maker's day: the first eight makers can make theirs again)
     expect((await stickers.make("p0", "a0", nth(1))).ok).toBe(true);
   });
+
+  it("keeps a picture written too late counted while it cannot be removed: it is there, with no record, until the next start", async () => {
+    const files = new MemoryStickerFiles();
+    const put = files.put.bind(files);
+    let go: (() => void) | undefined;
+    files.put = (id, data) => new Promise<void>((resolve) => (go = () => void put(id, data).then(resolve)));
+    files.remove = () => Promise.reject(new Error("the disk says no"));
+    const { stickers, warned } = book({ files, writeMs: 20 });
+    await expect(stickers.make("p1", "a1", nth(1))).rejects.toThrow(/not written in time/);
+    go!();
+    await vi.waitFor(() => expect(warned.join(" ")).toMatch(/could not be removed/));
+    expect(await files.ids()).toHaveLength(1);
+    expect(stickers.size, "no sticker, and its bytes still counted").toMatchObject({ stickers: 0 });
+    expect(stickers.size.bytes).toBeGreaterThan(0);
+  });
 });
 
 describe("the host's switches", () => {

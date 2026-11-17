@@ -346,6 +346,14 @@ describe("a personal sticker", () => {
     // (and each is let go when its answer has gone)
     expect((await alex.make(picture(22))).statusCode).toBe(201);
     expect((await sam.make(picture(23))).statusCode).toBe(201);
+    // (what reading a body took is the site's time too: one refused as it is read is counted, and one made is counted as it is read and as it is unpacked)
+    const worked = vi.spyOn(store.stickers, "worked");
+    expect((await junk(`{"data":"${"A".repeat(4000)}","junk":1}`)).statusCode).toBe(400);
+    expect(worked.mock.calls.map(([ms]) => ms > 0), "refused, and counted").toEqual([true]);
+    worked.mockClear();
+    expect((await junk(`{"data":"${picture(25)}"}`)).statusCode).toBe(201);
+    expect(worked.mock.calls.map(([ms]) => ms > 0), "read, then unpacked").toEqual([true, true]);
+    worked.mockRestore();
     // (and the whole site's allowance, whoever sends: when the book says to wait, the picture is not let in, and is told for how long)
     const arriving = store.stickers.arriving.bind(store.stickers);
     store.stickers.arriving = () => 90_000;

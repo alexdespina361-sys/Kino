@@ -9,6 +9,8 @@ import type { StickerBook } from "./stickers";
 const MINUTE = 60_000;
 /** How long a picture let in has to arrive (a quarter of a megabyte: a slow phone's mobile data takes a few seconds). */
 const UPLOAD_MS = 30_000;
+/** What a megabyte of a body is counted as taking to arrive and be put together (ms): more than twice what the box was measured to take (3.8 ms for 5.3 MB). */
+const BODY_MS_PER_MB = 2;
 const STATUS: Record<StickerProblem | "gone" | "friends_off", number> = {
   off: 404,
   gone: 404,
@@ -110,7 +112,12 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
   // like this without it being removed first (only a second reader of the site's own would be refused); stickerWiring.test.ts starts the whole site with it.)
   void app.register(async (scope) => {
     scope.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, parsed) => {
-      const read = readStickerMake(body as string);
+      // (What reading the body takes is the site's time as well, whatever comes of it (the judge, 17 Nov: a body refused here had cost nothing of the hour's):
+      // taking it apart is timed, and its arriving is counted by its length (`BODY_MS_PER_MB`).)
+      const text = body as string;
+      const began = performance.now();
+      const read = readStickerMake(text);
+      stickers.worked(performance.now() - began + (text.length / 1_000_000) * BODY_MS_PER_MB);
       if (read) parsed(null, read);
       else parsed(Object.assign(new Error("The body is not a sticker to be made."), { statusCode: 400 }), undefined);
     });
@@ -148,12 +155,16 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
         const me = letIn.get(request);
         if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 }); // (never: the hook let it in)
         clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
+        // (Checking it and unpacking its picture is timed too, refused or not.)
+        const began = performance.now();
         const parsed = StickerMakeSchema.safeParse(request.body);
-        if (!parsed.success) return stickerRefusal(reply, "too_big");
+        const sent = parsed.success ? Buffer.from(parsed.data.data, "base64") : undefined;
+        stickers.worked(performance.now() - began);
+        if (!parsed.success || !sent) return stickerRefusal(reply, "too_big");
         me.making = true;
         let made: Awaited<ReturnType<StickerBook["make"]>>;
         try {
-          made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
+          made = await stickers.make(me.profileId, me.accountId, sent, parsed.data.delays);
         } finally {
           me.making = false;
           done(request); // (made or not, and its asker there or gone: nothing of it is left to do but the answer)
