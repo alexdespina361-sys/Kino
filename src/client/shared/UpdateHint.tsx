@@ -7,7 +7,10 @@ import "./updateHint.css";
 
 /** How long a TV's remote has been put down before the question is asked on it (it takes the remote's keys while it is up). */
 export const QUIET_MS = 60_000;
-/** How long OK does nothing once the question is up: an OK meant for what was on the screen, pressed as it came, answers nothing (the judge, 17 Nov). */
+/**
+ * How long OK does nothing after the first key pressed while the question is up: it comes while nobody is pressing, and the remote picked up again is meant for
+ * the page (the judge, 17 Nov). The first press is the one that finds the question there.
+ */
 export const ARM_MS = 1_000;
 const LOOK_MS = 2_000;
 
@@ -50,8 +53,8 @@ export function installUpdateKeys(): void {
  * "A new Kino is out" with Reload and Later, once the site serves a build that is not this page's (see update.ts), and never over a film.
  * - A screen that is touched or clicked (a phone, a computer, a hand-held screen showing the TV's pages) has it at the top, to press or to put away (×).
  * - A TV that is only a remote is asked once the remote has been put down for a minute, and not while something is typed or a window is open: the question
- *   then has the remote's keys - Left and Right between its two buttons, OK, Back for Later - and the remote is on Later, so a press that was meant for the
- *   page reloads nothing; OK does nothing for its first second. Once answered, the focus goes back to where it was.
+ *   then has the remote's keys - Left for Reload, Right for Later, OK, Back for Later - and the remote is on Later, so a press that was meant for the page
+ *   reloads nothing; OK answers only from a second after the first key pressed. Once answered, the focus goes back to where it was.
  * Later is for this build: the next one is offered again. Reloading loses nothing that is kept (a profile, the lists, what was watched where).
  */
 export function UpdateHint() {
@@ -95,7 +98,8 @@ export function UpdateHint() {
   useEffect(() => {
     if (!showing || !remoteOnly) return;
     const before = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
-    const shownAt = performance.now();
+    /** When OK starts to answer: a second after the first key heard while it is up. */
+    let armedAt: number | null = null;
     chosen.current = "later";
     laterRef.current?.focus({ preventScroll: true });
     keys.answer = (event) => {
@@ -104,18 +108,25 @@ export function UpdateHint() {
       if (action === null) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      const now = performance.now();
+      const first = armedAt === null;
+      if (armedAt === null) armedAt = now + ARM_MS;
+      // (Each arrow goes its way, Reload on the left and Later on the right: a Right meant for the next tile stays on Later.)
       if (action === "left" || action === "right") {
-        const next = chosen.current === "later" ? "reload" : "later";
+        const next = action === "left" ? "reload" : "later";
         chosen.current = next;
         (next === "later" ? laterRef : reloadRef).current?.focus({ preventScroll: true });
       } else if (action === "select") {
-        if (performance.now() - shownAt < ARM_MS) return;
+        if (first || now < armedAt) return;
         (chosen.current === "reload" ? answers.current.reload : answers.current.later)();
       } else if (action === "back") answers.current.later();
     };
     return () => {
       keys.answer = null;
-      // (Back where the remote was; if that is gone, on what the page would land on first, never on nothing: the judge, 17 Nov.)
+      // (Back where the remote was; if that is gone, on what the page would land on first, never on nothing: the judge, 17 Nov. Only while nothing else took
+      // the keys meanwhile - a film that came on, a window that opened - which keeps them.)
+      const on = document.activeElement;
+      if (on !== null && on !== document.body && on.isConnected) return;
       if (before?.isConnected) before.focus({ preventScroll: true });
       else document.querySelector<HTMLElement>("[data-autofocus]:not(:disabled), [data-nav]:not(:disabled)")?.focus({ preventScroll: true });
     };

@@ -89,11 +89,14 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     await expect(hint(tv)).toBeVisible();
     // (The remote is on Later: a press meant for the page reloads nothing, the judge, 17 Nov.)
     await expect(tv.getByTestId("update-later")).toBeFocused();
+    // (Each arrow goes its way: a Right meant for the next tile stays on Later; Left is Reload.)
     await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("update-later")).toBeFocused();
+    await tv.keyboard.press("ArrowLeft");
     await expect(tv.getByTestId("update-reload")).toBeFocused();
     await tv.keyboard.press("ArrowDown"); // (the page under it does not move)
     await expect(tv.getByTestId("update-reload")).toBeFocused();
-    await tv.keyboard.press("ArrowLeft");
+    await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("update-later")).toBeFocused();
     expect(await tv.evaluate(() => (window as unknown as { heard?: boolean }).heard)).toBeUndefined();
     await tv.keyboard.press("Escape");
@@ -125,12 +128,17 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     await tv.clock.fastForward(3_000);
     await expect(hint(tv)).toBeVisible();
 
-    // (OK as it comes answers nothing; a second later, OK on Reload reloads.)
+    // (The first OK - the remote picked up again - answers nothing, however long the question was up; a second later, OK on Reload reloads.)
     await expect(tv.getByTestId("update-later")).toBeFocused();
+    await tv.clock.fastForward(5_000);
+    // (The page's clock stands still from here: "within its second" does not hang on how fast this machine is, the judge, 17 Nov.)
+    await tv.clock.pauseAt((await tv.evaluate(() => Date.now())) + 100);
     await tv.keyboard.press("Enter");
     await expect(hint(tv)).toBeVisible();
+    await tv.keyboard.press("ArrowLeft");
+    await tv.keyboard.press("Enter"); // (within its second: nothing)
+    await expect(hint(tv)).toBeVisible();
     await tv.clock.fastForward(1_500);
-    await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("update-reload")).toBeFocused();
     const reloaded = tv.waitForEvent("load");
     await tv.keyboard.press("Enter");
