@@ -343,6 +343,8 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
 .season.active { background: #fff; color: #000; }
 .episodes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+/* (Show earlier over a long season's episodes, Show more under them: 24 at a time, TitleSheet.tsx.) */
+.episodes-more { min-height: 46px; font-size: 0.95rem; }
 .episode { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; overflow: hidden; padding: 13px 14px; border-radius: 12px; background: var(--surface-2); text-align: left; }
 .episode-no { flex: none; min-width: 1.8em; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; }
 .episode-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
