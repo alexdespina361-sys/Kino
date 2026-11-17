@@ -163,6 +163,12 @@ describe("the page's side of personal stickers", () => {
       expect(asItWas(Array(48).fill(40))).toHaveLength(48);
       expect(asItWas(Array(9).fill(900))).toBeNull();
       expect(asItWas([300])).toBeNull();
+      // (a picture a file says is shown for days, or for no time that is a number: known at once, nothing is cut into pieces first)
+      const before = performance.now();
+      expect(asItWas([100, 4e12])).toBeNull();
+      expect(asItWas([100, Infinity])).toBeNull();
+      expect(asItWas([100, NaN])).toBeNull();
+      expect(performance.now() - before).toBeLessThan(200);
     });
 
     it("allows so many megapixels for each gigabyte of the phone: real phones' photos open where they are taken, and more is turned away without opening it", async () => {

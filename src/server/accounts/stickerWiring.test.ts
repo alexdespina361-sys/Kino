@@ -364,6 +364,9 @@ describe("a personal sticker", () => {
     await vi.waitFor(() => expect(release).toBeDefined());
     gone.abort();
     expect(await asked).toBe("gone");
+    // (its place is kept while what it sent is still being made: an asker who leaves does not make room for the next, the judge, 17 Nov)
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect((await alex.make(picture(31))).statusCode, "still being made").toBe(503);
     release!();
     files.put = put;
     await vi.waitFor(async () => expect(await alex.collection()).toHaveLength(1));

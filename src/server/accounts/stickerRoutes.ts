@@ -69,10 +69,12 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
    */
   const uploadMs = stickers.options.uploadMs ?? UPLOAD_MS;
   const uploading = new Set<string>();
-  const letIn = new WeakMap<FastifyRequest, { accountId: string; profileId: string; deadline: ReturnType<typeof setTimeout> }>();
+  const letIn = new WeakMap<FastifyRequest, { accountId: string; profileId: string; deadline: ReturnType<typeof setTimeout>; making?: boolean }>();
   const done = (request: FastifyRequest) => {
     const me = letIn.get(request);
-    if (!me) return;
+    // (While what it sent is being made its place is kept, whether or not its asker is still there: the making goes on without them, and a place let go then
+    // was room for the next, and the next, all of them being made at once, the judge, 17 Nov. The handler lets it go when the making has ended.)
+    if (!me || me.making) return;
     clearTimeout(me.deadline);
     letIn.delete(request);
     uploading.delete(me.accountId);
@@ -104,7 +106,8 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
   const movingBody = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4096;
   const arriveMs = stickers.moving ? uploadMs * 3 : uploadMs;
   // (In a place of its own: there, and nowhere else, a body is read as text and taken apart by hand (`readStickerMake`), never unpacked as JSON whatever it
-  // holds. A body that is not what the page sends is a bad request, as one that is not JSON at all always was.)
+  // holds. A body that is not what the page sends is a bad request, as one that is not JSON at all always was. Fastify lets its own JSON reader be replaced
+  // like this without it being removed first (only a second reader of the site's own would be refused); stickerWiring.test.ts starts the whole site with it.)
   void app.register(async (scope) => {
     scope.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, parsed) => {
       const read = readStickerMake(body as string);
@@ -141,7 +144,14 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
         clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
         const parsed = StickerMakeSchema.safeParse(request.body);
         if (!parsed.success) return stickerRefusal(reply, "too_big");
-        const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
+        me.making = true;
+        let made: Awaited<ReturnType<StickerBook["make"]>>;
+        try {
+          made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
+        } finally {
+          me.making = false;
+          done(request); // (made or not, and its asker there or gone: nothing of it is left to do but the answer)
+        }
         if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
         return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
       },

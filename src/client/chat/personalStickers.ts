@@ -305,6 +305,8 @@ export function asItWas(shown: readonly number[]): { index: number; delay: numbe
   const all: { index: number; delay: number }[] = [];
   let total = 0;
   for (const [index, time] of shown.entries()) {
+    // (too long is known before the time is cut into pictures, not after: a file may say one of its pictures is shown for days, the judge, 17 Nov)
+    if (!Number.isFinite(time) || total + Math.floor(time) > MOVING_STICKER.maxDuration) return null;
     for (let left = Math.floor(time); left > 0; ) {
       // (never a last piece shorter than a picture may be shown: the two last pieces share what is left)
       const delay = left > MOVING_STICKER.maxDelay ? Math.min(MOVING_STICKER.maxDelay, left - MOVING_STICKER.minDelay) : left;
@@ -436,12 +438,14 @@ async function videoFrames(file: Blob): Promise<Frames | null> {
   const video = document.createElement("video");
   video.muted = true;
   video.playsInline = true;
-  video.preload = "auto";
+  video.preload = "metadata";
   const until = performance.now() + VIDEO_MS;
   const left = () => Math.min(5000, until - performance.now());
   try {
-    if (!(await videoSays(video, "loadeddata", () => (video.src = address), left()))) return null;
+    // (Its size is asked for before any of its pictures is: one too big is refused with none of them unpacked, where the browser allows, the judge, 17 Nov.)
+    if (!(await videoSays(video, "loadedmetadata", () => (video.src = address), left()))) return null;
     if (video.videoWidth * video.videoHeight > MOVING_PIXELS) throw new StickerError("too_big");
+    video.preload = "auto";
     // (A video that does not say how long it is (one a browser recorded) says so once it has been to its end.)
     if (video.duration === Infinity && !(await videoSays(video, "seeked", () => (video.currentTime = 1e6), left()))) return null;
     const duration = video.duration * 1000;

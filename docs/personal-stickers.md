@@ -43,7 +43,9 @@ sticker of its first picture, as before.
   all the same make a still PNG. 2 to 48 pictures, 20 to 1000 ms each, 8 seconds in all, 4 MB sent at most (`MOVING_STICKER` in `src/shared/stickers.ts`).
 - What keeps the server's work small (the judge, 17 Nov): the body is read as text and taken apart by hand (`readStickerMake`: exactly `{"data":"…"}` or
   `{"data":"…","delays":[…]}`, anything else is a bad request, never unpacked); one WebP is packed at a time, the whole site over, and has 10 seconds; and
-  each one sent to be made is one of an account's 40 tries a day, made or not.
+  each one sent to be made is one of an account's 40 tries a day, made or not. A sticker's place among the four made at once is kept until its making has
+  ended, whether or not whoever sent it is still there (round 2: one who left made room for the next while theirs was still being made). The page asks a
+  video its size before any of its pictures, and knows a picture shown too long before cutting its time into pieces.
 - When the server says it cannot make the one that moves (not a picture, or too big), the page sends its first picture as a still one. Any other failure
   is said as it is, and the collection is looked at again (the sticker may have been made, and its answer lost).
 - In the Android app (0.2.0), **WhatsApp GIFs** opens the file chooser in `WhatsApp Animated Gifs` (MP4 and GIF files). It shows only while they are on.
