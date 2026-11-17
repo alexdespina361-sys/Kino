@@ -1159,6 +1159,8 @@ test.describe("a title sent in a chat", () => {
     await ann.page.getByTestId("friend-chat").click();
     await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
     await ann.page.keyboard.press("ArrowLeft");
+    await expect(ann.page.getByTestId("tv-chat-sticker-btn")).toBeFocused(); // (the stickers' button is the nearest the box)
+    await ann.page.keyboard.press("ArrowLeft");
     await expect(ann.page.getByTestId("tv-chat-title-btn")).toBeFocused();
     await ann.page.keyboard.press("Enter");
     const picks = ann.page.getByTestId("tv-chat-pick");
@@ -1317,6 +1319,119 @@ test.describe("the chat on a hand-held screen that shows the TV's pages", () => 
     await tile(bob.page, ann.name).click();
     await bob.page.getByTestId("friend-chat").click();
     await expect(tvLines(bob.page).first().getByTestId("chat-text")).toHaveText("Hello from the phone");
+  });
+});
+
+/* ------------------------------ Stickers (the site's own pictures) ------------------------------ */
+
+const STICKER_COUNT = 28;
+const stickerLoaded = (picture: ReturnType<Page["getByTestId"]>) => picture.evaluate((element) => (element as HTMLImageElement).complete && (element as HTMLImageElement).naturalWidth);
+const bubbleOf = (picture: ReturnType<Page["getByTestId"]>) => picture.evaluate((element) => getComputedStyle(element.closest(".chat-bubble")!).backgroundColor);
+
+test.describe("stickers in a chat", () => {
+  test("on the phone: the sticker button opens the whole set, a press sends one and the friend sees the picture; Back sends nothing; an emoji of the set typed alone is a sticker too, one in words stays words", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    // Back shuts the grid and sends nothing
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    await expect(sheet).toBeVisible();
+    const picks = ann.page.getByTestId("chat-sticker-pick");
+    await expect(picks).toHaveCount(STICKER_COUNT);
+    await expect(picks.first()).toHaveAttribute("data-sticker", "popcorn");
+    expect(await gridFaults(picks), "the stickers: squares, none over another").toEqual([]);
+    await ann.page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(0);
+
+    // a press sends it: the grid shuts, the chat has the picture, no bubble around it
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await ann.page.locator('[data-testid="chat-sticker-pick"][data-sticker="heart-eyes"]').click();
+    await expect(sheet).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(1);
+    const mine = lines(ann.page).first().getByTestId("chat-sticker");
+    await expect(mine).toHaveAttribute("src", "/stickers/heart-eyes.webp");
+    await expect.poll(() => stickerLoaded(mine)).toBeGreaterThan(0);
+    const bubble = lines(ann.page).first().getByTestId("chat-bubble");
+    expect(await bubble.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+    // (what is under the picture is what was sent, the emoji: a page that does not know stickers shows it)
+    await expect(mine).toHaveAttribute("alt", "\u{1F60D}");
+
+    await openChat(bob.page);
+    const theirs = lines(bob.page).first().getByTestId("chat-sticker");
+    await expect(theirs).toHaveAttribute("src", "/stickers/heart-eyes.webp");
+    await expect.poll(() => stickerLoaded(theirs)).toBeGreaterThan(0);
+    expect(await bubbleOf(theirs), "a friend's sticker has no bubble either").toBe("rgba(0, 0, 0, 0)");
+    await write(bob.page, "\u{1F525}");
+    await expect(lines(ann.page)).toHaveCount(2, SOON);
+    await expect(lines(ann.page).nth(1).getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/fire.webp");
+    await write(bob.page, "\u{1F525} that ending");
+    await expect(lines(ann.page)).toHaveCount(3, SOON);
+    await expect(lines(ann.page).nth(2).getByTestId("chat-sticker")).toHaveCount(0);
+    await expect(lines(ann.page).nth(2).getByTestId("chat-text")).toHaveText("\u{1F525} that ending");
+  });
+
+  test("on a TV that is only a remote: the button beside the box opens the set, the remote walks it and OK sends one; the friend on the narrowest hand-held screen sees it and has the set as the whole screen, one list that scrolls", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob", { viewport: { width: 320, height: 640 } });
+    await meet(ann, bob);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
+    await ann.page.keyboard.press("ArrowLeft");
+    await expect(ann.page.getByTestId("tv-chat-sticker-btn")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat-stickers-page")).toBeVisible();
+    const picks = ann.page.getByTestId("chat-sticker-pick");
+    await expect(picks).toHaveCount(STICKER_COUNT);
+    await expect(picks.first()).toBeFocused();
+    expect(await gridFaults(picks), "the stickers: squares, none over another").toEqual([]);
+    expect(await outsideTheScreen(ann.page, "tv-chat-stickers-page")).toEqual([]);
+    // Back sends nothing
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-empty")).toBeVisible();
+    await ann.page.getByTestId("tv-chat-sticker-btn").click();
+    await expect(picks.first()).toBeFocused();
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(picks.nth(1)).toBeFocused();
+    await ann.page.keyboard.press("ArrowDown");
+    await expect(picks.nth(8)).toBeFocused(); // (seven to a row)
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(tvLines(ann.page).first().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/heart-eyes.webp");
+    // the page that writes quotes it in words, for a TV that has no colour emoji
+    await ann.page.getByTestId("tv-chat-write").click();
+    await expect(ann.page.getByTestId("tv-chat-quote")).toContainText(say(en["chat.stickerSaid"], { emoji: "\u{1F60D}" }));
+    await ann.page.keyboard.press("Escape");
+
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    const theirs = tvLines(bob.page).first().getByTestId("chat-sticker");
+    await expect(theirs).toHaveAttribute("src", "/stickers/heart-eyes.webp");
+    await expect.poll(() => stickerLoaded(theirs)).toBeGreaterThan(0);
+    expect(await bubbleOf(theirs), "a friend's sticker has no bubble").toBe("rgba(0, 0, 0, 0)");
+    expect(await outsideTheScreen(bob.page, "tv-chat", false)).toEqual([]);
+    expect((await where(bob.page.getByTestId("tv-chat-box"))).width, "the box keeps room to type in, with the three buttons beside it").toBeGreaterThan(90);
+    await bob.page.getByTestId("tv-chat-sticker-btn").click();
+    await expect(bob.page.getByTestId("tv-chat-stickers-page")).toBeVisible();
+    const theirPicks = bob.page.getByTestId("chat-sticker-pick");
+    await expect(theirPicks).toHaveCount(STICKER_COUNT);
+    expect(await gridFaults(theirPicks), "on the narrowest screen: squares, none over another").toEqual([]);
+    expect((await where(theirPicks.first())).width, "five or so to a row, each bigger than a finger").toBeGreaterThan(48);
+    expect(await outsideTheScreen(bob.page, "tv-chat-stickers-page", false)).toEqual([]);
+    await theirPicks.last().scrollIntoViewIfNeeded();
+    await expect(theirPicks.last()).toBeInViewport();
+    await expect(bob.page.getByTestId("tv-chat-sticker-back")).toBeInViewport(); // (the arrow stays at the top)
+    await theirPicks.last().click();
+    await expect(bob.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(bob.page)).toHaveCount(2);
+    await expect(tvLines(bob.page).last().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/alarm.webp");
+    await expect(tvLines(ann.page)).toHaveCount(2, SOON);
   });
 });
 

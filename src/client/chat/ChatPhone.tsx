@@ -2,10 +2,11 @@ import { useRef, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
-import { FilmIcon, GifIcon, SendIcon, ShieldIcon } from "../shared/icons";
+import { FilmIcon, GifIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
+import { StickerPickSheet } from "./StickerPick";
 import { afterSent, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { CHAT_FACTS } from "./state";
@@ -44,6 +45,8 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   /** The sheet of GIFs is open (GifPick.tsx): there only when the site has a KLIPY key. */
   const [gifPicking, setGifPicking] = useState(false);
   const gifKey = useGifKey();
+  /** The sheet of stickers is open (StickerPick.tsx). */
+  const [stickerPicking, setStickerPicking] = useState(false);
   const blocked = whyNotWrite(session);
 
   return (
@@ -97,19 +100,20 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               {blocked === "ended" && session.ended ? problemText(t, session.ended, name) : t("chat.closed", { name })}
             </p>
           ) : (
-            <Composer session={session} onPickTitle={() => setPicking(true)} {...(gifKey ? { onPickGif: () => setGifPicking(true) } : {})} />
+            <Composer session={session} onPickTitle={() => setPicking(true)} {...(gifKey ? { onPickGif: () => setGifPicking(true) } : {})} onPickSticker={() => setStickerPicking(true)} />
           )}
         </div>
       </Sheet>
       {picking && !blocked && <TitlePickSheet name={name} session={session} onClose={() => setPicking(false)} />}
       {gifPicking && gifKey && !blocked && <GifPickSheet name={name} gifKey={gifKey} session={session} onClose={() => setGifPicking(false)} />}
+      {stickerPicking && !blocked && <StickerPickSheet name={name} session={session} onClose={() => setStickerPicking(false)} />}
       {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} />}
     </>
   );
 }
 
 /** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. Beside the box, the button that sends a title instead (see TitlePick.tsx). */
-function Composer({ session, onPickTitle, onPickGif }: { session: ChatSession; onPickTitle: () => void; onPickGif?: () => void }) {
+function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session: ChatSession; onPickTitle: () => void; onPickGif?: () => void; onPickSticker: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
   const input = useRef<HTMLDivElement>(null);
@@ -134,6 +138,9 @@ function Composer({ session, onPickTitle, onPickGif }: { session: ChatSession; o
           <GifIcon />
         </button>
       )}
+      <button type="button" className="chat-title-btn chat-sticker-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-testid="chat-sticker-btn">
+        <StickerIcon />
+      </button>
       {/* (An editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, see MessageBox.tsx.) */}
       <MessageBox
         ref={input}

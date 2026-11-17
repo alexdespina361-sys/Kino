@@ -5,6 +5,7 @@ import { useLanguage, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
 import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
+import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
 import { onlyNames, titleIn, titleLabel, type TitleInText } from "./titles";
@@ -36,7 +37,8 @@ const CARD = ".chat-card[data-title]";
  * The messages of a chat, oldest first and the newest at the bottom, where the list stays as messages come (unless it was scrolled up to read:
  * then it stays where it was). A message is text (never a link, never markup) in a bubble: one's own on the right, the friend's on the left.
  * A message that names a title by its address on this site (titles.ts) has a card under it, with the poster, which opens the title here; the address
- * is never shown as a link nor followed. A message that is the address of a GIF from KLIPY and nothing else (gifs.ts) is the picture. What a report would
+ * is never shown as a link nor followed. A message that is the address of a GIF from KLIPY and nothing else (gifs.ts) is the picture; one that is a sticker's
+ * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
 export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, remote = false, onOpenTitle, testId = "chat-lines" }: ChatLinesProps) {
@@ -47,7 +49,9 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const atEnd = useRef(true);
   // (A report shows what it would send: the text as it is, a GIF's address among it.)
   const gifs = useMemo(() => lines.map((line) => (showWriter ? null : gifOf(line.text))), [lines, showWriter]);
-  const titles = useMemo(() => lines.map((line, index) => (showWriter || gifs[index] ? null : titleIn(line.text))), [lines, showWriter, gifs]);
+  // (A report shows what it would send: a sticker's emoji, as it was sent.)
+  const stickers = useMemo(() => lines.map((line) => (showWriter ? null : stickerOf(line.text))), [lines, showWriter]);
+  const titles = useMemo(() => lines.map((line, index) => (showWriter || gifs[index] || stickers[index] ? null : titleIn(line.text))), [lines, showWriter, gifs, stickers]);
   const cards = useMemo(() => cardsOf(titles.map((found) => found?.id ?? null)), [titles]);
 
   // The newest message in view: the first time, for each new one when the person was at the end, and again when what is in the list changes
@@ -164,6 +168,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           const open = pressable && picked === line.id;
           const found = titles[index] ?? null;
           const gif = gifs[index] ?? null;
+          const sticker = stickers[index] ?? null;
+          const picture = gif ? " chat-bubble-gif" : sticker ? " chat-bubble-sticker" : "";
           const bubble = (text: ReactNode) => (
             <>
               {showWriter && <span className="chat-writer">{line.mine ? t("chat.you") : name}</span>}
@@ -176,11 +182,11 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           const said = (text: ReactNode, card: ReactNode) => (
             <>
               {pressable ? (
-                <button type="button" className={`chat-bubble${gif ? " chat-bubble-gif" : ""}${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={() => onPick(open ? null : line.id)} data-testid="chat-bubble">
+                <button type="button" className={`chat-bubble${picture}${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={() => onPick(open ? null : line.id)} data-testid="chat-bubble">
                   {bubble(text)}
                 </button>
               ) : (
-                <div className={`chat-bubble${gif ? " chat-bubble-gif" : ""}`}>{bubble(text)}</div>
+                <div className={`chat-bubble${picture}`}>{bubble(text)}</div>
               )}
               {card}
               {open && onTakeBack && (
@@ -199,6 +205,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
               )}
               {gif ? (
                 said(<GifPicture url={gif} />, null)
+              ) : sticker ? (
+                said(<StickerPicture sticker={sticker} />, null)
               ) : (
                 <Said line={line} found={found && cards.has(found.id) ? found : null} remote={remote} onOpenTitle={onOpenTitle}>
                   {said}
@@ -210,6 +218,11 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       </ol>
     </div>
   );
+}
+
+/** A message that is one of the chat's stickers (stickers.ts): its picture, big and with no bubble; its emoji is what a screen reader says, and what is copied. */
+function StickerPicture({ sticker }: { sticker: Sticker }) {
+  return <img className="chat-sticker" src={stickerSrc(sticker)} alt={sticker.emoji} width={192} height={192} decoding="async" draggable={false} data-testid="chat-sticker" data-sticker={sticker.id} />;
 }
 
 /**
