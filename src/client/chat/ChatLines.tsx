@@ -121,6 +121,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
    * the end (its first steps are still near it). The way there decides that, from where it will stop.
    */
   const travel = useRef<{ goal: number; until: number } | null>(null);
+  const travelTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(travelTimer.current), []);
   /** The newest message seen: one of one's own that comes after it is followed to the end, wherever the list was being read. */
   const newest = useRef<number | null>(null);
   // (A report shows what it would send: the text as it is, a GIF's address among it.)
@@ -303,7 +305,19 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     const goal = Math.round(Math.min(most, Math.max(0, element.scrollTop + at.top - view.top - (view.height - at.height) / 2)));
     atEnd.current = most - goal <= AT_END;
     const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    travel.current = Math.abs(goal - element.scrollTop) > 1 ? { goal, until: performance.now() + (smooth ? 900 : 100) } : null;
+    const wait = smooth ? 900 : 100;
+    const trip = Math.abs(goal - element.scrollTop) > 1 ? { goal, until: performance.now() + wait } : null;
+    travel.current = trip;
+    // (When its time is up the list is asked where it is, once more: a hand that scrolled it meanwhile and stopped sends no scroll after, the judge, 17 Nov.)
+    window.clearTimeout(travelTimer.current);
+    if (trip) {
+      travelTimer.current = window.setTimeout(() => {
+        const list = box.current;
+        if (travel.current !== trip || !list) return;
+        travel.current = null;
+        atEnd.current = list.scrollHeight - list.scrollTop - list.clientHeight <= AT_END;
+      }, wait + 30);
+    }
     element.scrollTo({ top: goal, behavior: smooth ? "smooth" : "auto" });
     return item;
   };
