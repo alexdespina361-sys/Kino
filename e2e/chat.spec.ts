@@ -1714,6 +1714,34 @@ test.describe("reactions in a chat", () => {
     await expect(bubbles).toHaveCount(1);
     await expect(bubbles.first()).toHaveAttribute("aria-expanded", "false");
     await expect(bar).toHaveCount(0);
+
+    // Ann's own message: Right past the last of the six goes on to Take back at the top of the chat, and Left comes back to the message; Escape lets the
+    // message go, and the keys are on it again, not on nothing (the judge, 17 Nov)
+    await ann.page.getByTestId("tv-chat-box").click();
+    await ann.page.keyboard.type("Mine");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    await list.focus();
+    await ann.page.keyboard.press("Tab");
+    await ann.page.keyboard.press("ArrowDown");
+    await expect(bubbles.last()).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    for (let step = 0; step < 6; step++) await ann.page.keyboard.press("ArrowRight");
+    await expect(six.last()).toBeFocused();
+    const take = ann.page.getByTestId("chat-takeback");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(take).toBeFocused();
+    await ann.page.keyboard.press("ArrowLeft");
+    await expect(bubbles.last()).toBeFocused();
+    await expect(bar).toBeVisible();
+    for (let step = 0; step < 7; step++) await ann.page.keyboard.press("ArrowRight");
+    await expect(take).toBeFocused();
+    await ann.page.keyboard.press("Escape");
+    await expect(take).toHaveCount(0);
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.last()).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
   });
 
   test("a TV's page of six, open when the friend stopped taking messages, does not come back by itself when they take them again: the chat is shown (the judge, 17 Nov)", async ({ browser }) => {
