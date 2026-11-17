@@ -6,7 +6,7 @@ const base = (profileId: string, friendId: string) => `/api/profiles/${encodeURI
 /** What the server says about the chat of a profile with one of its friends (routes: server/accounts/chatRoutes.ts). */
 export const chatApi = {
   /** The chat. With the revision the page has, the answer has no messages when nothing changed. Asking is having seen it. */
-  read: (profileId: string, friendId: string, since?: number) => ask(ChatThreadSchema, "GET", `${base(profileId, friendId)}${since === undefined ? "" : `?since=${since}`}`),
+  read: (profileId: string, friendId: string, since?: number) => ask(ChatThreadSchema, "GET", `${base(profileId, friendId)}${since === undefined ? "" : `?since=${since}&reactions=1`}`),
   /** Write to the friend: the answer is the chat, with the message in it. */
   send: (profileId: string, friendId: string, text: string) => ask(ChatThreadSchema, "POST", base(profileId, friendId), { text }),
   /** Send one of one's personal stickers (its name): the answer is the chat, with it in it. */

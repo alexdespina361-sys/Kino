@@ -1611,7 +1611,118 @@ test.describe("reactions in a chat", () => {
     await expect.poll(() => reactionsOn(tvLines(ann.page).first())).toEqual([`theirs:${JOY}`]);
     await expect.poll(() => reactionsOn(tvLines(bob.page).first()), SOON).toEqual([`mine:${JOY}`]);
   });
+
+  test("on a computer the keyboard reaches them: Tab stops on the newest message, Up and Down go between messages, Enter opens the six and Right walks them, Escape shuts them before the chat; a message taken back while its six are open takes them, and the keys go to the one before (the judge, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob", { desk: true });
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "First");
+    await writes(bob.page, ann.page, "Second");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    const list = ann.page.getByTestId("tv-chat-lines");
+    const bubbles = list.getByTestId("chat-bubble");
+    const bar = ann.page.getByTestId("chat-react-bar");
+    const six = bar.getByTestId("chat-react");
+
+    // Tab from the list stops on the newest message; Up and Down go between them
+    await list.focus();
+    await ann.page.keyboard.press("Tab");
+    await expect(bubbles.last()).toBeFocused();
+    await ann.page.keyboard.press("ArrowUp");
+    await expect(bubbles.first()).toBeFocused();
+    await ann.page.keyboard.press("ArrowDown");
+    await expect(bubbles.last()).toBeFocused();
+
+    // Enter opens the six under it with the keys still on the message; Right goes along them; Enter puts one on, and the keys are on the message again
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    await expect(bubbles.last()).toBeFocused();
+    await expect(bubbles.last()).toHaveAttribute("aria-expanded", "true");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(six.first()).toBeFocused();
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(six.nth(1)).toBeFocused();
+    await expect(six.nth(1)).toHaveAttribute("data-reaction", JOY);
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.last()).toBeFocused();
+    await expect.poll(() => reactionsOn(tvLines(ann.page).last())).toEqual([`mine:${JOY}`]);
+    await expect.poll(async () => (await openFriendsChatOf(bob.page, ann.page)).lines.at(-1)?.theirReaction).toBe(JOY);
+
+    // Escape shuts the six, and only them
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(bar).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(bubbles.last()).toBeFocused();
+    // (Space presses a message as Enter does)
+    await ann.page.keyboard.press("Space");
+    await expect(bar).toBeVisible();
+    await ann.page.keyboard.press("Space");
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.last()).toBeFocused();
+
+    // the six open on Bob's newest, the keys on one of them: Bob takes it back, and the message goes with its six; the keys are on the one before,
+    // and Enter there opens that one's own six
+    await ann.page.keyboard.press("Enter");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(six.first()).toBeFocused();
+    const newest = (await openFriendsChatOf(bob.page, ann.page)).lines.at(-1)!.id;
+    expect((await bob.page.request.delete(`${await chatAddress(bob.page, ann.page)}/${newest}`)).ok()).toBe(true);
+    await expect(tvLines(ann.page)).toHaveCount(1, SOON);
+    await expect(bar).toHaveCount(0);
+    await expect(bubbles.first()).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(bar).toBeVisible();
+    await expect(bubbles.first()).toHaveAttribute("aria-expanded", "true");
+
+    // Bob stops taking messages while the six are open: they go (his message can't be pressed now), and do not come back by themselves when he takes them again
+    await chose(bob.page, { friendsMessages: false });
+    await expect(ann.page.getByTestId("tv-chat-closed")).toBeVisible(SOON);
+    await expect(bar).toHaveCount(0);
+    await chose(bob.page, { friendsMessages: true });
+    await expect(ann.page.getByTestId("tv-chat-box")).toBeVisible(SOON);
+    await expect(bubbles).toHaveCount(1);
+    await expect(bubbles.first()).toHaveAttribute("aria-expanded", "false");
+    await expect(bar).toHaveCount(0);
+  });
+
+  test("a TV's page of six, open when the friend stopped taking messages, does not come back by itself when they take them again: the chat is shown (the judge, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "Popcorn?");
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-react-last").click();
+    await expect(ann.page.getByTestId("tv-chat-react-page")).toBeVisible();
+
+    await chose(bob.page, { friendsMessages: false });
+    await expect(ann.page.getByTestId("tv-chat-closed")).toBeVisible(SOON);
+    await expect(ann.page.getByTestId("tv-chat-react-page")).toHaveCount(0);
+    await chose(bob.page, { friendsMessages: true });
+    await expect(ann.page.getByTestId("tv-chat-write")).toBeVisible(SOON);
+    await expect(ann.page.getByTestId("tv-chat-react-page")).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+  });
 });
+
+/** Where `from`'s chat with `to` is asked for, and what it holds as `from` sees it. */
+const chatAddress = async (from: Page, to: Page) => `/api/profiles/${await profileOf(from)}/friends/${await profileOf(to)}/chat`;
+async function openFriendsChatOf(from: Page, to: Page): Promise<{ lines: Array<{ id: number; theirReaction?: string }> }> {
+  const response = await from.request.get(await chatAddress(from, to));
+  expect(response.ok()).toBe(true);
+  return response.json();
+}
 
 /* ------------------------------ Personal stickers (a picture of one's own, made a sticker on the page: on for the e2e server, see playwright.config.ts) ------------------------------ */
 
@@ -1835,6 +1946,95 @@ test.describe("personal stickers in a chat", () => {
     const fromWebp = await pictureAt(ann.page, (await mine.locator("img").getAttribute("src"))!);
     expect([fromWebp.width, fromWebp.height, colourAt(fromWebp, 96, 96)]).toEqual([192, 192, "blue"]);
     expect(fromWebp.data[3], "a see-through corner stays see-through").toBe(0);
+  });
+
+  test("in a chat that stays open: a picture that did not come for a moment is asked for again, not called gone; a friend's can still be saved once they take no messages; one the team takes down goes within five minutes (the judge, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const account = fresh("Bob");
+    const page = await openDevice(browser, PHONE, {}, async (context) => context.clock.install());
+    await page.goto("/");
+    await signUp(page, account);
+    await turnOnFriends(page);
+    const bob = { page, account, name: nameOf(account) };
+    await befriend(ann.page, bob.page);
+    const made = await ann.page.request.post(`/api/profiles/${await profileOf(ann.page)}/stickers`, { data: { data: stickerSquare() } });
+    expect(made.status()).toBe(201);
+    const id = ((await made.json()) as { id: string }).id;
+    expect((await ann.page.request.post(`${await chatAddress(ann.page, bob.page)}/sticker`, { data: { id } })).status()).toBe(201);
+
+    // (Bob's first look at his own stickers is answered late, with what he had before he saved hers: that older answer does not undo the save, below)
+    let late = () => {};
+    const lateGate = new Promise<void>((resolve) => (late = resolve));
+    let delivered: Promise<void> | undefined;
+    const collection = /\/api\/profiles\/[^/]+\/stickers$/;
+    await bob.page.route(collection, async (route) => {
+      if (route.request().method() !== "GET" || delivered) return route.continue();
+      delivered = (async () => {
+        const answer = await route.fetch();
+        await lateGate;
+        await route.fulfill({ response: answer });
+      })();
+      await delivered;
+    });
+
+    // the first asks for its picture fail (the network went for a moment): it waits in its place, and comes when it is asked again
+    let failing = 2;
+    const pictures = /\/chat\/stickers\//;
+    await bob.page.route(pictures, (route) => (failing-- > 0 ? route.abort("connectionreset") : route.continue()));
+    await openChat(bob.page);
+    await expect(bob.page.getByTestId("chat-personal-waiting")).toBeVisible();
+    await expect(bob.page.getByTestId("chat-personal-gone")).toHaveCount(0);
+    await bob.page.clock.fastForward(6_000);
+    const theirs = lines(bob.page).first().getByTestId("chat-personal-sticker");
+    await expect.poll(() => stickerLoaded(theirs)).toBe(192);
+    await bob.page.unroute(pictures);
+
+    // Ann stops taking messages: no reactions under hers then, but her sticker can still be pressed and saved
+    await chose(ann.page, { friendsMessages: false });
+    await expect(bob.page.getByTestId("chat-closed")).toBeVisible(SOON);
+    await expect.poll(() => delivered !== undefined, { message: "Bob's page asked for his stickers" }).toBe(true);
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(bob.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await bob.page.getByTestId("chat-sticker-save").click();
+    await expect(bob.page.getByTestId("chat-sticker-note")).toHaveText(en["chat.stickerSavedNote"]);
+    // (the late answer, from before the save, comes now: it is older than what the page has, and the sticker is still his)
+    late();
+    await delivered;
+    await bob.page.unroute(collection);
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(bob.page.getByTestId("chat-sticker-save")).toBeDisabled();
+    await expect(bob.page.getByTestId("chat-sticker-save")).toHaveText(en["chat.stickerSaved"]);
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+
+    // the team takes it down: the open chat says so once its picture is asked for again, in five minutes at most
+    expect((await bob.page.request.delete(`/api/admin/stickers/${id}`, { headers: AUTH })).status()).toBe(200);
+    await expect(theirs).toBeVisible();
+    await bob.page.clock.fastForward(5 * 60_000 + 31_000);
+    await expect(bob.page.getByTestId("chat-personal-gone")).toHaveText(en["chat.stickerGone"], SOON);
+    await expect(bob.page.getByTestId("chat-personal-sticker")).toHaveCount(0);
+  });
+
+  test("a host that did not answer whether they are on is asked again while the stickers stay open: a moment's lost network does not leave them off (the judge, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const account = fresh("Ann");
+    const page = await openDevice(browser, PHONE, {}, async (context) => context.clock.install());
+    let down = true;
+    await page.route("**/api/features", (route) => (down ? route.abort("connectionreset") : route.continue()));
+    await page.goto("/");
+    await signUp(page, account);
+    await turnOnFriends(page);
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(page, bob.page);
+    await openChat(page);
+    await page.getByTestId("chat-sticker-btn").click();
+    const sheet = page.getByTestId("chat-sticker-sheet");
+    await expect(sheet.getByTestId("chat-sticker-pick")).toHaveCount(STICKER_COUNT);
+    await expect(sheet.getByTestId("chat-stickers-yours")).toHaveCount(0);
+    // the network is back: with the sheet open all along (nothing opened again), the next ask finds them on
+    down = false;
+    await page.clock.fastForward(61_000);
+    await expect(sheet.getByTestId("chat-stickers-yours")).toBeVisible(SOON);
   });
 
   test("on a TV that is only a remote: none of its own shows nothing of them; the profile's own come first, with nothing to add or edit there, the list scrolls to what the remote is on, and OK sends one, which the friend's phone sees", async ({ browser }) => {

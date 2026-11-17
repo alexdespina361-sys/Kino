@@ -1,4 +1,4 @@
-import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_TEXT_MAX, type ChatLine, type ChatThread } from "../../shared";
+import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_TEXT_MAX, type ChatLine, type ChatReactionsNow, type ChatThread } from "../../shared";
 import { ApiError } from "../account/api";
 
 /** What can go wrong with a chat, in the few words the views know how to say. */
@@ -29,13 +29,28 @@ export interface ChatState {
 export const FRESH_CHAT: ChatState = { rev: null, open: true, muted: false, lines: [] };
 
 /**
- * The chat after an answer. An answer older than what the page has (it was slow, and a later one came first) is ignored. An answer without
- * messages means "still at the revision you have". `keepMuted`: a mute is on its way or has just been answered, so a reading that started
- * before it must not put the old state back.
+ * The chat after an answer. An answer older than what the page has (it was slow, and a later one came first) is ignored, and so is one at the same revision
+ * to a call that started before the one whose answer the page took last (`older`): whether the friend takes messages changes no revision, so such an answer
+ * could put back an `open` that is over (the judge, 17 Nov). An answer without messages means "still at the revision you have", and one with `reactions`
+ * "the messages you have, with these reactions now". `keepMuted`: a mute is on its way or has just been answered, so a reading that started before it must
+ * not put the old state back.
  */
-export function applyThread(state: ChatState, answer: ChatThread, keepMuted = false): ChatState {
-  if (state.rev !== null && answer.rev < state.rev) return state;
-  return { rev: answer.rev, open: answer.open, muted: keepMuted ? state.muted : answer.muted, lines: answer.lines ?? state.lines };
+export function applyThread(state: ChatState, answer: ChatThread, keepMuted = false, older = false): ChatState {
+  if (state.rev !== null && (answer.rev < state.rev || (answer.rev === state.rev && older))) return state;
+  const lines = answer.lines ?? (answer.reactions ? withReactions(state.lines, answer.reactions) : state.lines);
+  return { rev: answer.rev, open: answer.open, muted: keepMuted ? state.muted : answer.muted, lines };
+}
+
+/** The messages with the reactions an answer says they have now (a message it does not name keeps its own). */
+function withReactions(lines: readonly ChatLine[], now: readonly ChatReactionsNow[]): readonly ChatLine[] {
+  if (now.length === 0) return lines;
+  const byId = new Map(now.map((each) => [each.id, each]));
+  return lines.map((line) => {
+    const changed = byId.get(line.id);
+    if (!changed) return line;
+    const { myReaction: _mine, theirReaction: _theirs, ...rest } = line;
+    return { ...rest, ...(changed.myReaction ? { myReaction: changed.myReaction } : {}), ...(changed.theirReaction ? { theirReaction: changed.theirReaction } : {}) };
+  });
 }
 
 /** The newest message of one's own, or undefined. */

@@ -346,6 +346,44 @@ describe("the book of personal stickers", () => {
     expect(failing.warned.join(" ")).toMatch(/could not tidy/);
   });
 
+  it("is one sticker when a profile sends the same picture twice at once (its makes go one after the other)", async () => {
+    const { stickers, files } = book();
+    const [one, two] = await Promise.all([stickers.make("alex", "a1", nth(5)), stickers.make("alex", "a1", nth(5))]);
+    expect(one.ok && two.ok).toBe(true);
+    expect((one as { value: string }).value).toBe((two as { value: string }).value);
+    expect(stickers.size.stickers).toBe(1);
+    expect(await files.ids()).toHaveLength(1);
+    // (and one that fails lets the next one go on)
+    const failing = new MemoryStickerFiles();
+    const put = failing.put.bind(failing);
+    let fail = true;
+    failing.put = async (id, data) => (fail ? ((fail = false), Promise.reject(new Error("disk full"))) : put(id, data));
+    const other = book({ files: failing }).stickers;
+    const [first, second] = await Promise.allSettled([other.make("alex", "a1", nth(6)), other.make("alex", "a1", nth(6))]);
+    expect(first.status).toBe("rejected");
+    expect(second).toMatchObject({ status: "fulfilled", value: { ok: true } });
+  });
+
+  it("does not count a sticker against the account's day when the collection filled while its picture was written", async () => {
+    const files = new MemoryStickerFiles();
+    const put = files.put.bind(files);
+    let hold: (() => void) | undefined;
+    const { stickers } = book({ files });
+    // (the collection one short of full, and a sticker of Sam's to save into it)
+    for (let n = 0; n < PERSONAL_STICKER.perProfile - 1; n++) await make(stickers, "alex", nth(200 + n), `account-${Math.floor(n / PERSONAL_STICKER.madePerDay)}`);
+    const sams = await make(stickers, "sam", nth(300));
+    files.put = (id, data) => new Promise<void>((resolve) => (hold = () => void put(id, data).then(resolve)));
+    const making = stickers.make("alex", "late-account", nth(301));
+    await tick();
+    expect(stickers.save("alex", sams).ok).toBe(true);
+    hold!();
+    expect(await making).toEqual({ ok: false, error: "full" });
+    files.put = put;
+    // (the account has all of its day still: as many as a day allows, for another profile)
+    for (let n = 0; n < PERSONAL_STICKER.madePerDay; n++) await make(stickers, "kim", nth(400 + n), "late-account");
+    expect(await files.ids()).toHaveLength(PERSONAL_STICKER.perProfile - 1 + 1 + PERSONAL_STICKER.madePerDay);
+  });
+
   it("takes back the room it counted when a picture could not be written", async () => {
     const files = new MemoryStickerFiles();
     files.put = async () => Promise.reject(new Error("disk full"));

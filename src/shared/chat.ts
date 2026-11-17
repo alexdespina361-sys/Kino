@@ -58,16 +58,23 @@ export const ChatLineSchema = z.object({
 });
 export type ChatLine = z.infer<typeof ChatLineSchema>;
 
+/** A message's reactions as they are now (none of one: taken away), in an answer that says only what changed (`ChatThread.reactions`). */
+export const ChatReactionsNowSchema = ChatLineSchema.pick({ id: true, myReaction: true, theirReaction: true });
+export type ChatReactionsNow = z.infer<typeof ChatReactionsNowSchema>;
+
 /**
- * A chat, as one of the two sees it. `rev` goes up with every change to the messages (a new one, one taken back, one let go): a screen that
- * sends the `rev` it has is answered without `lines` when nothing changed, so asking every few seconds costs a few bytes. `open` is whether the
- * friend takes messages now (when they do not, nothing can be sent, and the page says so); `muted` is whether this profile muted the friend.
+ * A chat, as one of the two sees it. `rev` goes up with every change to the messages (a new one, one taken back, one let go, a reaction): a screen that
+ * sends the `rev` it has is answered without `lines` when nothing changed, so asking every few seconds costs a few bytes. A screen that says it can take
+ * it (`reactions=1`) is answered, when only reactions changed since its `rev`, with `reactions` instead: those messages whose reactions changed, as they
+ * are now. `open` is whether the friend takes messages now (when they do not, nothing can be sent, and the page says so); `muted` is whether this profile
+ * muted the friend.
  */
 export const ChatThreadSchema = z.object({
   rev: z.number().int().nonnegative(),
   open: z.boolean(),
   muted: z.boolean(),
   lines: z.array(ChatLineSchema).max(CHAT_KEEP_MAX).optional(),
+  reactions: z.array(ChatReactionsNowSchema).max(CHAT_KEEP_MAX).optional(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;
 

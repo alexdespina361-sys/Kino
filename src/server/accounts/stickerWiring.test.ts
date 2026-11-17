@@ -1,7 +1,9 @@
+import { once } from "node:events";
+import { connect } from "node:net";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { PNG } from "pngjs";
-import { afterEach, describe, expect, it } from "vitest";
-import { PERSONAL_STICKER_TEXT } from "../../shared";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { PERSONAL_STICKER, PERSONAL_STICKER_TEXT } from "../../shared";
 import { buildApp } from "../app";
 import { FeedbackStore, MemoryFeedbackBackend } from "../feedback/store";
 import { MemoryPersistence } from "./persistence";
@@ -45,10 +47,10 @@ function picture(n: number, text?: string): string {
   return file.toString("base64");
 }
 
-async function start(options: { on?: boolean; persistence?: MemoryPersistence; files?: MemoryStickerFiles } = {}) {
+async function start(options: { on?: boolean; persistence?: MemoryPersistence; files?: MemoryStickerFiles; uploadMs?: number } = {}) {
   const persistence = options.persistence ?? new MemoryPersistence();
   const files = options.files ?? new MemoryStickerFiles();
-  const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now, stickers: { on: options.on ?? true, files } });
+  const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now, stickers: { on: options.on ?? true, files, ...(options.uploadMs ? { uploadMs: options.uploadMs } : {}) } });
   const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
   const app = await buildApp({ accounts: store, feedback, passwordCost: cheap, feedbackAdminToken: TOKEN });
   apps.push(app);
@@ -310,5 +312,80 @@ describe("a personal sticker", () => {
     expect(store.stickers.has(alone)).toBe(false);
     expect(store.stickers.of(sam.id).stickers).toEqual([{ id: shared, mine: false }]);
     expect(await files.ids()).toEqual([shared]);
+  });
+
+  it("lets a picture in before its body is read: only from the profile's own account, one at a time for it, and so many at once for the site", async () => {
+    const files = new MemoryStickerFiles();
+    const { app, alex, sam } = await friends({ files });
+    // (what is not even read as a body is turned away for who sent it, not for what it is)
+    const raw = (client: Client, id: string) =>
+      app.inject({ method: "POST", url: `/api/profiles/${id}/stickers`, headers: { "content-type": "application/json", ...(client.cookie ? { cookie: client.cookie } : {}) }, payload: "{ not json" });
+    expect((await raw(new Client(app), alex.id)).statusCode).toBe(401);
+    expect((await raw(sam.client, alex.id)).statusCode).toBe(404);
+    expect((await raw(alex.client, alex.id)).statusCode).toBe(400);
+
+    // (pictures held on their way in: a second of Alex's waits, as does a fifth of the site's)
+    const put = files.put.bind(files);
+    const held: Array<() => void> = [];
+    files.put = (id, data) => new Promise<void>((resolve) => held.push(() => void put(id, data).then(resolve)));
+    const others = await Promise.all(["kim", "lee", "max"].map((login) => person(app, login)));
+    const waiting = [alex, ...others].map((who, n) => who.make(picture(10 + n)));
+    await vi.waitFor(() => expect(held).toHaveLength(4));
+    const busy = await alex.make(picture(20));
+    expect([busy.statusCode, busy.data, busy.headers["retry-after"]]).toEqual([503, { error: "busy", retryAfter: 5 }, "5"]);
+    expect([(await sam.make(picture(21))).statusCode]).toEqual([503]);
+    held.forEach((go) => go());
+    expect((await Promise.all(waiting)).map((reply) => reply.statusCode)).toEqual([201, 201, 201, 201]);
+    files.put = put;
+    // (and each is let go when its answer has gone)
+    expect((await alex.make(picture(22))).statusCode).toBe(201);
+    expect((await sam.make(picture(23))).statusCode).toBe(201);
+  });
+
+  it("lets an upload's place go however it ends: its asker gone while the picture was being kept, or the picture too slow to come", async () => {
+    const files = new MemoryStickerFiles();
+    const { app, alex } = await friends({ files, uploadMs: 1000 });
+    const address = await app.listen({ port: 0, host: "127.0.0.1" });
+    const path = `/api/profiles/${alex.id}/stickers`;
+    const body = JSON.stringify({ data: picture(30) });
+
+    // the picture came whole, and its asker went while it was being kept: the account's next is let in
+    const put = files.put.bind(files);
+    let release: (() => void) | undefined;
+    files.put = (id, data) => new Promise<void>((resolve) => (release = () => void put(id, data).then(resolve)));
+    const gone = new AbortController();
+    const asked = fetch(`${address}${path}`, { method: "POST", headers: { cookie: alex.client.cookie, "content-type": "application/json" }, body, signal: gone.signal }).catch(() => "gone");
+    await vi.waitFor(() => expect(release).toBeDefined());
+    gone.abort();
+    expect(await asked).toBe("gone");
+    release!();
+    files.put = put;
+    await vi.waitFor(async () => expect(await alex.collection()).toHaveLength(1));
+    expect((await alex.make(picture(31))).statusCode).toBe(201);
+
+    // one sent a little at a time keeps the account's next out only until its time is up, then it is ended
+    const socket = connect(Number(new URL(address).port), "127.0.0.1");
+    await once(socket, "connect");
+    const ended = once(socket, "close");
+    socket.on("error", () => {});
+    socket.write(`POST ${path} HTTP/1.1\r\nHost: localhost\r\nCookie: ${alex.client.cookie}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n${body.slice(0, 100)}`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect((await alex.make(picture(32))).statusCode).toBe(503);
+    await ended;
+    expect((await alex.make(picture(33))).statusCode).toBe(201);
+    expect(await alex.collection()).toHaveLength(3);
+  });
+
+  it("has one allowance of pictures a minute for an account, of its collection and of its chats together", async () => {
+    const { alex, sam, store } = await friends();
+    const sid = await madeOne(alex, 1);
+    await sendIt(alex, sam, sid);
+    expect((await alex.own(sid)).statusCode).toBe(200);
+    expect((await alex.client.call("GET", alex.chat(sam, `/stickers/${sid}`))).statusCode).toBe(200);
+    for (let n = 2; n < PERSONAL_STICKER.picturesPerMinute; n++) store.stickers.pictureReads.hit(alex.account);
+    expect((await alex.own(sid)).statusCode).toBe(429);
+    expect((await alex.client.call("GET", alex.chat(sam, `/stickers/${sid}`))).statusCode).toBe(429);
+    // (Sam's are his own)
+    expect((await sam.client.call("GET", sam.chat(alex, `/stickers/${sid}`))).statusCode).toBe(200);
   });
 });
