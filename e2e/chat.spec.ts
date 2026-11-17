@@ -2227,6 +2227,8 @@ test.describe("personal stickers in a chat", () => {
     await expect(bob.page.getByTestId("chat")).toBeVisible();
     await bubble.click();
     await expect(view).toBeVisible();
+    // (A press in the 400 ms after it opened is the second of a double tap and is let be: ChatLines.tsx `VIEW_SETTLE_MS`. The press here is a later one.)
+    await bob.page.waitForTimeout(450);
     await view.click({ position: { x: 8, y: 8 } }); // (a press anywhere puts it away too, and does not shut the sheet under it)
     await expect(view).toHaveCount(0);
     await expect(bob.page.getByTestId("chat")).toBeVisible();
