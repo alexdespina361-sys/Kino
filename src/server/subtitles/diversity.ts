@@ -6,6 +6,7 @@ import { subtitleQualityScore } from "../resolvers/adapters/filmpire";
 export type SubtitleSource =
   | "official"
   | "provider"
+  | "vixsrc"
   | "opensubtitles"
   | "romanian"
   | "tvsubtitles"
@@ -40,6 +41,9 @@ export function inferSubtitleSource(track: SubtitleTrack & { source?: SubtitleSo
   // counted as the stream's own captions, and a stream caption with no release name lost its place to three crowd files.)
   if (u.includes("opensubtitles") || l.includes("opensubtitles") || u.includes("strem.io")) {
     return "opensubtitles";
+  }
+  if (u.includes("vixsrc") || l.includes("vixsrc")) {
+    return "vixsrc";
   }
   return "provider";
 }
@@ -152,8 +156,8 @@ export function filterDiverseSubtitles(
     // For Romanian: romanian > official > provider > opensubtitles > tvsubtitles > subdl
     // For others: official > provider > opensubtitles > tvsubtitles > subdl > romanian
     const priorityOrder: SubtitleSource[] = lang === "ro"
-      ? ["romanian", "official", "provider", "opensubtitles", "tvsubtitles", "subdl"]
-      : ["official", "provider", "opensubtitles", "tvsubtitles", "subdl", "romanian"];
+      ? ["romanian", "official", "provider", "vixsrc", "opensubtitles", "tvsubtitles", "subdl"]
+      : ["official", "provider", "vixsrc", "opensubtitles", "tvsubtitles", "subdl", "romanian"];
 
     let bestSource: SubtitleSource | undefined;
     for (const cand of priorityOrder) {
