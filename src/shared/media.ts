@@ -258,9 +258,18 @@ const ENGLISH_DUB = /\benglish\s+dub\b/i;
  */
 export function preferredSourceIndex(media: NormalizedMedia, animeAudio: "jp" | "eng" | undefined): number | undefined {
   const sources = sourcesOf(media);
-  const wanted = animeAudio === "eng" ? ENGLISH_DUB : JAPANESE_AUDIO;
-  const at = sources.findIndex((source) => wanted.test(source.label ?? ""));
-  return at >= 0 ? at : undefined;
+  const dubbed = (source: (typeof sources)[number]) => ENGLISH_DUB.test(source.label ?? "");
+  if (animeAudio === "eng") {
+    const at = sources.findIndex(dubbed);
+    return at >= 0 ? at : undefined;
+  }
+  const at = sources.findIndex((source) => JAPANESE_AUDIO.test(source.label ?? ""));
+  if (at >= 0) return at;
+  // (An anime whose Japanese audio has no name, beside its "Server 2 (English Dub)": the first that is not the dub. Japanese chosen while the dub plays goes back
+  // to it - the judge, 17 Nov: it did nothing until the next episode.)
+  if (!sources.some(dubbed)) return undefined;
+  const original = sources.findIndex((source) => !dubbed(source));
+  return original >= 0 ? original : undefined;
 }
 
 /** What the pickers list, as places in `sourcesOf`. */

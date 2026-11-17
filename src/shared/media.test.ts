@@ -90,6 +90,16 @@ describe("preferredSourceIndex (anime audio preferred language)", () => {
       alternates: [{ label: "Server 2 (English Dub)", stream: { url: "https://films.example/dub.m3u8", type: "hls" } }],
     };
     expect(preferredSourceIndex(server, "eng")).toBe(1);
-    expect(preferredSourceIndex(server, "jp")).toBeUndefined(); // (the main one is not labelled: it is what plays first anyway)
+    // (The main one is not labelled: it is the anime's own audio, the one that is not the dub - Japanese chosen while the dub plays goes back to it.)
+    expect(preferredSourceIndex(server, "jp")).toBe(0);
+    expect(preferredSourceIndex(server, undefined)).toBe(0);
+    const dubFirst: NormalizedMedia = {
+      sourceLabel: "English Dub",
+      stream: { url: "https://films.example/dub.m3u8", type: "hls" },
+      alternates: [{ label: "Server 2", stream: { url: "https://films.example/sub.m3u8", type: "hls" } }],
+    };
+    expect([preferredSourceIndex(dubFirst, "jp"), preferredSourceIndex(dubFirst, "eng")]).toEqual([1, 0]);
+    const onlyDub: NormalizedMedia = { stream: { url: "https://films.example/dub.m3u8", type: "hls" }, alternates: [{ label: "English Dub", stream: { url: "https://films.example/dub2.m3u8", type: "hls" } }] };
+    expect(preferredSourceIndex(onlyDub, "jp")).toBe(0);
   });
 });
