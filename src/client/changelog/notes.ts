@@ -4,6 +4,22 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.12",
+    date: "2026-11-17",
+    en: [
+      "In a chat, a title someone sent can be answered and reacted to like any message: draw it to the right to reply, hold it to react.",
+      "Your messages now show one tick when your friend's phone or TV has them, and two coloured ticks once your friend has seen them.",
+    ],
+    ro: [
+      "Într-un chat, unui titlu trimis i se poate răspunde și reacționa ca oricărui mesaj: trage-l spre dreapta ca să răspunzi, ține-l apăsat ca să reacționezi.",
+      "Mesajele tale arată acum o bifă când telefonul sau televizorul prietenului le-a primit, și două bife colorate după ce prietenul le-a văzut.",
+    ],
+    it: [
+      "In una chat, a un titolo inviato si può rispondere e reagire come a ogni messaggio: trascinalo a destra per rispondere, tienilo premuto per reagire.",
+      "I tuoi messaggi ora mostrano una spunta quando il telefono o la TV del tuo amico li ha ricevuti, e due spunte colorate quando li ha visti.",
+    ],
+  },
+  {
     version: "0.4.11",
     date: "2026-11-17",
     en: [
