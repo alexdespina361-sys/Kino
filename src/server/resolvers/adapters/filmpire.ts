@@ -1311,6 +1311,9 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       if (id === "1400837" || isAnimeOrCartoon || url.hostname === "filmpire.sc") {
         const fastResult = await runFallback();
         if (fastResult) return fastResult;
+        if (url.hostname === "filmpire.sc") {
+          return { status: "unsupported", reason: "No video stream is currently available for this title." };
+        }
       }
 
       // 3. Request embed player from screenfetch4 / vidsrc
