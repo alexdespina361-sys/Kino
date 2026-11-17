@@ -3,7 +3,7 @@ import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } fro
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
 import { FilmIcon, GifIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
-import { ChatLines, type PersonalLines } from "./ChatLines";
+import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
 import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
@@ -68,6 +68,19 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
             <button type="button" className="chat-tool" onClick={report.start} data-testid="chat-report">
               <ShieldIcon /> {t("chat.report")}
             </button>
+            {/* (What can be done with the message that is selected, at the top and not under it, as in any messenger: the owner, 17 Nov.) */}
+            <span className="chat-tools-picked">
+              <PickedActions
+                line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
+                personal={personal.lines}
+                onTakeBack={(id) => {
+                  setPicked(null);
+                  void session.takeBack(id);
+                }}
+                onSaved={() => setPicked(null)}
+                className="chat-tool"
+              />
+            </span>
           </div>
 
           {!session.loaded && !session.ended ? (
@@ -88,10 +101,6 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               now={now}
               picked={picked}
               onPick={setPicked}
-              onTakeBack={(id) => {
-                setPicked(null);
-                void session.takeBack(id);
-              }}
               {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) })}
               onOpenTitle={onOpenTitle}
               personal={personal.lines}

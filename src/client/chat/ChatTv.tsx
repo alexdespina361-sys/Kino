@@ -7,7 +7,7 @@ import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
-import { ChatLines, type PersonalLines } from "./ChatLines";
+import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
@@ -302,6 +302,24 @@ export function ReadTv({
               {[presence || (online ? t("friends.online") : t("chat.open")), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ")}
             </p>
           </div>
+          {/* (What can be done with the message that is selected, beside the ⋯, as in any messenger: the owner, 17 Nov. Once done, the keys are the ⋯'s.) */}
+          {pointer && (
+            <PickedActions
+              line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
+              personal={personal?.lines}
+              onTakeBack={(id) => {
+                setPicked(null);
+                more.current?.focus({ preventScroll: true });
+                void session.takeBack(id);
+              }}
+              onSaved={() => {
+                setPicked(null);
+                more.current?.focus({ preventScroll: true });
+              }}
+              className="tv-chat-more"
+              nav
+            />
+          )}
           <div className="tv-chat-more-wrap" onBlur={leaving}>
             <button
               type="button"
@@ -360,10 +378,6 @@ export function ReadTv({
               ? {
                   picked,
                   onPick: setPicked,
-                  onTakeBack: (id: number) => {
-                    setPicked(null);
-                    void session.takeBack(id);
-                  },
                   // (Reactions while one can write: a friend who takes no messages takes no reactions either, see server/accounts/chat.ts `react`.)
                   ...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) }),
                 }

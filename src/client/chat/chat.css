@@ -42,17 +42,24 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 .chat-writer { display: block; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; opacity: 0.75; }
 .chat-text { display: block; }
 .chat-time { display: block; margin-top: 2px; font-size: 0.7em; opacity: 0.7; text-align: right; }
-.chat-takeback {
-  margin-top: 4px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 107, 107, 0.14);
-  color: var(--bad);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-/* (Take back and Save are reached with a computer's keys too, from the message: see ChatLines `keyboard`.) */
-button.chat-takeback:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* (A message is held to select it: the phone's own selecting of its words, and its menu for a picture, stay away. Words in a button were never selected.) */
+button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer; }
+/* What can be done with the selected message (ChatLines `PickedActions`), at the top of the chat: the phone's sheet draws them as its Mute and Report, on the
+   right; the TV's pages as round buttons beside the ⋯, their words for a screen reader only. Take back is the red of undoing, Save is not. */
+.chat-tools-picked { display: flex; flex: none; gap: 8px; margin-left: auto; }
+.chat-tools-picked:empty { display: none; }
+.chat-tool.chat-act-takeback { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
+.chat-act:disabled { opacity: 0.6; }
+.chat-act:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* A picture of the chat shown larger (ChatLines `PictureView`), over whatever the chat is in (a sheet is 50, the TV's pages 80 and their notes 90) and under
+   the question asked before the site is left (100). It is drawn at the end of the page, outside the chat's own colours: its own are said here. */
+.chat-view { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.8); cursor: zoom-out; animation: chat-view-in 0.14s ease-out; }
+.chat-view-picture { display: block; width: min(92vw, 640px); height: auto; max-height: 72vh; border-radius: 14px; object-fit: contain; }
+.chat-view-small { width: min(78vw, 60vh, 384px); border-radius: 0; }
+.chat-view-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 22px; cursor: pointer; }
+.chat-view-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@keyframes chat-view-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chat-view { animation: none; } }
 /* A title a message names (titles.ts): its poster and name under the bubble. The same size while the server is asked as after, so the list does not move. */
 .chat-card {
   display: flex;
@@ -279,6 +286,13 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-more svg { width: 1.8em; height: 1.8em; }
 .tv-chat-more:hover, .tv-chat-more[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1); color: #fff; }
 .tv-chat-more:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+/* (What can be done with the selected message, beside the ⋯ and drawn as it is: the picture says it, the words are a screen reader's and the tip's.) */
+.tv-chat-more.chat-act { position: relative; flex: none; background: rgba(255, 255, 255, 0.1); color: #fff; }
+.tv-chat-more.chat-act svg { width: 1.5em; height: 1.5em; }
+.tv-chat-more.chat-act-takeback { color: #ffb4b4; }
+.tv-chat-more.chat-act:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+.tv-chat-more.chat-act-takeback:focus-visible { color: #b3261e; }
+.tv-chat-more .chat-act-words { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tv-chat-menu { position: absolute; top: calc(100% + 0.5em); right: 0; display: flex; flex-direction: column; min-width: 20em; padding: 0.5em; border-radius: 0.9em; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1em 2.4em rgba(0, 0, 0, 0.6); }
 .tv-chat-menu[hidden] { display: none; }
 .tv-chat-menu button { display: flex; align-items: center; gap: 0.6em; padding: 0.6em 0.8em; border-radius: 0.6em; background: transparent; color: #fff; font-size: 1.35em; font-weight: 600; text-align: left; white-space: nowrap; }
@@ -443,8 +457,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }
-.chat-takeback.chat-sticker-save { background: var(--surface-2); color: var(--text); } /* (keeping is no undoing: not the red of Take back) */
-.chat-sticker-save:disabled { opacity: 0.6; }
 
 /*
  * Reactions (Reactions.tsx): what is on a message, small and under it on its side, a little over the bubble's edge as a messenger draws them; the bar of

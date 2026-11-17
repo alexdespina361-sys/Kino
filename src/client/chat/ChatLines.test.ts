@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatLines } from "./ChatLines";
+import { ChatLines, PickedActions } from "./ChatLines";
 import { count, has, line, tagOf } from "./fixtures";
 import { askAbout, forgetTitles } from "./titleCache";
 
@@ -43,20 +43,33 @@ describe("the messages of a chat", () => {
     expect(count(html, "chat-bubble")).toBe(0);
   });
 
-  it("let a line of one's own be pressed (not the friend's), and offer to take back the one that was", () => {
-    const html = render({ onPick: () => {}, onTakeBack: () => {}, picked: 2 });
+  it("let a line of one's own be selected (not the friend's); what is done with it is not under it but at the top of the chat", () => {
+    const html = render({ onPick: () => {}, picked: 2 });
     expect(count(html, "chat-bubble")).toBe(1);
     expect(tagOf(html, "chat-bubble")).toContain('aria-expanded="true"');
-    expect(count(html, "chat-takeback")).toBe(1);
-    // it sits under the line that was picked
-    expect(html).toMatch(/data-line="2"[\s\S]*chat-takeback[\s\S]*data-line="3"/);
+    expect(has(html, "chat-takeback"), "not under the message").toBe(false);
+    expect(tagOf(render({ onPick: () => {}, picked: null }), "chat-bubble")).toContain('aria-expanded="false"');
   });
 
-  it("offer nothing when none is picked", () => {
-    const html = render({ onPick: () => {}, onTakeBack: () => {}, picked: null });
-    expect(count(html, "chat-bubble")).toBe(1);
-    expect(tagOf(html, "chat-bubble")).toContain('aria-expanded="false"');
-    expect(has(html, "chat-takeback")).toBe(false);
+  it("offer, at the top of the chat, to take back the selected line of one's own: nothing for a friend's words, nothing with none selected, nothing without a way to", () => {
+    const acts = (props: Partial<Parameters<typeof PickedActions>[0]> = {}) => renderToStaticMarkup(createElement(PickedActions, { line: line(2, true), className: "round", onTakeBack: () => {}, ...props }));
+    expect(count(acts(), "chat-takeback")).toBe(1);
+    expect(tagOf(acts(), "chat-takeback")).toContain('aria-label="Take back"');
+    expect(tagOf(acts(), "chat-takeback")).toContain("round");
+    expect(tagOf(acts(), "chat-takeback"), "no stop of the remote's on a phone's sheet").not.toContain("data-nav");
+    expect(tagOf(acts({ nav: true }), "chat-takeback")).toContain("data-nav");
+    expect(acts({ line: line(1, false) })).toBe("");
+    expect(acts({ line: undefined })).toBe("");
+    expect(acts({ onTakeBack: undefined })).toBe("");
+  });
+
+  it("let a picture be pressed, to be seen larger, where it cannot be selected: a friend's sticker with no way to react is a button all the same, a friend's words are not", () => {
+    const html = render({ lines: [line(1, false, "\u{1F37F}"), line(2, false)], onPick: () => {} });
+    expect(count(html, "chat-picture")).toBe(1);
+    expect(tagOf(html, "chat-picture")).not.toContain("aria-expanded");
+    expect(count(html, "chat-bubble")).toBe(0);
+    // (and only read where nothing is pressed: a report, a TV that is only a remote)
+    expect(render({ lines: [line(1, false, "\u{1F37F}")] })).not.toContain("<button");
   });
 
   it("are a place the remote can land on, when it is the TV's", () => {
@@ -111,7 +124,7 @@ describe("a message that names a title", () => {
 
   it("sits under the bubble of one's own line, not in it (the bubble is the button that takes it back)", async () => {
     await known(matrix);
-    const html = render({ lines: [line(1, true, `Watch it ${LINK}`)], onPick: () => {}, onTakeBack: () => {}, picked: null, onOpenTitle: () => {} });
+    const html = render({ lines: [line(1, true, `Watch it ${LINK}`)], onPick: () => {}, picked: null, onOpenTitle: () => {} });
     expect(html).toMatch(/data-testid="chat-bubble"[^]*?<\/button><button[^>]*data-testid="chat-card"/);
   });
 
