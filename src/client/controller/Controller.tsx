@@ -34,7 +34,6 @@ import { partyLink, readLaunchParams } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
 import { forgetStrayAddress, strayAddress } from "../shared/strayAddress";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
-import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
 import { BellButton, NotificationsSheet } from "./Bell";
@@ -84,7 +83,6 @@ export function Controller() {
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   /** The server has not answered for a while: the header's "Reconnecting…" gets a line that says why that can be. */
-  const waking = useWaking(connection);
   const [tv, setTv] = useState<TvInfo | null>(null);
   /** Every TV this phone has connected to and not let go of, the one it controls among them (see `TvsSheet`). */
   const [tvs, setTvs] = useState<PhoneTv[]>([]);
@@ -669,12 +667,6 @@ export function Controller() {
           </div>
         )}
       </header>
-
-      {waking && (
-        <p className="banner" data-testid="server-waking" role="status">
-          {t("server.waking")}
-        </p>
-      )}
 
       {away && (
         <section className="away" data-testid="tv-away">
