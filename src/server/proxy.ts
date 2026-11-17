@@ -431,10 +431,9 @@ async function proxyRequest(
     accept: "*/*",
   };
   if (!options.omitOrigin && refererOrigin) headers.origin = refererOrigin;
-  if (targetUrl.hostname.includes("hakunaymatata.com") || referer === "none") {
+  if (referer === "none" || (referer === targetUrl.origin && targetUrl.hostname.includes("hakunaymatata.com"))) {
     delete headers.referer;
     delete headers.origin;
-    delete headers["user-agent"];
   }
 
   if (request.headers.range) {

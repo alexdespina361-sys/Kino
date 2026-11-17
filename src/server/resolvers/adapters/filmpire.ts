@@ -202,7 +202,7 @@ function isSecurityBlock(err: unknown): boolean {
 export interface VidLinkResolvedStream {
   streamUrl: string;
   type: "mp4" | "hls";
-  qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }>;
+  qualities: Array<{ label: string; url: string; type: "mp4" | "hls"; referer?: string }>;
   captions: Array<{ label: string; url: string; lang?: string }>;
 }
 
@@ -257,18 +257,20 @@ export async function resolveVidLinkStream(
       stream?: {
         type?: string;
         playlist?: string;
-        qualities?: Record<string, { url?: string; type?: string }>;
+        qualities?: Record<string, { url?: string; type?: string; headers?: { referer?: string } }>;
+        headers?: { referer?: string };
         captions?: Array<{ url?: string; language?: string; type?: string }>;
       };
     };
     if (!data?.stream) return null;
 
     const normalizeCdnUrl = (u: string) => u.replace(/^https?:\/\/bcdn\d+\.hakunaymatata\.com/i, "https://bcdn.hakunaymatata.com");
+    const streamHeaders = data.stream.headers;
 
-    const qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }> = [];
+    const qualities: Array<{ label: string; url: string; type: "mp4" | "hls"; referer?: string }> = [];
     if (data.stream.playlist && isHttpUrl(data.stream.playlist)) {
       const cleanUrl = normalizeCdnUrl(data.stream.playlist);
-      qualities.push({ label: "Auto (HLS)", url: cleanUrl, type: "hls" });
+      qualities.push({ label: "Auto (HLS)", url: cleanUrl, type: "hls", referer: streamHeaders?.referer });
     }
     if (data.stream.qualities) {
       const qKeys = Object.keys(data.stream.qualities).sort((a, b) => Number(b) - Number(a));
@@ -280,6 +282,7 @@ export async function resolveVidLinkStream(
             label: `${q}p`,
             url: cleanUrl,
             type: item.type === "hls" || cleanUrl.includes(".m3u8") ? "hls" : "mp4",
+            referer: item.headers?.referer || streamHeaders?.referer,
           });
         }
       }
@@ -1158,12 +1161,12 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
 
         const primary = vl.qualities[0]!;
-        const proxiedUrl = streamAddress(primary.url, "none", process.env, false);
+        const proxiedUrl = streamAddress(primary.url, primary.referer || "none", process.env, false);
         const alternates: AlternateSource[] = vl.qualities.slice(1).map((q) => ({
           label: q.label.slice(0, 60),
           quality: q.label.slice(0, 20), // (the same stream in another quality, not another source: the screen lists it under Quality)
           stream: {
-            url: streamAddress(q.url, "none", process.env, false),
+            url: streamAddress(q.url, q.referer || "none", process.env, false),
             type: q.type,
             directUrl: q.url,
           },
