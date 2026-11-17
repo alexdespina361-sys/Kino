@@ -249,6 +249,18 @@ export const appAddress = (code: string, challenge: string, origin: string, next
 /** How much of the app's hash comes back with the way back. */
 export const APP_TRIP_LENGTH = 16;
 const APP_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Whether a start is a round trip of the app (`AppTrip`): a sign-in with the hash of the app's secret (`app=`, and no other mode), or one with a ticket. The app opens
+ * it in a Custom Tab, which Chrome says comes from another site (the app is its referrer: `Sec-Fetch-Site: cross-site`), so the gate lets these in when they are a
+ * navigation (guard.ts): what comes of one goes to this app's package alone, and is no use without the secret only the app knows, or the ticket only its WebView was
+ * given. A start of another mode, or with no `app=`, is still only this site's own button (the owner, 17 Nov: "cross_site" in the app's browser).
+ */
+export function isAppStart(query: Record<string, unknown>): boolean {
+  if (typeof query.ticket === "string" && query.ticket !== "") return true;
+  const mode = MODES.find((each) => each === query.mode) ?? "signin";
+  return mode === "signin" && typeof query.app === "string" && APP_CHALLENGE.test(query.app);
+}
 const HANDOFF_MS = 2 * 60_000;
 const TICKET_MS = 5 * 60_000;
 
