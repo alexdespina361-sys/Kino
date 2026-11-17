@@ -1,6 +1,7 @@
 import { googleFromEnv } from "./accounts/google";
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
+import { personalStickersMaxBytes, personalStickersOn, stickerFilesFor } from "./accounts/stickerFiles";
 import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
 import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
@@ -25,7 +26,12 @@ function trustProxy(env: NodeJS.ProcessEnv): boolean | number {
 }
 
 const { persistence, describe, kind } = await persistenceFromEnv();
-const accounts = await AccountStore.open({ persistence, log: console });
+// Personal stickers (shared/stickers.ts): their pictures beside the accounts (a table of their own, or a folder), and off unless PERSONAL_STICKERS=on.
+const accounts = await AccountStore.open({
+  persistence,
+  log: console,
+  stickers: { files: stickerFilesFor(persistence, kind), on: personalStickersOn(), ...(personalStickersMaxBytes() ? { maxBytes: personalStickersMaxBytes()! } : {}) },
+});
 // Which phone goes with which TV is kept in the same place, so a restart (a free host sleeps when nobody is using it) does not undo every pairing.
 const registry = new Registry();
 const pairings = await PairingStore.open({ registry, persistence, log: console });

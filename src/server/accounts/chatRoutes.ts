@@ -1,8 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ChatMuteSchema, ChatReactSchema, ChatReportSchema, ChatSendSchema, friendChoices, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
+import { ChatMuteSchema, ChatReactSchema, ChatReportSchema, ChatSendSchema, friendChoices, isStickerId, StickerSendSchema, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
 import type { ChatBook, ChatError, ChatOutcome } from "./chat";
 import type { FriendRouteHelpers } from "./friendRoutes";
 import { RateLimiter } from "./rateLimit";
+import { sendStickerPicture, stickerRefusal } from "./stickerRoutes";
+import type { StickerBook } from "./stickers";
 
 /** One end of a reported chat, as the team is told of them: the name as friends see it, with the tag that tells two of one name apart. */
 export interface ChatSide {
@@ -17,8 +19,17 @@ export interface ChatReport {
   /** The account that sends it: the team's side counts the reports each account has open (see `chatReporter`). It is not written into the report. */
   account: string;
   at: number;
-  lines: Array<{ at: number; from: "reporter" | "about"; text: string }>;
+  /** `sticker`: the line is a personal sticker (its words are `PERSONAL_STICKER_TEXT`): its name, which names its picture among `pictures`. */
+  lines: Array<{ at: number; from: "reporter" | "about"; text: string; sticker?: string }>;
+  /**
+   * The pictures of the personal stickers among the lines (the newest few, each once), as they were when the report was sent: the team sees what was sent
+   * even if its sender lets it go, or the team takes it down, before the report is read.
+   */
+  pictures?: Array<{ sticker: string; data: Buffer }>;
 }
+
+/** How many pictures of personal stickers a report carries (a report has room for eight files, and the chat's words are one). */
+export const REPORT_STICKER_PICTURES = 7;
 /**
  * Hands a report to the team (see `chatReporter` in feedback/chatReport.ts). Nothing was kept when it answers `"full"` (the team's side cannot take it now) or
  * `"too_many_open"` (the account has as many reports open as it may: the team has not dealt with them yet).
@@ -29,6 +40,8 @@ export interface ChatRouteOptions {
   chat: ChatBook;
   /** Without it (a server with no feedback) a chat cannot be reported, and says so as any route that is not there does. */
   report?: ChatReporter;
+  /** The personal stickers (stickers.ts): sent in a chat, shown in it to the two, saved from it. Without it, or while they are off, there are none. */
+  stickers?: StickerBook;
 }
 
 const MINUTE = 60_000;
@@ -57,10 +70,15 @@ type Asked = FastifyRequest & { params: { id: string; fid: string } };
  *   PUT    /chat/mute             stop hearing of the friend's messages, or hear again ({ muted })
  *   GET    /chat/report           what a report would hold
  *   POST   /chat/report           send it to the team ({ rev }, the one the preview had)
+ *   POST   /chat/sticker          send one of one's personal stickers ({ id }): answers with the chat
+ *   GET    /chat/stickers/:sid    the picture of a personal sticker sent in this chat (to either of the two, while they are friends)
+ *   POST   /chat/stickers/:sid/save   keep a personal sticker sent in this chat in one's own collection: answers with the collection
  */
 export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, options: ChatRouteOptions): void {
   const { store } = helpers;
-  const { chat, report } = options;
+  const { chat, report, stickers } = options;
+  /** The personal stickers, while the host has them on. */
+  const stickersOn = () => (stickers?.on ? stickers : undefined);
 
   // Looking is cheap and the page that is open asks every few seconds; writing is slowed per account on top of the book's twenty a minute per sender.
   const readsByAccount = new RateLimiter(120, MINUTE);
@@ -68,6 +86,8 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
   const reportsByAccount = new RateLimiter(5, 60 * MINUTE);
   // (And the whole site's: a number of accounts cannot send reports faster than the team can read them. A form's own allowance is separate: see feedback/routes.ts.)
   const reportsEveryone = new RateLimiter(60, 60 * MINUTE);
+  // (The pictures of a chat's personal stickers come many at once when it opens: they have their own allowance, and take nothing of the reads'.)
+  const picturesByAccount = new RateLimiter(600, MINUTE);
 
   const base = "/api/profiles/:id/friends/:fid/chat";
 
@@ -175,12 +195,20 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (held.value.lines.length === 0) return refuse(reply, "gone");
     reportsByAccount.hit(me.accountId);
     reportsEveryone.hit("all");
+    // (The pictures of the personal stickers in it, the newest first and each once, as they are now: whether the stickers are on or not, they are what was sent.)
+    const named = [...new Set(held.value.lines.map((line) => line.sticker).filter(isStickerId).reverse())].slice(0, REPORT_STICKER_PICTURES);
+    const pictures: Array<{ sticker: string; data: Buffer }> = [];
+    for (const sticker of named) {
+      const data = await stickers?.picture(sticker).catch(() => undefined);
+      if (data) pictures.push({ sticker, data });
+    }
     const sent = await report({
       reporter: sideOf(me.profileId),
       about: sideOf(me.friendId),
       account: me.accountId,
       at: store.clock(),
-      lines: held.value.lines.map((line) => ({ at: line.at, from: line.mine ? "reporter" : "about", text: line.text })),
+      lines: held.value.lines.map((line) => ({ at: line.at, from: line.mine ? "reporter" : "about", text: line.text, ...(isStickerId(line.sticker) ? { sticker: line.sticker } : {}) })),
+      ...(pictures.length > 0 ? { pictures } : {}),
     });
     // (A report that was not kept is not one the account sent: its place in the hour's few comes back. The team's side is full of reports nobody has closed: that is
     // the site's to put right, so it is a 503 and not a 429. The account has as many open as it may: that is its own doing, so it is a 429, and waiting a few
@@ -191,5 +219,43 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
       return reply.header("Retry-After", 3600).code(sent === "full" ? 503 : 429).send({ error: sent });
     }
     return reply.code(204).send();
+  });
+
+  /* ------------------------------ personal stickers ------------------------------ */
+
+  app.post<{ Params: { id: string; fid: string } }>(`${base}/sticker`, async (request, reply) => {
+    const me = asker(request, reply, writesByAccount);
+    if (!me) return reply;
+    const book = stickersOn();
+    if (!book) return stickerRefusal(reply, "off");
+    const parsed = StickerSendSchema.safeParse(request.body);
+    if (!parsed.success) return helpers.invalid(reply, parsed.error);
+    // (Only one of one's own: a name typed by hand, or one of somebody else's, is not a sticker one has.)
+    if (!book.holds(me.profileId, parsed.data.id)) return refuse(reply, "gone");
+    const sent = chat.sendSticker(me.profileId, me.friendId, parsed.data.id);
+    return sent.ok ? reply.code(201).send(sent.value) : fail(reply, sent);
+  });
+
+  app.get<{ Params: { id: string; fid: string; sid: string } }>(`${base}/stickers/:sid`, async (request, reply) => {
+    const me = asker(request, reply, picturesByAccount);
+    if (!me) return reply;
+    const book = stickersOn();
+    if (!book) return stickerRefusal(reply, "off");
+    const { sid } = request.params;
+    // (The same answer for a sticker that is not in this chat as for one there is no more: nobody learns of a picture that was not sent to them.)
+    if (!isStickerId(sid) || !chat.hasSticker(me.profileId, me.friendId, sid)) return refuse(reply, "gone");
+    const data = await book.picture(sid);
+    return data ? sendStickerPicture(reply, data) : refuse(reply, "gone");
+  });
+
+  app.post<{ Params: { id: string; fid: string; sid: string } }>(`${base}/stickers/:sid/save`, async (request, reply) => {
+    const me = asker(request, reply, writesByAccount);
+    if (!me) return reply;
+    const book = stickersOn();
+    if (!book) return stickerRefusal(reply, "off");
+    const { sid } = request.params;
+    if (!isStickerId(sid) || !chat.hasSticker(me.profileId, me.friendId, sid)) return refuse(reply, "gone");
+    const saved = book.save(me.profileId, sid);
+    return saved.ok ? reply.send(book.of(me.profileId)) : stickerRefusal(reply, saved.error, saved.waitMs);
   });
 }

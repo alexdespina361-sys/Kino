@@ -31,7 +31,18 @@ export interface ChatLinesProps {
   remote?: boolean;
   /** A title a message names was pressed (see titles.ts). Without it the cards are only shown. */
   onOpenTitle?: (item: LibraryItem) => void;
+  /**
+   * Personal stickers (personalStickers.ts), while they are on: where the picture of one sent in this chat is, and (on a screen that is touched or clicked)
+   * saving a friend's into one's own collection, `has` saying which are there already. Without it a message of one says that it is not available.
+   */
+  personal?: PersonalLines | undefined;
   testId?: string;
+}
+
+export interface PersonalLines {
+  src: (id: string) => string;
+  onSave?: (id: string) => void;
+  has?: (id: string) => boolean;
 }
 
 /** How near the end the list has to be for a new message to keep it there. */
@@ -46,17 +57,17 @@ const CARD = ".chat-card[data-title]";
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, onReact, remote = false, onOpenTitle, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, onReact, remote = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLOListElement>(null);
   const atEnd = useRef(true);
   // (A report shows what it would send: the text as it is, a GIF's address among it.)
-  const gifs = useMemo(() => lines.map((line) => (showWriter ? null : gifOf(line.text))), [lines, showWriter]);
+  const gifs = useMemo(() => lines.map((line) => (showWriter || line.sticker ? null : gifOf(line.text))), [lines, showWriter]);
   // (A report shows what it would send: a sticker's emoji, as it was sent.)
-  const stickers = useMemo(() => lines.map((line) => (showWriter ? null : stickerOf(line.text))), [lines, showWriter]);
-  const titles = useMemo(() => lines.map((line, index) => (showWriter || gifs[index] || stickers[index] ? null : titleIn(line.text))), [lines, showWriter, gifs, stickers]);
+  const stickers = useMemo(() => lines.map((line) => (showWriter || line.sticker ? null : stickerOf(line.text))), [lines, showWriter]);
+  const titles = useMemo(() => lines.map((line, index) => (showWriter || line.sticker || gifs[index] || stickers[index] ? null : titleIn(line.text))), [lines, showWriter, gifs, stickers]);
   const cards = useMemo(() => cardsOf(titles.map((found) => found?.id ?? null)), [titles]);
 
   // The newest message in view: the first time, for each new one when the person was at the end, and again when what is in the list changes
@@ -179,7 +190,10 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           const found = titles[index] ?? null;
           const gif = gifs[index] ?? null;
           const sticker = stickers[index] ?? null;
-          const picture = gif ? " chat-bubble-gif" : sticker ? " chat-bubble-sticker" : "";
+          // (A personal sticker is drawn in a report too: its picture is what the report sends with it.)
+          const own = line.sticker ?? null;
+          const picture = gif ? " chat-bubble-gif" : sticker || (own && !showWriter) ? " chat-bubble-sticker" : "";
+          const saving = open && own !== null && !line.mine && personal?.onSave ? personal : null;
           const bubble = (text: ReactNode) => (
             <>
               {showWriter && <span className="chat-writer">{line.mine ? t("chat.you") : name}</span>}
@@ -210,6 +224,21 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   }}
                 />
               )}
+              {saving && own && (
+                <button
+                  type="button"
+                  className="chat-takeback chat-sticker-save"
+                  disabled={saving.has?.(own) ?? false}
+                  onClick={() => {
+                    onPick?.(null);
+                    saving.onSave?.(own);
+                    if (remote) box.current?.focus({ preventScroll: true });
+                  }}
+                  data-testid="chat-sticker-save"
+                >
+                  {t(saving.has?.(own) ? "chat.stickerSaved" : "chat.stickerSave")}
+                </button>
+              )}
               {open && line.mine && onTakeBack && (
                 <button type="button" className="chat-takeback" onClick={() => onTakeBack(line.id)} data-testid="chat-takeback">
                   {t("chat.takeBack")}
@@ -224,7 +253,9 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   {dayOf(line.at, now, language)}
                 </span>
               )}
-              {gif ? (
+              {own ? (
+                said(<PersonalPicture src={personal ? personal.src(own) : null} name={line.mine ? t("chat.you") : name} />, null)
+              ) : gif ? (
                 said(<GifPicture url={gif} />, null)
               ) : sticker ? (
                 said(<StickerPicture sticker={sticker} />, null)
@@ -255,6 +286,37 @@ function StickerPicture({ sticker }: { sticker: Sticker }) {
     );
   }
   return <img className="chat-sticker" src={stickerSrc(sticker)} alt={sticker.emoji} width={192} height={192} decoding="async" draggable={false} onError={() => setFailed(true)} data-testid="chat-sticker" data-sticker={sticker.id} />;
+}
+
+/**
+ * A message that is a personal sticker (personalStickers.ts): its picture, from this site, big and with no bubble, as the built-in ones are. One nobody has any
+ * more (or the team took down, or while the host has them off) says so in a line, where a broken picture would have been. The picture is asked for only when
+ * it comes near the view (a chat with many is not a hundred pictures at once).
+ */
+function PersonalPicture({ src, name }: { src: string | null; name: string }) {
+  const t = useT();
+  const [gone, setGone] = useState(false);
+  if (!src || gone) {
+    return (
+      <span className="chat-gif-gone" data-testid="chat-personal-gone">
+        {t("chat.stickerGone")}
+      </span>
+    );
+  }
+  return (
+    <img
+      className="chat-sticker chat-sticker-personal"
+      src={src}
+      alt={t("chat.stickerOf", { name })}
+      width={192}
+      height={192}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onError={() => setGone(true)}
+      data-testid="chat-personal-sticker"
+    />
+  );
 }
 
 /**

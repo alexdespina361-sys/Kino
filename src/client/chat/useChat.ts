@@ -4,6 +4,9 @@ import { chatApi } from "./api";
 import { applyThread, endsChat, FRESH_CHAT, problemOf, type ChatProblem, type ChatState } from "./state";
 
 export interface ChatSession {
+  /** Whose chat it is, and with whom (the addresses of the personal stickers in it are named by them). */
+  profileId: string;
+  friendId: string;
   state: ChatState;
   /** Whether the first answer has come. */
   loaded: boolean;
@@ -15,6 +18,8 @@ export interface ChatSession {
   sending: boolean;
   /** Write to the friend. True when it went (so that the box can be emptied); when it did not, `problem` says why. */
   send: (text: string) => Promise<boolean>;
+  /** Send one of one's personal stickers (personalStickers.ts), as `send` sends words. */
+  sendSticker: (id: string) => Promise<boolean>;
   takeBack: (id: number) => Promise<void>;
   /** Put a reaction on a message, change it, or take it away (null). */
   react: (id: number, reaction: ChatReaction | null) => Promise<void>;
@@ -105,15 +110,16 @@ export function useChat(profileId: string, friendId: string, options: { active?:
     };
   }, [active, ended, interval, read]);
 
-  const send = useCallback(
-    async (text: string): Promise<boolean> => {
+  /** A message on its way (words, or a personal sticker): one at a time. */
+  const write = useCallback(
+    async (call: () => Promise<ChatThread>): Promise<boolean> => {
       if (writing.current) return false;
       writing.current = true;
       setSending(true);
       setFailure(null);
       const started = ++clock.current.tick;
       try {
-        take(await chatApi.send(profileId, friendId, text), started);
+        take(await call(), started);
         setOffline(false);
         return true;
       } catch (error) {
@@ -128,8 +134,10 @@ export function useChat(profileId: string, friendId: string, options: { active?:
         setSending(false);
       }
     },
-    [profileId, friendId, take, fail],
+    [take, fail],
   );
+  const send = useCallback((text: string) => write(() => chatApi.send(profileId, friendId, text)), [write, profileId, friendId]);
+  const sendSticker = useCallback((id: string) => write(() => chatApi.sendSticker(profileId, friendId, id)), [write, profileId, friendId]);
 
   const takeBack = useCallback(
     async (id: number): Promise<void> => {
@@ -180,7 +188,7 @@ export function useChat(profileId: string, friendId: string, options: { active?:
 
   const settle = useCallback(() => setFailure(null), []);
 
-  return { state, loaded, ended, problem: failure ?? (offline ? "offline" : null), sending, send, takeBack, react, setMuted, settle };
+  return { profileId, friendId, state, loaded, ended, problem: failure ?? (offline ? "offline" : null), sending, send, sendSticker, takeBack, react, setMuted, settle };
 }
 
 /** Where a report of the chat is: closed, being fetched, shown (and waiting for a yes), on its way, or sent. */

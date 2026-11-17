@@ -50,6 +50,11 @@ export const ChatLineSchema = z.object({
   /** The reaction the one who looks put on it, and the friend's (one of `CHAT_REACTIONS`; a string, so that a page made before a new one came does not fail on it). */
   myReaction: z.string().max(16).optional(),
   theirReaction: z.string().max(16).optional(),
+  /**
+   * A personal sticker (shared/stickers.ts): its name, the picture being asked for from the chat's own address. The text is then `PERSONAL_STICKER_TEXT`,
+   * which is what every place that shows words shows. (A string here, so that a page is not failed by a line it cannot show: it shows the text.)
+   */
+  sticker: z.string().max(64).optional(),
 });
 export type ChatLine = z.infer<typeof ChatLineSchema>;
 

@@ -17,6 +17,10 @@ const stamp = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace
  */
 export function chatTranscript(report: ChatReport): string {
   const who = (from: "reporter" | "about") => (from === "reporter" ? report.reporter.label : report.about.label);
+  const pictures = pictureNames(report);
+  // (A personal sticker is said as what it is, with the file its picture is in: or that it is not in the report, being one of the older ones or gone.)
+  const said = (line: ChatReport["lines"][number]) =>
+    line.sticker ? `${line.text} [personal sticker ${line.sticker}: ${pictures.get(line.sticker) ? `picture in ${pictures.get(line.sticker)}` : "picture not in this report"}]` : line.text;
   return [
     "A chat between two friends, reported by one of them.",
     `Reported by: ${report.reporter.label} (profile ${report.reporter.id})`,
@@ -24,9 +28,15 @@ export function chatTranscript(report: ChatReport): string {
     `Reported at: ${stamp(report.at)}`,
     `The last ${report.lines.length} messages of the chat, oldest first, as the reporter was shown them before they agreed to send them:`,
     "",
-    ...report.lines.map((line) => `[${stamp(line.at)}] ${who(line.from)}: ${line.text}`),
+    ...report.lines.map((line) => `[${stamp(line.at)}] ${who(line.from)}: ${said(line)}`),
     "",
+    ...(pictures.size > 0 ? ["A personal sticker is taken down everywhere with: node scripts/stickers.mjs remove <its name> --yes", ""] : []),
   ].join("\n");
+}
+
+/** The file each personal sticker's picture is in (`sticker1.png`, ...), in the order the report has them. */
+function pictureNames(report: ChatReport): Map<string, string> {
+  return new Map((report.pictures ?? []).map((picture, at) => [picture.sticker, `sticker${at + 1}.png`]));
 }
 
 /**
@@ -52,7 +62,11 @@ export function chatReporter(feedback: FeedbackStore): ChatReporter {
           details: {},
           answer: false,
           context: null,
-          files: [{ meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") }],
+          files: [
+            { meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") },
+            // (The pictures of the personal stickers in it, as they were when it was sent: see `ChatReport.pictures`.)
+            ...(report.pictures ?? []).map((picture, at) => ({ meta: { id: `sticker${at + 1}`, name: `sticker${at + 1}.png`, mime: "image/png" as const, role: "photo" as const }, data: picture.data })),
+          ],
           // (Kept in memory only, while the report is open, to count an account's reports: the report itself is not tied to the account.)
           from: `chat:${report.account}`,
         },

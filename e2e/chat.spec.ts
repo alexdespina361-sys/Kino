@@ -1,4 +1,5 @@
 import { expect, type Browser, type Page } from "@playwright/test";
+import { PNG } from "pngjs";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -1609,6 +1610,266 @@ test.describe("reactions in a chat", () => {
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
     await expect.poll(() => reactionsOn(tvLines(ann.page).first())).toEqual([`theirs:${JOY}`]);
     await expect.poll(() => reactionsOn(tvLines(bob.page).first()), SOON).toEqual([`mine:${JOY}`]);
+  });
+});
+
+/* ------------------------------ Personal stickers (a picture of one's own, made a sticker on the page: on for the e2e server, see playwright.config.ts) ------------------------------ */
+
+/** A picture wider than it is tall: green on the left, blue on the right, red between; its middle square is all red. */
+function widePicture(): Buffer {
+  const picture = new PNG({ width: 300, height: 200 });
+  for (let y = 0; y < 200; y++) {
+    for (let x = 0; x < 300; x++) {
+      const at = (y * 300 + x) * 4;
+      const [r, g, b] = x < 50 ? [0, 200, 0] : x >= 250 ? [0, 0, 220] : [220, 30, 30];
+      picture.data[at] = r;
+      picture.data[at + 1] = g;
+      picture.data[at + 2] = b;
+      picture.data[at + 3] = 255;
+    }
+  }
+  return PNG.sync.write(picture);
+}
+
+/** A sticker's picture as a page makes it (a red square, 192 by 192), for a screen that cannot choose a file: the server takes nothing else. */
+function stickerSquare(): string {
+  const picture = new PNG({ width: 192, height: 192 });
+  for (let at = 0; at < picture.data.length; at += 4) picture.data.set([220, 30, 30, 255], at);
+  return PNG.sync.write(picture).toString("base64");
+}
+
+/** What colour a pixel of a sticker's picture is, roughly. */
+function colourAt(picture: PNG, x: number, y: number): string {
+  const at = (y * picture.width + x) * 4;
+  const [r, g, b] = [picture.data[at]!, picture.data[at + 1]!, picture.data[at + 2]!];
+  return r > 150 && g < 90 && b < 90 ? "red" : g > 150 && r < 90 ? "green" : b > 150 && r < 90 ? "blue" : `rgb(${r}, ${g}, ${b})`;
+}
+
+/** A sticker's picture as the server gives it to `page` (a phone of the profile, or of the friend in that chat). */
+const pictureAt = async (page: Page, address: string) => {
+  const answer = await page.request.get(address);
+  expect(answer.status(), address).toBe(200);
+  return PNG.sync.read(await answer.body());
+};
+
+/** Pictures are kept by the browser for a few minutes (`private, max-age=300`): a page that must ask again is told to (a page whose asks are routed keeps nothing). */
+const askAfresh = (page: Page) => page.route(/\/stickers\//, (route) => route.continue());
+
+test.describe("personal stickers in a chat", () => {
+  test("while the host has them off (every host, until its owner turns them on): the phone's sheet and a computer's page are Kino's alone, as they were, and nothing is asked about them", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const dee = await screenWithFriends(browser, "Dee", { desk: true });
+    const asked: string[] = [];
+    for (const page of [ann.page, dee.page]) {
+      // (the host's answer without them, as a host that has them off gives it: the e2e server has them on)
+      await page.route("**/api/features", async (route) => {
+        const answer = await route.fetch();
+        const { stickers: _on, ...features } = (await answer.json()) as Record<string, unknown>;
+        await route.fulfill({ response: answer, json: features });
+      });
+      page.on("request", (request) => {
+        if (/\/api\/profiles\/[^?#]*\/stickers/.test(request.url())) asked.push(request.url());
+      });
+    }
+    await meetPhone(dee, ann);
+
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    await expect(sheet.getByTestId("chat-sticker-pick")).toHaveCount(STICKER_COUNT);
+    expect(await gridFaults(sheet.getByTestId("chat-sticker-pick")), "the phone's stickers: squares, none over another").toEqual([]);
+    await expect(sheet.getByTestId("chat-stickers-yours")).toHaveCount(0);
+    await expect(sheet.locator(".chat-stickers-head")).toHaveCount(0);
+    await expect(sheet.getByTestId("chat-sticker-file")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+
+    await tile(dee.page, ann.name).click();
+    await dee.page.getByTestId("friend-chat").click();
+    await dee.page.getByTestId("tv-chat-sticker-btn").click();
+    const page = dee.page.getByTestId("tv-chat-stickers-page");
+    const picks = page.getByTestId("chat-sticker-pick");
+    await expect(picks).toHaveCount(STICKER_COUNT);
+    await expect(picks.first()).toBeFocused();
+    expect(await gridFaults(picks), "the computer's stickers: squares, none over another").toEqual([]);
+    expect(await outsideTheScreen(dee.page, "tv-chat-stickers-page")).toEqual([]);
+    await expect(page.getByTestId("chat-stickers-yours")).toHaveCount(0);
+    await expect(page.locator(".chat-stickers-head, .with-yours")).toHaveCount(0);
+    await picks.first().click();
+    await expect(tvLines(dee.page)).toHaveCount(1);
+    await expect(tvLines(dee.page).first().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/popcorn.webp");
+    expect(asked, "nothing asked of personal stickers").toEqual([]);
+  });
+
+  test("on the phone: a picture of one's own is made a sticker (its middle square, 192 by 192), sent, and seen by the friend, who keeps it and sends it on; a report has its picture; the maker letting it go leaves the friend's, and once nobody has it, it is gone for both", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    await expect(sheet.getByTestId("chat-stickers-yours")).toBeVisible();
+    await expect(sheet.getByTestId("chat-stickers-none")).toHaveText(en["chat.stickersNone"]);
+    await expect(sheet.getByTestId("chat-stickers-edit")).toHaveCount(0); // (nothing to edit)
+    await expect(sheet.getByTestId("chat-sticker-pick")).toHaveCount(STICKER_COUNT); // (Kino's are all there, after)
+
+    // a file that is not a picture is said so, and nothing is made
+    const file = ann.page.getByTestId("chat-sticker-file");
+    await file.setInputFiles({ name: "notes.png", mimeType: "image/png", buffer: Buffer.from("these are not the pixels of anything") });
+    await expect(sheet.getByTestId("chat-sticker-problem")).toHaveText(en["chat.stickerNotPicture"]);
+    await expect(sheet.getByTestId("chat-sticker-mine")).toHaveCount(0);
+
+    // a picture is: its middle square, 192 by 192 (the green and the blue of its sides are left out)
+    await file.setInputFiles({ name: "wide.png", mimeType: "image/png", buffer: widePicture() });
+    const mine = sheet.getByTestId("chat-sticker-mine");
+    await expect(mine).toHaveCount(1);
+    await expect(sheet.getByTestId("chat-sticker-problem")).toHaveCount(0);
+    await expect(sheet.getByTestId("chat-stickers-none")).toHaveCount(0);
+    const id = (await mine.getAttribute("data-personal"))!;
+    expect(id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    const made = await pictureAt(ann.page, (await mine.locator("img").getAttribute("src"))!);
+    expect([made.width, made.height]).toEqual([192, 192]);
+    expect([colourAt(made, 96, 96), colourAt(made, 3, 96), colourAt(made, 188, 96), colourAt(made, 96, 3)]).toEqual(["red", "red", "red", "red"]);
+    await expect.poll(() => stickerLoaded(mine.locator("img"))).toBe(192);
+
+    // a press sends it: the sheet shuts, the chat has the picture, with no bubble
+    await mine.click();
+    await expect(sheet).toHaveCount(0);
+    await expect(lines(ann.page)).toHaveCount(1);
+    const sent = lines(ann.page).first().getByTestId("chat-personal-sticker");
+    await expect.poll(() => stickerLoaded(sent)).toBe(192);
+    expect(await bubbleOf(sent)).toBe("rgba(0, 0, 0, 0)");
+
+    // Bob sees it, presses it, and keeps it: the note says so, and the button then says it is his
+    await openChat(bob.page);
+    const theirs = lines(bob.page).first().getByTestId("chat-personal-sticker");
+    await expect.poll(() => stickerLoaded(theirs)).toBe(192);
+    await expect(theirs).toHaveAttribute("alt", say(en["chat.stickerOf"], { name: ann.name }));
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    const save = bob.page.getByTestId("chat-sticker-save");
+    await expect(save).toHaveText(en["chat.stickerSave"]);
+    await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible(); // (the reactions are there too)
+    await save.click();
+    await expect(bob.page.getByTestId("chat-sticker-note")).toHaveText(en["chat.stickerSavedNote"]);
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(save).toBeDisabled();
+    await expect(save).toHaveText(en["chat.stickerSaved"]);
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(save).toHaveCount(0);
+    // (Ann's own message has no Keep: Take back, as any of hers)
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(ann.page.getByTestId("chat-takeback")).toBeVisible();
+    await expect(ann.page.getByTestId("chat-sticker-save")).toHaveCount(0);
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+
+    // it is in Bob's stickers, the same one, and he sends it on
+    await bob.page.getByTestId("chat-sticker-btn").click();
+    const his = bob.page.getByTestId("chat-sticker-sheet").getByTestId("chat-sticker-mine");
+    await expect(his).toHaveCount(1);
+    await expect(his).toHaveAttribute("data-personal", id);
+    await expect(his).toHaveAttribute("aria-label", en["chat.stickerSavedOne"]);
+    await his.click();
+    await expect(lines(bob.page)).toHaveCount(2);
+    await expect.poll(() => stickerLoaded(lines(bob.page).nth(1).getByTestId("chat-personal-sticker"))).toBe(192);
+    await expect(lines(ann.page)).toHaveCount(2, SOON);
+    await expect.poll(() => stickerLoaded(lines(ann.page).nth(1).getByTestId("chat-personal-sticker"))).toBe(192);
+
+    // a report shows the pictures, and the team has them, with the transcript saying which file each is in
+    await bob.page.getByTestId("chat-report").click();
+    const shown = bob.page.getByTestId("chat-report-lines");
+    await expect(shown.getByTestId("chat-line")).toHaveCount(2);
+    await expect.poll(() => stickerLoaded(shown.getByTestId("chat-personal-sticker").first())).toBe(192);
+    await bob.page.getByTestId("chat-report-send").click();
+    await expect(bob.page.getByTestId("chat-report-sent")).toHaveText(en["chat.reportSent"]);
+    await bob.page.getByTestId("chat-report-done").click();
+    const [report] = await reportsAbout(bob.page, bob.name);
+    expect(report?.attachments.map((each) => `${each.name} ${each.role}`)).toEqual(["chat.txt file", "sticker1.png photo"]);
+    const transcript = await (await bob.page.request.get(`/api/admin/feedback/${report!.id}/files/${report!.attachments[0]!.id}`, { headers: AUTH })).text();
+    expect(transcript).toContain(`[personal sticker ${id}: picture in sticker1.png]`);
+    expect(transcript).toContain("node scripts/stickers.mjs remove");
+    const reported = PNG.sync.read(await (await bob.page.request.get(`/api/admin/feedback/${report!.id}/files/${report!.attachments[1]!.id}`, { headers: AUTH })).body());
+    expect([reported.width, colourAt(reported, 96, 96)]).toEqual([192, "red"]);
+
+    // Ann lets it go (Edit, then its ×): it is gone from hers, and is still Bob's, so the chat still has it
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await sheet.getByTestId("chat-stickers-edit").click();
+    await expect(sheet.getByTestId("chat-sticker-add")).toHaveCount(0); // (while editing, nothing is added)
+    await sheet.getByTestId("chat-sticker-remove").click();
+    await expect(mine).toHaveCount(0);
+    await expect(sheet.getByTestId("chat-stickers-none")).toBeVisible();
+    await expect(sheet.getByTestId("chat-sticker-add")).toBeVisible(); // (editing ends with the last one)
+    await ann.page.keyboard.press("Escape");
+    const address = (await sent.getAttribute("src"))!;
+    expect((await ann.page.request.get(address)).status(), "Bob keeps it").toBe(200);
+
+    // Bob lets it go too: nobody has it, and it is gone for both, said in a line where the picture was
+    await bob.page.getByTestId("chat-sticker-btn").click();
+    await bob.page.getByTestId("chat-stickers-edit").click();
+    await bob.page.getByTestId("chat-sticker-remove").click();
+    await expect(his).toHaveCount(0);
+    await bob.page.keyboard.press("Escape");
+    expect((await ann.page.request.get(address)).status()).toBe(404);
+    expect((await bob.page.request.get((await theirs.getAttribute("src"))!)).status()).toBe(404);
+    for (const page of [ann.page, bob.page]) {
+      await askAfresh(page);
+      await page.reload();
+      await openChat(page);
+      await expect(page.getByTestId("chat-personal-gone")).toHaveCount(2);
+      await expect(page.getByTestId("chat-personal-gone").first()).toHaveText(en["chat.stickerGone"]);
+    }
+  });
+
+  test("on a TV that is only a remote: none of its own shows nothing of them; the profile's own come first, with nothing to add or edit there, the list scrolls to what the remote is on, and OK sends one, which the friend's phone sees", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await meetPhone(ann, bob);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await ann.page.getByTestId("tv-chat-sticker-btn").click();
+    await expect(ann.page.getByTestId("chat-sticker-pick").first()).toBeFocused();
+    await expect(ann.page.getByTestId("chat-stickers-yours")).toHaveCount(0); // (it could not add one: Kino's, as they were)
+    await expect(ann.page.getByTestId("tv-chat-stickers-page").locator("h2")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+
+    // one made on a phone of Ann's (here the way a phone makes it: the TV cannot choose a file) is on the TV the next time the stickers are opened
+    const profile = await profileOf(ann.page);
+    const made = await ann.page.request.post(`/api/profiles/${profile}/stickers`, { data: { data: stickerSquare() } });
+    expect(made.status()).toBe(201);
+    const id = ((await made.json()) as { id: string }).id;
+    await ann.page.getByTestId("tv-chat-write").focus();
+    await ann.page.keyboard.press("ArrowLeft");
+    await expect(ann.page.getByTestId("tv-chat-sticker-btn")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    const page = ann.page.getByTestId("tv-chat-stickers-page");
+    await expect(page).toBeVisible();
+    const mine = page.getByTestId("chat-sticker-mine");
+    await expect(mine).toHaveCount(1);
+    await expect(mine).toHaveAttribute("data-personal", id);
+    await expect(page.getByTestId("chat-sticker-add")).toHaveCount(0);
+    await expect(page.getByTestId("chat-stickers-edit")).toHaveCount(0);
+    await expect(page.getByTestId("chat-sticker-file")).toHaveCount(0);
+    // (the remote lands on Kino's first, as it did; the list follows it down to their last row, and back up to the profile's own)
+    const picks = page.getByTestId("chat-sticker-pick");
+    await expect(picks.first()).toBeFocused();
+    for (let row = 1; row <= 3; row++) await ann.page.keyboard.press("ArrowDown");
+    await expect(picks.nth(21)).toBeFocused(); // (seven to a row)
+    await expect(picks.nth(21)).toBeInViewport({ ratio: 0.9 });
+    for (let row = 1; row <= 4; row++) await ann.page.keyboard.press("ArrowUp");
+    await expect(mine).toBeFocused();
+    await expect(mine).toBeInViewport({ ratio: 0.9 });
+    await expect.poll(() => stickerLoaded(mine.locator("img"))).toBe(192);
+    expect(await outsideTheScreen(ann.page, "chat-stickers-yours")).toEqual([]);
+    await expect(ann.page.getByTestId("tv-chat-sticker-back")).toBeInViewport();
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect.poll(() => stickerLoaded(tvLines(ann.page).first().getByTestId("chat-personal-sticker"))).toBe(192);
+    // (the TV's list is walked, not pressed: there is nothing to keep there)
+    await expect(ann.page.getByTestId("chat-sticker-save")).toHaveCount(0);
+
+    await openChat(bob.page);
+    await expect.poll(() => stickerLoaded(lines(bob.page).first().getByTestId("chat-personal-sticker"))).toBe(192);
   });
 });
 

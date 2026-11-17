@@ -7,7 +7,8 @@ import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
-import { ChatLines } from "./ChatLines";
+import { ChatLines, type PersonalLines } from "./ChatLines";
+import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
@@ -71,11 +72,13 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   const reactingTo = reacting === null ? undefined : session.state.lines.find((line) => line.id === reacting);
   /** What has been typed and not sent stays while the chat is open: Back from the writing does not lose it. */
   const [draft, setDraft] = useState("");
+  /** Personal stickers in the messages, while they are on (personalStickers.ts): saved from a chat where a message can be clicked or touched. */
+  const personal = usePersonalLines(session, desk || narrow);
 
-  if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} />;
+  if (report.stage !== "closed") return <ReportTv name={name} report={report} now={now} personal={personal.lines} />;
   if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
   if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
-  if (stickerPicking && !whyNotWrite(session)) return <StickerPickTv name={name} session={session} narrow={narrow} onBack={() => setStickerPicking(false)} />;
+  if (stickerPicking && !whyNotWrite(session)) return <StickerPickTv name={name} session={session} narrow={narrow} pointer={desk || narrow} onBack={() => setStickerPicking(false)} />;
   // (A message taken back while its page is open: the page goes, and the chat is shown.)
   if (reactingTo && !whyNotWrite(session)) return <ReactTv name={name} line={reactingTo} session={session} onBack={() => setReacting(null)} />;
   if (writing) {
@@ -115,6 +118,7 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       onReactTo={setReacting}
       onClose={onClose}
       onOpenTitle={onOpenTitle}
+      personal={personal}
     />
   );
 }
@@ -139,6 +143,7 @@ export function ReadTv({
   onReactTo,
   onClose,
   onOpenTitle,
+  personal,
 }: {
   name: string;
   avatar?: AvatarId | undefined;
@@ -164,6 +169,8 @@ export function ReadTv({
   onReactTo?: ((id: number) => void) | undefined;
   onClose: () => void;
   onOpenTitle?: ((item: LibraryItem) => void) | undefined;
+  /** Personal stickers in the messages (see `usePersonalLines`): none while they are off. */
+  personal?: { lines: PersonalLines | undefined; note: SaveNote | null } | undefined;
 }) {
   const t = useT();
   const { state } = session;
@@ -319,10 +326,16 @@ export function ReadTv({
                   ...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) }),
                 }
               : {})}
+            personal={personal?.lines}
             testId="tv-chat-lines"
           />
         )}
         <div className="tv-chat-foot">
+          {personal?.note && (
+            <p className="chat-note" role="status" data-testid="tv-chat-sticker-note">
+              {t(SAVE_NOTE[personal.note])}
+            </p>
+          )}
           <ChatNotices name={name} session={session} receiving={receiving} prefix="tv-chat" />
           {blocked ? (
             <p className="chat-closed" data-testid={blocked === "ended" ? "tv-chat-ended" : "tv-chat-closed"}>
@@ -488,7 +501,7 @@ export function WriteTv({
   );
 }
 
-export function ReportTv({ name, report, now }: { name: string; report: ChatReport; now: number }) {
+export function ReportTv({ name, report, now, personal }: { name: string; report: ChatReport; now: number; personal?: PersonalLines | undefined }) {
   const t = useT();
   const lines = report.preview?.lines ?? [];
   const sent = report.stage === "sent";
@@ -511,7 +524,7 @@ export function ReportTv({ name, report, now }: { name: string; report: ChatRepo
               {t("chat.reportNone")}
             </p>
           ) : (
-            lines.length > 0 && <ChatLines lines={lines} name={name} now={now} showWriter remote testId="tv-chat-report-lines" />
+            lines.length > 0 && <ChatLines lines={lines} name={name} now={now} showWriter remote personal={personal && { src: personal.src }} testId="tv-chat-report-lines" />
           )}
           {report.problem && (
             <p className="chat-problem" role="alert" data-testid="tv-chat-report-problem">

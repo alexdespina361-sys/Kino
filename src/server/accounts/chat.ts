@@ -6,6 +6,8 @@ import {
   CHAT_SENDS_PER_MINUTE,
   checkChatText,
   isChatReaction,
+  isStickerId,
+  PERSONAL_STICKER_TEXT,
   type ChatLine,
   type ChatNotice,
   type ChatReaction,
@@ -53,6 +55,8 @@ interface Written {
   text: string;
   /** The reactions on it: profile -> one of `CHAT_REACTIONS`. Not there when it has none. */
   r?: Record<string, string>;
+  /** A personal sticker (shared/stickers.ts): its name; the text is then `PERSONAL_STICKER_TEXT`. The line keeps no hold on the picture (stickers.ts). */
+  s?: string;
 }
 
 /** What is kept of a pair. (`said` and the reactions came later, and are optional: a server from before them still reads the document, and ignores them.) */
@@ -114,6 +118,8 @@ export class ChatBook {
       if (kept.length > 0) line.r = Object.fromEntries(kept);
       else delete line.r;
     }
+    // (A sticker's name that is not one is let go: the line is then its words.)
+    for (const line of doc.lines) if (line.s !== undefined && !isStickerId(line.s)) delete line.s;
     if (typeof doc.said !== "number") doc.said = doc.rev;
     this.chats.set(key, doc);
     for (const profile of [doc.a, doc.b]) this.of.set(profile, (this.of.get(profile) ?? new Set()).add(key));
@@ -200,6 +206,7 @@ export class ChatBook {
           text: line.text,
           ...(isChatReaction(mineOn) ? { myReaction: mineOn } : {}),
           ...(isChatReaction(theirsOn) ? { theirReaction: theirsOn } : {}),
+          ...(line.s ? { sticker: line.s } : {}),
         };
       }),
     };
@@ -234,18 +241,36 @@ export class ChatBook {
    * sender. A message counts as seen by its writer, who had the chat open to write it.
    */
   send(from: string, to: string, raw: string): ChatOutcome<ChatView> {
+    const checked = checkChatText(raw);
+    return this.write(from, to, checked.ok ? { text: checked.text } : checked.error);
+  }
+
+  /**
+   * `from` sends `to` one of its personal stickers (the routes have checked that it has it: see stickers.ts). It is a message as any other (the same rules,
+   * the same count a minute), whose words are `PERSONAL_STICKER_TEXT`.
+   */
+  sendSticker(from: string, to: string, id: string): ChatOutcome<ChatView> {
+    return this.write(from, to, isStickerId(id) ? { text: PERSONAL_STICKER_TEXT, s: id } : "gone");
+  }
+
+  /** Whether a personal sticker was sent in the chat of two friends (and is still in it): only then may either of them see it there, or save it. */
+  hasSticker(me: string, friend: string, id: string): boolean {
+    if (me === friend || !this.host.areFriends(me, friend)) return false;
+    return this.find(me, friend)?.lines.some((line) => line.s === id) ?? false;
+  }
+
+  private write(from: string, to: string, said: { text: string; s?: string } | ChatError): ChatOutcome<ChatView> {
     if (!this.friendly(from, to)) return no("not_friends");
     if (!this.host.on(from)) return no("friends_off");
     if (!this.host.takes(to)) return no("chat_off");
-    const checked = checkChatText(raw);
-    if (!checked.ok) return no(checked.error);
+    if (typeof said === "string") return no(said);
     const wait = this.sends.wait(from);
     if (wait > 0) return no("rate_limited", wait);
     this.sends.hit(from);
     const doc = this.make(from, to);
     const n = this.next(doc);
     doc.rev = n;
-    doc.lines = [...doc.lines, { n, from, at: this.host.now(), text: checked.text }].slice(-CHAT_KEEP_MAX);
+    doc.lines = [...doc.lines, { n, from, at: this.host.now(), ...said }].slice(-CHAT_KEEP_MAX);
     doc.said = n;
     doc.seen[from] = n;
     this.host.touch(keyOf(from, to));
@@ -311,7 +336,8 @@ export class ChatBook {
     if (!read.ok) return read;
     // (What was said, and its revision: the reactions are not part of a report, and do not make one "changed". See `said`.)
     const doc = this.find(me, friend);
-    const lines = read.value.lines.slice(-count).map(({ id, at, mine, text }) => ({ id, at, mine, text }));
+    // (A personal sticker's name goes with its line: the team is sent the picture with the report, see chatRoutes.ts.)
+    const lines = read.value.lines.slice(-count).map(({ id, at, mine, text, sticker }) => ({ id, at, mine, text, ...(sticker ? { sticker } : {}) }));
     return { ok: true, value: { rev: doc ? (doc.said ?? doc.rev) : read.value.rev, lines } };
   }
 

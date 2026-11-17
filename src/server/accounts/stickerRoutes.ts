@@ -1,0 +1,143 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { friendChoices, isStickerId, PERSONAL_STICKER, StickerMakeSchema, type StickerProblem } from "../../shared";
+import { teamGuard } from "../feedback/routes";
+import type { FriendRouteHelpers } from "./friendRoutes";
+import { RateLimiter } from "./rateLimit";
+import type { StickerBook } from "./stickers";
+
+const MINUTE = 60_000;
+const STATUS: Record<StickerProblem | "gone" | "friends_off", number> = {
+  off: 404,
+  gone: 404,
+  not_a_picture: 400,
+  too_big: 413,
+  full: 409,
+  too_many: 429,
+  site_full: 503,
+  friends_off: 403,
+};
+
+/** Why a sticker was refused, as the page is told it. */
+export function stickerRefusal(reply: FastifyReply, error: StickerProblem | "gone" | "friends_off", waitMs?: number): FastifyReply {
+  if (error === "too_many") reply.header("Retry-After", Math.max(1, Math.ceil((waitMs ?? MINUTE) / 1000)));
+  return reply.code(STATUS[error]).send({ error });
+}
+
+/**
+ * A sticker's picture, as it is sent: always a PNG (it is one this server made), never guessed at by the browser, nothing in it run or embedded elsewhere,
+ * kept by the browser of the one who asked for a few minutes only (a sticker taken down is gone from screens soon after).
+ */
+export function sendStickerPicture(reply: FastifyReply, data: Buffer): FastifyReply {
+  return reply
+    .header("Content-Type", "image/png")
+    .header("X-Content-Type-Options", "nosniff")
+    .header("Content-Security-Policy", "default-src 'none'; sandbox")
+    .header("Cross-Origin-Resource-Policy", "same-origin")
+    .header("Content-Disposition", "inline")
+    .header("Cache-Control", "private, max-age=300")
+    .send(data);
+}
+
+type Asked = FastifyRequest & { params: { id: string } };
+
+/**
+ * A profile's own personal stickers, under /api/profiles/:id/stickers (the profile is the one asking, and one of the signed-in account's, with friends on):
+ *
+ *   GET    /stickers          the collection, the newest first
+ *   POST   /stickers          make one of a picture the page made ({ data }: a PNG as base64): answers with the collection and the new one's name
+ *   GET    /stickers/:sid     the picture of one in the collection
+ *   DELETE /stickers/:sid     let one go: answers with the collection
+ *
+ * While the host has them off, every one of these says so (404, `off`), and nothing that was made is touched.
+ */
+export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, stickers: StickerBook): void {
+  const { store } = helpers;
+  const readsByAccount = new RateLimiter(120, MINUTE);
+  const writesByAccount = new RateLimiter(30, MINUTE);
+  const picturesByAccount = new RateLimiter(600, MINUTE);
+  const base = "/api/profiles/:id/stickers";
+
+  function asker(request: Asked, reply: FastifyReply, limiter: RateLimiter): { accountId: string; profileId: string } | undefined {
+    const auth = helpers.authenticate(request);
+    if (!auth) return void helpers.signedOut(reply);
+    const profileId = request.params.id;
+    if (!store.ownsProfile(auth.accountId, profileId)) return void helpers.refused(reply, "not_found");
+    const wait = limiter.wait(auth.accountId);
+    if (wait > 0) return void helpers.tooMany(reply, wait);
+    limiter.hit(auth.accountId);
+    if (!stickers.on) return void stickerRefusal(reply, "off");
+    // (A child's profile has no friends, so no chat, so no stickers of its own.)
+    if (!friendChoices(store.settingsOf(profileId)).friends) return void stickerRefusal(reply, "friends_off");
+    return { accountId: auth.accountId, profileId };
+  }
+
+  app.get<{ Params: { id: string } }>(base, async (request, reply) => {
+    const me = asker(request, reply, readsByAccount);
+    if (!me) return reply;
+    return reply.header("Cache-Control", "no-store").send(stickers.of(me.profileId));
+  });
+
+  app.post<{ Params: { id: string } }>(base, { bodyLimit: Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096 }, async (request, reply) => {
+    const me = asker(request, reply, writesByAccount);
+    if (!me) return reply;
+    const parsed = StickerMakeSchema.safeParse(request.body);
+    if (!parsed.success) return stickerRefusal(reply, "too_big");
+    const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"));
+    if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
+    return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
+  });
+
+  app.get<{ Params: { id: string; sid: string } }>(`${base}/:sid`, async (request, reply) => {
+    const me = asker(request, reply, picturesByAccount);
+    if (!me) return reply;
+    const { sid } = request.params;
+    if (!isStickerId(sid) || !stickers.holds(me.profileId, sid)) return stickerRefusal(reply, "gone");
+    const data = await stickers.picture(sid);
+    return data ? sendStickerPicture(reply, data) : stickerRefusal(reply, "gone");
+  });
+
+  app.delete<{ Params: { id: string; sid: string } }>(`${base}/:sid`, async (request, reply) => {
+    const me = asker(request, reply, writesByAccount);
+    if (!me) return reply;
+    const { sid } = request.params;
+    const released = isStickerId(sid) ? stickers.release(me.profileId, sid) : { ok: false as const, error: "gone" as const };
+    return released.ok ? reply.send(stickers.of(me.profileId)) : stickerRefusal(reply, released.error);
+  });
+}
+
+/**
+ * The team's side (scripts/stickers.mjs), with the feedback token as a Bearer, whether the stickers are on or off:
+ *
+ *   GET    /api/admin/stickers            every sticker, the newest first: its name, when, how big, who made it (profile and account), how many have it
+ *   GET    /api/admin/stickers/:sid       its picture
+ *   DELETE /api/admin/stickers/:sid       take it down everywhere
+ *   DELETE /api/admin/stickers?by=<id>    take down every one a profile or an account made
+ */
+export function stickerAdminRoutes(app: FastifyInstance, options: { stickers: StickerBook; adminToken: string | undefined }): void {
+  const team = teamGuard(options.adminToken);
+  const { stickers } = options;
+
+  app.get("/api/admin/stickers", async (request, reply) => {
+    if (!team(request, reply)) return reply;
+    return reply.header("Cache-Control", "no-store").send({ on: stickers.on, ...stickers.size, stickers: stickers.list() });
+  });
+
+  app.get<{ Params: { sid: string } }>("/api/admin/stickers/:sid", async (request, reply) => {
+    if (!team(request, reply)) return reply;
+    const data = isStickerId(request.params.sid) ? await stickers.picture(request.params.sid) : undefined;
+    return data ? sendStickerPicture(reply, data).header("Cache-Control", "no-store") : reply.code(404).send({ error: "gone" });
+  });
+
+  app.delete<{ Params: { sid: string } }>("/api/admin/stickers/:sid", async (request, reply) => {
+    if (!team(request, reply)) return reply;
+    const taken = isStickerId(request.params.sid) ? stickers.takeDown(request.params.sid) : 0;
+    return taken > 0 ? reply.send({ taken: 1 }) : reply.code(404).send({ error: "gone" });
+  });
+
+  app.delete<{ Querystring: { by?: string } }>("/api/admin/stickers", async (request, reply) => {
+    if (!team(request, reply)) return reply;
+    const by = request.query.by ?? "";
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(by)) return reply.code(400).send({ error: "by" });
+    return reply.send({ taken: stickers.takeDownBy(by) });
+  });
+}

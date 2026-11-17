@@ -15,6 +15,10 @@
 //   node scripts/feedback.mjs official show <id>              (saves .official/<id>.srt to correct, and .official/<id>.json with what the file first said)
 //   node scripts/feedback.mjs official put <id> <file.srt> [--times] [--note "..."]   (the team's text, line for line; --times takes its times too)
 //   node scripts/feedback.mjs official remove <id> --yes
+//   node scripts/feedback.mjs stickers [--json]               (the personal stickers, newest first, with who made them; `node scripts/stickers.mjs` is the same)
+//   node scripts/feedback.mjs stickers show <name>            (saves .stickers/<name>.png)
+//   node scripts/feedback.mjs stickers remove <name> --yes    (taken down everywhere, for good)
+//   node scripts/feedback.mjs stickers remove-by <profile or account> --yes
 //
 // Where: KINO_URL (the site, http://localhost:8787 when not set) and FEEDBACK_ADMIN_TOKEN, or both in .kino-feedback.json ({ "url": "...", "token": "..." },
 // which git ignores): beside the scripts folder, else in the main folder of the repository when this is a git worktree, else the file KINO_FEEDBACK_FILE names.
@@ -111,6 +115,7 @@ async function call(method, route, body, { timeoutMs = 90_000 } = {}) {
   if (response.status === 404 && route.startsWith("/api/admin/unavailable")) throw new Error("The server has no list for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the list was added.");
   if (response.status === 404 && route === "/api/admin/official") throw new Error("The server has no Kino Official subtitles for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before they were added.");
   if (response.status === 404 && route.startsWith("/api/admin/official/")) throw new Error("There is no Kino Official subtitle with that id (404): `official` lists them.");
+  if (response.status === 404 && route === "/api/admin/stickers") throw new Error("The server has no personal stickers for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before they were added.");
   if (response.status === 404 && route.startsWith("/api/admin/stats")) throw new Error("The server has no stats for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the stats were added.");
   if (response.status === 429) throw new Error("Too many wrong tries from this address: wait a quarter of an hour.");
   return response;
@@ -470,6 +475,51 @@ async function official({ words, flags }) {
   fail("official [list|show <id>|put <id> <file.srt>|remove <id> --yes]");
 }
 
+/**
+ * Personal stickers (src/shared/stickers.ts): every one there is, one's picture saved to look at, one taken down everywhere, or all of a profile's or an
+ * account's. A takedown is for good: out of every collection, the picture gone, its messages "no longer available".
+ */
+async function stickers({ words, flags }) {
+  const action = words[1] ?? "list";
+  const name = words[2];
+  if (action === "list") {
+    const data = await json("GET", "/api/admin/stickers");
+    if (flags.json) return console.log(JSON.stringify(data, null, 2));
+    console.log(`Personal stickers on ${connection.url}: ${data.on ? "ON" : "off (PERSONAL_STICKERS is not on: nobody can make, send or see one)"}; ${data.stickers.length} kept, ${(data.bytes / 1024 / 1024).toFixed(1)} MB.`);
+    if (data.stickers.length === 0) return;
+    console.log(`\n${"Name".padEnd(22)}  ${"Made".padEnd(16)}  ${"KB".padStart(4)}  Have  Made by (profile / account)`);
+    for (const each of data.stickers) console.log(`${each.id}  ${when(each.at)}  ${String(Math.round(each.bytes / 1024)).padStart(4)}  ${String(each.holders).padStart(4)}  ${each.by} / ${each.account}`);
+    console.log("\nSee one: node scripts/stickers.mjs show <name>    Take one down: node scripts/stickers.mjs remove <name> --yes    All of a maker's: node scripts/stickers.mjs remove-by <profile or account> --yes");
+    return;
+  }
+  if (!name || !/^[A-Za-z0-9_-]{1,64}$/.test(name)) fail(`stickers ${action} <name>   (\`stickers\` lists them)`);
+  if (action === "show") {
+    const response = await call("GET", `/api/admin/stickers/${name}`);
+    if (response.status === 404) fail(`There is no sticker ${name} (it was taken down, or everybody who had it let it go).`);
+    if (!response.ok) fail(`GET /api/admin/stickers/${name}: ${response.status}`);
+    const folder = path.join(root, ".stickers");
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, `${name}.png`), Buffer.from(await response.arrayBuffer()));
+    console.log(`Saved .stickers/${name}.png`);
+    return;
+  }
+  if (action === "remove") {
+    if (!flags.yes) fail(`stickers remove ${name} --yes   (for good: out of every collection, and its picture gone from every chat)`);
+    const response = await call("DELETE", `/api/admin/stickers/${name}`);
+    if (response.status === 404) fail(`There is no sticker ${name}: nothing was taken down.`);
+    if (!response.ok) fail(`DELETE /api/admin/stickers/${name}: ${response.status}`);
+    console.log(`${name} taken down everywhere.`);
+    return;
+  }
+  if (action === "remove-by") {
+    if (!flags.yes) fail(`stickers remove-by ${name} --yes   (every sticker that profile or account made, for good)`);
+    const data = await json("DELETE", `/api/admin/stickers?by=${encodeURIComponent(name)}`);
+    console.log(`${data.taken} sticker${data.taken === 1 ? "" : "s"} made by ${name} taken down everywhere.`);
+    return;
+  }
+  fail("stickers [list|show <name>|remove <name> --yes|remove-by <profile or account> --yes]");
+}
+
 const parsed = parse(process.argv.slice(2));
 const command = parsed.words[0];
 const commands = {
@@ -480,6 +530,7 @@ const commands = {
   stats,
   unavailable,
   official,
+  stickers,
   export: exportAll,
   status: ({ words }) => {
     if (!STATUSES.includes(words[2])) fail(`status <id> <${STATUSES.join("|")}>`);
