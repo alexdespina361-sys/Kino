@@ -275,6 +275,67 @@ describe("muting", () => {
   });
 });
 
+describe("reactions", () => {
+  const react = (who: Person, friend: Person, id: number, reaction: string | null) => who.call("PUT", who.chatWith(friend, `/${id}/reaction`), { reaction });
+  const HEART = "\u{2764}\u{FE0F}";
+  const FIRE = "\u{1F525}";
+
+  it("are one from each of the two on any message: the friend sees theirs at the next look, they change and go, and the revision moves so a page is told", async () => {
+    const { alex, sam } = await friends();
+    const said = (await write(sam, alex, "Seen the ending?")).data as ChatThread;
+    const id = said.lines![0]!.id;
+    const put = await react(alex, sam, id, HEART);
+    expect(put.statusCode).toBe(200);
+    expect(put.data.lines[0]).toMatchObject({ id, myReaction: HEART });
+    expect(put.data.rev).toBeGreaterThan(said.rev);
+    const seen = (await sam.call("GET", sam.chatWith(alex))).data as ChatThread;
+    expect(seen.lines![0]).toMatchObject({ theirReaction: HEART });
+    expect(seen.lines![0]!.myReaction).toBeUndefined();
+    // (Sam puts one on his own message too; Alex changes hers; then takes it away)
+    expect((await react(sam, alex, id, FIRE)).data.lines[0]).toMatchObject({ myReaction: FIRE, theirReaction: HEART });
+    expect((await react(alex, sam, id, FIRE)).data.lines[0]).toMatchObject({ myReaction: FIRE, theirReaction: FIRE });
+    const gone = (await react(alex, sam, id, null)).data.lines[0];
+    expect(gone.myReaction).toBeUndefined();
+    expect(gone.theirReaction).toBe(FIRE);
+    // (the same one again changes nothing)
+    const again = await react(sam, alex, id, FIRE);
+    expect(again.statusCode).toBe(200);
+  });
+
+  it("are one of the set, on a message that is there, from a friend, and only to one who takes messages (taking one away always works)", async () => {
+    const world = await friends();
+    const { alex, sam, quiet } = world;
+    const id = ((await write(sam, alex, "hi")).data as ChatThread).lines![0]!.id;
+    expect((await react(alex, sam, id, "\u{1F680}")).statusCode).toBe(400);
+    expect((await react(alex, sam, id, "<b>x</b>")).statusCode).toBe(400);
+    expect((await alex.call("PUT", alex.chatWith(sam, `/${id}/reaction`), {})).statusCode).toBe(400);
+    expect((await react(alex, sam, id + 999, HEART)).data).toEqual({ error: "gone" });
+    expect((await alex.call("PUT", alex.chatWith(sam, "/abc/reaction"), { reaction: HEART })).statusCode).toBe(404);
+    await react(alex, sam, id, HEART);
+    quiet.add(sam.id);
+    expect((await react(alex, sam, id, FIRE)).data).toEqual({ error: "chat_off" });
+    expect((await react(alex, sam, id, null)).statusCode).toBe(200);
+    // (somebody who is not Sam's friend has no chat with him to react in)
+    const robin = person(world, "robin");
+    expect((await react(robin, sam, id, HEART)).statusCode).toBe(404);
+  });
+
+  it("do not make a report 'changed': the one reported cannot hold it off by putting reactions on and off, and a report holds the words alone", async () => {
+    const { alex, sam, reports } = await friends();
+    await write(sam, alex, "something awful");
+    const shown = (await alex.call("GET", alex.chatWith(sam, "/report"))).data;
+    const id = shown.lines[0].id;
+    await react(sam, alex, id, FIRE);
+    await react(sam, alex, id, null);
+    await react(alex, sam, id, HEART);
+    const again = (await alex.call("GET", alex.chatWith(sam, "/report"))).data;
+    expect(again.rev).toBe(shown.rev);
+    expect(again.lines[0]).toEqual({ id, at: expect.any(Number), mine: false, text: "something awful" });
+    expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: shown.rev })).statusCode).toBe(204);
+    expect(reports[0]!.lines).toEqual([{ at: expect.any(Number), from: "about", text: "something awful" }]);
+  });
+});
+
 describe("reporting a chat", () => {
   it("shows what would be sent: the last messages, as the reporter sees them, and the revision they are of", async () => {
     const { alex, sam } = await friends();

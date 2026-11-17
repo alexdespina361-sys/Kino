@@ -473,6 +473,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/profiles/:id/friends/:fid/chat": { params: withFriend },
   "POST /api/profiles/:id/friends/:fid/chat": { params: withFriend, body: () => ({ text: "hello again" }) },
   "DELETE /api/profiles/:id/friends/:fid/chat/:n": { params: { ...withFriend, n: (w) => w.line }, ok: [200, 404] },
+  "PUT /api/profiles/:id/friends/:fid/chat/:n/reaction": { params: { ...withFriend, n: (w) => w.line }, body: () => ({ reaction: "\u{1F525}" }), ok: [200, 404] },
   "PUT /api/profiles/:id/friends/:fid/chat/mute": { params: withFriend, body: () => ({ muted: false }) },
   "GET /api/profiles/:id/friends/:fid/chat/report": { params: withFriend },
   "POST /api/profiles/:id/friends/:fid/chat/report": { params: withFriend, body: () => ({ rev: 1 }), ok: [204, 400, 404, 409] },

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX, type LibraryItem } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
 import { FilmIcon, GifIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
@@ -34,7 +34,8 @@ export interface ChatPhoneProps {
 
 /**
  * The chat with one friend, on the phone: a sheet over the friend's page. The messages, with a line for who they are from and when; a box to write
- * in; Mute and Report on top. A message of one's own can be pressed, and taken back. The sheet closes with the phone's Back, like the others.
+ * in; Mute and Report on top. A message can be pressed: under it come the six reactions (Reactions.tsx), and, for one's own, Take back. The sheet closes with
+ * the phone's Back, like the others.
  */
 export function ChatPhone({ name, presence, online = false, session, report, receiving = true, onClose, onOpenTitle, now = Date.now() }: ChatPhoneProps) {
   const t = useT();
@@ -89,6 +90,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
                 setPicked(null);
                 void session.takeBack(id);
               }}
+              {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) })}
               onOpenTitle={onOpenTitle}
             />
           )}

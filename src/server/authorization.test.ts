@@ -422,6 +422,7 @@ const ROWS: Row[] = [
   row(`GET ${CHAT}`, { id: asking, fid: other }),
   row(`POST ${CHAT}`, { id: asking, fid: other }, { body: () => ({ text: "hello" }) }),
   row(`DELETE ${CHAT}/:n`, { id: ["profile"], fid: other, n: ["mine", "theirs"] }),
+  row(`PUT ${CHAT}/:n/reaction`, { id: ["profile"], fid: other, n: ["theirs", "mine"] }, { body: () => ({ reaction: "\u{1F525}" }) }),
   row(`PUT ${CHAT}/mute`, { id: asking, fid: other }, { body: () => ({ muted: true }) }),
   row(`GET ${CHAT}/report`, { id: asking, fid: other }),
   row(`POST ${CHAT}/report`, { id: asking, fid: other, rev: "chatRev" }, { open: ["rev"], body: (slot) => ({ rev: Number(slot.rev) }) }),

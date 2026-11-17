@@ -316,8 +316,10 @@ test.describe("the chat on the phone", () => {
 
     await write(ann.page, "Oops, wrong chat");
     await expect(lines(bob.page)).toHaveCount(1, SOON);
-    // (a line of the friend's is only read; a line of one's own is pressed, and a button under it takes it back)
-    await expect(bob.page.getByTestId("chat-bubble")).toHaveCount(0);
+    // (a line of the friend's is pressed for a reaction, and has no Take back; a line of one's own is pressed, and a button under it takes it back)
+    await bob.page.getByTestId("chat-bubble").click();
+    await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible();
+    await expect(bob.page.getByTestId("chat-takeback")).toHaveCount(0);
     await ann.page.getByTestId("chat-bubble").click();
     await ann.page.getByTestId("chat-takeback").click();
     await expect(lines(ann.page)).toHaveCount(0);
@@ -1469,6 +1471,144 @@ test.describe("stickers in a chat", () => {
     await expect(tvLines(bob.page)).toHaveCount(2);
     await expect(tvLines(bob.page).last().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/alarm.webp");
     await expect(tvLines(ann.page)).toHaveCount(2, SOON);
+  });
+});
+
+/* ------------------------------ Reactions (one from each of the two, on any message) ------------------------------ */
+
+const FIRE = "\u{1F525}";
+const HEART = "\u{2764}\u{FE0F}";
+const JOY = "\u{1F602}";
+/** What is on a line: "who:reaction" for each, the friend's first. */
+const reactionsOn = (line: ReturnType<Page["getByTestId"]>) => line.getByTestId("chat-reaction").evaluateAll((all) => all.map((chip) => `${chip.getAttribute("data-who")}:${chip.getAttribute("data-reaction")}`));
+const reactWith = (page: Page, reaction: string) => page.locator(`[data-testid="chat-react"][data-reaction="${reaction}"]`);
+
+test.describe("reactions in a chat", () => {
+  test("on the phone: a friend's message is pressed and a reaction picked; both see it under the message, it can be changed and taken away, and each can put their own", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await openChat(bob.page);
+    await write(bob.page, "Tonight at eight?");
+    await expect(lines(ann.page)).toHaveCount(1, SOON);
+
+    // Ann presses Bob's message: the six, nothing on, no Take back (it is not hers); 🔥 puts it on and the bar goes
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    const bar = ann.page.getByTestId("chat-react-bar");
+    await expect(bar).toBeVisible();
+    await expect(bar.getByTestId("chat-react")).toHaveCount(6);
+    await expect(bar.locator('[aria-pressed="true"]')).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-takeback")).toHaveCount(0);
+    await reactWith(ann.page, FIRE).click();
+    await expect(bar).toHaveCount(0);
+    await expect.poll(() => reactionsOn(lines(ann.page).first())).toEqual([`mine:${FIRE}`]);
+    const chip = lines(ann.page).first().getByTestId("chat-reaction").locator("img");
+    await expect(chip).toHaveAttribute("src", "/stickers/fire.webp");
+    await expect.poll(() => stickerLoaded(chip)).toBeGreaterThan(0);
+    // (it sits under the bubble, on its side, and is small)
+    const bubble = await where(lines(ann.page).first().getByTestId("chat-bubble"));
+    const chips = await where(lines(ann.page).first().getByTestId("chat-reactions"));
+    expect(chips.y, "under the bubble").toBeGreaterThan(bubble.y + bubble.height / 2);
+    expect(chips.x, "on the friend's side").toBeLessThan(bubble.x + bubble.width / 2);
+    expect(chips.height).toBeLessThan(40);
+    // Bob sees it, as Ann's
+    await expect.poll(() => reactionsOn(lines(bob.page).first()), SOON).toEqual([`theirs:${FIRE}`]);
+
+    // changed: one reaction of Ann's, the new one, on both screens
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(reactWith(ann.page, FIRE)).toHaveAttribute("aria-pressed", "true");
+    await reactWith(ann.page, HEART).click();
+    await expect.poll(() => reactionsOn(lines(ann.page).first())).toEqual([`mine:${HEART}`]);
+    await expect.poll(() => reactionsOn(lines(bob.page).first()), SOON).toEqual([`theirs:${HEART}`]);
+
+    // Bob puts one on his own message: both are there, the friend's first
+    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(bob.page.getByTestId("chat-takeback")).toBeVisible(); // (his own: Take back is there too)
+    await reactWith(bob.page, JOY).click();
+    await expect.poll(() => reactionsOn(lines(bob.page).first())).toEqual([`theirs:${HEART}`, `mine:${JOY}`]);
+    await expect.poll(() => reactionsOn(lines(ann.page).first()), SOON).toEqual([`theirs:${JOY}`, `mine:${HEART}`]);
+
+    // Ann presses hers again: it is taken away, and Bob's stays
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await reactWith(ann.page, HEART).click();
+    await expect.poll(() => reactionsOn(lines(ann.page).first())).toEqual([`theirs:${JOY}`]);
+    await expect.poll(() => reactionsOn(lines(bob.page).first()), SOON).toEqual([`mine:${JOY}`]);
+
+    // the report shows the words, not the reactions
+    await ann.page.getByTestId("chat-report").click();
+    const report = ann.page.getByTestId("chat-report-lines");
+    await expect(report.getByTestId("chat-line")).toHaveCount(1);
+    await expect(report.getByTestId("chat-reaction")).toHaveCount(0);
+  });
+
+  test("on a TV that is only a remote, 'React to Bob's last message' behind the ⋯ opens a page of six; on a computer the message is clicked", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob", { desk: true });
+    await meet(ann, bob);
+    await look(bob.page);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(bob.page.getByTestId("tv-chat-box")).toBeFocused();
+    await bob.page.keyboard.type("Popcorn?");
+    await bob.page.keyboard.press("Enter");
+    await expect(tvLines(bob.page)).toHaveCount(1);
+
+    await look(ann.page);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    // the TV's list is walked, not pressed: no message is a button there
+    await expect(ann.page.getByTestId("tv-chat-lines").getByTestId("chat-bubble")).toHaveCount(0);
+    // ⋯: the first thing in it is the reaction; OK opens the page, on the first of the six
+    await ann.page.getByTestId("tv-chat-more").focus();
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat-react-last")).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-react-last")).toHaveText(say(en["chat.reactLast"], { name: bob.name }));
+    await ann.page.keyboard.press("Enter");
+    const page = ann.page.getByTestId("tv-chat-react-page");
+    await expect(page).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-react-quote")).toContainText("Popcorn?");
+    const six = ann.page.getByTestId("tv-chat-react");
+    await expect(six).toHaveCount(6);
+    await expect(six.first()).toBeFocused();
+    await expect(ann.page.getByTestId("tv-chat-react-remove")).toHaveCount(0);
+    expect(await outsideTheScreen(ann.page, "tv-chat-react-page")).toEqual([]);
+    // Back changes nothing
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(tvLines(ann.page).first().getByTestId("chat-reaction")).toHaveCount(0);
+    // the remote walks to 🔥 (the last) and OK puts it on: back in the chat, on Write
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-react-last").click();
+    await expect(six.first()).toBeFocused();
+    for (let step = 0; step < 5; step++) await ann.page.keyboard.press("ArrowRight");
+    await expect(six.last()).toBeFocused();
+    await expect(six.last()).toHaveAttribute("data-reaction", FIRE);
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-write")).toBeFocused();
+    await expect.poll(() => reactionsOn(tvLines(ann.page).first())).toEqual([`mine:${FIRE}`]);
+
+    // the computer sees it; Bob clicks his message and puts one on it from the bar under it
+    await expect.poll(() => reactionsOn(tvLines(bob.page).first()), SOON).toEqual([`theirs:${FIRE}`]);
+    await tvLines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible();
+    await expect(bob.page.getByTestId("chat-takeback")).toBeVisible();
+    await reactWith(bob.page, JOY).click();
+    await expect(bob.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect.poll(() => reactionsOn(tvLines(bob.page).first())).toEqual([`theirs:${FIRE}`, `mine:${JOY}`]);
+    await expect.poll(() => reactionsOn(tvLines(ann.page).first()), SOON).toEqual([`theirs:${JOY}`, `mine:${FIRE}`]);
+
+    // the TV again: the page lands on the one that is on, and takes it away
+    await ann.page.getByTestId("tv-chat-more").click();
+    await ann.page.getByTestId("tv-chat-react-last").click();
+    await expect(six.last()).toBeFocused();
+    await expect(six.last()).toHaveAttribute("aria-pressed", "true");
+    await ann.page.getByTestId("tv-chat-react-remove").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect.poll(() => reactionsOn(tvLines(ann.page).first())).toEqual([`theirs:${JOY}`]);
+    await expect.poll(() => reactionsOn(tvLines(bob.page).first()), SOON).toEqual([`mine:${JOY}`]);
   });
 });
 

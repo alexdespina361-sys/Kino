@@ -97,8 +97,10 @@ describe("the chat on the phone", () => {
     expect(has(render({ receiving: false }), "chat-compose")).toBe(true); // (it can still write)
   });
 
-  it("lets a message of one's own be pressed", () => {
-    expect(count(render(), "chat-bubble")).toBe(1);
+  it("lets every message be pressed, for a reaction (and one's own, to take it back); a friend who takes no messages, or no friend any more, takes no reactions", () => {
+    expect(count(render(), "chat-bubble")).toBe(3);
+    expect(count(render({ session: fakeSession({ state: { lines, open: false } }) }), "chat-bubble")).toBe(1);
+    expect(count(render({ session: fakeSession({ ended: "not_friends", state: { lines } }) }), "chat-bubble")).toBe(1);
   });
 
   it("opens no report by itself", () => {
