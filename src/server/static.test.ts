@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,6 +47,31 @@ describe("serving the built page", () => {
         expect(stray.body, url).toBe("<!doctype html><title>Kino</title>");
         expect(stray.headers["cache-control"] ?? "", url).not.toMatch(/immutable|31536000/);
       }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("says which build it serves, never kept anywhere, and the new one once index.html is a new build; nothing while there is no page (the owner's ask, 17 Nov)", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
+    const page = (script: string) => `<!doctype html><title>Kino</title><script type="module" crossorigin src="/assets/${script}.js"></script>`;
+    await writeFile(path.join(dir, "index.html"), page("index-Ab1_c2-D"));
+    const app = await buildApp({ clientDir: dir });
+    try {
+      const first = await app.inject({ url: "/api/build" });
+      expect(first.statusCode).toBe(200);
+      expect(first.headers["cache-control"]).toBe("no-store");
+      expect(first.json()).toEqual({ build: "index-Ab1_c2-D" });
+      // (A deploy writes a new page: its time is another, and so is its script.)
+      await writeFile(path.join(dir, "index.html"), page("index-Zz9"));
+      await utimes(path.join(dir, "index.html"), new Date(), new Date(Date.now() + 5000));
+      expect((await app.inject({ url: "/api/build" })).json()).toEqual({ build: "index-Zz9" });
+      // (A page with no script of the app's names no build; one that is not there, while a build is made, neither.)
+      await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
+      await utimes(path.join(dir, "index.html"), new Date(), new Date(Date.now() + 10000));
+      expect((await app.inject({ url: "/api/build" })).json()).toEqual({ build: null });
+      await rm(path.join(dir, "index.html"));
+      expect((await app.inject({ url: "/api/build" })).json()).toEqual({ build: null });
     } finally {
       await app.close();
     }

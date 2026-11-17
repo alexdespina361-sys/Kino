@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
@@ -558,6 +558,21 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
         }
       },
     });
+    // The build the site serves now: the name of the page's script (`index-…`, as `buildId` reads it in a page). A page that has another one is an old page,
+    // and offers to be reloaded (client/shared/update.ts; the owner's ask, 17 Nov). Read again whenever index.html has changed, so that a new build put in
+    // place without a restart is told too; while it is not there (a build being made), the answer is null and no page is asked anything.
+    const indexFile = path.join(clientDir, "index.html");
+    let served = { changed: -1, build: null as string | null };
+    const buildNow = (): string | null => {
+      try {
+        const changed = statSync(indexFile).mtimeMs;
+        if (changed !== served.changed) served = { changed, build: /\/assets\/(index-[\w-]+)\.js/.exec(readFileSync(indexFile, "utf8"))?.[1] ?? null };
+        return served.build;
+      } catch {
+        return null;
+      }
+    };
+    app.get("/api/build", async (_request, reply) => reply.header("Cache-Control", "no-store").send({ build: buildNow() }));
     // Kino Labs' upscaler test is a page of its own (labs/upscale/index.html): without the last slash its address would be taken for one of the app's.
     if (existsSync(path.join(clientDir, "labs", "upscale", "index.html"))) {
       app.get("/labs/upscale", (_request, reply) => reply.redirect("/labs/upscale/", 301));
