@@ -220,9 +220,20 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   );
 }
 
-/** A message that is one of the chat's stickers (stickers.ts): its picture, big and with no bubble; its emoji is what a screen reader says, and what is copied. */
+/**
+ * A message that is one of the chat's stickers (stickers.ts): its picture, big and with no bubble; its emoji is what a screen reader says, and what is copied.
+ * A picture that does not come (the network went, a screen that cannot draw it) is the emoji, big, as it was sent: never a broken picture.
+ */
 function StickerPicture({ sticker }: { sticker: Sticker }) {
-  return <img className="chat-sticker" src={stickerSrc(sticker)} alt={sticker.emoji} width={192} height={192} decoding="async" draggable={false} data-testid="chat-sticker" data-sticker={sticker.id} />;
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className="chat-sticker chat-sticker-emoji" role="img" aria-label={sticker.emoji} data-testid="chat-sticker-emoji" data-sticker={sticker.id}>
+        {sticker.emoji}
+      </span>
+    );
+  }
+  return <img className="chat-sticker" src={stickerSrc(sticker)} alt={sticker.emoji} width={192} height={192} decoding="async" draggable={false} onError={() => setFailed(true)} data-testid="chat-sticker" data-sticker={sticker.id} />;
 }
 
 /**

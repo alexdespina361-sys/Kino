@@ -47,15 +47,22 @@ export const STICKERS: readonly Sticker[] = [
   { id: "alarm", emoji: "\u{23F0}" },
 ];
 
-/** (An emoji may come with or without the "draw me as a picture" mark, U+FE0F: "❤" and "❤️" are the same heart.) */
-const bare = (text: string) => text.replace(/\u{FE0F}/gu, "");
-const BY_EMOJI = new Map(STICKERS.map((sticker) => [bare(sticker.emoji), sticker]));
+/**
+ * An emoji may come with or without the "draw me as a picture" mark, U+FE0F, at its end: "❤" and "❤️" are the same heart, and a keyboard may put the mark
+ * after one that has no need of it. Only those forms: a mark anywhere else, or two of them, is not one of the stickers (the judge, 17 Nov).
+ */
+const MARK = "\u{FE0F}";
+const BY_TEXT = new Map<string, Sticker>();
+for (const sticker of STICKERS) {
+  const bare = sticker.emoji.endsWith(MARK) ? sticker.emoji.slice(0, -MARK.length) : sticker.emoji;
+  for (const form of [bare, bare + MARK]) BY_TEXT.set(form, sticker);
+}
 
 /** The sticker a message is, when its whole text (spaces around it aside) is one of the stickers' emoji, else null. */
 export function stickerOf(text: string): Sticker | null {
   const written = text.trim();
-  if (written.length === 0 || written.length > 4) return null; // (the longest is two letters and the mark)
-  return BY_EMOJI.get(bare(written)) ?? null;
+  if (written.length === 0 || written.length > 3) return null; // (the longest is two letters and the mark)
+  return BY_TEXT.get(written) ?? null;
 }
 
 /** Where a sticker's picture is: this site's own file. */

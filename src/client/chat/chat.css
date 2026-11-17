@@ -358,6 +358,13 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-btn { display: block; aspect-ratio: 1; padding: 6px; border-radius: 14px; background: transparent; }
 .chat-sticker-btn img, .tv-chat-sticker-btn img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .chat-sticker-btn:active { background: var(--surface-2); }
+.chat-sticker-btn:disabled, .tv-chat-sticker-btn:disabled { opacity: 0.5; }
+/* (A picture that did not come: the emoji, as big.) */
+.chat-sticker-emoji { display: grid; place-items: center; line-height: 1; }
+.chat-sticker-btn .chat-sticker-emoji, .tv-chat-sticker-btn .chat-sticker-emoji { width: 100%; height: 100%; font-size: 40px; }
+.tv-chat-sticker-btn .chat-sticker-emoji { font-size: 3.6em; }
+.chat-sticker.chat-sticker-emoji { font-size: 84px; } /* (in the chat: the 120px of a picture) */
+.tv .chat-sticker.chat-sticker-emoji { width: 1.46em; height: 1.46em; font-size: 4.8em; } /* (7em of the list's letters, as a picture) */
 .tv-chat-sticker-list { display: contents; } /* (a hand-held screen's list that scrolls: below) */
 .tv-chat-stickers { display: grid; flex: none; grid-template-columns: repeat(7, 6.5em); grid-auto-rows: max-content; align-content: start; justify-content: center; gap: 0.7em; width: min(100%, 74em); max-height: 62vh; padding: 0.5em; overflow-y: auto; scrollbar-width: none; }
 .tv-chat-sticker-btn { display: block; aspect-ratio: 1; padding: 0.55em; border-radius: 0.8em; background: #222227; }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { checkChatText } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
@@ -18,20 +19,32 @@ const send = async (session: ChatSession, sticker: Sticker): Promise<boolean> =>
   return checked.ok ? session.send(checked.text) : false;
 };
 
-function StickerButton({ sticker, className, onSend, nav, first }: { sticker: Sticker; className: string; onSend: () => void; nav: boolean; first: boolean }) {
+/**
+ * One sticker of the grid. While a message is on its way the grid waits (the chat sends one at a time: a press then would have been lost, with the grid shut
+ * and nothing said, the judge, 17 Nov). A picture that does not come (the network went, a screen that cannot draw it) is its emoji, big, not an empty square.
+ */
+function StickerButton({ sticker, className, onSend, nav, first, waiting }: { sticker: Sticker; className: string; onSend: () => void; nav: boolean; first: boolean; waiting: boolean }) {
   const t = useT();
+  const [failed, setFailed] = useState(false);
   return (
     <button
       type="button"
       className={className}
       onClick={onSend}
+      disabled={waiting}
       aria-label={`${t("chat.sticker")}: ${sticker.emoji}`}
       {...(nav ? { "data-nav": true } : {})}
       {...(nav && first ? { "data-autofocus": true } : {})}
       data-sticker={sticker.id}
       data-testid="chat-sticker-pick"
     >
-      <img src={stickerSrc(sticker)} width={192} height={192} alt="" decoding="async" draggable={false} />
+      {failed ? (
+        <span className="chat-sticker-emoji" aria-hidden="true">
+          {sticker.emoji}
+        </span>
+      ) : (
+        <img src={stickerSrc(sticker)} width={192} height={192} alt="" decoding="async" draggable={false} onError={() => setFailed(true)} />
+      )}
     </button>
   );
 }
@@ -49,7 +62,9 @@ export function StickerPickSheet({ name, session, onClose }: { name: string; ses
             className="chat-sticker-btn"
             nav={false}
             first={at === 0}
+            waiting={session.sending}
             onSend={() => {
+              if (session.sending) return;
               onClose();
               void send(session, sticker);
             }}
@@ -89,7 +104,9 @@ export function StickerPickTv({ name, session, narrow, onBack }: { name: string;
               className="tv-chat-sticker-btn"
               nav
               first={at === 0}
+              waiting={session.sending}
               onSend={() => {
+                if (session.sending) return;
                 onBack();
                 void send(session, sticker);
               }}

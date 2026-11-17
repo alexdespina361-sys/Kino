@@ -1372,6 +1372,43 @@ test.describe("stickers in a chat", () => {
     await expect(lines(ann.page).nth(2).getByTestId("chat-text")).toHaveText("\u{1F525} that ending");
   });
 
+  test("the grid waits while a message is on its way (a press then is not lost), and a picture that does not come is its emoji, big, in the grid and in the chat", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    // Ann's messages take a while to go
+    let hold: (() => void) | undefined;
+    await ann.page.route(/\/friends\/[^/]+\/chat$/, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await new Promise<void>((done) => (hold = done));
+      await route.continue();
+    });
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-input").fill("Popcorn ready?");
+    await ann.page.getByTestId("chat-send").click();
+    await expect.poll(() => hold !== undefined).toBe(true);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    const picks = ann.page.getByTestId("chat-sticker-pick");
+    await expect(picks.first()).toBeDisabled();
+    hold!();
+    await expect(lines(ann.page)).toHaveCount(1);
+    await expect(picks.first()).toBeEnabled();
+    hold = undefined;
+    await ann.page.unroute(/\/friends\/[^/]+\/chat$/);
+    await picks.first().click();
+    await expect(lines(ann.page)).toHaveCount(2);
+    await expect(lines(ann.page).nth(1).getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/popcorn.webp");
+
+    // Bob's screen cannot get the pictures
+    await bob.page.route(/\/stickers\/.+\.webp$/, (route) => route.abort());
+    await openChat(bob.page);
+    const emoji = lines(bob.page).nth(1).getByTestId("chat-sticker-emoji");
+    await expect(emoji).toHaveText("\u{1F37F}");
+    expect((await where(emoji)).height, "as big as the picture").toBeGreaterThan(100);
+    await bob.page.getByTestId("chat-sticker-btn").click();
+    await expect(bob.page.getByTestId("chat-sticker-pick").first().locator(".chat-sticker-emoji")).toHaveText("\u{1F37F}");
+    await expect(bob.page.getByTestId("chat-sticker-pick").first().locator("img")).toHaveCount(0);
+  });
+
   test("on a TV that is only a remote: the button beside the box opens the set, the remote walks it and OK sends one; the friend on the narrowest hand-held screen sees it and has the set as the whole screen, one list that scrolls", async ({ browser }) => {
     test.setTimeout(180_000);
     const ann = await screenWithFriends(browser, "Ann");

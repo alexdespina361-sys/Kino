@@ -52,11 +52,11 @@ function GifState({ search, prefix }: { search: GifSearch; prefix: string }) {
   return null;
 }
 
-/** One GIF of the grid: its picture at the size KLIPY gave, so that the grid does not move as they come. */
-function GifButton({ gif, className, onSend, nav }: { gif: Gif; className: string; onSend: () => void; nav: boolean }) {
+/** One GIF of the grid: its picture at the size KLIPY gave, so that the grid does not move as they come. It waits while a message is on its way (see StickerPick.tsx). */
+function GifButton({ gif, className, onSend, nav, waiting }: { gif: Gif; className: string; onSend: () => void; nav: boolean; waiting: boolean }) {
   const t = useT();
   return (
-    <button type="button" className={className} onClick={onSend} aria-label={gif.title ? `${t("chat.gif")}: ${gif.title}` : t("chat.gif")} {...(nav ? { "data-nav": true } : {})} data-testid="chat-gif-pick">
+    <button type="button" className={className} onClick={onSend} disabled={waiting} aria-label={gif.title ? `${t("chat.gif")}: ${gif.title}` : t("chat.gif")} {...(nav ? { "data-nav": true } : {})} data-testid="chat-gif-pick">
       <img src={gif.thumb} width={gif.width} height={gif.height} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" draggable={false} />
     </button>
   );
@@ -101,7 +101,9 @@ export function GifPickSheet({ name, gifKey, session, onClose }: { name: string;
                 gif={gif}
                 className="chat-gif"
                 nav={false}
+                waiting={session.sending}
                 onSend={() => {
+                  if (session.sending) return;
                   onClose();
                   void send(session, gif);
                 }}
@@ -168,7 +170,9 @@ export function GifPickTv({ name, gifKey, session, narrow, onBack }: { name: str
                 gif={gif}
                 className="tv-chat-gif"
                 nav
+                waiting={session.sending}
                 onSend={() => {
+                  if (session.sending) return;
                   onBack();
                   void send(session, gif);
                 }}
