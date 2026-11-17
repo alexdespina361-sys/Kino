@@ -401,8 +401,11 @@ export class ChatBook {
 
   /* ------------------------------ what waits ------------------------------ */
 
-  /** The messages from friends that `me` has not looked at, a friend at a time, the newest first. Not the ones from a friend that is muted. */
-  unread(me: string): ChatNotice[] {
+  /**
+   * The messages from friends that `me` has not looked at, a friend at a time, the newest first. Not the ones from a friend that is muted. `received`
+   * false leaves them without their one tick: a profile that chose not to be seen online is not shown as having a screen open by it.
+   */
+  unread(me: string, received = true): ChatNotice[] {
     const waiting: ChatNotice[] = [];
     for (const key of [...(this.of.get(me) ?? [])]) {
       const doc = this.chats.get(key);
@@ -414,7 +417,7 @@ export class ChatBook {
       const newest = fresh.at(-1);
       // (A screen of `me`'s is being told of them: they are received, the friend's one tick. A muted chat's too: the friend is not told it is muted, and a
       // message that never got its tick would tell them.)
-      if (newest && (doc.got?.[me] ?? 0) < newest.n) {
+      if (received && newest && (doc.got?.[me] ?? 0) < newest.n) {
         doc.got = { ...doc.got, [me]: newest.n };
         this.host.touch(key);
       }

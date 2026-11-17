@@ -448,6 +448,9 @@ describe("the ticks: how far the friend has one's messages, and has seen them (t
       return { theirSeen, theirGot };
     };
     expect(ticks()).toEqual({ theirSeen: undefined, theirGot: undefined });
+    // a screen of Sam's asks while Sam chose not to be seen online: told of it, but no tick (the tick would say Sam is there. The judge, 17 Nov)
+    expect(chat.unread("sam", false)).toHaveLength(1);
+    expect(ticks()).toEqual({ theirSeen: undefined, theirGot: undefined });
     // a screen of Sam's asks what waits (the bell, the app): received, up to the newest
     written.clear();
     expect(chat.unread("sam")).toHaveLength(1);

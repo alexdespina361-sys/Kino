@@ -581,10 +581,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                 {/* (A message the search found has the words searched for marked, as they were written.) */}
                 {hit && search && typeof text === "string" ? <Marked text={text} query={search.query} /> : text}
               </span>
-              <span className="chat-time">
-                {stampOf(line.at, language)}
-                {line.mine && receipts && !showWriter && <Ticks count={ticksOf(receipts, line.id)} />}
-              </span>
+              {line.mine && receipts && !showWriter ? (
+                // (The time is dimmed on its own, not with the ticks: two lit ticks dimmed too were hard to see. The judge, 17 Nov.)
+                <span className="chat-time chat-time-ticked">
+                  <span className="chat-stamp">{stampOf(line.at, language)}</span>
+                  <Ticks count={ticksOf(receipts, line.id)} />
+                </span>
+              ) : (
+                <span className="chat-time">{stampOf(line.at, language)}</span>
+              )}
             </>
           );
           // (The message it answers, over it, while that message is in the chat. A report sends the words alone, and shows no quote.)
