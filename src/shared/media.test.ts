@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitMedia, NormalizedMediaSchema, sourceMenus, sourcesOf, type NormalizedMedia } from "./media";
+import { fitMedia, NormalizedMediaSchema, preferredSourceIndex, sourceMenus, sourcesOf, type NormalizedMedia } from "./media";
 
 /*
  * Where a film comes from and how sharp it is are two questions, with a picker each. A source that hands over the same stream in several qualities
@@ -43,5 +43,34 @@ describe("a film's sources and its qualities", () => {
     expect(NormalizedMediaSchema.safeParse(fitted).success).toBe(true);
     expect(fitted?.quality).toBe("Auto (HLS)");
     expect(fitted?.alternates?.map((alternate) => alternate.quality)).toEqual(["1080p", "720p", undefined]);
+  });
+});
+
+describe("preferredSourceIndex (anime audio preferred language)", () => {
+  const animeMedia: NormalizedMedia = {
+    title: "Anime Episode",
+    sourceLabel: "Japanese (Sub)",
+    stream: { url: "https://films.example/sub.m3u8", type: "hls" },
+    alternates: [
+      { label: "English Dub", stream: { url: "https://films.example/dub.m3u8", type: "hls" } },
+    ],
+  };
+
+  it("picks English Dub source index when preferred anime audio is eng", () => {
+    expect(preferredSourceIndex(animeMedia, "eng")).toBe(1);
+  });
+
+  it("picks Japanese (Sub) source index when preferred anime audio is jp or unset", () => {
+    expect(preferredSourceIndex(animeMedia, "jp")).toBe(0);
+    expect(preferredSourceIndex(animeMedia, undefined)).toBe(0);
+  });
+
+  it("defaults to index 0 when only 1 source is available or media has no alternates", () => {
+    const singleSourceMedia: NormalizedMedia = {
+      title: "Solo",
+      stream: { url: "https://films.example/video.mp4", type: "mp4" },
+    };
+    expect(preferredSourceIndex(singleSourceMedia, "eng")).toBe(0);
+    expect(preferredSourceIndex(singleSourceMedia, "jp")).toBe(0);
   });
 });

@@ -1011,7 +1011,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               const targetEp = eps.find((ep) => ep.num === hiEpisodeToFind) ?? (eps.length === 1 ? eps[0] : undefined);
               if (!targetEp) return null;
 
-              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, targetEp.num, { fetcher: get });
+              const prefAudio = url.searchParams.get("audio") || (url.searchParams.get("mode") === "dub" ? "eng" : undefined);
+              const hiMode: "sub" | "dub" = prefAudio === "eng" ? "dub" : "sub";
+
+              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, targetEp.num, { mode: hiMode, fetcher: get });
               if (!resolved) return null;
 
               const proxiedUrl = streamAddress(resolved.stream.src, resolved.embedUrl, process.env, false);
@@ -1029,10 +1032,22 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               const subList = finalSubtitles([...roSubs, ...hiSubs, ...listed]);
 
+              const primaryLabel = resolved.type === "dub" ? "English Dub" : "Japanese (Sub)";
               const alternates: AlternateSource[] = [];
-              if (resolved.altDubStream) {
+              if (resolved.alternate) {
+                const altLabel = resolved.alternate.type === "dub" ? "English Dub" : "Japanese (Sub)";
                 alternates.push({
-                  label: "Server 2 (English Dub)",
+                  label: altLabel,
+                  stream: {
+                    url: streamAddress(resolved.alternate.stream.src, resolved.alternate.embedUrl, process.env, false),
+                    type: "hls",
+                    directUrl: resolved.alternate.stream.src,
+                  },
+                  ...(resolved.alternate.type === "sub" && subList ? { subtitles: subList } : {}),
+                });
+              } else if (resolved.altDubStream) {
+                alternates.push({
+                  label: "English Dub",
                   stream: {
                     url: streamAddress(resolved.altDubStream.stream.src, resolved.altDubStream.embedUrl, process.env, false),
                     type: "hls",
@@ -1046,6 +1061,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 resolver: "filmpire",
                 media: {
                   title,
+                  sourceLabel: alternates.length > 0 ? primaryLabel : undefined,
                   stream: {
                     url: proxiedUrl,
                     type: "hls",

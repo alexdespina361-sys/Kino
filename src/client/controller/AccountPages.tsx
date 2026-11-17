@@ -303,6 +303,25 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
           <Switch label={t("settings.autoSkip")} checked={settings.autoSkip ?? false} onChange={(on) => set("autoSkip", on)} testId="auto-skip" />
         </Rows>
+        <p className="group-label">{t("settings.animeAudio")}</p>
+        <div className="segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
+          <button
+            role="radio"
+            aria-checked={(settings.animeAudio ?? "jp") === "jp"}
+            onClick={() => set("animeAudio", "jp")}
+            data-testid="anime-audio-jp"
+          >
+            {t("settings.animeAudioJp")}
+          </button>
+          <button
+            role="radio"
+            aria-checked={settings.animeAudio === "eng"}
+            onClick={() => set("animeAudio", "eng")}
+            data-testid="anime-audio-eng"
+          >
+            {t("settings.animeAudioEng")}
+          </button>
+        </div>
       </Group>
       <SubtitleLanguages />
       {/* A child's profile: only cartoons for children, no friends and no watch party, wherever the profile is used (see the TV's Browse). Sent at once: the server turns the friends off. */}
