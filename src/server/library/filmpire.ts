@@ -4,7 +4,7 @@ import { remember } from "../boundedMap";
 import { hasRomanianDub, hasRomanianDubSync, romanianDubsOn } from "../dubs/romanian";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
-import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
+import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, UNSCRIPTED_TV_GENRES, type FilmpireCategory } from "./shelves";
 
 export type { FilmpireCategory };
 
@@ -18,6 +18,18 @@ const STILL_BASE = "https://image.tmdb.org/t/p/w300";
 export const MAX_PAGE = 15;
 /** How many shelves one question about the rows after the first ones brings. */
 export const SHELF_BATCH = 5;
+
+/** Today as TMDB writes a date, to tell what has not come out yet. */
+export const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Stands for today in a category's path: `pageUrl` writes the day each question is asked. (Written once as the server started, the date stayed that day for as
+ * long as it ran - days - and what came out since was left out of the rows.)
+ */
+export const TODAY = "{today}";
+
+const MOVIE_DISCOVER_FILTER = `primary_release_date.lte=${TODAY}&vote_count.gte=10`;
+const TV_DISCOVER_FILTER = `first_air_date.lte=${TODAY}&vote_count.gte=5`;
 
 /** What the lists of Movies and Series that TMDB can sort by genre are asked not to have: animation is in the Cartoons and the Anime (the trending, popular and top lists cannot be asked that way, so `askPage` takes it out of them). */
 const NO_ANIMATION = `without_genres=${ANIMATION_GENRE}`;
@@ -36,41 +48,41 @@ export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
   { id: "top-rated-tv", title: "Best Rated TV Series", path: "/tv/top_rated?language=en-US&page=1", type: "tv" },
 
   // Movies by Genre (from explore-movies)
-  { id: "action-movies", title: "Action Movies", path: `/discover/movie?with_genres=28&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "scifi-movies", title: "Sci-Fi Movies", path: `/discover/movie?with_genres=878&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "comedy-movies", title: "Comedy Movies", path: `/discover/movie?with_genres=35&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "horror-movies", title: "Horror Movies", path: `/discover/movie?with_genres=27&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "thriller-movies", title: "Thriller Movies", path: `/discover/movie?with_genres=53&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "adventure-movies", title: "Adventure Movies", path: `/discover/movie?with_genres=12&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "crime-movies", title: "Crime Movies", path: `/discover/movie?with_genres=80&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "fantasy-movies", title: "Fantasy Movies", path: `/discover/movie?with_genres=14&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "drama-movies", title: "Drama Movies", path: `/discover/movie?with_genres=18&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "mystery-movies", title: "Mystery Movies", path: `/discover/movie?with_genres=9648&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "romance-movies", title: "Romance Movies", path: `/discover/movie?with_genres=10749&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "family-movies", title: "Family Movies", path: `/discover/movie?with_genres=10751&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "documentary-movies", title: "Documentary Movies", path: `/discover/movie?with_genres=99&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "action-movies", title: "Action Movies", path: `/discover/movie?with_genres=28&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "scifi-movies", title: "Sci-Fi Movies", path: `/discover/movie?with_genres=878&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "comedy-movies", title: "Comedy Movies", path: `/discover/movie?with_genres=35&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "horror-movies", title: "Horror Movies", path: `/discover/movie?with_genres=27&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "thriller-movies", title: "Thriller Movies", path: `/discover/movie?with_genres=53&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "adventure-movies", title: "Adventure Movies", path: `/discover/movie?with_genres=12&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "crime-movies", title: "Crime Movies", path: `/discover/movie?with_genres=80&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "fantasy-movies", title: "Fantasy Movies", path: `/discover/movie?with_genres=14&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "drama-movies", title: "Drama Movies", path: `/discover/movie?with_genres=18&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "mystery-movies", title: "Mystery Movies", path: `/discover/movie?with_genres=9648&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "romance-movies", title: "Romance Movies", path: `/discover/movie?with_genres=10749&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "family-movies", title: "Family Movies", path: `/discover/movie?with_genres=10751&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "documentary-movies", title: "Documentary Movies", path: `/discover/movie?with_genres=99&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
 
   // Series by Genre (from explore-series)
-  { id: "action-adventure-tv", title: "Action & Adventure Series", path: `/discover/tv?with_genres=10759&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: `/discover/tv?with_genres=10765&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "comedy-tv", title: "Comedy Series", path: `/discover/tv?with_genres=35&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "crime-tv", title: "Crime Series", path: `/discover/tv?with_genres=80&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "drama-tv", title: "Drama Series", path: `/discover/tv?with_genres=18&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "mystery-tv", title: "Mystery Series", path: `/discover/tv?with_genres=9648&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "kids-tv", title: "Kids & Family Shows", path: `/discover/tv?with_genres=10762&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "documentary-tv", title: "Docuseries", path: `/discover/tv?with_genres=99&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "action-adventure-tv", title: "Action & Adventure Series", path: `/discover/tv?with_genres=10759&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: `/discover/tv?with_genres=10765&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "comedy-tv", title: "Comedy Series", path: `/discover/tv?with_genres=35&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "crime-tv", title: "Crime Series", path: `/discover/tv?with_genres=80&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "drama-tv", title: "Drama Series", path: `/discover/tv?with_genres=18&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "mystery-tv", title: "Mystery Series", path: `/discover/tv?with_genres=9648&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "kids-tv", title: "Kids & Family Shows", path: `/discover/tv?with_genres=10762&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "documentary-tv", title: "Docuseries", path: `/discover/tv?with_genres=99&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
 
   // Cartoons: the first rows of their page (the ones that come after are the shelves, see shelves.ts)
-  { id: "cartoon-tv", title: "Popular Cartoon Series", path: `/discover/tv?${animated("cartoon")}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
-  { id: "cartoon-movies", title: "Popular Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
+  { id: "cartoon-tv", title: "Popular Cartoon Series", path: `/discover/tv?${animated("cartoon")}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-movies", title: "Popular Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
   { id: "cartoon-top-tv", title: "Top Rated Cartoon Series", path: `/discover/tv?${animated("cartoon")}&vote_count.gte=300&sort_by=vote_average.desc`, type: "tv", section: "cartoon" },
   { id: "cartoon-top-movies", title: "Top Rated Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&vote_count.gte=1000&sort_by=vote_average.desc`, type: "movie", section: "cartoon" },
-  { id: "cartoon-kids-tv", title: "Kids' Cartoons", path: `/discover/tv?${animated("cartoon", 10762)}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
-  { id: "cartoon-family-movies", title: "Family Cartoon Movies", path: `/discover/movie?${animated("cartoon", 10751)}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
+  { id: "cartoon-kids-tv", title: "Kids' Cartoons", path: `/discover/tv?${animated("cartoon", 10762)}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-family-movies", title: "Family Cartoon Movies", path: `/discover/movie?${animated("cartoon", 10751)}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
 
   // Anime: the same, of Japanese animation
-  { id: "anime-series", title: "Popular Anime Series", path: `/discover/tv?${animated("anime")}&sort_by=popularity.desc`, type: "tv", section: "anime" },
-  { id: "anime-films", title: "Popular Anime Movies", path: `/discover/movie?${animated("anime")}&sort_by=popularity.desc`, type: "movie", section: "anime" },
+  { id: "anime-series", title: "Popular Anime Series", path: `/discover/tv?${animated("anime")}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv", section: "anime" },
+  { id: "anime-films", title: "Popular Anime Movies", path: `/discover/movie?${animated("anime")}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie", section: "anime" },
   { id: "anime-top-tv", title: "Top Rated Anime Series", path: `/discover/tv?${animated("anime")}&vote_count.gte=200&sort_by=vote_average.desc`, type: "tv", section: "anime" },
   { id: "anime-top-movies", title: "Top Rated Anime Movies", path: `/discover/movie?${animated("anime")}&vote_count.gte=300&sort_by=vote_average.desc`, type: "movie", section: "anime" },
 ];
@@ -106,6 +118,14 @@ const preloadedSeasons = new Map<number, number[]>();
 const preloadedSeasonCounts = new Map<number, Record<number, number>>();
 export const knownTvIds = new Set<number>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
+/** A film that came out this long ago or less is listed only once it has a home release (see `watchableNow`); an older one is taken to have one. */
+export const RECENT_FILM_MS = 365 * 24 * 60 * 60 * 1000;
+const HOME_TTL_MS = 12 * 60 * 60 * 1000;
+const HOME_CHECKS_AT_ONCE = 8;
+const HOME_WAIT_MS = 4_000;
+const HOME_TIMEOUT_MS = 3_000;
+/** TMDB's release types a film can be watched at home from: digital (4), physical (5), TV (6). */
+const HOME_RELEASES: ReadonlySet<number> = new Set([4, 5, 6]);
 
 /** How many video checks run at once, for all the searches of a source together (a search checks its first page, twenty titles, at once). */
 export const PROBES_AT_ONCE = 16;
@@ -263,6 +283,10 @@ const hasGenre = (doc: z.infer<typeof TmdbItemSchema>, genre: number): boolean =
 const CHILDREN_GENRES = [10751, 10762] as const;
 const forKids = (doc: z.infer<typeof TmdbItemSchema>): boolean => CHILDREN_GENRES.some((genre) => hasGenre(doc, genre));
 
+/** Tells if a TV title is unscripted (News: 10763, Soap: 10766, Talk: 10767) which has no playback availability. Scripted content is kept. */
+export const isUnscriptedTv = (doc: z.infer<typeof TmdbItemSchema>): boolean =>
+  UNSCRIPTED_TV_GENRES.some((genre) => hasGenre(doc, genre));
+
 /** How many titles of a page of TMDB's answers are taken: a page has twenty, and whatever more one says it has is not looked at (each title of a search's first page is checked for video). */
 export const PAGE_TITLES = 20;
 
@@ -273,8 +297,8 @@ const TmdbResponseSchema = z.object({
 const TmdbSearchSchema = TmdbResponseSchema.extend({ total_pages: z.number().int().optional() });
 
 /** A TMDB path with the page asked for (any `page` it had is replaced) and the key. */
-function pageUrl(path: string, page: number, apiKey: string): string {
-  const [route = "", query = ""] = path.split("?");
+export function pageUrl(path: string, page: number, apiKey: string): string {
+  const [route = "", query = ""] = path.replaceAll(TODAY, today()).split("?");
   const rest = query.split("&").filter((part) => part && !part.startsWith("page=") && !part.startsWith("api_key="));
   return `${BASE_URL}${route}?${[...rest, `page=${page}`, `api_key=${apiKey}`].join("&")}`;
 }
@@ -299,6 +323,12 @@ const TmdbSeasonSchema = z.object({
 const TmdbShowSchema = z.object({
   seasons: z.array(z.object({ season_number: z.number().int(), episode_count: z.number().int().optional(), air_date: z.string().nullable().optional() })),
 });
+const TmdbReleaseDatesSchema = z.object({
+  results: z.array(z.object({ release_dates: z.array(z.object({ type: z.number().optional(), release_date: z.string().nullish() })) })),
+});
+type TmdbEpisode = z.infer<typeof TmdbSeasonSchema>["episodes"][number];
+/** A season of a show, and how many episodes it has. */
+type ShowPart = { season: number; episodes: number };
 
 /**
  * One title with what TMDB can append to its answer (`append_to_response`): the people, the age rating (a film's `release_dates`, a show's `content_ratings`)
@@ -343,10 +373,12 @@ function ageIn(country: string, doc: z.infer<typeof TmdbAboutSchema>, type: "mov
   return (releases.find((one) => one.certification && one.type === 3) ?? releases.find((one) => one.certification))?.certification?.trim();
 }
 
-/** Today as TMDB writes a date, to tell what has not come out yet. */
-const today = () => new Date().toISOString().slice(0, 10);
-
-function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem | null {
+/**
+ * A tile of one of TMDB's titles. `listed` (a row, a search, the titles like another) also leaves out a show that is talk, news or a soap (hidden
+ * for now: the owner, 17 Nov, undecided) and a stub nobody voted on; one title looked up by its id is never left out for those, so that a card
+ * saved or sent in a chat, or a link to it, still opens (the judge, 17 Nov).
+ */
+function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv", listed = true): LibraryItem | null {
   const parsed = TmdbItemSchema.safeParse(raw);
   if (!parsed.success) return null;
   const doc = parsed.data;
@@ -356,9 +388,13 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   if (!title) return null;
 
   const isTv = doc.media_type ? doc.media_type === "tv" : (defaultType ? defaultType === "tv" : Boolean(doc.first_air_date));
+  if (listed && isTv && isUnscriptedTv(doc)) return null;
   if (isTv) knownTvIds.add(doc.id);
   const rawDate = doc.release_date || doc.first_air_date;
   if (rawDate && rawDate.slice(0, 10) > today()) return null; // not out yet: nothing to play
+  if (listed && doc.vote_count === 0 && (!rawDate || (!doc.overview || doc.overview.trim().length < 20))) {
+    return null;
+  }
   const year = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
   const validYear = Number.isInteger(year) && year! > 1800 ? year : undefined;
 
@@ -425,11 +461,18 @@ function isTrashItem(raw: unknown): boolean {
   if (!parsed.success) return true;
   const doc = parsed.data;
   if (doc.media_type === "person") return true;
+  const isTv = doc.media_type ? doc.media_type === "tv" : Boolean(doc.first_air_date);
+  if (isTv && isUnscriptedTv(doc)) return true;
   const title = (doc.title || doc.name)?.trim();
   if (!title) return true;
   const lower = title.toLowerCase();
   if (lower.includes("podcast")) return true;
   if (!doc.poster_path && !doc.backdrop_path) {
+    return true;
+  }
+  const rawDate = doc.release_date || doc.first_air_date;
+  if (rawDate && rawDate.slice(0, 10) > today()) return true;
+  if (doc.vote_count === 0 && (!rawDate || (!doc.overview || doc.overview.trim().length < 20))) {
     return true;
   }
   return false;
@@ -441,13 +484,149 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const get = options.fetch ?? providerFetch();
   const timeoutMs = options.timeoutMs ?? 10_000;
   const probeCache = new Map<string, ProbeRecord>();
-  const preloadedSeasons = new Map<number, number[]>();
   const now = options.now ?? Date.now;
   const shouldVerify = options.verifyPlayback ?? (process.env.FILTER_UNPLAYABLE !== "0" && (!options.fetch || options.probeFetch !== undefined));
   const shouldFilterTrash = options.filterTrash ?? (process.env.FILTER_TRASH !== "0" && (!options.fetch || options.probeFetch !== undefined));
   const probeFetcher = options.probeFetch ?? get;
   const probeTimeout = options.probeTimeoutMs ?? 1500;
   const probeSlots = new Slots(options.probesAtOnce ?? PROBES_AT_ONCE);
+
+  /**
+   * What TMDB says of a show's seasons: those from 1 on with episodes, out by today, in order, with how many episodes each has. Remembered for six
+   * hours, for so many shows. Null for a show TMDB does not know; it throws when TMDB cannot be asked, so that nothing is remembered.
+   */
+  const shows = new Map<number, { at: number; seasons: ShowPart[] }>();
+  const showOf = async (id: number): Promise<ShowPart[] | null> => {
+    const kept = shows.get(id);
+    if (kept && now() - kept.at < PROBE_TTL_MS) return kept.seasons;
+    // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
+    const res = await get(`${BASE_URL}/tv/${id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
+    knownTvIds.add(id);
+    const day = today();
+    const seasons = TmdbShowSchema.parse(await res.json())
+      .seasons.filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
+      .map((season) => ({ season: season.season_number, episodes: season.episode_count ?? 0 }))
+      .sort((a, b) => a.season - b.season);
+    remember(shows, id, { at: now(), seasons }, MAX_PRELOADED_SEASONS);
+    return seasons;
+  };
+  /** The episodes of one season as TMDB has them; null for a season it does not know. */
+  const seasonOf = async (id: number, season: number): Promise<TmdbEpisode[] | null> => {
+    const res = await get(`${BASE_URL}/tv/${id}/season/${season}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`episodes: HTTP ${res.status}`);
+    return TmdbSeasonSchema.parse(await res.json()).episodes;
+  };
+  /**
+   * Whether a film can be watched at home yet: TMDB has a digital, physical or TV release of it (types 4, 5, 6) dated by now, in any country.
+   * Remembered for twelve hours, for so many films. A question that has no answer says yes, and nothing is remembered: a bad moment of TMDB's
+   * does not empty the rows.
+   */
+  const atHome = new Map<number, { at: number; yes: boolean }>();
+  const homeSlots = new Slots(HOME_CHECKS_AT_ONCE);
+  const outAtHome = async (id: number): Promise<boolean> => {
+    const kept = atHome.get(id);
+    if (kept && now() - kept.at < HOME_TTL_MS) return kept.yes;
+    const over = await homeSlots.take(HOME_WAIT_MS);
+    if (!over) return true; // (no turn in time: no answer)
+    try {
+      const res = await get(`${BASE_URL}/movie/${id}/release_dates?api_key=${apiKey}`, { signal: AbortSignal.timeout(HOME_TIMEOUT_MS), headers: { accept: "application/json" } });
+      if (!res.ok) return true;
+      const parsed = TmdbReleaseDatesSchema.safeParse(await res.json());
+      if (!parsed.success) return true;
+      const by = new Date(now()).toISOString();
+      const yes = parsed.data.results.some((country) => country.release_dates.some((release) => release.type !== undefined && HOME_RELEASES.has(release.type) && !!release.release_date && release.release_date <= by));
+      remember(atHome, id, { at: now(), yes }, MAX_PRELOADED_SEASONS);
+      return yes;
+    } catch {
+      return true;
+    } finally {
+      over();
+    }
+  };
+  /**
+   * The titles of a list that can be watched now (the owner, 17 Nov: "content that isn't yet available isn't shown"): one with no date, or a date
+   * still to come, is left out; so is a film out in the last year that has had no home release yet (the Madoka film Walpurgisnacht: Rising, in
+   * Japan's cinemas and on no streaming service). Only for lists: one title looked up by its id is shown as it is.
+   */
+  const watchableNow = async (results: readonly unknown[], defaultType?: "movie" | "tv"): Promise<unknown[]> => {
+    const day = today();
+    const recent = new Date(now() - RECENT_FILM_MS).toISOString().slice(0, 10);
+    const kept = await Promise.all(
+      results.map(async (raw) => {
+        const parsed = TmdbItemSchema.safeParse(raw);
+        if (!parsed.success) return true; // (what is not a title is left out further on)
+        const doc = parsed.data;
+        const date = (doc.release_date || doc.first_air_date)?.slice(0, 10);
+        if (!date || date > day) return false;
+        const isFilm = doc.media_type ? doc.media_type === "movie" : defaultType ? defaultType === "movie" : !doc.first_air_date;
+        return !isFilm || date < recent || (await outAtHome(doc.id));
+      }),
+    );
+    return results.filter((_, at) => kept[at]);
+  };
+  /**
+   * How a show TMDB keeps as season 1 alone is cut, from what the video check told of its seasons: the players' seasons when they are 1, 2, 3...
+   * with none missing; else, for a season of more than 30 episodes, parts of 24 (an empty plan); else whole (null). Whether a show is cut goes by
+   * TMDB's whole season, so it does not change as episodes come out.
+   */
+  const planFrom = (counts: Record<number, number> | undefined, total: number): ShowPart[] | null => {
+    const told = Object.entries(counts ?? {})
+      .map(([season, episodes]) => ({ season: Number(season), episodes }))
+      .filter((part) => Number.isInteger(part.season) && part.season >= 1 && Number.isInteger(part.episodes) && part.episodes > 0)
+      .sort((a, b) => a.season - b.season);
+    if (told.length === 1 && told[0]!.season === 1) return null; // (the players have it as one season too: TMDB's, whole)
+    // (with a season missing, a part would be called by a number the players give another)
+    if (told.length > 1 && told.every((part, at) => part.season === at + 1)) return told;
+    return total <= 30 ? null : [];
+  };
+  /** The last plan each show got from a real answer of the video check: what is used while the check has none (the judge, 17 Nov). */
+  const plans = new Map<number, ShowPart[] | null>();
+  const planOf = async (id: number, total: number): Promise<ShowPart[] | null> => {
+    if (!shouldVerify) return planFrom(preloadedSeasonCounts.get(id), total);
+    await probePlayback(id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
+    // (A check with no answer - no turn in time, a timeout, a bad answer - writes nothing down: the show is then cut as its last answer said.)
+    const record = probeCache.get(`tv:${id}`);
+    if (record && now() - record.checkedAt < PROBE_TTL_MS) {
+      const plan = planFrom(record.status === 200 ? record.seasonCounts : undefined, total);
+      remember(plans, id, plan, MAX_PRELOADED_SEASONS);
+      return plan;
+    }
+    if (plans.has(id)) return plans.get(id)!;
+    // Never an answer: a season of 30 or fewer is listed whole, as most one-season shows are (a page of seasons does not fail for a busy
+    // moment); a longer one fails and is asked again, rather than be cut one way for its seasons and another for its episodes.
+    if (total <= 30) return null;
+    throw new Error("parts: the video check gave no answer");
+  };
+  /**
+   * The parts a show is played in when TMDB keeps it as one long season and the players number it in seasons (JJK: TMDB's one season of 59, the
+   * players' seasons of 24 and more): see `planOf`. Cut over the episodes of TMDB's season 1 out by today (`season1`, the answer `episodes`
+   * lists, when it has it): none is empty, and the episodes beyond the players' seasons follow as further parts of 24. Null for any other show,
+   * which is listed as TMDB lists it. `seasons` and `episodes` both go by this, so the list of seasons and the episodes of each agree.
+   */
+  const partsOf = async (id: number, show: ShowPart[], season1?: TmdbEpisode[] | null): Promise<ShowPart[] | null> => {
+    if (show.length !== 1 || show[0]!.season !== 1) return null;
+    const plan = await planOf(id, show[0]!.episodes);
+    if (!plan) return null;
+    const day = today();
+    const out = ((season1 === undefined ? await seasonOf(id, 1) : season1) ?? []).filter((episode) => !(episode.air_date && episode.air_date > day)).length;
+    const parts: ShowPart[] = [];
+    let from = 0;
+    for (const part of plan) {
+      if (from >= out) break;
+      const episodes = Math.min(part.episodes, out - from);
+      parts.push({ season: part.season, episodes });
+      from += episodes;
+    }
+    for (let season = (plan.at(-1)?.season ?? 0) + 1; from < out; season += 1) {
+      const episodes = Math.min(24, out - from);
+      parts.push({ season, episodes });
+      from += episodes;
+    }
+    return parts.length > 0 ? parts : null;
+  };
 
   const shelfGroups = options.shelves ?? SHELF_GROUPS;
   const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => {
@@ -470,7 +649,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     const res = await get(pageUrl(cat.path, page, apiKey), { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
     if (!res.ok) throw new Error(`${cat.id}: HTTP ${res.status}`);
     const data = TmdbSearchSchema.parse(await res.json());
-    const results = tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results;
+    const results = await watchableNow(tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results, cat.type);
     const section = sectionOfCategory(cat);
     const items = results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null && sectionOf(item) === section);
     return { items, last: data.results.length === 0 || page >= Math.min(data.total_pages ?? MAX_PAGE, MAX_PAGE) };
@@ -517,14 +696,14 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         // The rest of the pages are asked together once the first says there are any; one that cannot be had is left out.
         const rest = await Promise.all(Array.from({ length: Math.min(first.total_pages ?? 1, SEARCH_PAGES) - 1 }, (_, at) => askSearchPage(at + 2).catch(() => null)));
 
-        const toItems = (results: unknown[]) =>
-          (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)
+        const toItems = async (results: unknown[]) =>
+          (await watchableNow(shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results))
             .map((item) => toLibraryItem(item))
             .filter((item): item is LibraryItem => item !== null);
-        const items = toItems(first.results);
+        const items = await toItems(first.results);
         const seen = new Set(items.map((item) => item.id));
         // (Only the first page is asked about at the provider, as before; for the others, what it was already found to lack stays out.)
-        const further = toItems(rest.flatMap((page) => page?.results ?? [])).filter((item) => {
+        const further = (await toItems(rest.flatMap((page) => page?.results ?? []))).filter((item) => {
           const parsed = parseWatchLink(item.url);
           const record = shouldVerify && parsed ? probeCache.get(`${parsed.type}:${parsed.id}`) : undefined;
           return !seen.has(item.id) && seen.add(item.id) && !(record?.status === 404 && now() - record.checkedAt < PROBE_TTL_MS);
@@ -562,9 +741,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (!res.ok) throw new Error(`similar: HTTP ${res.status}`);
       const data = TmdbResponseSchema.parse(await res.json());
 
-      const candidateResults = shouldFilterTrash
-        ? data.results.filter((item) => !isTrashItem(item))
-        : data.results;
+      const candidateResults = await watchableNow(shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results, title.type);
 
       const items = candidateResults
         .map((item) => toLibraryItem(item, title.type))
@@ -601,7 +778,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const res = await get(`${BASE_URL}/${type}/${match[2]}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`title: HTTP ${res.status}`);
-      return toLibraryItem(await res.json(), type);
+      return toLibraryItem(await res.json(), type, false);
     },
     async about(link: string): Promise<TitleAbout | null> {
       let title = parseWatchLink(link);
@@ -620,8 +797,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (!res.ok) throw new Error(`about: HTTP ${res.status}`);
       const doc = TmdbAboutSchema.parse(await res.json());
       const own = `filmpire-${title.type}-${title.id}`;
-      const listed = (results: readonly unknown[], type: "movie" | "tv", max: number, skip: ReadonlySet<string> = new Set()) =>
-        (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)
+      const listed = async (results: readonly unknown[], type: "movie" | "tv", max: number, skip: ReadonlySet<string> = new Set()) =>
+        (await watchableNow(shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results, type))
           .map((item) => toLibraryItem(item, type))
           .filter((item): item is LibraryItem => item !== null && item.id !== own && !skip.has(item.id))
           .slice(0, max);
@@ -629,10 +806,10 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       let parts: LibraryItem[] = [];
       if (title.type === "movie" && doc.belongs_to_collection) {
         const collection = await ask(`/collection/${doc.belongs_to_collection.id}`);
-        if (collection.ok) parts = listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts);
+        if (collection.ok) parts = await listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts);
         else if (collection.status !== 404) throw new Error(`about: collection HTTP ${collection.status}`);
       }
-      const similar = listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id))); // (a sequel is among the parts, not among the titles like it as well)
+      const similar = await listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id))); // (a sequel is among the parts, not among the titles like it as well)
 
       const ages: Record<string, string> = {};
       for (const country of AGE_COUNTRIES) {
@@ -666,131 +843,52 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
-
-      let counts = preloadedSeasonCounts.get(title.id);
-      if (!counts && shouldVerify) {
-        try {
-          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
-          if (probe.seasonCounts) {
-            counts = probe.seasonCounts;
-            remember(preloadedSeasonCounts, title.id, counts, MAX_PRELOADED_SEASONS);
-          }
-          if (probe.seasons && probe.seasons.length > 0) {
-            remember(preloadedSeasons, title.id, probe.seasons, MAX_PRELOADED_SEASONS);
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
-      const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      const show = await showOf(title.id);
+      if (!show) return [];
+      // (A show of season 1 alone: its episodes are asked once, and the parts are cut over the same answer that is listed.)
+      const alone = show.length === 1 && show[0]!.season === 1;
+      const season1 = alone ? await seasonOf(title.id, 1) : undefined;
+      const parts = alone ? await partsOf(title.id, show, season1) : null;
       const day = today();
+      const detail = (episode: TmdbEpisode, number: number): EpisodeDetail => {
+        const name = episode.name?.trim();
+        const overview = episode.overview?.trim();
+        return {
+          season,
+          episode: number,
+          ...(name ? { title: name.slice(0, 200) } : {}),
+          ...(overview ? { overview: overview.slice(0, 400) } : {}),
+          ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+          ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+          url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${number}`,
+        };
+      };
 
-      if (res.ok) {
-        const tmdbSeason = TmdbSeasonSchema.parse(await res.json());
-        const validEps = tmdbSeason.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
-
-        // If this is season 1, and the provider divided the series into multiple seasons
-        // (e.g. JJK where TMDB season 1 has 59 episodes, but provider season 1 only has 24):
-        const expectedCount = counts?.[season] ?? (season === 1 && validEps.length > 30 ? 24 : undefined);
-        if (season === 1 && expectedCount && validEps.length > expectedCount) {
-          return validEps.slice(0, expectedCount).map((episode, idx) => ({
-            season: 1,
-            episode: idx + 1,
-            ...(episode.name?.trim() ? { title: episode.name.trim().slice(0, 200) } : {}),
-            ...(episode.overview?.trim() ? { overview: episode.overview.trim().slice(0, 400) } : {}),
-            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-            url: `https://filmpire.sc/watch/${title.id}?s=1&e=${idx + 1}`,
-          }));
-        }
-
-        return validEps.map((episode) => {
-          const name = episode.name?.trim();
-          const overview = episode.overview?.trim();
-          return {
-            season,
-            episode: episode.episode_number,
-            ...(name ? { title: name.slice(0, 200) } : {}),
-            ...(overview ? { overview: overview.slice(0, 400) } : {}),
-            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-            url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${episode.episode_number}`,
-          };
-        });
+      if (parts) {
+        // A show TMDB keeps as one long season is played in parts (see `partsOf`): a part is its share of TMDB's season 1, numbered from one, and
+        // no episode is in two parts (the judge, 17 Nov: with season 1 listed whole, the parts after it listed its episodes again).
+        const at = parts.findIndex((part) => part.season === season);
+        if (at < 0) return [];
+        const offset = parts.slice(0, at).reduce((sum, part) => sum + part.episodes, 0);
+        return (season1 ?? [])
+          .filter((episode) => !(episode.air_date && episode.air_date > day))
+          .slice(offset, offset + parts[at]!.episodes)
+          .map((episode, index) => detail(episode, index + 1));
       }
 
-      // If TMDB returned 404 for this season (e.g. TMDB lumped all seasons into season 1):
-      if (res.status === 404 && season > 1) {
-        const s1Url = `${BASE_URL}/tv/${title.id}/season/1?api_key=${apiKey}&language=en-US`;
-        const s1Res = await get(s1Url, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-        if (s1Res.ok) {
-          const s1Data = TmdbSeasonSchema.parse(await s1Res.json());
-          const validEps = s1Data.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
-
-          let offset = 0;
-          let targetCount = counts?.[season] ?? 0;
-          if (counts) {
-            for (let s = 1; s < season; s++) {
-              offset += counts[s] ?? 0;
-            }
-          } else if (validEps.length > 24) {
-            offset = (season - 1) * 24;
-            targetCount = 24;
-          }
-          const slice = validEps.slice(offset, targetCount > 0 ? offset + targetCount : undefined);
-
-          if (slice.length > 0) {
-            return slice.map((episode, idx) => {
-              const name = episode.name?.trim();
-              const overview = episode.overview?.trim();
-              return {
-                season,
-                episode: idx + 1,
-                ...(name ? { title: name.slice(0, 200) } : {}),
-                ...(overview ? { overview: overview.slice(0, 400) } : {}),
-                ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-                ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-                url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${idx + 1}`,
-              };
-            });
-          }
-        }
-      }
-
-      if (res.status === 404) return [];
-      throw new Error(`episodes: HTTP ${res.status}`);
+      // Any other show is listed as TMDB lists it, each season whole (a long one is shown 24 at a time by the page, not cut here: Bleach, 17 Nov).
+      const episodes = await seasonOf(title.id, season);
+      if (!episodes) return [];
+      return episodes.filter((episode) => !(episode.air_date && episode.air_date > day)).map((episode) => detail(episode, episode.episode_number));
     },
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
-      const preloaded = preloadedSeasons.get(title.id);
-      if (preloaded && preloaded.length > 0) return preloaded;
-      // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
-      const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-      if (res.status === 404) return [];
-      if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
-      knownTvIds.add(title.id);
-      const day = today();
-      const parsed = TmdbShowSchema.parse(await res.json());
-      const counts = preloadedSeasonCounts.get(title.id);
-      if (counts) {
-        const cSeasons = Object.keys(counts).map(Number).filter((n) => Number.isInteger(n) && n >= 1).sort((a, b) => a - b);
-        if (cSeasons.length > 0) return cSeasons;
-      }
-      const valid = parsed.seasons
-        .filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
-        .map((season) => season.season_number)
-        .sort((a, b) => a - b);
-      if (valid.length === 1 && valid[0] === 1) {
-        const s1 = parsed.seasons.find((s) => s.season_number === 1);
-        if (s1 && (s1.episode_count ?? 0) > 30) {
-          const derived = Math.ceil(s1.episode_count! / 24);
-          return Array.from({ length: derived }, (_, i) => i + 1);
-        }
-      }
-      return valid;
+      // (TMDB's list, always: the video check's own list of seasons once put Bleach at seasons 3 to 16 over TMDB's 1 and 2. The judge, 17 Nov.)
+      const show = await showOf(title.id);
+      if (!show) return [];
+      const parts = await partsOf(title.id, show);
+      return parts ? parts.map((part) => part.season) : show.map((part) => part.season);
     },
   };
 }

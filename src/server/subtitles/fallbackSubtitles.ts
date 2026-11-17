@@ -241,16 +241,16 @@ export class FallbackSubtitleManager {
     const showMatches = [...searchHtml.matchAll(/<a\s+href="\/tvshow-(\d+)\.html">([^<]+)<\/a>/g)];
     if (showMatches.length === 0) return [];
 
-    // Find the show that best matches the query
-    const compactTarget = normTitle.replace(/\s+/g, "");
-    let bestShow = showMatches.find((m) => {
-      const candidateNorm = normalizeSearchTitle(m[2] ?? '').replace(/\s+/g, "");
-      return candidateNorm.includes(compactTarget) || compactTarget.includes(candidateNorm);
+    // Strict title matching: candidate title must match normalized query after stripping trailing years (e.g. " (2004-2010)")
+    const bestShow = showMatches.find((m) => {
+      const rawCand = m[2] ?? "";
+      const strippedCand = rawCand.replace(/\s*\(\d{4}(?:-\d{4})?\)\s*$/g, "").trim();
+      return normalizeSearchTitle(strippedCand) === normTitle;
     });
     if (!bestShow) {
-      bestShow = showMatches[0];
+      return []; // Do not guess or pick random show to avoid assigning subtitles for the wrong series
     }
-    const showId = bestShow?.[1] ?? '';
+    const showId = bestShow[1] ?? '';
 
     // Step B: Fetch season overview page
     const seasonUrl = `http://www.tvsubtitles.net/tvshow-${showId}-${season}.html`;
@@ -265,8 +265,11 @@ export class FallbackSubtitleManager {
     const packLinks = [...seasonHtml.matchAll(/<a\s+href="subtitle-(\d+)-(\d+)-([a-z]{2})\.html">/g)];
     if (packLinks.length === 0) return [];
 
-    // We can fetch up to 5 diverse season packs (e.g. en, ro, es, fr, de)
-    const packsToFetch = packLinks.slice(0, 5);
+    // Prioritize English ('en') and Romanian ('ro') season packs first
+    const targetLangs = new Set(["en", "ro"]);
+    const priorityPacks = packLinks.filter((p) => targetLangs.has(p[3] ?? ""));
+    const otherPacks = packLinks.filter((p) => !targetLangs.has(p[3] ?? ""));
+    const packsToFetch = [...priorityPacks, ...otherPacks].slice(0, 6);
 
     await Promise.allSettled(
       packsToFetch.map(async (p) => {

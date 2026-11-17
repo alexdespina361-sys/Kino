@@ -11,6 +11,7 @@ import {
   previousEpisode,
   resolveCaptionStyle,
   seriesKeyOf,
+  preferredSourceIndex,
   sourceMenus,
   sourcesOf,
   stateIsFor,
@@ -330,10 +331,10 @@ export function Tv() {
   const [sourceIndex, setSourceIndex] = useState(0);
   const sourceIndexRef = useRef(0);
   const triedSourcesRef = useRef(new Set([0]));
-  const resetSources = () => {
-    sourceIndexRef.current = 0;
-    triedSourcesRef.current = new Set([0]);
-    setSourceIndex(0);
+  const resetSources = (initialIndex = 0) => {
+    sourceIndexRef.current = initialIndex;
+    triedSourcesRef.current = new Set([initialIndex]);
+    setSourceIndex(initialIndex);
   };
   /** Play the video from one of its sources, carrying on from where it was. `manual`: someone picked it, so the others are fair game again. */
   const loadSource = (index: number, manual: boolean) => {
@@ -352,6 +353,17 @@ export function Tv() {
     void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     if (play) engine?.play();
   };
+
+  // If the user's preferred anime audio changes in settings while playing, switch to that source if available.
+  useEffect(() => {
+    const media = currentMediaRef.current;
+    if (!media) return;
+    // (Only an anime with that audio among its sources: anything else stays on the source it plays, a film's Romanian dub or the second source it fell back to.)
+    const targetIdx = preferredSourceIndex(media, settings.animeAudio);
+    if (targetIdx !== undefined && targetIdx !== sourceIndexRef.current) {
+      loadSource(targetIdx, true);
+    }
+  }, [settings.animeAudio]);
 
   // A source that fails hands over to the next one that hasn't been tried, so the first one that works plays.
   useEffect(() => {
@@ -486,8 +498,10 @@ export function Tv() {
       putMedia(preloaded);
       profileStore.playbackStarted(preloaded);
       resetApplied();
-      resetSources();
-      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles, undefined, preloaded.stream.directUrl);
+      const startIdx = preferredSourceIndex(preloaded, settings.animeAudio) ?? 0;
+      resetSources(startIdx);
+      const startSource = sourcesOf(preloaded)[startIdx] ?? sourcesOf(preloaded)[0]!;
+      engineRef.current?.load(startSource.stream.url, startSource.stream.type, startSource.subtitles, undefined, startSource.stream.directUrl);
       engineRef.current?.play();
       socketRef.current?.send({ type: "TV_PLAY_URL", url: nextUrl });
     } else if (nextUrl) {
@@ -966,8 +980,10 @@ export function Tv() {
               clearUpNext();
               setUpNextDismissed(false);
               resetApplied();
-              resetSources();
-              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt, command.media.stream.directUrl);
+              const startIdx = preferredSourceIndex(command.media, settings.animeAudio) ?? 0;
+              resetSources(startIdx);
+              const startSource = sourcesOf(command.media)[startIdx] ?? sourcesOf(command.media)[0]!;
+              void engine.load(startSource.stream.url, startSource.stream.type, startSource.subtitles, command.startAt, startSource.stream.directUrl);
             } else if (command.type === "PLAY") {
               engine.play();
               if (message.by) {
@@ -1454,10 +1470,11 @@ export function Tv() {
       playEpisode(page, { ...(at > 5 ? { startAt: at } : {}), hint: { poster, backdrop, year } });
       return;
     }
-    const source = sourcesOf(currentMedia)[0];
+    const startIdx = preferredSourceIndex(currentMedia, settings.animeAudio) ?? 0;
+    const source = sourcesOf(currentMedia)[startIdx] ?? sourcesOf(currentMedia)[0];
     if (!source) return;
     resetApplied();
-    resetSources();
+    resetSources(startIdx);
     void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     engine.play();
   };

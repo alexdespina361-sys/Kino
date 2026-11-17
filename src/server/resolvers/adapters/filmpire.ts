@@ -185,10 +185,11 @@ export async function getHostToken(
   return cached?.token || "";
 }
 
-export interface BuzzResolvedStream {
+export interface VixSrcResolvedStream {
   streamUrl: string;
-  alternates: Array<{ name: string; url: string; type: "hls" | "mp4" }>;
   embedUrl: string;
+  type: "hls";
+  subtitles: SubtitleTrack[];
 }
 
 function isSecurityBlock(err: unknown): boolean {
@@ -201,7 +202,7 @@ function isSecurityBlock(err: unknown): boolean {
 export interface VidLinkResolvedStream {
   streamUrl: string;
   type: "mp4" | "hls";
-  qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }>;
+  qualities: Array<{ label: string; url: string; type: "mp4" | "hls"; referer?: string }>;
   captions: Array<{ label: string; url: string; lang?: string }>;
 }
 
@@ -256,18 +257,20 @@ export async function resolveVidLinkStream(
       stream?: {
         type?: string;
         playlist?: string;
-        qualities?: Record<string, { url?: string; type?: string }>;
+        qualities?: Record<string, { url?: string; type?: string; headers?: { referer?: string } }>;
+        headers?: { referer?: string };
         captions?: Array<{ url?: string; language?: string; type?: string }>;
       };
     };
     if (!data?.stream) return null;
 
     const normalizeCdnUrl = (u: string) => u.replace(/^https?:\/\/bcdn\d+\.hakunaymatata\.com/i, "https://bcdn.hakunaymatata.com");
+    const streamHeaders = data.stream.headers;
 
-    const qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }> = [];
+    const qualities: Array<{ label: string; url: string; type: "mp4" | "hls"; referer?: string }> = [];
     if (data.stream.playlist && isHttpUrl(data.stream.playlist)) {
       const cleanUrl = normalizeCdnUrl(data.stream.playlist);
-      qualities.push({ label: "Auto (HLS)", url: cleanUrl, type: "hls" });
+      qualities.push({ label: "Auto (HLS)", url: cleanUrl, type: "hls", referer: streamHeaders?.referer });
     }
     if (data.stream.qualities) {
       const qKeys = Object.keys(data.stream.qualities).sort((a, b) => Number(b) - Number(a));
@@ -279,6 +282,7 @@ export async function resolveVidLinkStream(
             label: `${q}p`,
             url: cleanUrl,
             type: item.type === "hls" || cleanUrl.includes(".m3u8") ? "hls" : "mp4",
+            referer: item.headers?.referer || streamHeaders?.referer,
           });
         }
       }
@@ -307,69 +311,103 @@ export async function resolveVidLinkStream(
   }
 }
 
-export async function resolveBuzzStream(
+export async function resolveVixSrcStream(
   get: typeof fetch,
   tmdbId: string,
   isTv: boolean,
   season?: string | null,
   episode?: string | null,
-): Promise<BuzzResolvedStream | null> {
+  timeoutMs: number = 5000,
+): Promise<VixSrcResolvedStream | null> {
   const s = season || "1";
   const e = episode || "1";
-  const embedUrl = isTv
-    ? `https://vidsrc.buzz/embed/tv/${tmdbId}/${s}/${e}`
-    : `https://vidsrc.buzz/embed/movie/${tmdbId}`;
+  const apiUrl = isTv
+    ? `https://vixsrc.to/api/tv/${encodeURIComponent(tmdbId)}/${encodeURIComponent(s)}/${encodeURIComponent(e)}`
+    : `https://vixsrc.to/api/movie/${encodeURIComponent(tmdbId)}`;
 
   try {
-    const res = await get(embedUrl, {
+    const apiRes = await get(apiUrl, {
       headers: {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        referer: "https://www.2embed.cc/",
+        "user-agent": UA,
+        referer: "https://vixsrc.to/",
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const qMatch = html.match(/var\s+Q\s*=\s*(\{[\s\S]*?\});/);
-    if (!qMatch?.[1]) return null;
-    const q = JSON.parse(qMatch[1]) as {
-      t: string;
-      ssr?: { servers?: Array<{ ref: string; name?: string }> };
-    };
-    const servers = q.ssr?.servers || [];
-    if (servers.length === 0) return null;
+    if (!apiRes.ok) return null;
+    const apiData = (await apiRes.json().catch(() => null)) as { src?: string } | null;
+    if (!apiData?.src) return null;
 
-    const playStreams: Array<{ name: string; url: string; type: "hls" | "mp4" }> = [];
-    for (const srv of servers.slice(0, 3)) {
-      try {
-        const playUrl = `https://vidsrc.buzz/pl/api.php?a=play&ref=${encodeURIComponent(srv.ref)}&t=${encodeURIComponent(q.t)}`;
-        const pRes = await get(playUrl, {
-          headers: {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            referer: embedUrl,
-          },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!pRes.ok) continue;
-        const pData = (await pRes.json()) as { url?: string; type?: string };
-        if (pData?.url) {
-          const fullStream = new URL(pData.url, "https://vidsrc.buzz/").href;
-          playStreams.push({
-            name: srv.name || "Server",
-            url: fullStream,
-            type: pData.type === "mp4" ? "mp4" : "hls",
-          });
+    const embedUrl = new URL(apiData.src, "https://vixsrc.to").href;
+    const embedRes = await get(embedUrl, {
+      headers: {
+        "user-agent": UA,
+        referer: "https://vixsrc.to/",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!embedRes.ok) return null;
+    const html = await embedRes.text();
+
+    const masterMatch = html.match(/window\.masterPlaylist\s*=\s*(\{[\s\S]*?\});/);
+    if (!masterMatch?.[1]) return null;
+
+    let playlistBase = "";
+    let token = "";
+    let expires = "";
+
+    const urlMatch = masterMatch[1].match(/(?:['"]?url['"]?)\s*:\s*['"]([^'"]+)['"]/);
+    if (urlMatch?.[1]) playlistBase = urlMatch[1];
+
+    const tokenMatch = masterMatch[1].match(/(?:['"]?token['"]?)\s*:\s*['"]([^'"]+)['"]/);
+    if (tokenMatch?.[1]) token = tokenMatch[1];
+
+    const expiresMatch = masterMatch[1].match(/(?:['"]?expires['"]?)\s*:\s*['"]([^'"]+)['"]/);
+    if (expiresMatch?.[1]) expires = expiresMatch[1];
+
+    if (!playlistBase || !token || !expires) return null;
+
+    const masterPlaylistUrl = `${playlistBase}?ub=1&token=${encodeURIComponent(token)}&expires=${encodeURIComponent(expires)}&h=1`;
+    if (!isHttpUrl(masterPlaylistUrl)) return null;
+
+    const subtitles: SubtitleTrack[] = [];
+    try {
+      const plRes = await get(masterPlaylistUrl, {
+        headers: {
+          "user-agent": UA,
+          referer: embedUrl,
+          Origin: "https://vixsrc.to",
+        },
+        signal: AbortSignal.timeout(Math.min(timeoutMs, 3000)),
+      });
+      if (plRes.ok) {
+        const m3u8 = await plRes.text();
+        const subMatches = [...m3u8.matchAll(/#EXT-X-MEDIA:TYPE=SUBTITLES[^\n]*?NAME="([^"]+)"[^\n]*?LANGUAGE="([^"]+)"[^\n]*?URI="([^"]+)"/g)];
+        let subIdx = 0;
+        for (const match of subMatches) {
+          const name = match[1] ?? "";
+          const rawLang = match[2] ?? "";
+          const uri = match[3] ?? "";
+          if (uri) {
+            const fullUri = new URL(uri, playlistBase).href;
+            const normLang = normalizeLang(rawLang) || rawLang;
+            subtitles.push({
+              id: 7000 + subIdx++,
+              url: `/api/proxy?url=${encodeURIComponent(fullUri)}&referer=${encodeURIComponent(embedUrl)}&format=vtt`,
+              label: name,
+              lang: normLang,
+            });
+          }
         }
-      } catch {
-        // ignore individual server fail
       }
+    } catch {
+      // Subtitle parse failure should not block video playback
     }
 
-    if (playStreams.length === 0) return null;
     return {
-      streamUrl: playStreams[0]!.url,
-      alternates: playStreams.slice(1),
+      streamUrl: masterPlaylistUrl,
       embedUrl,
+      type: "hls",
+      subtitles,
     };
   } catch {
     return null;
@@ -506,7 +544,15 @@ async function seasonPackSubtitles(ask: ExtrasAsk): Promise<SubtitleTrack[]> {
 export const lookForExtras: ExtrasLookup = (ask, get) => ({
   listed: (ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]))
     .catch((): SubtitleTrack[] => [])
-    .then(async (listed) => (listed.length > 0 ? listed : await seasonPackSubtitles(ask).catch((): SubtitleTrack[] => []))),
+    .then(async (listed) => {
+      const hasEn = listed.some((s) => s.lang === "en" || s.lang === "eng");
+      const hasRo = listed.some((s) => s.lang === "ro" || s.lang === "ron" || s.lang === "rum");
+      if (!hasEn || !hasRo || listed.length === 0) {
+        const fallback = await seasonPackSubtitles(ask).catch((): SubtitleTrack[] => []);
+        return [...listed, ...fallback];
+      }
+      return listed;
+    }),
   romanian: (async () => {
     const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
     return getRomanianSubtitleManager().getSubtitles({ imdbId: ask.imdbId, tmdbId: ask.tmdbId, title: ask.title, season: ask.season, episode: ask.episode });
@@ -672,7 +718,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let pendingExtras: Extras | undefined = tmdbImdbId ? askExtras(tmdbImdbId) : undefined;
 
       // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated or has a Western original language is not looked for there.)
-      const fallbackAnime = async (): Promise<ResolveResult | null> => {
+      const fallbackAnime = async (preferredProvider?: "hianime" | "animeheaven"): Promise<ResolveResult | null> => {
         if (!rawShowTitle || animated === false) return null;
         if (originalLang && originalLang !== "ja" && originalLang !== "zh") return null;
         try {
@@ -764,13 +810,32 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             return named !== undefined && named !== targetSeason;
           };
 
+          const belongsToShow = (tTitle: string): boolean => {
+            const norm = normalizeTitle(tTitle);
+            if (norm === cleanShow) return true;
+            if (norm.startsWith(`${cleanShow} `) || norm.startsWith(`${cleanShow}:`)) return true;
+            if (cleanShow.startsWith(`${norm} `)) return true;
+            for (const q of searchQueries) {
+              const nq = normalizeTitle(q);
+              if (nq && (norm === nq || norm.startsWith(`${nq} `) || nq.startsWith(`${norm} `))) return true;
+            }
+            const showWords = cleanShow.split(/\s+/).filter((w) => w.length >= 4 && !["season", "series", "the", "movie", "part"].includes(w));
+            const candidateWords = new Set(norm.split(/\s+/));
+            if (showWords.length > 0 && showWords.some((w) => candidateWords.has(w))) return true;
+            return false;
+          };
+
           const itself = (name: string): boolean => {
+            if (!belongsToShow(name)) return false;
             const norm = normalizeTitle(name);
             if (norm === cleanShow) return true;
-            if (!norm.startsWith(`${cleanShow} `)) return false;
-            return /^(?:tv|(?:tv )?(?:19|20)\d\d)$/.test(norm.slice(cleanShow.length + 1));
+            if (norm.startsWith(`${cleanShow} `)) {
+              const suffix = norm.slice(cleanShow.length + 1);
+              if (/^(?:tv|(?:tv )?(?:19|20)\d\d|uncut|dub|sub|the animation|ghost files|brotherhood)$/.test(suffix)) return true;
+            }
+            return false;
           };
-          const sequel = (name: string): boolean => normalizeTitle(name).startsWith(`${cleanShow} `) && !itself(name);
+          const sequel = (name: string): boolean => belongsToShow(name) && normalizeTitle(name).startsWith(`${cleanShow} `) && !itself(name);
 
           // Calculates episode offset if the show has grouped seasons under an umbrella title (e.g. "Pokemon Journeys" covering S23-S25)
           const umbrellaSeasonOffset = (matchedTitle: string): number => {
@@ -821,16 +886,17 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               let episodeToFind = targetEpisode;
 
               if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-                matched = results.find((r) => seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
+                matched = results.find((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
                 if (matched) episodeToFind = targetEpisode;
               }
 
               if (!matched && targetSeason > 1) {
-                const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
+                const matchedSeasonList = results.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
                 matched = matchedSeasonList[0];
                 if (!matched) {
                   matched = results.find(
                     (r) =>
+                      belongsToShow(r.title) &&
                       !otherSeason(r.title) &&
                       (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
                         r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
@@ -843,11 +909,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               if (!matched) {
                 if (targetSeason === 1) {
-                  const first = (r: { title: string }) => extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+                  const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
                   matched = results.find((r) => first(r) && itself(r.title)) ?? results.find((r) => first(r) && !sequel(r.title));
                   if (matched) episodeToFind = targetEpisode;
                 } else if (absoluteEpisode) {
-                  const baseMatch = results.find((r) => normalizeTitle(r.title) === cleanShow) ?? results.find((r) => itself(r.title));
+                  const baseMatch = results.find((r) => belongsToShow(r.title) && (normalizeTitle(r.title) === cleanShow || itself(r.title)));
                   if (baseMatch) {
                     matched = baseMatch;
                     episodeToFind = absoluteEpisode;
@@ -910,15 +976,30 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               if (hiResults.length === 0) return null;
 
               let hiMatched: { title: string; href: string; id: string } | undefined;
+              let hiCours: Array<{ title: string; href: string; id: string }> = [];
               let hiEpisodeToFind = targetEpisode;
 
+              const isExtra = (t: string) => /\b(?:movie|film|special|ova|recap|omake|anniversary)\b/i.test(t);
+              const dedupByTitle = (list: Array<{ title: string; href: string; id: string }>) => {
+                const seen = new Set<string>();
+                return list.filter((r) => {
+                  const nt = normalizeTitle(r.title);
+                  if (seen.has(nt)) return false;
+                  seen.add(nt);
+                  return true;
+                });
+              };
+
               if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-                hiMatched = hiResults.find((r) => seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
-                if (hiMatched) {
+                hiCours = dedupByTitle(
+                  hiResults.filter((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !isExtra(r.title)),
+                );
+                if (hiCours.length > 0) {
+                  hiMatched = hiCours[0];
                   hiEpisodeToFind = targetEpisode;
                 } else {
                   for (const r of hiResults) {
-                    if (/\b(?:movie|film|special|ova)\b/i.test(r.title)) continue;
+                    if (!belongsToShow(r.title) || isExtra(r.title)) continue;
                     const offset = umbrellaSeasonOffset(r.title);
                     if (offset > 0) {
                       hiMatched = r;
@@ -930,12 +1011,19 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               }
 
               if (!hiMatched && targetSeason > 1) {
-                const matchedSeasonList = hiResults.filter((r) => extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
-                hiMatched = matchedSeasonList[0];
+                const matchedSeasonList = dedupByTitle(
+                  hiResults.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title) && !isExtra(r.title)),
+                );
+                if (matchedSeasonList.length > 0) {
+                  hiCours = matchedSeasonList;
+                  hiMatched = matchedSeasonList[0];
+                }
                 if (!hiMatched) {
                   hiMatched = hiResults.find(
                     (r) =>
+                      belongsToShow(r.title) &&
                       !otherSeason(r.title) &&
+                      !isExtra(r.title) &&
                       (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
                         r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
                         r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
@@ -947,11 +1035,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               if (!hiMatched) {
                 if (targetSeason === 1) {
-                  const first = (r: { title: string }) => extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+                  const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !isExtra(r.title);
                   hiMatched = hiResults.find((r) => first(r) && itself(r.title)) ?? hiResults.find((r) => first(r) && !sequel(r.title));
                   if (hiMatched) hiEpisodeToFind = targetEpisode;
                 } else if (absoluteEpisode) {
-                  const baseMatch = hiResults.find((r) => normalizeTitle(r.title) === cleanShow) ?? hiResults.find((r) => itself(r.title));
+                  const baseMatch = hiResults.find((r) => belongsToShow(r.title) && (normalizeTitle(r.title) === cleanShow || itself(r.title)));
                   if (baseMatch) {
                     hiMatched = baseMatch;
                     hiEpisodeToFind = absoluteEpisode;
@@ -961,11 +1049,34 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               if (!hiMatched) return null;
 
-              const eps = await getHiAnimeEpisodes(hiMatched.id, get);
-              const targetEp = eps.find((ep) => ep.num === hiEpisodeToFind);
+              let targetEp: { num: number; id: string; title?: string } | undefined;
+              if (hiCours.length > 1) {
+                let remaining = hiEpisodeToFind;
+                for (const cour of hiCours) {
+                  const courEps = await getHiAnimeEpisodes(cour.id, get);
+                  if (courEps.length === 0) continue;
+                  const found = courEps.find((ep) => ep.num === remaining);
+                  if (found) {
+                    hiMatched = cour;
+                    targetEp = found;
+                    break;
+                  }
+                  if (remaining > courEps.length) {
+                    remaining -= courEps.length;
+                  } else {
+                    break;
+                  }
+                }
+              } else {
+                const eps = await getHiAnimeEpisodes(hiMatched.id, get);
+                targetEp = eps.find((ep) => ep.num === hiEpisodeToFind) ?? (eps.length === 1 && hiEpisodeToFind === 1 ? eps[0] : undefined);
+              }
               if (!targetEp) return null;
 
-              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, hiEpisodeToFind, { fetcher: get });
+              const prefAudio = url.searchParams.get("audio") || (url.searchParams.get("mode") === "dub" ? "eng" : undefined);
+              const hiMode: "sub" | "dub" = prefAudio === "eng" ? "dub" : "sub";
+
+              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, targetEp.num, { mode: hiMode, fetcher: get });
               if (!resolved) return null;
 
               const proxiedUrl = streamAddress(resolved.stream.src, resolved.embedUrl, process.env, false);
@@ -983,10 +1094,22 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               const subList = finalSubtitles([...roSubs, ...hiSubs, ...listed]);
 
+              const primaryLabel = resolved.type === "dub" ? "English Dub" : "Japanese (Sub)";
               const alternates: AlternateSource[] = [];
-              if (resolved.altDubStream) {
+              if (resolved.alternate) {
+                const altLabel = resolved.alternate.type === "dub" ? "English Dub" : "Japanese (Sub)";
                 alternates.push({
-                  label: "Server 2 (English Dub)",
+                  label: altLabel,
+                  stream: {
+                    url: streamAddress(resolved.alternate.stream.src, resolved.alternate.embedUrl, process.env, false),
+                    type: "hls",
+                    directUrl: resolved.alternate.stream.src,
+                  },
+                  ...(resolved.alternate.type === "sub" && subList ? { subtitles: subList } : {}),
+                });
+              } else if (resolved.altDubStream) {
+                alternates.push({
+                  label: "English Dub",
                   stream: {
                     url: streamAddress(resolved.altDubStream.stream.src, resolved.altDubStream.embedUrl, process.env, false),
                     type: "hls",
@@ -1000,6 +1123,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 resolver: "filmpire",
                 media: {
                   title,
+                  sourceLabel: alternates.length > 0 ? primaryLabel : undefined,
                   stream: {
                     url: proxiedUrl,
                     type: "hls",
@@ -1010,10 +1134,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                   // (HiAnime's own times for its own stream, the main one: the player takes them over AniSkip's, and only while it plays this stream.)
                   ...sourceSkipTimes(resolved.stream.skip),
                   page: url.href,
-                  series: {
-                    season: targetSeason,
-                    episode: targetEpisode,
-                  },
+                  ...(isTv
+                    ? {
+                        series: {
+                          season: targetSeason,
+                          episode: targetEpisode,
+                        },
+                      }
+                    : {}),
                 },
               };
             } catch {
@@ -1021,28 +1149,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             }
           };
 
-          const [ahRes, hiRes] = await Promise.allSettled([
-            tryAnimeHeaven(),
-            tryHiAnime(),
-          ]);
-          const ah = ahRes.status === "fulfilled" ? ahRes.value : null;
-          const hi = hiRes.status === "fulfilled" ? hiRes.value : null;
-
-          if (hi && hi.status === "success" && ah && ah.status === "success") {
-            const alternates = [...(hi.media.alternates ?? [])];
-            alternates.push({
-              label: "Server (AnimeHeaven)",
-              stream: ah.media.stream,
-            });
-            return {
-              ...hi,
-              media: {
-                ...hi.media,
-                alternates: alternates.slice(0, MAX_ALTERNATES),
-              },
-            };
+          if (preferredProvider === "hianime") {
+            return await tryHiAnime();
           }
+          if (preferredProvider === "animeheaven") {
+            return await tryAnimeHeaven();
+          }
+          const hi = await tryHiAnime();
           if (hi && hi.status === "success") return hi;
+          const ah = await tryAnimeHeaven();
           if (ah && ah.status === "success") return ah;
           return null;
         } catch {
@@ -1050,13 +1165,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       };
 
-      const buildBuzzResult = async (buzz: BuzzResolvedStream): Promise<ResolveResult> => {
+      const buildVixSrcResult = async (vx: VixSrcResolvedStream): Promise<ResolveResult> => {
         const imdbId = tmdbImdbId;
         pendingExtras ??= askExtras(imdbId);
         const [listed, roSubs, dub] = pendingExtras
           ? await extrasByThen(pendingExtras, extrasGraceMs)
           : [[], [], undefined];
-        const subList = finalSubtitles([...roSubs, ...listed]);
+        const subList = finalSubtitles([...roSubs, ...vx.subtitles, ...listed]);
 
         let sInfo: SeriesInfo | undefined;
         if (isTv) {
@@ -1073,30 +1188,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         }
 
-        const proxiedUrl = streamAddress(buzz.streamUrl, buzz.embedUrl, process.env, false);
-        const alternates: AlternateSource[] = buzz.alternates.map((alt) => ({
-          label: alt.name.slice(0, 60),
-          stream: {
-            url: streamAddress(alt.url, buzz.embedUrl, process.env, false),
-            type: alt.type,
-            directUrl: alt.url,
-          },
-          subtitles: subList,
-        }));
-
-        if (rawShowTitle && isTv && alternates.length < 2) {
-          try {
-            const altAnime = await fallbackAnime();
-            if (altAnime?.status === "success") {
-              alternates.push({
-                label: `Server ${alternates.length + 2} (AnimeHeaven)`.slice(0, 60),
-                stream: altAnime.media.stream,
-              });
-            }
-          } catch {
-            // ignore
-          }
-        }
+        const proxiedUrl = streamAddress(vx.streamUrl, vx.embedUrl, process.env, false);
+        const alternates: AlternateSource[] = [];
 
         if (dub) alternates.unshift(dub);
         const cappedAlternates = alternates.slice(0, MAX_ALTERNATES);
@@ -1109,7 +1202,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             stream: {
               url: proxiedUrl,
               type: "hls",
-              directUrl: buzz.streamUrl,
+              directUrl: vx.streamUrl,
             },
             ...(subList ? { subtitles: subList } : {}),
             ...(cappedAlternates.length > 0 ? { alternates: cappedAlternates } : {}),
@@ -1154,12 +1247,12 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
 
         const primary = vl.qualities[0]!;
-        const proxiedUrl = streamAddress(primary.url, "none", process.env, false);
+        const proxiedUrl = streamAddress(primary.url, primary.referer || "none", process.env, false);
         const alternates: AlternateSource[] = vl.qualities.slice(1).map((q) => ({
           label: q.label.slice(0, 60),
           quality: q.label.slice(0, 20), // (the same stream in another quality, not another source: the screen lists it under Quality)
           stream: {
-            url: streamAddress(q.url, "none", process.env, false),
+            url: streamAddress(q.url, q.referer || "none", process.env, false),
             type: q.type,
             directUrl: q.url,
           },
@@ -1203,34 +1296,35 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       };
 
       const fallbackStreams = async (): Promise<ResolveResult | null> => {
-        const isAnime = isTv && (originalLang === "ja" || originalLang === "zh");
+        const isAnime = Boolean(
+          originalLang === "ja" ||
+          originalLang === "zh" ||
+          sectionHint === "anime" ||
+          (animated === true && (originalLang === "ja" || originalLang === "zh" || originalLang === "ko")) ||
+          url.searchParams.get("category")?.match(/anime/i)
+        );
+
         if (isAnime) {
-          // For anime series, VidLink either responds in <300ms or times out after 12s.
-          // If VidLink hasn't responded within 2000ms, start fallbackAnime in parallel. (Its answer is still taken last, after Buzz's, as for every
-          // other title: VidLink, then Buzz, then the anime site; starting it early only saves the wait.)
-          let animePromise: Promise<ResolveResult | null> | undefined;
-          const animeTimer = setTimeout(() => {
-            animePromise = fallbackAnime().catch(() => null);
-          }, 2000);
-
+          // Priority #1 for Anime: HiAnime / ZokoAnime (1080p master HLS, embedded subtitles, skip times)
           try {
-            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
-            clearTimeout(animeTimer);
-            if (vl) return await buildVidLinkResult(vl);
-          } catch {
-            clearTimeout(animeTimer);
-          }
-
-          try {
-            const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-            if (buzz) return await buildBuzzResult(buzz);
+            const hi = await fallbackAnime("hianime");
+            if (hi && hi.status === "success") return hi;
           } catch {
             // ignore
           }
 
+          // Priority #2 for Anime: VidLink fallback
           try {
-            const alt = animePromise ? await animePromise : await fallbackAnime();
-            if (alt) return alt;
+            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
+            if (vl) return await buildVidLinkResult(vl);
+          } catch {
+            // ignore
+          }
+
+          // Priority #3 for Anime: AnimeHeaven
+          try {
+            const ah = await fallbackAnime("animeheaven");
+            if (ah && ah.status === "success") return ah;
           } catch {
             // ignore
           }
@@ -1238,24 +1332,32 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           return null;
         }
 
+        // Priority #1 for Western Movies & Series: VidLink
         try {
           const vl = await resolveVidLinkStream(get, id, isTv, s, e);
           if (vl) return await buildVidLinkResult(vl);
         } catch {
           // ignore
         }
+
+        // Priority #2 for Western Movies & Series: VixSrc
         try {
-          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-          if (buzz) return await buildBuzzResult(buzz);
+          const vx = await resolveVixSrcStream(get, id, isTv, s, e);
+          if (vx) return await buildVixSrcResult(vx);
         } catch {
           // ignore
         }
-        try {
-          const alt = await fallbackAnime();
-          if (alt) return alt;
-        } catch {
-          // ignore
+
+        // Secondary fallback for animated titles
+        if (animated === true) {
+          try {
+            const alt = await fallbackAnime();
+            if (alt && alt.status === "success") return alt;
+          } catch {
+            // ignore
+          }
         }
+
         return null;
       };
 
@@ -1265,9 +1367,9 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         return fallbackPromise;
       };
 
-      // Special-case titles:
-      // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
-      // 2. Cartoons & Anime (isAnimeOrCartoon): skip slow 15s upstream retries and resolve via fast provider immediately
+      // Special-case titles and fast-path resolution:
+      // For all Kino titles (filmpire.sc), cartoons, anime, and clean-release titles (1400837):
+      // Resolve immediately via fast providers (HiAnime for anime, VidLink & VixSrc for Western content), bypassing slow 15s upstream retries
       if (id === "1400837" || isAnimeOrCartoon) {
         const fastResult = await runFallback();
         if (fastResult) return fastResult;

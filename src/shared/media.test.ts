@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitMedia, NormalizedMediaSchema, sourceMenus, sourcesOf, type NormalizedMedia } from "./media";
+import { fitMedia, NormalizedMediaSchema, preferredSourceIndex, sourceMenus, sourcesOf, type NormalizedMedia } from "./media";
 
 /*
  * Where a film comes from and how sharp it is are two questions, with a picker each. A source that hands over the same stream in several qualities
@@ -43,5 +43,63 @@ describe("a film's sources and its qualities", () => {
     expect(NormalizedMediaSchema.safeParse(fitted).success).toBe(true);
     expect(fitted?.quality).toBe("Auto (HLS)");
     expect(fitted?.alternates?.map((alternate) => alternate.quality)).toEqual(["1080p", "720p", undefined]);
+  });
+});
+
+describe("preferredSourceIndex (anime audio preferred language)", () => {
+  const animeMedia: NormalizedMedia = {
+    title: "Anime Episode",
+    sourceLabel: "Japanese (Sub)",
+    stream: { url: "https://films.example/sub.m3u8", type: "hls" },
+    alternates: [
+      { label: "English Dub", stream: { url: "https://films.example/dub.m3u8", type: "hls" } },
+    ],
+  };
+
+  it("picks English Dub source index when preferred anime audio is eng", () => {
+    expect(preferredSourceIndex(animeMedia, "eng")).toBe(1);
+  });
+
+  it("picks Japanese (Sub) source index when preferred anime audio is jp or unset", () => {
+    expect(preferredSourceIndex(animeMedia, "jp")).toBe(0);
+    expect(preferredSourceIndex(animeMedia, undefined)).toBe(0);
+  });
+
+  it("has no say over a title without an anime's audios: one source, a film's Romanian dub, a source whose name says sub", () => {
+    const singleSourceMedia: NormalizedMedia = {
+      title: "Solo",
+      stream: { url: "https://films.example/video.mp4", type: "mp4" },
+    };
+    expect(preferredSourceIndex(singleSourceMedia, "eng")).toBeUndefined();
+    expect(preferredSourceIndex(singleSourceMedia, "jp")).toBeUndefined();
+    const dubbed: NormalizedMedia = {
+      stream: { url: "https://films.example/a.m3u8", type: "hls" },
+      alternates: [
+        { label: "Română (Dublat)", stream: { url: "https://dub.example/a.m3u8", type: "hls" } },
+        { label: "Subtitled source", stream: { url: "https://other.example/a.m3u8", type: "hls" } },
+      ],
+    };
+    expect(preferredSourceIndex(dubbed, "eng")).toBeUndefined();
+    expect(preferredSourceIndex(dubbed, "jp")).toBeUndefined();
+    expect(preferredSourceIndex(dubbed, undefined)).toBeUndefined();
+  });
+
+  it("finds the dub of the HiAnime server's label too, and leaves an anime without the audio asked for alone", () => {
+    const server: NormalizedMedia = {
+      stream: { url: "https://films.example/sub.m3u8", type: "hls" },
+      alternates: [{ label: "Server 2 (English Dub)", stream: { url: "https://films.example/dub.m3u8", type: "hls" } }],
+    };
+    expect(preferredSourceIndex(server, "eng")).toBe(1);
+    // (The main one is not labelled: it is the anime's own audio, the one that is not the dub - Japanese chosen while the dub plays goes back to it.)
+    expect(preferredSourceIndex(server, "jp")).toBe(0);
+    expect(preferredSourceIndex(server, undefined)).toBe(0);
+    const dubFirst: NormalizedMedia = {
+      sourceLabel: "English Dub",
+      stream: { url: "https://films.example/dub.m3u8", type: "hls" },
+      alternates: [{ label: "Server 2", stream: { url: "https://films.example/sub.m3u8", type: "hls" } }],
+    };
+    expect([preferredSourceIndex(dubFirst, "jp"), preferredSourceIndex(dubFirst, "eng")]).toEqual([1, 0]);
+    const onlyDub: NormalizedMedia = { stream: { url: "https://films.example/dub.m3u8", type: "hls" }, alternates: [{ label: "English Dub", stream: { url: "https://films.example/dub2.m3u8", type: "hls" } }] };
+    expect(preferredSourceIndex(onlyDub, "jp")).toBe(0);
   });
 });

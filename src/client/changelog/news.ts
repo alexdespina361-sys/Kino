@@ -19,7 +19,7 @@ export interface ChangeNote {
 }
 
 /** The newest version: what the profile's tile says. */
-export const LATEST = { version: "0.4.12", date: "2026-11-17" } as const;
+export const LATEST = { version: "0.4.13", date: "2026-11-17" } as const;
 
 /** The newest version this screen has shown its viewer (a screen's own: each TV, phone and computer keeps its own). */
 export const SEEN_KEY = "kino.seenVersion";

@@ -104,7 +104,13 @@ export async function searchHiAnime(
   }
 
   const html = await res.text();
-  const matches = [...html.matchAll(/<h3 class="film-name">\s*<a href="([^"]+)"\s*title="([^"]+)"/g)];
+  let searchHtml = html;
+  const wrapStart = html.indexOf('class="film_list-wrap"');
+  if (wrapStart !== -1) {
+    const sidebarIdx = html.indexOf('id="main-sidebar"', wrapStart);
+    searchHtml = sidebarIdx !== -1 ? html.slice(wrapStart, sidebarIdx) : html.slice(wrapStart);
+  }
+  const matches = [...searchHtml.matchAll(/<h3 class="film-name">\s*<a href="([^"]+)"\s*title="([^"]+)"/g)];
   const results: HiAnimeSearchResult[] = [];
   const seenHrefs = new Set<string>();
 
@@ -297,6 +303,14 @@ export async function extractZokoStream(
   }
 }
 
+export interface ResolvedHiAnimeStream {
+  stream: HiAnimeStreamResult;
+  embedUrl: string;
+  type: "sub" | "dub";
+  alternate?: { stream: HiAnimeStreamResult; embedUrl: string; type: "sub" | "dub" };
+  altDubStream?: { stream: HiAnimeStreamResult; embedUrl: string };
+}
+
 /**
  * Resolves a stream for a specific anime ID and episode number from HiAnime.
  */
@@ -304,7 +318,7 @@ export async function resolveHiAnimeEpisodeStream(
   animeId: string,
   episodeNum: number,
   options: { mode?: "sub" | "dub"; fetcher?: typeof fetch } = {},
-): Promise<{ stream: HiAnimeStreamResult; embedUrl: string; altDubStream?: { stream: HiAnimeStreamResult; embedUrl: string } } | null> {
+): Promise<ResolvedHiAnimeStream | null> {
   const fetcher = options.fetcher ?? providerFetch();
   const mode = options.mode ?? "sub";
 
@@ -319,40 +333,72 @@ export async function resolveHiAnimeEpisodeStream(
     return null;
   }
 
-  // Find primary server: ZokoAnime with preferred mode, or any ZokoAnime
-  const primaryServer =
-    servers.find((s) => s.serverName.toLowerCase() === "zokoanime" && s.type === mode) ||
-    servers.find((s) => s.serverName.toLowerCase() === "zokoanime") ||
-    servers[0];
+  const isZoko = (s: HiAnimeServerInfo) => s.serverName.toLowerCase() === "zokoanime";
 
-  if (!primaryServer) {
-    return null;
-  }
+  // Rank servers: ZokoAnime of wanted mode -> other servers of wanted mode -> ZokoAnime of other mode -> remaining.
+  // Try each in turn and move on when Zoko extraction fails.
+  const rankedPrimary = [
+    ...servers.filter((s) => isZoko(s) && s.type === mode),
+    ...servers.filter((s) => !isZoko(s) && s.type === mode),
+    ...servers.filter((s) => isZoko(s) && s.type !== mode),
+    ...servers.filter((s) => !isZoko(s) && s.type !== mode),
+  ];
 
-  const primaryResult = await extractZokoStream(primaryServer.embedUrl, fetcher);
-  if (!primaryResult) {
-    return null;
-  }
+  let primaryServer: HiAnimeServerInfo | undefined;
+  let primaryResult: HiAnimeStreamResult | null = null;
+  const triedUrls = new Set<string>();
 
-  // If user requested sub, check if dub is also available as an alternate
-  let altDubStream: { stream: HiAnimeStreamResult; embedUrl: string } | undefined;
-  if (mode === "sub") {
-    const dubServer = servers.find((s) => s.serverName.toLowerCase() === "zokoanime" && s.type === "dub");
-    if (dubServer && dubServer.embedUrl !== primaryServer.embedUrl) {
-      try {
-        const dubRes = await extractZokoStream(dubServer.embedUrl, fetcher);
-        if (dubRes) {
-          altDubStream = { stream: dubRes, embedUrl: dubServer.embedUrl };
-        }
-      } catch {
-        // non-fatal
+  for (const candidate of rankedPrimary) {
+    if (triedUrls.has(candidate.embedUrl)) continue;
+    triedUrls.add(candidate.embedUrl);
+    try {
+      const extracted = await extractZokoStream(candidate.embedUrl, fetcher);
+      if (extracted) {
+        primaryServer = candidate;
+        primaryResult = extracted;
+        break;
       }
+    } catch {
+      // try next server
     }
   }
+
+  if (!primaryServer || !primaryResult) {
+    return null;
+  }
+
+  // Check if opposite mode (dub if primary is sub, or sub if primary is dub) is available as alternate
+  const otherMode = primaryServer.type === "dub" ? "sub" : "dub";
+  let alternate: { stream: HiAnimeStreamResult; embedUrl: string; type: "sub" | "dub" } | undefined;
+  const rankedOther = [
+    ...servers.filter((s) => isZoko(s) && s.type === otherMode),
+    ...servers.filter((s) => !isZoko(s) && s.type === otherMode),
+  ];
+
+  for (const otherServer of rankedOther) {
+    if (triedUrls.has(otherServer.embedUrl)) continue;
+    triedUrls.add(otherServer.embedUrl);
+    try {
+      const otherRes = await extractZokoStream(otherServer.embedUrl, fetcher);
+      if (otherRes) {
+        alternate = { stream: otherRes, embedUrl: otherServer.embedUrl, type: otherMode };
+        break;
+      }
+    } catch {
+      // non-fatal, try next server
+    }
+  }
+
+  const altDubStream =
+    primaryServer.type === "sub" && alternate?.type === "dub"
+      ? { stream: alternate.stream, embedUrl: alternate.embedUrl }
+      : undefined;
 
   return {
     stream: primaryResult,
     embedUrl: primaryServer.embedUrl,
+    type: primaryServer.type,
+    alternate,
     altDubStream,
   };
 }

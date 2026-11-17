@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createHiAnimeAdapter } from "./adapters/hianime";
-import { createFilmpireAdapter, resolveVidLinkStream } from "./adapters/filmpire";
+import { createFilmpireAdapter, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 
 describe("adapters streaming proxy configuration", () => {
@@ -558,17 +558,17 @@ describe("the anime site for a show TMDB keeps as one with many seasons", () => 
     expect(res.status).not.toBe("success");
   });
 
-  it("keeps the order of the sources for anime: Buzz, when it has the episode, before the anime site", async () => {
+  it("keeps the order of the sources for anime: VidLink, when it has the episode, before the anime site", async () => {
     const get = animeWorld({
       tmdbId: "60572",
       tmdb: { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons: POKEMON_SEASONS },
       titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
       episodes: { pokemonuj: [5, 6, 7] },
-      buzz: true,
+      vidlink: true,
     });
     const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
     expect(res.status).toBe("success");
-    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.vidlink.test");
   });
 
   it("does not take another show's title that has the season's name in it", async () => {
@@ -662,40 +662,25 @@ describe("the anime site: a season is never another season's title", () => {
     expect(JSON.stringify(res)).toContain("sousou.mp4");
   });
 
-  it("keeps the full order of sources: VidLink before Buzz before the anime site", async () => {
-    // When VidLink has the episode, it is preferred over both Buzz and AnimeHeaven
+  it("keeps the order of sources: VidLink before AnimeHeaven", async () => {
+    // When VidLink has the episode, it is preferred over AnimeHeaven
     const getWithVidlink = animeWorld({
       tmdbId: "60572",
       tmdb: pokemon,
       titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
       episodes: { pokemonuj: [5, 6, 7] },
-      buzz: true,
       vidlink: true,
     });
     const resVl = await createFilmpireAdapter({ fetch: getWithVidlink }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
     expect(resVl.status).toBe("success");
     if (resVl.status === "success") expect(resVl.media.stream.directUrl).toContain("cdn.vidlink.test");
 
-    // When VidLink is absent, Buzz is taken before AnimeHeaven
-    const getWithBuzz = animeWorld({
-      tmdbId: "60572",
-      tmdb: pokemon,
-      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
-      episodes: { pokemonuj: [5, 6, 7] },
-      buzz: true,
-      vidlink: false,
-    });
-    const resBuzz = await createFilmpireAdapter({ fetch: getWithBuzz }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
-    expect(resBuzz.status).toBe("success");
-    if (resBuzz.status === "success") expect(resBuzz.media.stream.directUrl).toContain("cdn.buzz.test");
-
-    // When neither VidLink nor Buzz has it, AnimeHeaven is taken
+    // When VidLink is absent, AnimeHeaven is taken
     const getWithAh = animeWorld({
       tmdbId: "60572",
       tmdb: pokemon,
       titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
       episodes: { pokemonuj: [5, 6, 7] },
-      buzz: false,
       vidlink: false,
     });
     const resAh = await createFilmpireAdapter({ fetch: getWithAh }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
@@ -719,13 +704,19 @@ describe("the anime site: a season is never another season's title", () => {
     expect(aborted).toBe(true);
   });
 
-  it("an anime episode VidLink does not answer for is played from Buzz after 2.5 s, not after VidLink's usual 6", { timeout: 20_000 }, async () => {
-    const get = animeWorld({ tmdbId: "60572", tmdb: pokemon, titles: () => [], episodes: {}, buzz: true, vidlink: "hang" });
+  it("an anime episode VidLink does not answer for is played from AnimeHeaven after 2.5 s, not after VidLink's usual 6", { timeout: 20_000 }, async () => {
+    const get = animeWorld({
+      tmdbId: "60572",
+      tmdb: pokemon,
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
+      episodes: { pokemonuj: [5, 6, 7] },
+      vidlink: "hang",
+    });
     const started = Date.now();
     const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
     const took = Date.now() - started;
     expect(res.status).toBe("success");
-    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("pokemonuj.mp4");
     expect(took).toBeGreaterThanOrEqual(2_400);
     expect(took).toBeLessThan(5_000);
   });
@@ -866,6 +857,159 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     }
   });
 
+  it("resolves Yu Yu Hakusho S1 E1 to Ghost Files and never matches One Piece from search results", async () => {
+    const yuyuTmdb = {
+      id: 30669,
+      name: "Yu Yu Hakusho",
+      original_name: "幽☆遊☆白書",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+      seasons: [
+        { season_number: 1, name: "The Spirit Detective", episode_count: 25 },
+        { season_number: 2, name: "The Dark Tournament", episode_count: 41 },
+      ],
+    };
+
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/30669")) {
+        return { ok: true, status: 200, json: async () => yuyuTmdb };
+      }
+
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`
+            <div class="film_list-wrap">
+              <div class="film-detail">
+                <h3 class="film-name"><a href="/yu-yu-hakusho-ghost-files-906" title="Yu Yu Hakusho: Ghost Files">Yu Yu Hakusho: Ghost Files</a></h3>
+              </div>
+            </div>
+            <div id="main-sidebar">
+              <div class="film-detail">
+                <h3 class="film-name"><a href="/one-piece-1" title="One Piece">One Piece</a></h3>
+              </div>
+            </div>
+          `);
+        }
+        if (u.pathname.startsWith("/api/theme/episode/list/906")) {
+          const epHtml = Array.from({ length: 112 }, (_, i) => `<a class="ep-item" data-id="${15000 + i + 1}" data-number="${i + 1}" title="Episode ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "15001";
+          const subEmbed = `https://zokoanime.video/stream/mal/392/${epId}/sub`;
+          return text(JSON.stringify({
+            status: true,
+            html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+          }));
+        }
+      }
+
+      if (u.hostname === "zokoanime.video") {
+        const blob = makeZokoBlob({
+          src: "https://cdn.hianime.test/yuyu/1/master.m3u8",
+          subtitles: [{ lang: "en", label: "English", src: "https://cdn.hianime.test/yuyu/1/sub.vtt", default: true }],
+        });
+        return text(`<html><script>window.__P="${blob}";</script></html>`);
+      }
+
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const res = await createFilmpireAdapter({ fetch: fetcher }).resolve(new URL("https://filmpire.sc/watch/30669?s=1&e=1"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.directUrl).toContain("cdn.hianime.test/yuyu/1/master.m3u8");
+      expect(res.media.title).toBe("Yu Yu Hakusho · S1 E1");
+    }
+  });
+
+  it("walks multi-cour HiAnime entries for a named TMDB season (e.g. Bleach S2 E14 -> The Separation E1, skipping recaps and duplicates)", async () => {
+    const bleachTmdb = {
+      id: 30984,
+      name: "Bleach",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+      seasons: [
+        { season_number: 1, name: "Bleach", episode_count: 366 },
+        { season_number: 2, name: "Thousand-Year Blood War", episode_count: 50 },
+      ],
+    };
+
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/30984")) {
+        return { ok: true, status: 200, json: async () => bleachTmdb };
+      }
+
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`
+            <div class="film_list-wrap">
+              <h3 class="film-name"><a href="/bleach-1369" title="Bleach">Bleach</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-1234" title="Bleach: Thousand-Year Blood War Arc">TYBW 1</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-recap-3863" title="Bleach: Thousand-Year Blood War - The Separation Recap">Recap</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-sep-1009" title="Bleach: Thousand-Year Blood War - The Separation">TYBW 2</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-sep-dup-9999" title="BLEACH: Thousand-Year Blood War - The Separation">TYBW 2 Dup</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-conf-3859" title="Bleach: Thousand-Year Blood War - The Conflict">TYBW 3</a></h3>
+            </div>
+          `);
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/1234")) {
+          const epHtml = Array.from({ length: 13 }, (_, i) => `<a class="ep-item" data-id="${21000 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/1009")) {
+          const epHtml = Array.from({ length: 13 }, (_, i) => `<a class="ep-item" data-id="${22000 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/3859")) {
+          const epHtml = Array.from({ length: 14 }, (_, i) => `<a class="ep-item" data-id="${23000 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "0";
+          const subEmbed = `https://zokoanime.video/stream/mal/bleach/${epId}/sub`;
+          return text(JSON.stringify({
+            status: true,
+            html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+          }));
+        }
+      }
+
+      if (u.hostname === "zokoanime.video") {
+        const epId = u.pathname.split("/")[4] || "0";
+        const blob = makeZokoBlob({
+          src: `https://cdn.hianime.test/bleach/${epId}/master.m3u8`,
+          subtitles: [{ lang: "en", label: "English", src: `https://cdn.hianime.test/bleach/${epId}/sub.vtt`, default: true }],
+        });
+        return text(`<html><script>window.__P="${blob}";</script></html>`);
+      }
+
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fetcher });
+
+    // S2 E14 -> Cour 2 (1009) Ep 1 -> data-id 22001
+    const ep14 = await adapter.resolve(new URL("https://filmpire.sc/watch/30984?s=2&e=14"));
+    expect(ep14.status).toBe("success");
+    if (ep14.status === "success") {
+      expect(ep14.media.stream.directUrl).toContain("cdn.hianime.test/bleach/22001/master.m3u8");
+    }
+
+    // S2 E27 -> Cour 3 (3859) Ep 1 -> data-id 23001
+    const ep27 = await adapter.resolve(new URL("https://filmpire.sc/watch/30984?s=2&e=27"));
+    expect(ep27.status).toBe("success");
+    if (ep27.status === "success") {
+      expect(ep27.media.stream.directUrl).toContain("cdn.hianime.test/bleach/23001/master.m3u8");
+    }
+  });
+
   it("resolves direct ZokoAnime and HiAnime URLs via createHiAnimeAdapter", async () => {
     const subEmbed = "https://zokoanime.video/stream/mal/40351/1/sub";
     const blob = makeZokoBlob({
@@ -889,6 +1033,113 @@ describe("HiAnime provider and multi-season anime fallback", () => {
       expect(res.media.stream.type).toBe("hls");
       expect(res.media.subtitles).toHaveLength(1);
     }
+  });
+});
+
+describe("VixSrc provider and Western content fallback", () => {
+  it("resolves stream and parses subtitles via resolveVixSrcStream", async () => {
+    const mockM3u8 = `#EXTM3U
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="en",URI="https://vixsrc.to/sub/en.vtt"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Romanian",DEFAULT=NO,AUTOSELECT=NO,LANGUAGE="ro",URI="https://vixsrc.to/sub/ro.vtt"
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720
+https://vixsrc.to/720p.m3u8`;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("vixsrc.to/api/movie/671")) {
+        return { ok: true, status: 200, json: async () => ({ src: "https://vixsrc.to/embed/movie/671" }) };
+      }
+      if (u.includes("vixsrc.to/embed/movie/671")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `<html><script>window.masterPlaylist = { url: "https://vixsrc.to/playlist/671", token: "tok123", expires: "999999" };</script></html>`,
+        };
+      }
+      if (u.includes("vixsrc.to/playlist/671")) {
+        return { ok: true, status: 200, text: async () => mockM3u8 };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const res = await resolveVixSrcStream(fakeFetch, "671", false);
+    expect(res).not.toBeNull();
+    expect(res?.streamUrl).toBe("https://vixsrc.to/playlist/671?ub=1&token=tok123&expires=999999&h=1");
+    expect(res?.type).toBe("hls");
+    expect(res?.subtitles).toHaveLength(2);
+    expect(res?.subtitles[0]?.lang).toBe("en");
+    expect(res?.subtitles[1]?.lang).toBe("ro");
+  });
+
+  it("filmpireAdapter falls back to VixSrc when VidLink has no stream", async () => {
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/movie/671")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            title: "Harry Potter and the Philosopher's Stone",
+            original_language: "en",
+            genres: [{ id: 12 }, { id: 14 }], // Adventure, Fantasy (not animated)
+          }),
+        };
+      }
+      // VidLink returns 404
+      if (u.includes("vidlink.pro")) {
+        return { ok: false, status: 404 };
+      }
+      // VixSrc succeeds
+      if (u.includes("vixsrc.to/api/movie/671")) {
+        return { ok: true, status: 200, json: async () => ({ src: "https://vixsrc.to/embed/movie/671" }) };
+      }
+      if (u.includes("vixsrc.to/embed/movie/671")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `<html><script>window.masterPlaylist = { url: "https://vixsrc.to/playlist/671", token: "tok456", expires: "999999" };</script></html>`,
+        };
+      }
+      if (u.includes("vixsrc.to/playlist/671")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="https://vixsrc.to/sub/en.vtt"\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nhttps://vixsrc.to/720.m3u8`,
+        };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/671"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.title).toBe("Harry Potter and the Philosopher's Stone");
+      expect(res.media.stream.directUrl).toContain("vixsrc.to/playlist/671");
+      expect(res.media.stream.type).toBe("hls");
+    }
+  });
+
+  it("filmpireAdapter handles when both VidLink and VixSrc miss", async () => {
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/movie/999999")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            title: "Missing Film",
+            original_language: "en",
+            genres: [{ id: 18 }],
+          }),
+        };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/999999"));
+    expect(res.status).toBe("temporary_failure");
   });
 });
 

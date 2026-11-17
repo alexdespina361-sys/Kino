@@ -144,3 +144,78 @@ export function extractSubtitlesFromZip(zipBuf: Buffer): ExtractedSubtitle[] {
 
   return results;
 }
+
+/**
+ * Extracts .srt and .vtt subtitle files from a RAR archive Buffer (supports RAR4 and RAR5).
+ */
+export async function extractSubtitlesFromRar(rarBuf: Buffer): Promise<ExtractedSubtitle[]> {
+  try {
+    const { createExtractorFromData } = await import("node-unrar-js");
+    const arrayBuffer = rarBuf.buffer.slice(
+      rarBuf.byteOffset,
+      rarBuf.byteOffset + rarBuf.byteLength,
+    ) as ArrayBuffer;
+    const extractor = await createExtractorFromData({ data: arrayBuffer });
+    const list = extractor.getFileList();
+    const fileHeaders = [...list.fileHeaders].filter(
+      (f) =>
+        !f.flags.directory &&
+        (f.name.toLowerCase().endsWith(".srt") || f.name.toLowerCase().endsWith(".vtt")) &&
+        !f.name.toLowerCase().startsWith("__macosx"),
+    );
+    if (fileHeaders.length === 0) return [];
+
+    const extracted = extractor.extract({ files: fileHeaders.slice(0, MAX_UNZIP_FILES).map((f) => f.name) });
+    const results: ExtractedSubtitle[] = [];
+    let unpacked = 0;
+
+    for (const f of extracted.files) {
+      if (f.extraction && (f.fileHeader.name.toLowerCase().endsWith(".srt") || f.fileHeader.name.toLowerCase().endsWith(".vtt"))) {
+        const raw = Buffer.from(f.extraction);
+        unpacked += raw.length;
+        if (unpacked > MAX_UNZIP_TOTAL_BYTES) break;
+        const text = decodeSubtitleBuffer(raw);
+        if (text.length > 10) {
+          const parsed = parseSeasonAndEpisode(f.fileHeader.name);
+          results.push({
+            name: f.fileHeader.name,
+            text,
+            ...(parsed?.season !== undefined ? { season: parsed.season } : {}),
+            ...(parsed?.episode !== undefined ? { episode: parsed.episode } : {}),
+          });
+        }
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Universally extracts subtitles from an archive Buffer (ZIP, RAR, or raw SRT).
+ */
+export async function extractSubtitlesFromArchive(buf: Buffer): Promise<ExtractedSubtitle[]> {
+  if (buf.length < 4) return [];
+
+  // 1. Raw SRT / VTT
+  if (buf[0] === 0x31 || buf.subarray(0, 50).includes(Buffer.from("-->"))) {
+    const text = decodeSubtitleBuffer(buf);
+    if (text.includes("-->")) {
+      return [{ name: "subtitle.srt", text }];
+    }
+  }
+
+  // 2. PKZIP (0x04034b50 or 'PK')
+  if (buf[0] === 0x50 && buf[1] === 0x4b) {
+    return extractSubtitlesFromZip(buf);
+  }
+
+  // 3. RAR ('Rar!' -> 0x52, 0x61, 0x72, 0x21)
+  if (buf[0] === 0x52 && buf[1] === 0x61 && buf[2] === 0x72 && buf[3] === 0x21) {
+    return extractSubtitlesFromRar(buf);
+  }
+
+  return [];
+}
+

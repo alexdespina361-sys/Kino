@@ -198,6 +198,15 @@ describe("createLibrary title", () => {
     expect(silent.asked.filter((each) => each === "nobody")).toHaveLength(3);
   });
 
+  it("does not put a title looked up by its id among what search finds: a show the lists leave out stays out of them (the judge, 17 Nov)", async () => {
+    const source = { ...knowing("a", (asked) => Promise.resolve(asked === "soap" ? { id: "soap", title: "Hidden Soap", url: "https://x.example/soap" } : null)), search: () => Promise.resolve([]) };
+    const { library } = setup([source]);
+    await library.get();
+    expect(await library.title("soap")).toMatchObject({ id: "soap" });
+    expect((await library.search("hidden soap")).items.map((found) => found.id)).toEqual([]);
+    expect(library.known("soap")).toMatchObject({ title: "Hidden Soap" }); // (what is said of it keeps its name)
+  });
+
   it("is none for a title that would not play, as the lists leave it out", async () => {
     const { library } = setup([knowing("a", () => Promise.resolve(item("gone")))]);
     library.played("https://x.example/gone", "none");

@@ -19,6 +19,7 @@ describe("diversity subtitle cleanup", () => {
     // (As `listedSubtitles` really writes them: through the proxy, from strem.io's file host.)
     expect(inferSubtitleSource({ id: 6, label: "English · Film.2024.1080p.WEB-DL", url: crowd(1) })).toBe("opensubtitles");
     expect(inferSubtitleSource({ id: 7, label: "English", url: `/api/proxy?url=${encodeURIComponent("https://cdn.example/captions/en.vtt")}&format=vtt` })).toBe("provider");
+    expect(inferSubtitleSource({ id: 8, label: "English", url: `/api/proxy?url=${encodeURIComponent("https://vixsrc.to/sub.vtt")}&format=vtt` })).toBe("vixsrc");
   });
 
   it("keeps the stream's own caption first, ahead of three well-named crowd files", () => {

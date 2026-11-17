@@ -205,6 +205,9 @@ export function createLibrary(options: LibraryOptions): LibraryService {
   /** Every title the places have listed, to look for a title among (it grows as pages are scrolled and searches are made). */
   const pool = new TitleIndex();
   const learn = (items: readonly LibraryItem[]) => pool.add(items);
+  /** The titles looked up by their id (a card, a link), the latest so many: what `known` says of them, apart from the pool a search reads. */
+  const lookedUp = new Map<string, LibraryItem>();
+  const LOOKED_UP_KEPT = 2000;
   /** What a question about the next rows or the next titles of a row was answered, kept as the library is and shared by those who ask at once; a question that failed is not kept. */
   const pages = new Map<string, { at: number; value: unknown }>();
   const asking = new Map<string, Promise<unknown>>();
@@ -378,10 +381,16 @@ export function createLibrary(options: LibraryOptions): LibraryService {
         return item ? [item] : [];
       });
       if (!found) return null;
-      learn([found]);
+      // (Not learnt into the pool that a search reads: a title looked up by its id is not sifted as the lists are, and a soap opened from a
+      // card would then be in everybody's search. The judge, 17 Nov. It is kept apart for `known`, so what is said of it keeps its name.)
+      if (!known) {
+        lookedUp.delete(id);
+        lookedUp.set(id, found);
+        if (lookedUp.size > LOOKED_UP_KEPT) lookedUp.delete(lookedUp.keys().next().value!);
+      }
       return listed(found) ? found : null;
     },
-    known: (id: string) => pool.get(id),
+    known: (id: string) => pool.get(id) ?? lookedUp.get(id),
     episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),
     seasons: (link: string) => seasonsOf(link, (source) => source.seasons?.(link)),
     played(link: string, outcome: PlayOutcome) {
