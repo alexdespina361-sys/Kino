@@ -19,6 +19,12 @@ export const MAX_PAGE = 15;
 /** How many shelves one question about the rows after the first ones brings. */
 export const SHELF_BATCH = 5;
 
+/** Today as TMDB writes a date, to tell what has not come out yet. */
+export const today = () => new Date().toISOString().slice(0, 10);
+
+const MOVIE_DISCOVER_FILTER = `primary_release_date.lte=${today()}&vote_count.gte=10`;
+const TV_DISCOVER_FILTER = `first_air_date.lte=${today()}&vote_count.gte=5`;
+
 /** What the lists of Movies and Series that TMDB can sort by genre are asked not to have: animation is in the Cartoons and the Anime (the trending, popular and top lists cannot be asked that way, so `askPage` takes it out of them). */
 const NO_ANIMATION = `without_genres=${ANIMATION_GENRE}`;
 
@@ -36,41 +42,41 @@ export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
   { id: "top-rated-tv", title: "Best Rated TV Series", path: "/tv/top_rated?language=en-US&page=1", type: "tv" },
 
   // Movies by Genre (from explore-movies)
-  { id: "action-movies", title: "Action Movies", path: `/discover/movie?with_genres=28&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "scifi-movies", title: "Sci-Fi Movies", path: `/discover/movie?with_genres=878&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "comedy-movies", title: "Comedy Movies", path: `/discover/movie?with_genres=35&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "horror-movies", title: "Horror Movies", path: `/discover/movie?with_genres=27&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "thriller-movies", title: "Thriller Movies", path: `/discover/movie?with_genres=53&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "adventure-movies", title: "Adventure Movies", path: `/discover/movie?with_genres=12&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "crime-movies", title: "Crime Movies", path: `/discover/movie?with_genres=80&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "fantasy-movies", title: "Fantasy Movies", path: `/discover/movie?with_genres=14&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "drama-movies", title: "Drama Movies", path: `/discover/movie?with_genres=18&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "mystery-movies", title: "Mystery Movies", path: `/discover/movie?with_genres=9648&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "romance-movies", title: "Romance Movies", path: `/discover/movie?with_genres=10749&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "family-movies", title: "Family Movies", path: `/discover/movie?with_genres=10751&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
-  { id: "documentary-movies", title: "Documentary Movies", path: `/discover/movie?with_genres=99&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "action-movies", title: "Action Movies", path: `/discover/movie?with_genres=28&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "scifi-movies", title: "Sci-Fi Movies", path: `/discover/movie?with_genres=878&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "comedy-movies", title: "Comedy Movies", path: `/discover/movie?with_genres=35&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "horror-movies", title: "Horror Movies", path: `/discover/movie?with_genres=27&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "thriller-movies", title: "Thriller Movies", path: `/discover/movie?with_genres=53&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "adventure-movies", title: "Adventure Movies", path: `/discover/movie?with_genres=12&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "crime-movies", title: "Crime Movies", path: `/discover/movie?with_genres=80&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "fantasy-movies", title: "Fantasy Movies", path: `/discover/movie?with_genres=14&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "drama-movies", title: "Drama Movies", path: `/discover/movie?with_genres=18&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "mystery-movies", title: "Mystery Movies", path: `/discover/movie?with_genres=9648&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "romance-movies", title: "Romance Movies", path: `/discover/movie?with_genres=10749&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "family-movies", title: "Family Movies", path: `/discover/movie?with_genres=10751&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
+  { id: "documentary-movies", title: "Documentary Movies", path: `/discover/movie?with_genres=99&${NO_ANIMATION}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie" },
 
   // Series by Genre (from explore-series)
-  { id: "action-adventure-tv", title: "Action & Adventure Series", path: `/discover/tv?with_genres=10759&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: `/discover/tv?with_genres=10765&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "comedy-tv", title: "Comedy Series", path: `/discover/tv?with_genres=35&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "crime-tv", title: "Crime Series", path: `/discover/tv?with_genres=80&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "drama-tv", title: "Drama Series", path: `/discover/tv?with_genres=18&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "mystery-tv", title: "Mystery Series", path: `/discover/tv?with_genres=9648&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "kids-tv", title: "Kids & Family Shows", path: `/discover/tv?with_genres=10762&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
-  { id: "documentary-tv", title: "Docuseries", path: `/discover/tv?with_genres=99&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "action-adventure-tv", title: "Action & Adventure Series", path: `/discover/tv?with_genres=10759&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: `/discover/tv?with_genres=10765&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "comedy-tv", title: "Comedy Series", path: `/discover/tv?with_genres=35&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "crime-tv", title: "Crime Series", path: `/discover/tv?with_genres=80&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "drama-tv", title: "Drama Series", path: `/discover/tv?with_genres=18&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "mystery-tv", title: "Mystery Series", path: `/discover/tv?with_genres=9648&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "kids-tv", title: "Kids & Family Shows", path: `/discover/tv?with_genres=10762&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
+  { id: "documentary-tv", title: "Docuseries", path: `/discover/tv?with_genres=99&${NO_ANIMATION}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv" },
 
   // Cartoons: the first rows of their page (the ones that come after are the shelves, see shelves.ts)
-  { id: "cartoon-tv", title: "Popular Cartoon Series", path: `/discover/tv?${animated("cartoon")}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
-  { id: "cartoon-movies", title: "Popular Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
+  { id: "cartoon-tv", title: "Popular Cartoon Series", path: `/discover/tv?${animated("cartoon")}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-movies", title: "Popular Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
   { id: "cartoon-top-tv", title: "Top Rated Cartoon Series", path: `/discover/tv?${animated("cartoon")}&vote_count.gte=300&sort_by=vote_average.desc`, type: "tv", section: "cartoon" },
   { id: "cartoon-top-movies", title: "Top Rated Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&vote_count.gte=1000&sort_by=vote_average.desc`, type: "movie", section: "cartoon" },
-  { id: "cartoon-kids-tv", title: "Kids' Cartoons", path: `/discover/tv?${animated("cartoon", 10762)}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
-  { id: "cartoon-family-movies", title: "Family Cartoon Movies", path: `/discover/movie?${animated("cartoon", 10751)}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
+  { id: "cartoon-kids-tv", title: "Kids' Cartoons", path: `/discover/tv?${animated("cartoon", 10762)}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-family-movies", title: "Family Cartoon Movies", path: `/discover/movie?${animated("cartoon", 10751)}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
 
   // Anime: the same, of Japanese animation
-  { id: "anime-series", title: "Popular Anime Series", path: `/discover/tv?${animated("anime")}&sort_by=popularity.desc`, type: "tv", section: "anime" },
-  { id: "anime-films", title: "Popular Anime Movies", path: `/discover/movie?${animated("anime")}&sort_by=popularity.desc`, type: "movie", section: "anime" },
+  { id: "anime-series", title: "Popular Anime Series", path: `/discover/tv?${animated("anime")}&${TV_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "tv", section: "anime" },
+  { id: "anime-films", title: "Popular Anime Movies", path: `/discover/movie?${animated("anime")}&${MOVIE_DISCOVER_FILTER}&sort_by=popularity.desc`, type: "movie", section: "anime" },
   { id: "anime-top-tv", title: "Top Rated Anime Series", path: `/discover/tv?${animated("anime")}&vote_count.gte=200&sort_by=vote_average.desc`, type: "tv", section: "anime" },
   { id: "anime-top-movies", title: "Top Rated Anime Movies", path: `/discover/movie?${animated("anime")}&vote_count.gte=300&sort_by=vote_average.desc`, type: "movie", section: "anime" },
 ];
@@ -347,9 +353,6 @@ function ageIn(country: string, doc: z.infer<typeof TmdbAboutSchema>, type: "mov
   return (releases.find((one) => one.certification && one.type === 3) ?? releases.find((one) => one.certification))?.certification?.trim();
 }
 
-/** Today as TMDB writes a date, to tell what has not come out yet. */
-const today = () => new Date().toISOString().slice(0, 10);
-
 function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem | null {
   const parsed = TmdbItemSchema.safeParse(raw);
   if (!parsed.success) return null;
@@ -364,6 +367,9 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   if (isTv) knownTvIds.add(doc.id);
   const rawDate = doc.release_date || doc.first_air_date;
   if (rawDate && rawDate.slice(0, 10) > today()) return null; // not out yet: nothing to play
+  if (doc.vote_count === 0 && (!rawDate || rawDate.slice(0, 10) > today() || (!doc.overview || doc.overview.trim().length < 20))) {
+    return null;
+  }
   const year = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
   const validYear = Number.isInteger(year) && year! > 1800 ? year : undefined;
 
@@ -437,6 +443,11 @@ function isTrashItem(raw: unknown): boolean {
   const lower = title.toLowerCase();
   if (lower.includes("podcast")) return true;
   if (!doc.poster_path && !doc.backdrop_path) {
+    return true;
+  }
+  const rawDate = doc.release_date || doc.first_air_date;
+  if (rawDate && rawDate.slice(0, 10) > today()) return true;
+  if (doc.vote_count === 0 && (!rawDate || (!doc.overview || doc.overview.trim().length < 20))) {
     return true;
   }
   return false;
