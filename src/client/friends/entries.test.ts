@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_LIST, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings } from "../../shared";
 import { formatDay } from "../account/time";
+import { dayOf, stampOf } from "../chat/state";
 import { t } from "../i18n";
 import type { Entry } from "../tv/pages";
-import { entriesOfList, entriesOfRatings, entryOfActivity, entryOfRecommendation, friendHeadline, friendLine, presenceLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type Recommendation } from "./entries";
+import { entriesOfList, entriesOfRatings, entryOfActivity, entryOfRecommendation, friendHeadline, friendLine, presenceInChat, presenceLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type Recommendation } from "./entries";
 
 const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
@@ -54,6 +55,24 @@ describe("the line under a friend's name", () => {
     expect(friendLine(seen(5 * 60_000), [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" }));
     expect(friendLine({ ...seen(5 * 60_000), on: false }, [], NOW)).toBe(t("friends.paused"));
     expect(presenceLine({ ...seen(5 * 60_000), on: false }, NOW)).toBe("");
+  });
+});
+
+describe("the top of a chat with a friend (the owner, 17 Nov: by the clock, never the word Chat)", () => {
+  it("says when they were last online by the day and the clock, that they are online, a moment ago, or nothing when it is not told", () => {
+    const now = new Date(2026, 10, 17, 15, 0).getTime();
+    const at = (day: number, hour: number, minute: number) => new Date(2026, 10, day, hour, minute).getTime();
+    const seen = (when: number): Friend => ({ ...sam, lastOnline: when });
+    expect(presenceInChat(seen(at(17, 14, 32)), now)).toBe(t("chat.lastOnlineAt", { day: "today", time: stampOf(at(17, 14, 32), "en") }));
+    expect(presenceInChat(seen(at(17, 14, 32)), now)).toMatch(/^Last online today at 14[:.]32$/);
+    expect(presenceInChat(seen(at(16, 21, 5)), now)).toBe(t("chat.lastOnlineAt", { day: "yesterday", time: stampOf(at(16, 21, 5), "en") }));
+    expect(presenceInChat(seen(at(12, 9, 10)), now)).toBe(t("chat.lastOnlineAt", { day: dayOf(at(12, 9, 10), now, "en"), time: stampOf(at(12, 9, 10), "en") }));
+    expect(presenceInChat(seen(at(12, 9, 10)), now)).toContain("12 Nov");
+    expect(presenceInChat(seen(now - 20_000), now)).toBe(t("friends.lastOnlineNow"));
+    expect(presenceInChat(seen(now + 5 * 60_000), now)).toBe(t("friends.lastOnlineNow")); // (a clock here behind the server's)
+    expect(presenceInChat({ ...seen(at(17, 14, 32)), online: true }, now)).toBe(t("friends.online"));
+    expect(presenceInChat(sam, now)).toBe("");
+    expect(presenceInChat({ ...seen(at(17, 14, 32)), on: false }, now)).toBe("");
   });
 });
 

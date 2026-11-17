@@ -39,8 +39,8 @@ describe("reactions under a message", () => {
     expect(has(lines({ lines: [with_(line(1, false), { theirReaction: FIRE })], showWriter: true }), "chat-reactions")).toBe(false);
   });
 
-  it("are put from the bar under a pressed message, the friend's too: six buttons, the one that is on pressed, and Take back only under one's own", () => {
-    const react = { onPick: () => {}, onTakeBack: () => {}, onReact: () => {} };
+  it("are put from the bar under a selected message, the friend's too: six buttons, the one that is on pressed, and nothing else under it (Take back is at the top of the chat)", () => {
+    const react = { onPick: () => {}, onReact: () => {} };
     const all = lines({ ...react, picked: null });
     expect(count(all, "chat-bubble"), "every message can be pressed").toBe(3);
     expect(has(all, "chat-react-bar")).toBe(false);
@@ -54,12 +54,12 @@ describe("reactions under a message", () => {
 
     const mine = lineOf(lines({ ...react, picked: 2 }), 2);
     expect(has(mine, "chat-react-bar")).toBe(true);
-    expect(mine).toMatch(/chat-react-bar[\s\S]*chat-takeback/);
+    expect(has(mine, "chat-takeback")).toBe(false);
   });
 
   it("are not offered where they can't be put: without a way to react, only one's own lines are pressed, as before", () => {
-    expect(count(lines({ onPick: () => {}, onTakeBack: () => {}, picked: 1 }), "chat-bubble")).toBe(1);
-    expect(has(lines({ onPick: () => {}, onTakeBack: () => {}, picked: 1 }), "chat-react-bar")).toBe(false);
+    expect(count(lines({ onPick: () => {}, picked: 1 }), "chat-bubble")).toBe(1);
+    expect(has(lines({ onPick: () => {}, picked: 1 }), "chat-react-bar")).toBe(false);
   });
 
   it("show none of the six as on when nothing is on", () => {

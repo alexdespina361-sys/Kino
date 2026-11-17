@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
+import { CloseIcon, StarIcon, TrashIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useBackFirst } from "../tv/dpad";
 import { actionForKey } from "../tv/keys";
@@ -21,12 +23,14 @@ export interface ChatLinesProps {
   /** Say who wrote each line (a report shows what would be sent, and whose words they are). */
   showWriter?: boolean;
   /**
-   * A screen that is touched or clicked: a line can be pressed, and under it come the reactions to pick from (with `onReact`, on any line) and the button that
-   * takes it back (a line of one's own). Without `onPick` the lines are only read.
+   * A screen that is touched or clicked: a line can be selected (`picked`), and under it come the reactions to pick from (with `onReact`, on any line); what
+   * else can be done with it (Take back for one's own, Save for a friend's personal sticker) is at the top of the chat, beside the ⋯, where the page that
+   * shows the list puts it (`PickedActions`: the owner, 17 Nov, "like WhatsApp"). A message is selected by holding it (or with the right button of a mouse);
+   * a press of words selects too, and a press of a picture shows it larger in the middle of the screen. With the keys, Enter selects any. A press anywhere
+   * else lets the selection go. Without `onPick` the lines are only read.
    */
   picked?: number | null;
   onPick?: (id: number | null) => void;
-  onTakeBack?: (id: number) => void;
   onReact?: (id: number, reaction: ChatReaction | null) => void;
   /** The TV: the list is a place the remote can land on, and Up and Down scroll it while there is more to see that way (and step onto the titles in it). */
   remote?: boolean;
@@ -55,6 +59,14 @@ export interface PersonalLines {
 /** How near the end the list has to be for a new message to keep it there. */
 const AT_END = 48;
 const CARD = ".chat-card[data-title]";
+/** How long a message is held before it is selected, and how far the finger may wander meanwhile (more is a scroll, or a slip). */
+const HOLD_MS = 450;
+const HOLD_SLOP = 10;
+/** A touch this soon after the list scrolled stops the scroll, and holds nothing. */
+const SCROLL_REST_MS = 150;
+
+/** Whether a message can be selected: for its reactions, to take it back (one's own), or to save it (a friend's personal sticker, with `save`). */
+export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boolean }): boolean => line.mine || options.reacts || (line.sticker !== undefined && options.saves);
 
 /**
  * The messages of a chat, oldest first and the newest at the bottom, where the list stays as messages come (unless it was scrolled up to read:
@@ -64,7 +76,7 @@ const CARD = ".chat-card[data-title]";
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, onReact, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -96,9 +108,67 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     return () => watcher.disconnect();
   }, []);
 
-  // (A message can be pressed for what is under it: its reactions, Take back for one's own, and Save for a friend's personal sticker, which stays possible
-  // while the friend takes no messages, as the server allows: the judge, 17 Nov.)
-  const pressable = (line: ChatLine) => onPick !== undefined && (line.mine || onReact !== undefined || (line.sticker !== undefined && !showWriter && personal?.onSave !== undefined));
+  // (A message can be selected for its reactions, Take back for one's own, and Save for a friend's personal sticker, which stays possible while the friend
+  // takes no messages, as the server allows: the judge, 17 Nov.)
+  const pressable = (line: ChatLine) => onPick !== undefined && canPick(line, { reacts: onReact !== undefined, saves: !showWriter && personal?.onSave !== undefined });
+
+  // The picture shown larger, in the middle of the screen (a press of a GIF or a sticker): nothing is selected while it is.
+  const [enlarged, setEnlarged] = useState<{ src: string; alt: string; small: boolean; line: number } | null>(null);
+  // (Its message taken back by its sender, or the sticker taken down, takes it away too: the judge, 17 Nov.)
+  const enlargedThere = enlarged !== null && lines.some((line) => line.id === enlarged.line);
+  useEffect(() => {
+    if (enlarged && !enlargedThere) setEnlarged(null);
+  }, [enlarged, enlargedThere]);
+
+  // A hold selects: so long down without wandering (a finger that moves is scrolling, and the browser then takes the touch away: `pointercancel`). The press
+  // that ends a hold is not one more press (`heldNow`). The right button of a mouse, and a phone's own long-press menu, select too, and no menu comes.
+  const holding = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const heldNow = useRef(false);
+  /** When the list last scrolled: a finger that stops a fast scroll and rests there is not holding a message (the judge, 17 Nov). */
+  const scrolled = useRef(Number.NEGATIVE_INFINITY);
+  const letGo = () => {
+    if (holding.current) window.clearTimeout(holding.current.timer);
+    holding.current = null;
+  };
+  useEffect(() => letGo, []);
+  const holds = (select: (() => void) | null) => ({
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
+      heldNow.current = false;
+      letGo();
+      if (!select || event.button !== 0 || performance.now() - scrolled.current < SCROLL_REST_MS) return;
+      const timer = window.setTimeout(() => {
+        holding.current = null;
+        heldNow.current = true;
+        select();
+      }, HOLD_MS);
+      holding.current = { timer, x: event.clientX, y: event.clientY };
+    },
+    onPointerMove: (event: PointerEvent<HTMLElement>) => {
+      const at = holding.current;
+      if (at && Math.hypot(event.clientX - at.x, event.clientY - at.y) > HOLD_SLOP) letGo();
+    },
+    onPointerUp: letGo,
+    onPointerCancel: letGo,
+    onPointerLeave: letGo,
+    onContextMenu: (event: MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      letGo();
+      select?.();
+    },
+  });
+  /**
+   * A press beside the messages lets the selection go, as in any messenger: not the press that ended a hold, wherever it ends. The message held can move
+   * from under a mouse while it is held (the reactions come under it, and a list at its end stays at its end), and the press then ends beside it, on its
+   * line: it had selected the message and at once let it go again (the screenshots, 17 Nov). A touch's long hold ends with no press at all, so what is left
+   * of a hold is forgotten at the next touch of the list (`onPointerDown` below).
+   */
+  const pressBeside = (event: MouseEvent<HTMLDivElement>) => {
+    if (heldNow.current && event.detail > 0) {
+      heldNow.current = false;
+      return;
+    }
+    if (picked !== null && !(event.target instanceof Element && event.target.closest("button"))) onPick?.(null);
+  };
   /** On a computer (`keyboard`), the one message Tab stops on: the one the keys were last on while it is there, else the newest that can be pressed. */
   const [stop, setStop] = useState<number | null>(null);
   const tabStop = useMemo(() => {
@@ -113,8 +183,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   useEffect(() => {
     if (picked !== null && !pickedThere) onPick?.(null);
   }, [picked, pickedThere, onPick]);
-  // (Escape on a computer shuts the reactions under a message first, as a menu shuts, and only then leaves the chat.)
-  useBackFirst(keyboard && pickedThere ? () => onPick?.(null) : undefined);
+  // (Back, and Escape on a computer, let the selection go first, as a menu shuts, and only then leave the chat: on a phone too, the owner, 17 Nov.)
+  useBackFirst(pickedThere ? () => onPick?.(null) : undefined);
 
   // What the keys are on can go away under them: a message taken back (here, or by its sender on another screen) or let go, the reactions under a message
   // that shut once one is picked, a card no longer one of the newest titles, or carried out of view by the messages that came after it. They are given to
@@ -157,6 +227,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const onScroll = () => {
     const element = box.current;
     if (!element) return;
+    scrolled.current = performance.now();
+    letGo(); // (a hold that has begun is no hold once the list moves under it)
     atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
     const on = document.activeElement;
     if (remote && on instanceof HTMLElement && on.matches(CARD) && element.contains(on)) {
@@ -185,9 +257,14 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
         event.stopPropagation();
         const own = item.querySelector<HTMLElement>("button[data-testid='chat-bubble']");
         if (action === "left" || action === "right") {
-          // (Along what the message has: its bubble, then the reactions under it, then Save or Take back; it does not go on past them.)
+          // (Along what the message has: its bubble, then the reactions under it; Right past the last of them goes on to what can be done with the selected
+          // message at the top of the chat (Save, Take back: `PickedActions`), whose Left comes back. It goes no further.)
           const along = [...item.querySelectorAll<HTMLElement>("button:not(:disabled)")].filter((button) => !button.matches(CARD));
-          along[along.indexOf(target) + (action === "right" ? 1 : -1)]?.focus({ preventScroll: true });
+          const next = along[along.indexOf(target) + (action === "right" ? 1 : -1)];
+          if (next) next.focus({ preventScroll: true });
+          else if (action === "right" && picked !== null && Number(item.dataset.line) === picked) {
+            element.parentElement?.closest("[role='group'], .chat")?.querySelector<HTMLElement>(".chat-act:not(:disabled)")?.focus({ preventScroll: true });
+          }
           return;
         }
         // (Up from what is under a message is the message; else from message to message, and past the first or the last back to the list, which goes on from there.)
@@ -247,6 +324,23 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       onKeyDown={onKeyDown}
       onFocus={onFocus}
       onBlur={onBlur}
+      onClick={pressBeside}
+      // The press that ends a hold is no press of anything, wherever it lands: the reactions come under the message as it is selected, and a list at its
+      // end moves up, so a finger lifted after a hold could press a reaction, or a title's card, that was not there when it went down (the judge, 17 Nov:
+      // an unasked reaction sent to the friend). It is stopped on its way down, before any of them hears of it; so is the phone's own long-press menu,
+      // which would otherwise open on the picture of a reaction that slid under the finger.
+      onClickCapture={(event) => {
+        if (!heldNow.current || event.detail === 0) return;
+        heldNow.current = false;
+        event.stopPropagation();
+        event.preventDefault();
+      }}
+      onContextMenuCapture={(event) => {
+        if (heldNow.current) event.preventDefault();
+      }}
+      onPointerDown={() => {
+        heldNow.current = false; // (a message's own `onPointerDown` came first, and its hold sets this again when it has lasted)
+      }}
       role="log"
       aria-label={t("chat.title", { name })}
       // (Elsewhere it is no stop of Tab's, and can still be given the keys when what they were on goes: see `held`.)
@@ -270,7 +364,21 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           // (A personal sticker is drawn in a report too: its picture is what the report sends with it.)
           const own = line.sticker ?? null;
           const picture = gif ? " chat-bubble-gif" : sticker || (own && !showWriter) ? " chat-bubble-sticker" : "";
-          const saving = open && own !== null && !line.mine && personal?.onSave ? personal : null;
+          // (A picture, on a screen that is touched or clicked: a press shows it larger, whether or not it can be selected.)
+          const shows = onPick !== undefined && !showWriter && picture !== "";
+          const pressed = (event: MouseEvent<HTMLButtonElement>) => {
+            const wasHeld = heldNow.current;
+            heldNow.current = false;
+            if (wasHeld && event.detail > 0) return; // (the press that ended the hold: the hold selected it)
+            // (`detail` is 0 for a press made with the keys: Enter selects a picture as it does words; a finger's or a mouse's press shows it larger, or,
+            // while a message is selected, only lets that go.)
+            if (shows && event.detail > 0) {
+              if (picked !== null) return onPick?.(null);
+              const drawn = event.currentTarget.querySelector("img");
+              if (drawn) return setEnlarged({ src: drawn.currentSrc || drawn.src, alt: drawn.alt, small: !gif, line: line.id });
+            }
+            if (canPress) press();
+          };
           const bubble = (text: ReactNode) => (
             <>
               {showWriter && <span className="chat-writer">{line.mine ? t("chat.you") : name}</span>}
@@ -282,14 +390,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           );
           const said = (text: ReactNode, card: ReactNode) => (
             <>
-              {canPress ? (
+              {canPress || shows ? (
                 <button
                   type="button"
                   className={`chat-bubble${picture}${open ? " chat-picked" : ""}`}
-                  aria-expanded={open}
-                  onClick={press}
+                  {...(canPress ? { "aria-expanded": open } : {})}
+                  onClick={pressed}
+                  {...holds(canPress ? () => onPick?.(line.id) : null)}
                   {...(remote ? { tabIndex: keyboard && line.id === tabStop ? 0 : -1 } : {})}
-                  data-testid="chat-bubble"
+                  data-testid={canPress ? "chat-bubble" : "chat-picture"}
                 >
                   {bubble(text)}
                 </button>
@@ -307,26 +416,6 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                     if (listTakes) box.current?.focus({ preventScroll: true }); // (a computer's keyboard goes back to the message: see `held`)
                   }}
                 />
-              )}
-              {saving && own && (
-                <button
-                  type="button"
-                  className="chat-takeback chat-sticker-save"
-                  disabled={saving.has?.(own) ?? false}
-                  onClick={() => {
-                    onPick?.(null);
-                    saving.onSave?.(own);
-                    if (listTakes) box.current?.focus({ preventScroll: true });
-                  }}
-                  data-testid="chat-sticker-save"
-                >
-                  {t(saving.has?.(own) ? "chat.stickerSaved" : "chat.stickerSave")}
-                </button>
-              )}
-              {open && line.mine && onTakeBack && (
-                <button type="button" className="chat-takeback" onClick={() => onTakeBack(line.id)} data-testid="chat-takeback">
-                  {t("chat.takeBack")}
-                </button>
               )}
             </>
           );
@@ -352,7 +441,116 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           );
         })}
       </ol>
+      {enlarged && enlargedThere && <PictureView src={enlarged.src} alt={enlarged.alt} small={enlarged.small} onClose={() => setEnlarged(null)} />}
     </div>
+  );
+}
+
+/**
+ * A picture of the chat shown larger, in the middle of the screen, over everything (the owner, 17 Nov: "not full full, just enlarge middle of screen"): a GIF
+ * as wide as the screen allows, a sticker twice its size (it is 192 pixels: more would only blur it). A press anywhere, the ×, Back or Escape puts it away;
+ * nothing else on the page is pressed meanwhile. It is drawn at the end of the page, not in the list: the list scrolls, and a sheet it is in moves.
+ */
+function PictureView({ src, alt, small, onClose }: { src: string; alt: string; small: boolean; onClose: () => void }) {
+  const t = useT();
+  const close = useRef<HTMLButtonElement>(null);
+  useBackFirst(onClose);
+  useEffect(() => {
+    const before = document.activeElement;
+    close.current?.focus({ preventScroll: true });
+    return () => {
+      if (before instanceof HTMLElement && before.isConnected) before.focus({ preventScroll: true });
+    };
+  }, []);
+  return createPortal(
+    <div
+      className="chat-view"
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt}
+      onClick={(event) => {
+        event.stopPropagation(); // (it is over a sheet, whose own backdrop a press would close as well)
+        // (The second press of a double tap or a double click is the one that opened it, and does not close it at once: the judge, 17 Nov.)
+        if (event.detail > 1) return;
+        onClose();
+      }}
+      onKeyDown={(event) => {
+        // (The keys are its own while it is up: the list and the page under it are not walked, and Tab stays on its one button. Back and Escape were heard
+        // before this, on their way down: `useBackFirst`.)
+        event.stopPropagation();
+        if (event.key === "Tab") event.preventDefault();
+      }}
+      data-testid="chat-view"
+    >
+      {/* (A picture that does not come, shown larger, is not shown at all: the view goes, never a broken picture.) */}
+      <img className={`chat-view-picture${small ? " chat-view-small" : ""}`} src={src} alt={alt} draggable={false} referrerPolicy="no-referrer" onError={onClose} data-testid="chat-view-picture" />
+      <button type="button" className="chat-view-close" ref={close} aria-label={t("common.close")} title={t("common.close")} data-testid="chat-view-close">
+        <CloseIcon />
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * What can be done with the message that is selected, besides reacting to it: Save for a friend's personal sticker, Take back for one's own. They are drawn
+ * by the page that shows the list, at the top of the chat beside its ⋯ (the owner, 17 Nov: "the delete should appear up near the triple dots like WhatsApp").
+ * Nothing while no message is selected, or when there is nothing to do with the one that is.
+ */
+export function PickedActions({
+  line,
+  personal,
+  onTakeBack,
+  onSaved,
+  className,
+  nav = false,
+}: {
+  /** The message that is selected (none: nothing is drawn). */
+  line: ChatLine | undefined;
+  personal?: PersonalLines | undefined;
+  onTakeBack?: ((id: number) => void) | undefined;
+  /** After Save was pressed: the selection is let go. */
+  onSaved?: (() => void) | undefined;
+  /** The class of each button: the page's own round button. */
+  className: string;
+  /** The TV's pages: the buttons are stops of the arrow keys. */
+  nav?: boolean;
+}) {
+  const t = useT();
+  if (!line) return null;
+  const own = line.sticker ?? null;
+  const saving = own !== null && !line.mine && personal?.onSave ? personal : null;
+  const taking = line.mine && onTakeBack !== undefined;
+  if (!saving && !taking) return null;
+  const has = saving && own ? (saving.has?.(own) ?? false) : false;
+  const steps = nav ? { "data-nav": true } : {};
+  return (
+    <>
+      {saving && own && (
+        <button
+          type="button"
+          className={`${className} chat-act chat-act-save`}
+          disabled={has}
+          onClick={() => {
+            saving.onSave?.(own);
+            onSaved?.();
+          }}
+          aria-label={t(has ? "chat.stickerSaved" : "chat.stickerSave")}
+          title={t(has ? "chat.stickerSaved" : "chat.stickerSave")}
+          {...steps}
+          data-testid="chat-sticker-save"
+        >
+          <StarIcon />
+          <span className="chat-act-words">{t(has ? "chat.stickerSaved" : "chat.stickerSave")}</span>
+        </button>
+      )}
+      {taking && (
+        <button type="button" className={`${className} chat-act chat-act-takeback`} onClick={() => onTakeBack?.(line.id)} aria-label={t("chat.takeBack")} title={t("chat.takeBack")} {...steps} data-testid="chat-takeback">
+          <TrashIcon />
+          <span className="chat-act-words">{t("chat.takeBack")}</span>
+        </button>
+      )}
+    </>
   );
 }
 

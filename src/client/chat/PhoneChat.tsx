@@ -1,4 +1,4 @@
-import { presenceLine } from "../friends/entries";
+import { presenceInChat } from "../friends/entries";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { ChatPhone } from "./ChatPhone";
 import { useHost } from "./useHost";
@@ -16,7 +16,7 @@ export function PhoneChat({ friendId, onClose, onOpenTitle }: { friendId: string
   return (
     <ChatPhone
       name={host.friend.name}
-      presence={presenceLine(host.friend, Date.now())}
+      presence={presenceInChat(host.friend, Date.now())}
       online={host.friend.on && host.friend.online === true}
       session={host.session}
       report={host.report}

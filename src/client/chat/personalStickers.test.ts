@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PERSONAL_STICKER_TEXT, type ChatLine } from "../../shared";
 import { ApiError } from "../account/api";
-import { ChatLines, PERSONAL_RECHECK_MS, type PersonalLines } from "./ChatLines";
+import { ChatLines, PERSONAL_RECHECK_MS, PickedActions, type PersonalLines } from "./ChatLines";
 import { count, has, line, tagOf } from "./fixtures";
 import { addProblemOf, asItWas, chatStickerSrc, forgetPersonalStickers, keptCollection, lookAgain, movingKind, ownStickerSrc, pictureSize, pixelBudget, steps, StickerError, stickerPicture, tookCollection } from "./personalStickers";
 
@@ -38,29 +38,30 @@ describe("a message that is a personal sticker", () => {
     expect(has(odd, "chat-sticker")).toBe(false);
   });
 
-  it("can be saved from a friend's message once it is pressed, and says so when it is in one's stickers already", () => {
-    const saved: string[] = [];
-    const open = (has_: boolean) =>
-      lines({ personal: { ...personal, onSave: (id) => void saved.push(id), has: () => has_ }, picked: 1, onPick: () => {}, onReact: () => {} });
-    const fresh = open(false);
+  it("can be saved from a friend's message once it is selected, at the top of the chat, and says so when it is in one's stickers already", () => {
+    const acts = (props: Partial<Parameters<typeof PickedActions>[0]> = {}) => renderToStaticMarkup(createElement(PickedActions, { line: sticker(line(1, false)), className: "round", ...props }));
+    const save = (has_: boolean) => acts({ personal: { ...personal, onSave: () => {}, has: () => has_ } });
+    const fresh = save(false);
     expect(tagOf(fresh, "chat-sticker-save")).not.toContain("disabled");
     expect(fresh).toContain("Save to my stickers");
-    const already = open(true);
+    const already = save(true);
     expect(tagOf(already, "chat-sticker-save")).toContain("disabled");
     expect(already).toContain("In your stickers");
-    // (not one's own, not one that is not pressed, and not without a way to save)
-    expect(has(lines({ personal: { ...personal, onSave: () => {} }, lines: [sticker(line(1, true))], picked: 1, onPick: () => {}, onReact: () => {} }), "chat-sticker-save")).toBe(false);
-    expect(has(lines({ personal: { ...personal, onSave: () => {} }, onPick: () => {}, onReact: () => {} }), "chat-sticker-save")).toBe(false);
-    expect(has(lines({ personal, picked: 1, onPick: () => {}, onReact: () => {} }), "chat-sticker-save")).toBe(false);
+    // (not one's own, not without a way to save, not a message of words)
+    expect(has(acts({ line: sticker(line(1, true)), personal: { ...personal, onSave: () => {} } }), "chat-sticker-save")).toBe(false);
+    expect(has(acts({ personal }), "chat-sticker-save")).toBe(false);
+    expect(has(acts({ line: line(1, false), personal: { ...personal, onSave: () => {} } }), "chat-sticker-save")).toBe(false);
+    // (and nothing of it under the message)
+    expect(has(lines({ personal: { ...personal, onSave: () => {} }, picked: 1, onPick: () => {}, onReact: () => {} }), "chat-sticker-save")).toBe(false);
   });
 
-  it("can still be saved while the friend takes no messages (no reactions then), when a text of theirs can no longer be pressed", () => {
+  it("can still be selected, to be saved, while the friend takes no messages (no reactions then), when a text of theirs can no longer be", () => {
     const closed = lines({ personal: { ...personal, onSave: () => {} }, lines: [sticker(line(1, false)), line(2, false)], picked: 1, onPick: () => {} });
-    expect(has(closed, "chat-sticker-save")).toBe(true);
     expect(count(closed, "chat-bubble")).toBe(1);
     expect(has(closed, "chat-react-bar")).toBe(false);
-    // (and not in a report, where nothing is pressed)
-    expect(has(lines({ personal: { ...personal, onSave: () => {} }, showWriter: true, picked: 1, onPick: () => {} }), "chat-sticker-save")).toBe(false);
+    // (and not in a report, which shows what would be sent: the friend's sticker there is neither selected nor shown larger)
+    const report = lines({ personal: { ...personal, onSave: () => {} }, lines: [sticker(line(1, false))], showWriter: true, picked: 1, onPick: () => {} });
+    expect(report).not.toContain("<button");
   });
 
   it("is drawn in a report too, with who sent it: its picture goes with the report", () => {

@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type SetStateAction } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
+import { actionForKey } from "../tv/keys";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
-import { ChatLines, type PersonalLines } from "./ChatLines";
+import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
@@ -15,7 +16,7 @@ import { TitlePickTv } from "./TitlePick";
 import { GifPickTv } from "./GifPick";
 import { lastTheirs, ReactTv } from "./Reactions";
 import { StickerPickTv } from "./StickerPick";
-import { afterSent, cutTo, keepTheBox, MessageBox } from "./MessageBox";
+import { afterSent, cutTo, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
@@ -193,6 +194,7 @@ export function ReadTv({
   /** A computer or a hand-held screen: a message is clicked or touched, and its reactions (and Take back, for one's own) come under it. */
   const [picked, setPicked] = useState<number | null>(null);
   const pointer = desk || narrow;
+  const status = [presence || (online ? t("friends.online") : null), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
   const [menu, setMenu] = useState(false);
   const more = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -217,11 +219,59 @@ export function ReadTv({
     setMenu(false);
     action();
   };
+  /** The selected message's own button in the list. */
+  const pickedBubble = (id: number) => document.querySelector<HTMLElement>(`[data-testid='tv-chat'] li[data-line="${id}"] button[data-testid='chat-bubble']`);
+  // What had the keys at the top (Take back, Save) goes with the selection, as it is let go (Escape, a press elsewhere, the message taken back from another
+  // screen): the keys go back to the message, else to the ⋯, never to nothing (the judge, 17 Nov).
+  const wasPicked = useRef<number | null>(null);
+  useEffect(() => {
+    const was = wasPicked.current;
+    wasPicked.current = picked;
+    if (picked !== null || was === null) return;
+    const on = document.activeElement;
+    if (on && on !== document.body) return;
+    (pickedBubble(was) ?? more.current)?.focus({ preventScroll: true });
+  }, [picked]);
+  const backToPicked = (event: KeyboardEvent<HTMLSpanElement>) => {
+    if (!desk || picked === null || event.altKey || event.ctrlKey || event.metaKey || actionForKey(event.nativeEvent) !== "left") return;
+    if (event.target !== event.currentTarget.querySelector(".chat-act:not(:disabled)")) return;
+    event.preventDefault();
+    event.stopPropagation(); // (the D-pad listens on the window)
+    pickedBubble(picked)?.focus({ preventScroll: true });
+  };
 
+  // (A hand-held screen, while something is typed: the buttons that send something else are one +, until it is pressed; typing on folds them again.)
+  const [tools, setTools] = useState(false);
+  const folded = narrow && draft !== "" && !tools && (onPickTitle !== undefined || onPickGif !== undefined || onPickSticker !== undefined);
+  useEffect(() => {
+    if (draft === "") setTools(false);
+  }, [draft]);
+  const unfold = useUnfold(tools, () => setTools(true));
   const type = (text: string) => {
     setDraft(cutTo(text, CHAT_TEXT_MAX));
+    setTools(false);
     session.settle();
   };
+  /** The buttons that send something other than words: a title, a GIF, a sticker (the stickers' the nearest the box). */
+  const toolButtons = (
+    <>
+      {onPickTitle && (
+        <button type="button" className="tv-chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-nav data-testid="tv-chat-title-btn">
+          <FilmIcon />
+        </button>
+      )}
+      {onPickGif && (
+        <button type="button" className="tv-chat-title-btn tv-chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-nav data-testid="tv-chat-gif-btn">
+          <GifIcon />
+        </button>
+      )}
+      {onPickSticker && (
+        <button type="button" className="tv-chat-title-btn tv-chat-sticker-btn-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-nav data-testid="tv-chat-sticker-btn">
+          <StickerIcon />
+        </button>
+      )}
+    </>
+  );
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!checked.ok || session.sending) return;
@@ -270,10 +320,34 @@ export function ReadTv({
             <h1 className="tv-chat-name" data-testid="tv-chat-name">
               {name}
             </h1>
-            <p className="tv-chat-status" data-testid="tv-chat-status">
-              {[presence || (online ? t("friends.online") : t("chat.open")), state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ")}
-            </p>
+            {/* (When they were last online, by the clock, and not the word "Chat" when that is not told: the owner, 17 Nov. Nothing told, nothing said.) */}
+            {status && (
+              <p className="tv-chat-status" data-testid="tv-chat-status">
+                {status}
+              </p>
+            )}
           </div>
+          {/* (What can be done with the message that is selected, beside the ⋯, as in any messenger: the owner, 17 Nov. Once done, the keys are the ⋯'s.) */}
+          {pointer && (
+            // (A computer's keys reach them from the message, with Right past what is under it, and Left from the first goes back to the message: the judge, 17 Nov.)
+            <span className="tv-chat-picked" onKeyDown={backToPicked}>
+              <PickedActions
+                line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
+                personal={personal?.lines}
+                onTakeBack={(id) => {
+                  setPicked(null);
+                  more.current?.focus({ preventScroll: true });
+                  void session.takeBack(id);
+                }}
+                onSaved={() => {
+                  setPicked(null);
+                  more.current?.focus({ preventScroll: true });
+                }}
+                className="tv-chat-more"
+                nav
+              />
+            </span>
+          )}
           <div className="tv-chat-more-wrap" onBlur={leaving}>
             <button
               type="button"
@@ -282,7 +356,12 @@ export function ReadTv({
               aria-label={t("chat.more")}
               title={t("chat.more")}
               aria-expanded={menu}
-              onClick={() => (menu ? shut() : setMenu(true))}
+              onClick={() => {
+                if (menu) return shut();
+                // (The menu and a selection are not open at once: one Back would shut both, the judge, 17 Nov.)
+                setPicked(null);
+                setMenu(true);
+              }}
               data-nav
               data-testid="tv-chat-more"
             >
@@ -332,10 +411,6 @@ export function ReadTv({
               ? {
                   picked,
                   onPick: setPicked,
-                  onTakeBack: (id: number) => {
-                    setPicked(null);
-                    void session.takeBack(id);
-                  },
                   // (Reactions while one can write: a friend who takes no messages takes no reactions either, see server/accounts/chat.ts `react`.)
                   ...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) }),
                 }
@@ -357,55 +432,61 @@ export function ReadTv({
             </p>
           ) : (
             <div className="tv-chat-compose-row">
-              {onPickTitle && (
-                <button type="button" className="tv-chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-nav data-testid="tv-chat-title-btn">
-                  <FilmIcon />
-                </button>
-              )}
-              {onPickGif && (
-                <button type="button" className="tv-chat-title-btn tv-chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-nav data-testid="tv-chat-gif-btn">
-                  <GifIcon />
-                </button>
-              )}
-              {onPickSticker && (
-                <button type="button" className="tv-chat-title-btn tv-chat-sticker-btn-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-nav data-testid="tv-chat-sticker-btn">
-                  <StickerIcon />
-                </button>
-              )}
               {desk || narrow ? (
-                // A computer or a hand-held screen: the box itself, Enter sends.
+                // A computer or a hand-held screen: one bar, the buttons that send something else in it before the box, Send beside it; Enter sends. On a
+                // hand-held screen the bar is the screen's width, so while something is typed the buttons fold into one + (a press of it brings them back),
+                // and the words have the bar to themselves (the owner, 17 Nov: three round buttons left the box a column a few words wide).
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
-                  {narrow ? (
-                    <MessageBox
-                      ref={area}
-                      className="tv-chat-box tv-chat-box-area"
-                      value={draft}
-                      onChange={type}
-                      onSend={() => void submit()}
-                      maxLength={CHAT_TEXT_MAX}
-                      label={t("chat.messageLabel")}
-                      placeholder={t("chat.placeholder")}
-                      extra={{ "data-nav": true }}
-                      testId="tv-chat-box"
-                    />
-                  ) : (
-                    <input
-                      ref={box}
-                      className="tv-chat-box"
-                      type="text"
-                      value={draft}
-                      maxLength={CHAT_TEXT_MAX}
-                      autoComplete="off"
-                      autoCapitalize="sentences"
-                      enterKeyHint="send"
-                      aria-label={t("chat.messageLabel")}
-                      placeholder={t("chat.placeholder")}
-                      onChange={(event) => type(event.target.value)}
-                      data-nav
-                      data-autofocus
-                      data-testid="tv-chat-box"
-                    />
-                  )}
+                  <div className="tv-chat-pill" ref={unfold.bar} data-testid="tv-chat-pill">
+                    {folded ? (
+                      <button
+                        type="button"
+                        className="tv-chat-title-btn tv-chat-tools-btn"
+                        onClick={unfold.press}
+                        onMouseDown={keepTheBox}
+                        aria-label={t("chat.moreToSend")}
+                        aria-expanded={false}
+                        title={t("chat.moreToSend")}
+                        data-nav
+                        data-testid="tv-chat-tools"
+                      >
+                        <PlusIcon />
+                      </button>
+                    ) : (
+                      toolButtons
+                    )}
+                    {narrow ? (
+                      <MessageBox
+                        ref={area}
+                        className="tv-chat-box tv-chat-box-area"
+                        value={draft}
+                        onChange={type}
+                        onSend={() => void submit()}
+                        maxLength={CHAT_TEXT_MAX}
+                        label={t("chat.messageLabel")}
+                        placeholder={t("chat.placeholder")}
+                        extra={{ "data-nav": true }}
+                        testId="tv-chat-box"
+                      />
+                    ) : (
+                      <input
+                        ref={box}
+                        className="tv-chat-box"
+                        type="text"
+                        value={draft}
+                        maxLength={CHAT_TEXT_MAX}
+                        autoComplete="off"
+                        autoCapitalize="sentences"
+                        enterKeyHint="send"
+                        aria-label={t("chat.messageLabel")}
+                        placeholder={t("chat.placeholder")}
+                        onChange={(event) => type(event.target.value)}
+                        data-nav
+                        data-autofocus
+                        data-testid="tv-chat-box"
+                      />
+                    )}
+                  </div>
                   <button
                     type="submit"
                     className="tv-chat-send-round"
@@ -420,13 +501,16 @@ export function ReadTv({
                   </button>
                 </form>
               ) : (
-                // A TV: what looks like the box, and OK on it opens the page that writes (with what was typed and not sent, if anything was).
-                <button type="button" className="tv-chat-composer tv-chat-fakebox" onClick={onWrite} data-nav data-autofocus data-testid="tv-chat-write">
-                  <span className={`tv-chat-fakebox-text${draft ? "" : " is-empty"}`}>{draft || t("chat.placeholder")}</span>
-                  <span className="tv-chat-send-round" aria-hidden="true">
-                    <SendIcon />
-                  </span>
-                </button>
+                // A TV: the buttons, then what looks like the box, and OK on it opens the page that writes (with what was typed and not sent, if anything was).
+                <>
+                  {toolButtons}
+                  <button type="button" className="tv-chat-composer tv-chat-fakebox" onClick={onWrite} data-nav data-autofocus data-testid="tv-chat-write">
+                    <span className={`tv-chat-fakebox-text${draft ? "" : " is-empty"}`}>{draft || t("chat.placeholder")}</span>
+                    <span className="tv-chat-send-round" aria-hidden="true">
+                      <SendIcon />
+                    </span>
+                  </button>
+                </>
               )}
             </div>
           )}

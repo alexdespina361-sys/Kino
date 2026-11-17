@@ -42,17 +42,24 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 .chat-writer { display: block; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; opacity: 0.75; }
 .chat-text { display: block; }
 .chat-time { display: block; margin-top: 2px; font-size: 0.7em; opacity: 0.7; text-align: right; }
-.chat-takeback {
-  margin-top: 4px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 107, 107, 0.14);
-  color: var(--bad);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-/* (Take back and Save are reached with a computer's keys too, from the message: see ChatLines `keyboard`.) */
-button.chat-takeback:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* (A message is held to select it: the phone's own selecting of its words, and its menu for a picture, stay away. Words in a button were never selected.) */
+button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer; }
+/* What can be done with the selected message (ChatLines `PickedActions`), at the top of the chat: the phone's sheet draws them as its Mute and Report, on the
+   right; the TV's pages as round buttons beside the ⋯, their words for a screen reader only. Take back is the red of undoing, Save is not. */
+.chat-tools-picked { display: flex; flex: none; gap: 8px; margin-left: auto; }
+.chat-tools-picked:empty { display: none; }
+.chat-tool.chat-act-takeback { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
+.chat-act:disabled { opacity: 0.6; }
+.chat-act:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* A picture of the chat shown larger (ChatLines `PictureView`), over whatever the chat is in (a sheet is 50, the TV's pages 80 and their notes 90) and under
+   the question asked before the site is left (100). It is drawn at the end of the page, outside the chat's own colours: its own are said here. */
+.chat-view { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.9); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: zoom-out; animation: chat-view-in 0.14s ease-out; }
+.chat-view-picture { display: block; width: min(100vw - 48px, 640px); height: auto; max-height: 72vh; border-radius: 14px; object-fit: contain; }
+.chat-view-small { width: min(78vw, 60vh, 384px); border-radius: 0; }
+.chat-view-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 22px; cursor: pointer; }
+.chat-view-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@keyframes chat-view-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chat-view { animation: none; } }
 /* A title a message names (titles.ts): its poster and name under the bubble. The same size while the server is asked as after, so the list does not move. */
 .chat-card {
   display: flex;
@@ -97,6 +104,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 40px; /* (a finger's size: the judge, 17 Nov) */
+  box-sizing: border-box;
   padding: 8px 14px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -114,41 +123,63 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-empty p { margin: 0; }
 .chat-privacy { color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 
-.sheet-body .chat-compose { display: flex; flex: none; flex-direction: row; align-items: center; gap: 8px; }
+/* The bar a message is written in (the owner, 17 Nov: three round buttons and a box a few words wide were cramped). One bar: the buttons that send
+   something else are in it, with no ring of their own, then the box; Send is beside it, at the bar's foot when a long message has made the bar tall.
+   The bar lights when the box is typed in. */
+.sheet-body .chat-compose { display: flex; flex: none; flex-direction: row; align-items: flex-end; gap: 8px; }
+.chat-pill {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 12px 0 2px;
+  border: 1.5px solid transparent;
+  border-radius: 24px;
+  background: var(--surface-2);
+}
+.chat-pill:focus-within { border-color: var(--accent); }
 .chat-input {
   flex: 1;
   min-width: 0;
-  padding: 11px 14px;
-  border: 1.5px solid transparent;
-  border-radius: 999px;
-  background: var(--surface-2);
+  padding: 12px 0 12px 6px;
+  border: none;
+  background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 1rem; /* (16px: a smaller one makes a phone's browser zoom the page when the box is touched) */
 }
-.chat-input:focus { border-color: var(--accent); outline: none; }
-/* The box of a phone is an editable area (MessageBox.tsx), not a form field: it says what to do while empty, as a field would, and grows a few lines
-   with a long message before it scrolls. A round end on one line, a rounded box on more. (Selectable whatever the page around says: Safari gives no
+.chat-input:focus { outline: none; }
+/* The box of a phone is an editable area (MessageBox.tsx), not a form field: it says what to do while empty, as a field would (on one line, cut short
+   where the bar is narrow), and grows to six lines with a long message before it scrolls. (Selectable whatever the page around says: Safari gives no
    caret to an area that may not be selected.) */
 .chat-input[contenteditable], .tv-chat-box-area {
-  border-radius: 22px;
   line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: calc(1.35em * 5 + 22px);
+  max-height: calc(1.35em * 6 + 26px);
   overflow-y: auto;
   cursor: text;
   -webkit-user-select: text;
   user-select: text;
 }
-.chat-input[contenteditable]:empty::before, .tv-chat-box-area:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+.chat-input[contenteditable]:empty::before, .tv-chat-box-area:empty::before {
+  content: attr(data-placeholder);
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .tv-chat-box-area:empty::before { color: rgba(255, 255, 255, 0.45); }
-.chat-send { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 1.2rem; }
-.chat-send:disabled { opacity: 0.4; }
+.chat-send { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 1.25rem; }
+/* (Nothing to send yet: plainly a button, and plainly not ready. Not the accent dimmed, which read as a muddy red.) */
+.chat-send:disabled { background: var(--surface-2); color: var(--muted); }
 .chat-send:active:not(:disabled) { background: var(--accent-hover); }
-/* Send a title (TitlePick.tsx): the round button before the box, and the sheet of titles, a row each (poster, name, year). */
-.chat-title-btn { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 1.2rem; }
-.chat-title-btn:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); }
+/* The buttons that send something else (a title: TitlePick.tsx, a GIF, a sticker), and the + they fold into while something is typed. */
+.chat-title-btn { display: grid; flex: none; place-items: center; width: 42px; height: 44px; margin: 0.5px 0; border-radius: 22px; background: transparent; color: var(--muted); font-size: 1.3rem; }
+.chat-title-btn:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); color: var(--text); }
 .chat-picks { display: flex; flex-direction: column; gap: 6px; max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; }
 .chat-pick {
   display: grid;
@@ -253,10 +284,19 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-name { margin: 0; overflow: hidden; color: #fff; font-size: 2em; font-weight: 700; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
 .tv-chat-status { margin: 0.15em 0 0; color: rgba(255, 255, 255, 0.6); font-size: 1.25em; }
 .tv-chat-more-wrap { position: relative; flex: none; }
+/* (Take back and Save, in the head's row as they were: the span only listens for the keys.) */
+.tv-chat-picked { display: contents; }
 .tv-chat-more { display: grid; place-items: center; width: 3.4em; height: 3.4em; border-radius: 50%; background: transparent; color: rgba(255, 255, 255, 0.75); font-size: 1em; }
 .tv-chat-more svg { width: 1.8em; height: 1.8em; }
 .tv-chat-more:hover, .tv-chat-more[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1); color: #fff; }
 .tv-chat-more:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+/* (What can be done with the selected message, beside the ⋯ and drawn as it is: the picture says it, the words are a screen reader's and the tip's.) */
+.tv-chat-more.chat-act { position: relative; flex: none; background: rgba(255, 255, 255, 0.1); color: #fff; }
+.tv-chat-more.chat-act svg { width: 1.5em; height: 1.5em; }
+.tv-chat-more.chat-act-takeback { color: #ffb4b4; }
+.tv-chat-more.chat-act:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+.tv-chat-more.chat-act-takeback:focus-visible { color: #b3261e; }
+.tv-chat-more .chat-act-words { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tv-chat-menu { position: absolute; top: calc(100% + 0.5em); right: 0; display: flex; flex-direction: column; min-width: 20em; padding: 0.5em; border-radius: 0.9em; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1em 2.4em rgba(0, 0, 0, 0.6); }
 .tv-chat-menu[hidden] { display: none; }
 .tv-chat-menu button { display: flex; align-items: center; gap: 0.6em; padding: 0.6em 0.8em; border-radius: 0.6em; background: transparent; color: #fff; font-size: 1.35em; font-weight: 600; text-align: left; white-space: nowrap; }
@@ -283,8 +323,19 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-fakebox:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff, 0 0 0 0.25em rgb(var(--accent-rgb) / 0.35); }
 .tv-chat-send-round { display: grid; flex: none; place-items: center; width: 3.2em; height: 3.2em; border-radius: 50%; background: var(--accent); color: #fff; font-size: 1em; }
 .tv-chat-send-round svg { width: 1.45em; height: 1.45em; }
-button.tv-chat-send-round:disabled { opacity: 0.35; }
+/* (Nothing to send yet: plainly a button, and plainly not ready. Not the accent dimmed, which read as a muddy red.) */
+button.tv-chat-send-round:disabled { background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.4); }
 button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
+/* One bar (a computer, a hand-held screen; the phone's is `.chat-pill`, above): the buttons that send something else are in it, with no ring of their own,
+   then the box, which has no ground of its own there; Send is beside it. The bar lights when the box is typed in. */
+.tv-chat-pill { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 0 0.6em 0 0.35em; border-radius: 2em; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.tv-chat-pill:focus-within { box-shadow: inset 0 0 0 0.1em var(--accent); }
+.tv-chat-pill .tv-chat-box, .tv-chat-pill .tv-chat-box:focus { border-radius: 0; background: transparent; box-shadow: none; }
+.tv-chat-pill .tv-chat-box { padding-left: 0.4em; padding-right: 0.2em; }
+.tv-chat-pill > .tv-chat-box:first-child { padding-left: 0.9em; }
+.tv-chat-pill .tv-chat-title-btn { width: 2.9em; height: 3.2em; border-radius: 1.6em; background: transparent; box-shadow: none; color: rgba(255, 255, 255, 0.72); }
+.tv-chat-pill .tv-chat-title-btn:hover { background: rgba(255, 255, 255, 0.08); box-shadow: none; color: #fff; }
+.tv-chat-pill .tv-chat-title-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff; color: #fff; }
 /* Send a title (TitlePick.tsx): a round button before the box, and a page of posters the remote walks. */
 .tv-chat-compose-row { display: flex; align-items: center; gap: 0.8em; width: 100%; }
 .tv-chat-compose-row > .tv-chat-composer { flex: 1 1 auto; min-width: 0; }
@@ -410,8 +461,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }
-.chat-takeback.chat-sticker-save { background: var(--surface-2); color: var(--text); } /* (keeping is no undoing: not the red of Take back) */
-.chat-sticker-save:disabled { opacity: 0.6; }
 
 /*
  * Reactions (Reactions.tsx): what is on a message, small and under it on its side, a little over the bubble's edge as a messenger draws them; the bar of
@@ -447,9 +496,11 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-window { width: 100%; height: auto; max-height: none; }
   .tv-chat-window > .chat-lines { max-height: 50vh; font-size: 1.4em; }
   .tv-chat-name { font-size: 1.7em; }
-  /* (the ⋯ as wide as the screen allows, its lines wrapping: "Reacționează la ultimul mesaj al lui <a long name>" is wider than the narrowest phone) */
-  .tv-chat-menu { min-width: 0; max-width: calc(100vw - 2rem); }
-  .tv-chat-menu button { font-size: 1.25em; white-space: normal; overflow-wrap: anywhere; }
+  /* (the ⋯ as wide as what it says, and at most as the screen allows, its lines wrapping then: "Reacționează la ultimul mesaj al lui <a long name>" is wider
+     than the narrowest phone. As wide as what it says is said outright: it hangs from the ⋯, which is a button wide, and a box that may break its words
+     anywhere was made no wider than that, a letter to a line: the owner, 17 Nov.) */
+  .tv-chat-menu { min-width: 0; width: max-content; max-width: calc(100vw - 2rem); }
+  .tv-chat-menu button { font-size: 1.25em; white-space: normal; overflow-wrap: break-word; }
   .tv .chat-lines { width: 100%; max-height: 38vh; font-size: 1.5em; }
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
@@ -491,12 +542,25 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-screen .tv-chat-window > .chat-lines > .chat-list { margin-top: auto; } /* (a few messages sit over the box, where the eye is, as in any messenger) */
   .tv-chat-screen .tv-chat-head { gap: 0.6em; padding: max(0.7em, env(safe-area-inset-top)) 0.8em 0.7em 0.4em; }
   .tv-chat-screen .tv-chat-pic { font-size: 3em; }
-  .tv-chat-screen .tv-chat-foot { padding: 0.7em 0.8em max(0.8em, env(safe-area-inset-bottom)); }
-  .tv-chat-screen .tv-chat-box { font-size: 16px; } /* (16px: a smaller one makes a phone's browser zoom the page when the box is touched) */
-  .tv-chat-screen .tv-chat-title-btn, .tv-chat-screen .tv-chat-send-round { width: 4.2em; height: 4.2em; }
+  /* (the ⋯, and what is done with a selected message beside it: a finger's size on the narrowest phone too, where 3.4em was 34 pixels) */
+  .tv-chat-screen .tv-chat-more { width: max(3.4em, 40px); height: max(3.4em, 40px); }
+  .tv-chat-screen .tv-chat-more.chat-act { margin-right: -0.2em; }
+  .tv-chat-screen .tv-chat-foot { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+  /* The bar, in the sizes of a thumb (as the phone's own, `.chat-pill`): 48px high on one line, the buttons in it 42 by 44, Send 48 round beside it, both
+     at the bar's foot when a long message has made it tall. */
+  .tv-chat-screen .tv-chat-composer { align-items: flex-end; gap: 8px; }
+  .tv-chat-screen .tv-chat-pill { align-items: flex-end; min-height: 48px; padding: 0 12px 0 2px; border-radius: 24px; }
+  .tv-chat-screen .tv-chat-pill:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .tv-chat-screen .tv-chat-box { padding: 13px 0 13px 6px; font-size: 16px; } /* (16px: a smaller one makes a phone's browser zoom the page when the box is touched) */
+  .tv-chat-screen .tv-chat-pill > .tv-chat-box:first-child { padding-left: 14px; }
+  .tv-chat-screen .tv-chat-pill .tv-chat-title-btn { width: 42px; height: 44px; margin: 2px 0; border-radius: 22px; }
+  .tv-chat-screen .tv-chat-pill .tv-chat-title-btn:active { background: rgba(255, 255, 255, 0.12); color: #fff; }
+  .tv-chat-screen .tv-chat-pill .tv-chat-title-btn svg, .tv-chat-screen .tv-chat-send-round svg { width: 22px; height: 22px; }
+  .tv-chat-screen .tv-chat-send-round { width: 48px; height: 48px; }
   .tv-chat-headback { display: grid; flex: none; place-items: center; width: 4em; height: 4em; border-radius: 50%; background: transparent; color: #fff; font-size: 1em; }
   .tv-chat-headback svg { width: 2em; height: 2em; }
   .tv-chat-headback:active, .tv-chat-headback:focus-visible { background: rgba(255, 255, 255, 0.12); outline: none; }
-  /* (A note that comes up while the chat is open stands over the box, not on it.) */
-  :root[data-ui="polish"] .tv:has(.tv-chat-screen) .tv-toast, .tv:has(.tv-chat-screen) .tv-toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  /* (A note that comes up while the chat is open stands under the friend's name, at the top of what the keyboard leaves: the bar at the bottom is as tall
+     as what is typed in it, and a note over it was a note on it.) */
+  :root[data-ui="polish"] .tv:has(.tv-chat-screen) .tv-toast, .tv:has(.tv-chat-screen) .tv-toast { top: calc(var(--chat-top, 0px) + max(8px, env(safe-area-inset-top)) + 70px); bottom: auto; }
 }

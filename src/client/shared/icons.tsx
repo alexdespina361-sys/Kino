@@ -513,12 +513,12 @@ export const BellOffIcon = (props: Props) => (
   </Icon>
 );
 
-/** Three dots in a row: "more", a few things that are there when they are asked for. */
+/** Three dots one above the other: "more", a few things that are there when they are asked for (upright, as in a messenger: the owner, 17 Nov). */
 export const MoreIcon = (props: Props) => (
   <Icon {...props}>
-    <circle cx="5" cy="12" r="1.3" fill="currentColor" />
-    <circle cx="12" cy="12" r="1.3" fill="currentColor" />
-    <circle cx="19" cy="12" r="1.3" fill="currentColor" />
+    <circle cx="12" cy="5" r="1.6" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+    <circle cx="12" cy="19" r="1.6" fill="currentColor" />
   </Icon>
 );
 
