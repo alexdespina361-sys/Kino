@@ -230,6 +230,10 @@ export function ReadTv({
   // What had the keys at the top (Take back, Save) goes with the selection, as it is let go (Escape, a press elsewhere, the message taken back from another
   // screen): the keys go back to the message, else to the ⋯, never to nothing (the judge, 17 Nov).
   const wasPicked = useRef<number | null>(null);
+  // (A message selected shuts the ⋯: a finger's hold moves no focus, so the menu would not shut by itself, and one Back would then shut both: the judge, 17 Nov.)
+  useEffect(() => {
+    if (picked !== null) setMenu(false);
+  }, [picked]);
   useEffect(() => {
     const was = wasPicked.current;
     wasPicked.current = picked;

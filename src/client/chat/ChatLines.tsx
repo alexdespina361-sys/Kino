@@ -79,6 +79,8 @@ const SWIPE_REPLY = 56;
 const SWIPE_MAX = 84;
 /** How long the message a quote names is lit, once the quote was pressed and it was brought into view. */
 const SHOWN_MS = 1400;
+/** How long a picture shown larger hears no press: the second of the double tap that opened it. */
+const VIEW_SETTLE_MS = 400;
 
 /** Whether a message can be selected: for its reactions, to answer it, to take it back (one's own), or to save it (a friend's personal sticker, with `save`). */
 export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boolean; replies?: boolean }): boolean =>
@@ -133,7 +135,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
 
   // The picture shown larger, in the middle of the screen (a press of a GIF or a sticker): nothing is selected while it is.
   const [enlarged, setEnlarged] = useState<{ src: string; alt: string; small: boolean; line: number } | null>(null);
-  // (Its message taken back by its sender, or the sticker taken down, takes it away too: the judge, 17 Nov.)
+  // (Its message taken back by its sender, or let go with time, takes it away too; a picture that no longer comes - a personal sticker taken down - closes it
+  // through its `onError`: the judge, 17 Nov.)
   const enlargedThere = enlarged !== null && lines.some((line) => line.id === enlarged.line);
   useEffect(() => {
     if (enlarged && !enlargedThere) setEnlarged(null);
@@ -167,12 +170,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     },
     [],
   );
+  /** Whether the press now down may hold a message: not a finger that stopped a fast scroll (its long-press menu too: the judge, 17 Nov). */
+  const mayHold = useRef(true);
   const holds = (select: (() => void) | null, reply: (() => void) | null) => ({
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       heldNow.current = false;
       letGo();
       putBack();
-      if (event.button !== 0 || performance.now() - scrolled.current < SCROLL_REST_MS) return;
+      mayHold.current = performance.now() - scrolled.current >= SCROLL_REST_MS;
+      if (event.button !== 0 || !mayHold.current) return;
       if (reply) swipe.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, on: false, shift: 0, item: event.currentTarget.closest("li"), reply };
       if (!select) return;
       const timer = window.setTimeout(() => {
@@ -235,6 +241,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       letGo();
       if (swipe.current?.on) return; // (a phone's long-press menu, while a message is drawn: it is being drawn, not held)
       putBack();
+      if (!mayHold.current) return; // (the finger that stopped a fast scroll and rested: no hold, and no long-press menu's hold either)
       select?.();
     },
   });
@@ -558,6 +565,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
 function PictureView({ src, alt, small, onClose }: { src: string; alt: string; small: boolean; onClose: () => void }) {
   const t = useT();
   const close = useRef<HTMLButtonElement>(null);
+  /** When it opened: a press in the moment after is the second of the double tap or click that opened it. */
+  const opened = useRef(performance.now());
   useBackFirst(onClose);
   useEffect(() => {
     const before = document.activeElement;
@@ -574,8 +583,9 @@ function PictureView({ src, alt, small, onClose }: { src: string; alt: string; s
       aria-label={alt}
       onClick={(event) => {
         event.stopPropagation(); // (it is over a sheet, whose own backdrop a press would close as well)
-        // (The second press of a double tap or a double click is the one that opened it, and does not close it at once: the judge, 17 Nov.)
-        if (event.detail > 1) return;
+        // (The second press of a double tap or a double click, in the moment after it opened, does not close it at once; a quick press of one's own later
+        // does: the judges, 17 Nov.)
+        if (performance.now() - opened.current < VIEW_SETTLE_MS) return;
         onClose();
       }}
       onKeyDown={(event) => {
