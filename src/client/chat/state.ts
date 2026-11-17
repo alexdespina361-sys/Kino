@@ -81,7 +81,9 @@ export function dayOf(at: number, now: number, language: string): string {
   try {
     const ago = Math.round((startOf(at) - startOf(now)) / DAY);
     if (ago === 0 || ago === -1) return new Intl.RelativeTimeFormat(localeOf(language), { numeric: "auto" }).format(ago, "day");
-    return new Intl.DateTimeFormat(localeOf(language), { day: "numeric", month: "short" }).format(new Date(at));
+    // (A day of another year says which: on 5 Jan, "26 Dec" read as last week, and somebody gone fourteen months looked recent: the judge, 17 Nov.)
+    const other = new Date(at).getFullYear() !== new Date(now).getFullYear();
+    return new Intl.DateTimeFormat(localeOf(language), { day: "numeric", month: "short", ...(other ? { year: "numeric" } : {}) }).format(new Date(at));
   } catch {
     return "";
   }

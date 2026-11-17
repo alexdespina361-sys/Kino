@@ -26,9 +26,33 @@ export const CHAT_POLL_MS = 3000;
  * chat's stickers of the same emoji (client/chat/stickers.ts). How many changes of reactions one profile may make in a minute.
  */
 export const CHAT_REACTIONS = ["\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F631}", "\u{1F62D}", "\u{1F44D}", "\u{1F525}"] as const;
-export type ChatReaction = (typeof CHAT_REACTIONS)[number];
+/**
+ * More of them, behind the "+" of the bar (the owner, 17 Nov: "allow more reaction options like that +"): the rest of the chat's own stickers that are a
+ * face or a gesture, and the two of the cinema, each drawn with its sticker as the six are.
+ */
+export const CHAT_MORE_REACTIONS = [
+  "\u{1F923}", // rolling on the floor laughing
+  "\u{1F60D}", // heart eyes
+  "\u{1F929}", // star-struck
+  "\u{1F92F}", // mind blown
+  "\u{1F914}", // thinking
+  "\u{1F97A}", // pleading
+  "\u{1F971}", // yawning
+  "\u{1F634}", // sleeping
+  "\u{1F44F}", // clapping
+  "\u{1F389}", // party popper
+  "\u{1F44B}", // waving
+  "\u{1F47B}", // ghost
+  "\u{1F480}", // skull
+  "\u{1F440}", // eyes
+  "\u{1F37F}", // popcorn
+  "\u{1F3AC}", // clapper board
+] as const;
+/** Every reaction a message can have: the six of the bar first. */
+export const CHAT_ALL_REACTIONS = [...CHAT_REACTIONS, ...CHAT_MORE_REACTIONS] as const;
+export type ChatReaction = (typeof CHAT_ALL_REACTIONS)[number];
 export const CHAT_REACTS_PER_MINUTE = 40;
-export const isChatReaction = (value: unknown): value is ChatReaction => typeof value === "string" && (CHAT_REACTIONS as readonly string[]).includes(value);
+export const isChatReaction = (value: unknown): value is ChatReaction => typeof value === "string" && (CHAT_ALL_REACTIONS as readonly string[]).includes(value);
 
 export type ChatTextProblem = "empty" | "too_long";
 
@@ -55,6 +79,11 @@ export const ChatLineSchema = z.object({
    * which is what every place that shows words shows. (A string here, so that a page is not failed by a line it cannot show: it shows the text.)
    */
   sticker: z.string().max(64).optional(),
+  /**
+   * The message this one answers (the owner, 17 Nov: "dragging a message makes it reply to it"): its `id`, and nothing of what it said. The page finds it among
+   * the lines; one that is not there any more (taken back, or let go) is quoted as gone, so that nothing taken back lives on in a quote.
+   */
+  replyTo: z.number().int().nonnegative().optional(),
 });
 export type ChatLine = z.infer<typeof ChatLineSchema>;
 
@@ -78,12 +107,14 @@ export const ChatThreadSchema = z.object({
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;
 
+/** The message something answers, when it does (`ChatLine.replyTo`): one that is not in the chat when it is sent is not quoted, and the message goes all the same. */
+export const ChatReplyToSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 /** What is written to a friend. (The text is cleaned and measured by the server, whatever the page did.) */
-export const ChatSendSchema = z.object({ text: z.string().max(CHAT_TEXT_MAX * 4) });
+export const ChatSendSchema = z.object({ text: z.string().max(CHAT_TEXT_MAX * 4), replyTo: ChatReplyToSchema.optional() });
 export const ChatMuteSchema = z.object({ muted: z.boolean() });
 export type ChatMute = z.infer<typeof ChatMuteSchema>;
 /** A reaction put on a message, or taken away (null). */
-export const ChatReactSchema = z.object({ reaction: z.enum(CHAT_REACTIONS).nullable() });
+export const ChatReactSchema = z.object({ reaction: z.enum(CHAT_ALL_REACTIONS).nullable() });
 
 /**
  * What a report would send, before anybody has agreed to send it: the last messages of the chat, as they stand at `rev`. Sending is asked for

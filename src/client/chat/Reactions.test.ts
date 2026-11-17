@@ -34,8 +34,10 @@ describe("reactions under a message", () => {
     expect(has(lineOf(html, 2), "chat-reactions")).toBe(false);
   });
 
-  it("show nothing for what is not one of the six (an old or broken record), and nothing in a report, which sends the words alone", () => {
-    expect(has(lines({ lines: [with_(line(1, false), { theirReaction: "<b>", myReaction: "\u{1F37F}" })] }), "chat-reactions")).toBe(false);
+  it("show nothing for what is not one of the reactions (an old or broken record), and nothing in a report, which sends the words alone", () => {
+    expect(has(lines({ lines: [with_(line(1, false), { theirReaction: "<b>", myReaction: "\u{1F680}" })] }), "chat-reactions")).toBe(false);
+    // (one of the sixteen behind the + is one)
+    expect(has(lines({ lines: [with_(line(1, false), { myReaction: "\u{1F37F}" })] }), "chat-reactions")).toBe(true);
     expect(has(lines({ lines: [with_(line(1, false), { theirReaction: FIRE })], showWriter: true }), "chat-reactions")).toBe(false);
   });
 
