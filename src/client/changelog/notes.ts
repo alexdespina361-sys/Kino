@@ -4,6 +4,31 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.13",
+    date: "2026-11-17",
+    en: [
+      "A new setting, Anime audio, chooses whether an anime starts in Japanese with subtitles or with the English dub.",
+      "Long anime such as Bleach now list all their episodes under the right season, and Yu Yu Hakusho no longer plays another show.",
+      "Films that are still only in cinemas, and titles with no release date, are no longer listed.",
+      "More Romanian subtitles are found, for series too.",
+      "Talk shows, news and soap operas are left out of the rows for now.",
+    ],
+    ro: [
+      "O setare nouă, Audio anime, alege dacă un anime pornește în japoneză cu subtitrare sau dublat în engleză.",
+      "Anime-urile lungi, ca Bleach, își arată acum toate episoadele la sezonul potrivit, iar Yu Yu Hakusho nu mai pornește alt serial.",
+      "Filmele care rulează încă doar în cinematografe și titlurile fără dată de lansare nu mai apar în liste.",
+      "Se găsesc mai multe subtitrări în română, și pentru seriale.",
+      "Talk-show-urile, știrile și telenovelele lipsesc deocamdată din rânduri.",
+    ],
+    it: [
+      "Una nuova impostazione, Audio anime, sceglie se un anime parte in giapponese con i sottotitoli o doppiato in inglese.",
+      "Gli anime lunghi come Bleach ora mostrano tutti gli episodi nella stagione giusta, e Yu Yu Hakusho non avvia più un'altra serie.",
+      "I film ancora solo al cinema e i titoli senza data di uscita non compaiono più negli elenchi.",
+      "Si trovano più sottotitoli in rumeno, anche per le serie.",
+      "Talk show, notiziari e soap opera per ora non sono nelle righe.",
+    ],
+  },
+  {
     version: "0.4.12",
     date: "2026-11-17",
     en: [
