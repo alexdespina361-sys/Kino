@@ -49,3 +49,35 @@ export class RateLimiter {
     for (const key of [...this.hits.keys()]) this.recent(key);
   }
 }
+
+/**
+ * "No more than `maxMs` of work in `windowMs`", for everybody together: what was spent is said after it was (`spend`), so the work under way when the
+ * budget runs out is finished, and the next waits. In memory, as the limiter above.
+ */
+export class WorkBudget {
+  private spent: Array<{ at: number; ms: number }> = [];
+
+  constructor(
+    private readonly maxMs: number,
+    private readonly windowMs: number,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /** How long until more may be done; 0 when it may now. */
+  wait(): number {
+    const cutoff = this.now() - this.windowMs;
+    this.spent = this.spent.filter((each) => each.at > cutoff);
+    let over = this.spent.reduce((all, each) => all + each.ms, 0) - this.maxMs;
+    if (over < 0) return 0;
+    // (the oldest of what was spent leaves the window first: it may go on once enough of it has)
+    for (const each of this.spent) {
+      over -= each.ms;
+      if (over < 0) return Math.max(1, each.at + this.windowMs - this.now());
+    }
+    return this.windowMs;
+  }
+
+  spend(ms: number): void {
+    if (ms > 0) this.spent.push({ at: this.now(), ms });
+  }
+}

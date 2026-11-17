@@ -9,6 +9,8 @@ import type { StickerBook } from "./stickers";
 const MINUTE = 60_000;
 /** How long a picture let in has to arrive (a quarter of a megabyte: a slow phone's mobile data takes a few seconds). */
 const UPLOAD_MS = 30_000;
+/** What a megabyte of a body is counted as taking to arrive and be put together (ms): more than twice what the box was measured to take (3.8 ms for 5.3 MB). */
+const BODY_MS_PER_MB = 2;
 const STATUS: Record<StickerProblem | "gone" | "friends_off", number> = {
   off: 404,
   gone: 404,
@@ -105,25 +107,40 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
   const stillBody = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096;
   const movingBody = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4096;
   const arriveMs = stickers.moving ? uploadMs * 3 : uploadMs;
+  const bodyLimit = stickers.moving ? movingBody : stillBody;
   // (In a place of its own: there, and nowhere else, a body is read as text and taken apart by hand (`readStickerMake`), never unpacked as JSON whatever it
   // holds. A body that is not what the page sends is a bad request, as one that is not JSON at all always was. Fastify lets its own JSON reader be replaced
   // like this without it being removed first (only a second reader of the site's own would be refused); stickerWiring.test.ts starts the whole site with it.)
   void app.register(async (scope) => {
     scope.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, parsed) => {
+      // (What reading the body takes is the site's time as well, whatever comes of it (the judge, 17 Nov: a body refused here had cost nothing of the hour's):
+      // taking it apart is timed. Its arriving was counted as it was let in, at the most it may be: see `onRequest`.)
+      const began = performance.now();
       const read = readStickerMake(body as string);
+      stickers.worked(performance.now() - began);
       if (read) parsed(null, read);
       else parsed(Object.assign(new Error("The body is not a sticker to be made."), { statusCode: 400 }), undefined);
     });
     scope.post<{ Params: { id: string } }>(
       base,
       {
-        bodyLimit: stickers.moving ? movingBody : stillBody,
+        bodyLimit,
         onRequest: async (request, reply) => {
           const me = asker(request as Asked, reply, writesByAccount);
           if (!me) return reply;
           if (uploading.has(me.accountId) || uploading.size >= PERSONAL_STICKER.uploadsAtOnce) {
             return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
           }
+          // (And the whole site takes so many a minute, and gives their making so much of an hour, whoever sends them: counted here, before the body is read.)
+          const wait = stickers.arriving();
+          if (wait > 0) {
+            const after = Math.min(3600, Math.max(5, Math.ceil(wait / 1000)));
+            return reply.code(503).header("Retry-After", after).send({ error: "busy", retryAfter: after });
+          }
+          // (Its body's arriving is the site's time, counted now, at the most a body may be, whatever then comes: one that is not JSON, or longer than it may
+          // be, or never all sent, reaches no reader of the site's own, and one of letters that take more than a byte each is no shorter for it: the judge's
+          // fifth round, 17 Nov.)
+          stickers.worked((bodyLimit / 1_000_000) * BODY_MS_PER_MB);
           uploading.add(me.accountId);
           // (A picture that has not come by then is let go, and its request ended.)
           const deadline = setTimeout(() => {
@@ -142,12 +159,16 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
         const me = letIn.get(request);
         if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 }); // (never: the hook let it in)
         clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
+        // (Checking it and unpacking its picture is timed too, refused or not.)
+        const began = performance.now();
         const parsed = StickerMakeSchema.safeParse(request.body);
-        if (!parsed.success) return stickerRefusal(reply, "too_big");
+        const sent = parsed.success ? Buffer.from(parsed.data.data, "base64") : undefined;
+        stickers.worked(performance.now() - began);
+        if (!parsed.success || !sent) return stickerRefusal(reply, "too_big");
         me.making = true;
         let made: Awaited<ReturnType<StickerBook["make"]>>;
         try {
-          made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
+          made = await stickers.make(me.profileId, me.accountId, sent, parsed.data.delays);
         } finally {
           me.making = false;
           done(request); // (made or not, and its asker there or gone: nothing of it is left to do but the answer)

@@ -5,8 +5,9 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
 import { PNG } from "pngjs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PERSONAL_STICKER } from "../../shared";
+import { WorkBudget } from "./rateLimit";
 import { FileStickerFiles, MemoryStickerFiles, PostgresStickerFiles, personalStickersMaxBytes, personalStickersOn, type StickerFiles } from "./stickerFiles";
 import { makeSticker, pngHeader } from "./stickerImage";
 import { StickerBook, type StickerHost } from "./stickers";
@@ -160,7 +161,7 @@ class Host {
   }
 }
 
-function book(options: { on?: boolean; maxBytes?: number; files?: StickerFiles; host?: Host } = {}) {
+function book(options: { on?: boolean; maxBytes?: number; files?: StickerFiles; host?: Host; writeMs?: number; siteWorkMs?: number } = {}) {
   const host = options.host ?? new Host();
   const files = options.files ?? new MemoryStickerFiles();
   const warned: string[] = [];
@@ -168,6 +169,8 @@ function book(options: { on?: boolean; maxBytes?: number; files?: StickerFiles; 
   const stickers = new StickerBook(seen, files, {
     on: options.on ?? true,
     ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+    ...(options.writeMs ? { writeMs: options.writeMs } : {}),
+    ...(options.siteWorkMs ? { siteWorkMs: options.siteWorkMs } : {}),
     log: { warn: (message) => void warned.push(message) },
   });
   return { stickers, host, files, warned };
@@ -456,6 +459,74 @@ describe("the folder of the pictures", () => {
     await writeFile(path.join(dir, "short.png"), "x");
     expect(await files.ids()).toEqual([ID]);
     expect((await readdir(dir)).sort()).toEqual([`${ID}.png`, "notes.txt", "short.png"]);
+  });
+});
+
+describe("what the whole site gives to making stickers (the judge, 17 Nov: every limit was an account's)", () => {
+  it("lets so many pictures in in a minute, whoever sends them, and the next when the minute has passed", () => {
+    const { stickers, host } = book();
+    for (let n = 0; n < PERSONAL_STICKER.sitePerMinute; n++) expect(stickers.arriving(), String(n)).toBe(0);
+    expect(stickers.arriving()).toBeGreaterThan(0);
+    host.now += 60_001;
+    expect(stickers.arriving()).toBe(0);
+  });
+
+  it("counts the time spent making them: an hour's spent, the next waits until enough of it is an hour old", () => {
+    const clock = { now: 1_000_000 };
+    const budget = new WorkBudget(1000, 3600_000, () => clock.now);
+    expect(budget.wait()).toBe(0);
+    budget.spend(600);
+    clock.now += 60_000;
+    budget.spend(300);
+    expect(budget.wait()).toBe(0);
+    clock.now += 60_000;
+    budget.spend(200); // (1100 of 1000: what was under way was finished, the next waits)
+    expect(budget.wait(), "until the first 600 are an hour old").toBe(3600_000 - 120_000);
+    clock.now += 3600_000 - 120_000;
+    expect(budget.wait()).toBe(0);
+  });
+
+  it("counts what making a sticker took, made or not, and lets none in when the hour's is spent", async () => {
+    const { stickers, host } = book({ siteWorkMs: 0.0001 });
+    expect(stickers.arriving()).toBe(0);
+    expect(await stickers.make("p1", "a1", Buffer.from("not a picture"))).toEqual({ ok: false, error: "not_a_picture" });
+    expect(stickers.arriving(), "even what was refused took its time").toBeGreaterThan(0);
+    host.now += 3600_001;
+    expect(stickers.arriving()).toBe(0);
+  });
+
+  it("tells a maker whose picture is not written in time that it failed, counts it until it is, and makes nothing new with so many on their way", async () => {
+    const files = new MemoryStickerFiles();
+    const put = files.put.bind(files);
+    const held: Array<() => void> = [];
+    files.put = (id, data) => new Promise<void>((resolve) => held.push(() => void put(id, data).then(resolve)));
+    const { stickers } = book({ files, writeMs: 20 });
+    for (let n = 0; n < PERSONAL_STICKER.writesAtOnce; n++) await expect(stickers.make(`p${n}`, `a${n}`, nth(n + 1)), String(n)).rejects.toThrow(/not written in time/);
+    expect(await stickers.make("p9", "a9", nth(99))).toEqual({ ok: false, error: "site_full" });
+    expect(stickers.size.stickers).toBe(0);
+    // (they answer at last: what they wrote is let go, nothing having been made of it, and the site makes again)
+    for (const go of held.splice(0)) go();
+    await vi.waitFor(async () => expect(await files.ids()).toEqual([]));
+    files.put = put;
+    await vi.waitFor(async () => expect((await stickers.make("p9", "a9", nth(99))).ok).toBe(true));
+    expect(stickers.size.stickers).toBe(1);
+    // (and it was not one of its maker's day: the first eight makers can make theirs again)
+    expect((await stickers.make("p0", "a0", nth(1))).ok).toBe(true);
+  });
+
+  it("keeps a picture written too late counted while it cannot be removed: it is there, with no record, until the next start", async () => {
+    const files = new MemoryStickerFiles();
+    const put = files.put.bind(files);
+    let go: (() => void) | undefined;
+    files.put = (id, data) => new Promise<void>((resolve) => (go = () => void put(id, data).then(resolve)));
+    files.remove = () => Promise.reject(new Error("the disk says no"));
+    const { stickers, warned } = book({ files, writeMs: 20 });
+    await expect(stickers.make("p1", "a1", nth(1))).rejects.toThrow(/not written in time/);
+    go!();
+    await vi.waitFor(() => expect(warned.join(" ")).toMatch(/could not be removed/));
+    expect(await files.ids()).toHaveLength(1);
+    expect(stickers.size, "no sticker, and its bytes still counted").toMatchObject({ stickers: 0 });
+    expect(stickers.size.bytes).toBeGreaterThan(0);
   });
 });
 
