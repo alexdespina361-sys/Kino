@@ -535,6 +535,7 @@ export function ReadTv({
             lines={state.lines}
             name={name}
             now={now}
+            receipts={state}
             remote
             keyboard={desk}
             onOpenTitle={onOpenTitle}

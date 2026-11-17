@@ -102,6 +102,12 @@ export const ChatThreadSchema = z.object({
   rev: z.number().int().nonnegative(),
   open: z.boolean(),
   muted: z.boolean(),
+  /**
+   * How far the friend has seen the messages (the `id` of the newest), and how far a screen of theirs has been told of them: one's own messages up to `theirSeen`
+   * have two ticks, up to `theirGot` one (the owner, 17 Nov). In every answer, as they change no `rev`; not there from a server before them.
+   */
+  theirSeen: z.number().int().nonnegative().optional(),
+  theirGot: z.number().int().nonnegative().optional(),
   lines: z.array(ChatLineSchema).max(CHAT_KEEP_MAX).optional(),
   reactions: z.array(ChatReactionsNowSchema).max(CHAT_KEEP_MAX).optional(),
 });

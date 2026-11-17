@@ -99,6 +99,8 @@ export const chatIt: ChatDictionary = {
   "chat.more": "Altro",
   "chat.lastOnlineAt": "Ultimo accesso {day} alle {time}",
   "chat.reply": "Rispondi",
+  "chat.received": "Ricevuto",
+  "chat.seen": "Visto",
   "chat.replyingTo": "Stai rispondendo a {name}",
   "chat.replyingToMine": "Stai rispondendo al tuo messaggio",
   "chat.replyCancel": "Annulla risposta",

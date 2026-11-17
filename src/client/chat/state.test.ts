@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatLine, ChatThread } from "../../shared";
 import { ApiError } from "../account/api";
-import { applyThread, CHAT_FACTS, dayOf, endsChat, FRESH_CHAT, lastOwn, problemOf, stampOf, startsDay, type ChatState } from "./state";
+import { applyThread, CHAT_FACTS, dayOf, endsChat, FRESH_CHAT, lastOwn, problemOf, stampOf, startsDay, ticksOf, type ChatState } from "./state";
 
 const line = (id: number, mine: boolean, at = 1_000 * id, text = `m${id}`): ChatLine => ({ id, at, mine, text });
 const thread = (rev: number, lines?: ChatLine[], rest: Partial<ChatThread> = {}): ChatThread => ({ rev, open: true, muted: false, ...(lines ? { lines } : {}), ...rest });
@@ -30,28 +30,28 @@ describe("what a failed call comes to", () => {
 describe("the chat after an answer", () => {
   it("takes the first answer as it is", () => {
     const state = applyThread(FRESH_CHAT, thread(10, [line(5, false), line(10, true)], { muted: true, open: false }));
-    expect(state).toEqual({ rev: 10, open: false, muted: true, lines: [line(5, false), line(10, true)] });
+    expect(state).toEqual({ rev: 10, open: false, muted: true, lines: [line(5, false), line(10, true)], theirSeen: 0, theirGot: 0 });
   });
 
   it("keeps its messages when the answer has none because nothing changed, and takes the rest of the answer", () => {
-    const before: ChatState = { rev: 10, open: true, muted: false, lines: [line(10, true)] };
+    const before: ChatState = { rev: 10, open: true, muted: false, theirSeen: 0, theirGot: 0, lines: [line(10, true)] };
     const after = applyThread(before, thread(10, undefined, { open: false, muted: true }));
     expect(after.lines).toBe(before.lines);
     expect(after).toMatchObject({ rev: 10, open: false, muted: true });
   });
 
   it("replaces its messages with those of a newer answer", () => {
-    const before: ChatState = { rev: 10, open: true, muted: false, lines: [line(10, true)] };
+    const before: ChatState = { rev: 10, open: true, muted: false, theirSeen: 0, theirGot: 0, lines: [line(10, true)] };
     expect(applyThread(before, thread(20, [line(20, false)])).lines).toEqual([line(20, false)]);
   });
 
   it("ignores an answer older than what it has (a slow one that was overtaken)", () => {
-    const before: ChatState = { rev: 20, open: true, muted: false, lines: [line(20, false)] };
+    const before: ChatState = { rev: 20, open: true, muted: false, theirSeen: 0, theirGot: 0, lines: [line(20, false)] };
     expect(applyThread(before, thread(10, [line(10, true)]))).toBe(before);
   });
 
   it("ignores an answer at the same revision to a call that began before the one it took last: it could put back an `open` that is over (the judge, 17 Nov)", () => {
-    const before: ChatState = { rev: 20, open: false, muted: false, lines: [line(20, false)] };
+    const before: ChatState = { rev: 20, open: false, muted: false, theirSeen: 0, theirGot: 0, lines: [line(20, false)] };
     expect(applyThread(before, thread(20, undefined, { open: true }), false, true)).toBe(before);
     expect(applyThread(before, thread(20, undefined, { open: true }), false, false).open).toBe(true);
     // (a newer revision is newer news, whenever its call began)
@@ -61,7 +61,7 @@ describe("the chat after an answer", () => {
   it("puts the reactions an answer says changed on its messages, as they are now, and keeps the others", () => {
     const fire = "\u{1F525}";
     const joy = "\u{1F602}";
-    const before: ChatState = { rev: 20, open: true, muted: false, lines: [{ ...line(5, false), myReaction: fire }, { ...line(6, true), theirReaction: joy }, line(7, false)] };
+    const before: ChatState = { rev: 20, open: true, muted: false, theirSeen: 0, theirGot: 0, lines: [{ ...line(5, false), myReaction: fire }, { ...line(6, true), theirReaction: joy }, line(7, false)] };
     const after = applyThread(before, thread(25, undefined, { reactions: [{ id: 5 }, { id: 7, myReaction: joy, theirReaction: fire }, { id: 99, myReaction: fire }] }));
     expect(after.rev).toBe(25);
     expect(after.lines).toEqual([line(5, false), { ...line(6, true), theirReaction: joy }, { ...line(7, false), myReaction: joy, theirReaction: fire }]);
@@ -69,8 +69,19 @@ describe("the chat after an answer", () => {
     expect(applyThread(before, thread(25, undefined, { reactions: [] })).lines).toBe(before.lines);
   });
 
+  it("says how far the friend has one's messages and has seen them, only ever further: one tick, then two (the owner, 17 Nov)", () => {
+    const at10 = applyThread(FRESH_CHAT, thread(10, [line(5, true), line(8, true), line(10, true)], { theirGot: 8, theirSeen: 5 }));
+    expect([5, 8, 10].map((id) => ticksOf(at10, id))).toEqual([2, 1, 0]);
+    // (an answer that began before the friend looked does not take a tick away; one with the friend's newer look adds them)
+    expect(applyThread(at10, thread(10, undefined, {}))).toMatchObject({ theirSeen: 5, theirGot: 8 });
+    const looked = applyThread(at10, thread(10, undefined, { theirSeen: 10, theirGot: 10 }));
+    expect([5, 8, 10].map((id) => ticksOf(looked, id))).toEqual([2, 2, 2]);
+    // (seen is had: a server that says only `theirSeen` gives the one tick as well)
+    expect(applyThread(FRESH_CHAT, thread(3, [], { theirSeen: 3 })).theirGot).toBe(3);
+  });
+
   it("keeps its own idea of muting when a mute was answered after the reading began", () => {
-    const before: ChatState = { rev: 10, open: true, muted: true, lines: [] };
+    const before: ChatState = { rev: 10, open: true, muted: true, theirSeen: 0, theirGot: 0, lines: [] };
     expect(applyThread(before, thread(11, [], { muted: false }), true).muted).toBe(true);
     expect(applyThread(before, thread(11, [], { muted: false }), false).muted).toBe(false);
   });

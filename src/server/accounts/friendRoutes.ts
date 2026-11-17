@@ -287,7 +287,8 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       .sort((a, b) => b.at - a.at)
       .slice(0, ACTIVITY_MAX);
     // (What waits in the chats rides with the rest, a friend at a time: the messages themselves are only asked for by a page that has the chat open.)
-    const waiting = store.chats.unread(profileId).filter((notice) => known.has(notice.friend));
+    // (Being told of them gives the friend's message its one tick, unless this profile chose not to be seen online: the tick would say it is. The judge, 17 Nov.)
+    const waiting = store.chats.unread(profileId, friendChoices(store.settingsOf(profileId)).friendsPresence).filter((notice) => known.has(notice.friend));
     return {
       friends,
       inbox: book

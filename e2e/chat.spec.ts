@@ -1234,6 +1234,41 @@ test.describe("a title sent in a chat", () => {
     await expect(bob.page.getByTestId("title-name")).toHaveText("The Matrix");
   });
 
+  test("on the phone a title's card is drawn aside to answer it and held to react, as its message is, and neither opens the title (the owner, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    for (const page of [ann.page, bob.page]) await knowsTitles(page);
+    await saves(ann.page, SAVED);
+    await expect.poll(() => atHome(ann.page)).toBe(true);
+    await openChat(ann.page);
+    await (await openPanel(ann.page, "titles")).getByTestId("chat-pick").first().click();
+    await openChat(bob.page);
+    const card = bob.page.getByTestId("chat-card");
+    await expect(card).toContainText("The Matrix", SOON);
+    const strip = bob.page.getByTestId("chat-reply-strip");
+    const cdp = await bob.page.context().newCDPSession(bob.page);
+    const touch = async (dx: number, rest = 0) => {
+      const spot = await where(card);
+      const from = { x: Math.round(spot.x + 30), y: Math.round(spot.y + spot.height / 2) };
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+      if (rest) await bob.page.waitForTimeout(rest);
+      for (const part of dx ? [0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1] : []) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: Math.round(from.x + dx * part), y: from.y }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    // drawn to the right: answered, and the title is not opened
+    await touch(100);
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText("The Matrix");
+    await bob.page.waitForTimeout(300);
+    await expect(bob.page.getByTestId("title-sheet")).toHaveCount(0);
+    await bob.page.getByTestId("chat-reply-cancel").click();
+    // held: the reactions come, and the title is not opened
+    await touch(0, 900);
+    await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible();
+    await bob.page.waitForTimeout(300);
+    await expect(bob.page.getByTestId("title-sheet")).toHaveCount(0);
+  });
+
   test("on the TV: the remote goes from the box to the panel's button, along its tabs to the posters, OK sends one; the friend's remote steps from the box onto the list and the card, and OK opens the title's page", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");
@@ -2300,6 +2335,71 @@ test.describe("answering a message", () => {
     const said = (await openFriendsChatOf(bob.page, ann.page)).lines;
     expect(said).toHaveLength(2);
     expect(said[1]!.replyTo).toBe(said[0]!.id);
+  });
+});
+
+test.describe("the ticks on one's own messages", () => {
+  const ticks = (line: ReturnType<Page["getByTestId"]>) => line.getByTestId("chat-ticks");
+
+  test("on the phone: none while the friend's screens have not asked, one once one of them has the message, two once the friend opened the chat; the friend's messages have none, and an open chat sees at once (the owner, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await write(ann.page, "Are you there?");
+    await expect(lines(ann.page)).toHaveCount(1);
+    // (Bob's screen has not asked since: no tick, even after a few of Ann's looks at the chat)
+    await ann.page.waitForTimeout(4_000);
+    await expect(ticks(lines(ann.page).first())).toHaveCount(0);
+
+    // Bob's phone, on its home screen, asks about the friends: the message is on it, as the bell's number; Ann's open chat shows one tick
+    await look(bob.page);
+    await expect(badge(bob.page)).toHaveText("1");
+    const one = ticks(lines(ann.page).first());
+    await expect(one).toHaveAttribute("data-ticks", "1", SOON);
+    await expect(one).toHaveAttribute("aria-label", en["chat.received"]);
+    await expect(one).not.toHaveClass(/chat-ticks-seen/);
+
+    // he opens the chat: two ticks, lit
+    await bell(bob.page).click();
+    await bob.page.getByTestId("bell-chat-open").click();
+    await expect(lines(bob.page)).toHaveCount(1);
+    await expect(ticks(lines(bob.page).first())).toHaveCount(0);
+    await expect(one).toHaveAttribute("data-ticks", "2", SOON);
+    await expect(one).toHaveAttribute("aria-label", en["chat.seen"]);
+    await expect(one).toHaveClass(/chat-ticks-seen/);
+
+    // he answers into her open chat: his message is seen as soon as her chat has it
+    await write(bob.page, "Yes!");
+    await expect(lines(ann.page)).toHaveCount(2, SOON);
+    await expect(ticks(lines(ann.page).nth(1))).toHaveCount(0);
+    await expect(ticks(lines(bob.page).nth(1))).toHaveAttribute("data-ticks", "2", SOON);
+    // (and her first message keeps its two)
+    await expect(one).toHaveAttribute("data-ticks", "2");
+  });
+
+  test("on the TV's pages: the same ticks beside the time of one's own messages", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob", { desk: true });
+    await meet(ann, bob);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await ann.page.getByTestId("tv-chat-box").click();
+    await ann.page.keyboard.type("Sunday?");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(ticks(tvLines(ann.page).first())).toHaveCount(0);
+
+    await look(bob.page);
+    await expect(ticks(tvLines(ann.page).first())).toHaveAttribute("data-ticks", "1", SOON);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page)).toHaveCount(1);
+    await expect(ticks(tvLines(ann.page).first())).toHaveAttribute("data-ticks", "2", SOON);
+    // (beside the time, inside the message's own line)
+    const time = tvLines(ann.page).first().locator(".chat-time");
+    await expect(time.getByTestId("chat-ticks")).toHaveCount(1);
   });
 });
 
