@@ -4,6 +4,34 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.4",
+    date: "2026-11-17",
+    en: [
+      "Stickers of your own can move: make one from a GIF, a moving picture or a short video.",
+      "In a chat: hold a message to pick it; its reactions come under it, and Take back or Save is at the top.",
+      "In a chat: tap a GIF or a sticker to see it bigger.",
+      "In a chat: more room to type; the title, GIF and sticker buttons fold into a + while you write.",
+      "In a chat: the top says when your friend was last online, with the day and the time.",
+      "When a new Kino is out, an open page offers to reload; on a TV it asks once the remote has been put down.",
+    ],
+    ro: [
+      "Stickerele tale se pot mișca: faci unul dintr-un GIF, o poză animată sau un clip scurt.",
+      "În chat: ține apăsat pe un mesaj ca să-l alegi; reacțiile apar sub el, iar Retrage sau Salvează e sus.",
+      "În chat: apasă pe un GIF sau pe un sticker ca să-l vezi mai mare.",
+      "În chat: mai mult loc pentru scris; butoanele de titlu, GIF și sticker se strâng într-un + cât scrii.",
+      "În chat: sus scrie când a fost prietenul ultima dată online, cu ziua și ora.",
+      "Când apare un Kino nou, pagina deschisă îți propune să o reîncarci; pe TV, după ce lași telecomanda din mână.",
+    ],
+    it: [
+      "I tuoi sticker possono muoversi: ne fai uno da una GIF, un'immagine animata o un breve video.",
+      "In chat: tieni premuto un messaggio per sceglierlo; sotto compaiono le reazioni, e in alto Ritira o Salva.",
+      "In chat: tocca una GIF o uno sticker per vederlo più grande.",
+      "In chat: più spazio per scrivere; i pulsanti di titolo, GIF e sticker si raccolgono in un + mentre scrivi.",
+      "In chat: in alto c'è quando l'amico è stato online l'ultima volta, con giorno e ora.",
+      "Quando esce un nuovo Kino, la pagina aperta propone di ricaricarla; sulla TV, dopo che posi il telecomando.",
+    ],
+  },
+  {
     version: "0.4.3",
     date: "2026-11-17",
     en: [
