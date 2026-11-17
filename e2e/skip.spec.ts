@@ -39,6 +39,7 @@ test.describe("the Skip button", () => {
     await expect(button).toHaveAttribute("data-kind", "intro");
     await expect(button).toHaveAttribute("data-fresh", "true");
     await expect(button).toHaveAttribute("data-counting", "false"); // (skipping by itself is off until the profile turns it on)
+    await expect(button).toHaveAttribute("data-fading", "true"); // (its bar runs out over the 5 seconds it stays)
     await expect(button).toContainText("Skip intro");
     await expect.poll(() => phone.states.at(-1)?.skip?.kind).toBe("intro");
 
@@ -50,19 +51,35 @@ test.describe("the Skip button", () => {
     phone.close();
   });
 
+  test("a bright one goes after 5 seconds, its bar running out, and comes back with the controls (the owner, 17 Nov)", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await start(tv, baseURL!, episode({ skip: { intro: { start: 6, end: 60 } } }), 4);
+    const button = tv.getByTestId("tv-skip");
+    await expect(button).toHaveAttribute("data-fading", "true", { timeout: 8_000 });
+    const came = Date.now();
+    await expect(button).not.toHaveAttribute("data-fresh", /./, { timeout: 8_000 });
+    expect(Date.now() - came, "it stays about 5 seconds").toBeGreaterThan(3_500);
+    await expect(button).not.toHaveAttribute("data-fading", /./);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 12_000 });
+    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(0);
+    await tv.keyboard.press("ArrowDown"); // the controls come up, and so does it
+    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1);
+    phone.close();
+  });
+
   test("jumped into, it is quiet: OK is the picture's again, and the phone's Skip still skips", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await start(tv, baseURL!, episode({ skip: { intro: { start: 6, end: 40 } } }), 20);
     const button = tv.getByTestId("tv-skip");
     await expect(button).toBeVisible({ timeout: 8_000 });
     await expect(button).not.toHaveAttribute("data-fresh", /./);
-    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 12_000 }); // with the controls gone, a quiet button is see-through, not gone
-    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(0.7);
-    await expect(button).toBeVisible();
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 12_000 }); // with the controls gone, a quiet button goes (the owner, 17 Nov)
+    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(0);
 
     await tv.keyboard.press("Enter");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     await expect(button).toBeVisible(); // (OK paused the picture: it did not skip)
+    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1); // (and back with the controls)
 
     phone.cmd({ type: "SKIP_SEGMENT" });
     await expect(button).toHaveCount(0);

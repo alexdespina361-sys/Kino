@@ -250,6 +250,8 @@ export const en = {
   "library.kindMovie": "Movie",
   "library.unavailable": "Not available yet",
   "library.unavailableFilm": "No source had this film the last times it was tried. You can try again.",
+  "library.aboutMore": "Show more…",
+  "library.aboutLess": "Show less",
   "library.kindSeries": "Series",
 
   /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */

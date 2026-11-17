@@ -364,6 +364,7 @@
 :root[data-ui="polish"] .tv-detail-text { gap: calc(var(--em) * 0.6); padding: 0 var(--page-r) var(--detail-b) var(--gutter); }
 :root[data-ui="polish"] .tv-detail-title { font-size: var(--fs-7); font-weight: 700; line-height: 1.08; letter-spacing: -0.02em; }
 :root[data-ui="polish"] .tv-detail-about { margin-top: calc(var(--em) * 0.4); font-size: var(--fs-3); line-height: 1.45; color: var(--text-2); }
+:root[data-ui="polish"] .tv-detail .about-more { font-size: var(--fs-3); color: var(--text-1, #fff); }
 :root[data-ui="polish"] .tv-detail .tv-hero-actions { margin-top: calc(var(--em) * 1); }
 :root[data-ui="polish"] .tv-detail .tv-hero-button { font-size: var(--fs-3); }
 /* Close is the pill that Back is on the pages that fill the screen, in the same corner: level with the library's corner buttons, at the same distance from the edges. */

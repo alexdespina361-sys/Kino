@@ -322,6 +322,18 @@ test.describe("a phone used as the screen, held upright", () => {
     return tv;
   }
 
+  test("with the keyboard open in the search (the page made lower than 480 px), the page stays the phone's: the bar at the foot, the menu not down the left (the owner, 17 Nov)", async ({ browser }) => {
+    const size = SIZES[1]!;
+    const tv = await screen(browser, size, "en-US");
+    await tv.getByTestId("rail-search").tap();
+    await expect(tv.locator(".tv-rail[data-bar]")).toHaveCount(1);
+    await tv.setViewportSize({ width: size.width, height: 360 }); // (what the Android app's page is with the keyboard up)
+    await expect(tv.locator(".tv-rail[data-bar]"), "still the phone's bar").toHaveCount(1);
+    const bar = (await tv.getByTestId("tv-rail").boundingBox())!;
+    expect(bar.width, "along the foot, not down the left").toBeGreaterThanOrEqual(size.width - 1);
+    await tv.setViewportSize({ width: size.width, height: size.height });
+  });
+
   for (const { size, locale, name } of CASES) {
     test(`at ${name}: the places are a bar at the foot, the sections a row of buttons over the titles, and everything fits a thumb and an eye`, async ({ browser }) => {
       const tv = await screen(browser, size, locale);

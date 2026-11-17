@@ -4,6 +4,34 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.14",
+    date: "2026-11-17",
+    en: [
+      "A long description on a title's page ends in “Show more…”, which shows the rest.",
+      "The Skip intro and Skip credits button goes away after 5 seconds, its bar running out meanwhile; it comes back with the player's controls.",
+      "On a phone, the categories show their posters, as on the TV.",
+      "In a chat, the ⋮ menu is a little larger.",
+      "On a phone, opening the keyboard in the search no longer turns the page into the TV's.",
+      "The app's icon is Kino's new logo.",
+    ],
+    ro: [
+      "O descriere lungă pe pagina unui titlu se termină cu „Arată mai mult…”, care arată restul.",
+      "Butonul Sari peste intro sau peste generic dispare după 5 secunde, cu bara lui golindu-se între timp; revine odată cu comenzile playerului.",
+      "Pe telefon, categoriile își arată afișele, ca pe televizor.",
+      "Într-un chat, meniul ⋮ e puțin mai mare.",
+      "Pe telefon, deschiderea tastaturii în căutare nu mai transformă pagina în cea de televizor.",
+      "Pictograma aplicației este noul logo Kino.",
+    ],
+    it: [
+      "Una descrizione lunga nella pagina di un titolo finisce con “Mostra di più…”, che mostra il resto.",
+      "Il pulsante Salta sigla o Salta titoli di coda sparisce dopo 5 secondi, con la sua barra che si svuota nel frattempo; torna con i comandi del player.",
+      "Sul telefono, le categorie mostrano le locandine, come sulla TV.",
+      "In una chat, il menu ⋮ è un po' più grande.",
+      "Sul telefono, aprire la tastiera nella ricerca non trasforma più la pagina in quella della TV.",
+      "L'icona dell'app è il nuovo logo di Kino.",
+    ],
+  },
+  {
     version: "0.4.13",
     date: "2026-11-17",
     en: [

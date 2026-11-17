@@ -739,6 +739,13 @@
 .hud-skip[data-counting="true"],
 .hud-skip:hover,
 .hud-skip:focus-within { opacity: 1; }
+/* A Skip button that is no longer new goes (the owner, 17 Nov: after 5 seconds), and comes back with the controls. The Next episode button stays. */
+/* (Not taken out: the remote's Up still reaches it, and it shows again as it does.) */
+.hud-skip:not([data-kind="next"]):not([data-fresh]):not([data-counting="true"]) { opacity: 0; pointer-events: none; }
+.tv[data-hud="visible"] .hud-skip:not([data-kind="next"]):not([data-fresh]):not([data-counting="true"]),
+.hud-skip:not([data-kind="next"]):not([data-fresh]):not([data-counting="true"]):focus-within { opacity: 1; pointer-events: auto; }
+/* (Going, its bar runs out: a little quieter than the fill that acts.) */
+.hud-skip[data-fading] .hud-skip-fill { opacity: 0.55; }
 @keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; } }
 .hud-skip-btn {
   position: relative;
@@ -1173,6 +1180,24 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* (Shown whole after "Show more…": the clamps of the smaller screens and of the polish give way too.) */
+:root .tv-detail-about.is-open { display: block; -webkit-line-clamp: unset !important; overflow: visible; }
+.tv-detail .about-more {
+  display: block;
+  align-self: flex-start;
+  margin: 0.2em 0 0;
+  padding: 0.15em 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  font: inherit;
+  font-size: 1.4em;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.tv-detail .about-more:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 4px; }
 .tv-detail .tv-hero-actions { flex-wrap: wrap; margin-top: 0.8em; }
 .tv-detail .tv-hero-button { font-size: 1.7em; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; } /* "Remove from <a list of your own>" can be longer than a small screen is wide */
 .tv-detail .tv-detail-close { position: absolute; top: 1.8em; right: 3.4em; z-index: 1; font-size: 1.3em; } /* (3.4 of its own 1.3em: the 4.4em that the library's corner buttons are from the edge) */

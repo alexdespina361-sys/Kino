@@ -122,10 +122,11 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-more-wrap { position: relative; flex: none; margin-left: auto; }
 .chat-tool.chat-more { justify-content: center; width: 40px; padding: 0; font-size: 1rem; }
 /* The ⋮'s menu: under it, at its right, over the messages (the sheet's own layer). */
-.chat-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; flex-direction: column; min-width: 13rem; max-width: calc(100vw - 40px); padding: 6px; border-radius: 14px; background: var(--surface-2, #222227); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.6); }
+/* (A little larger than it was: the owner, 17 Nov.) */
+.chat-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; flex-direction: column; min-width: 15rem; max-width: calc(100vw - 32px); padding: 8px; border-radius: 16px; background: var(--surface-2, #222227); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.6); }
 .chat-menu[hidden] { display: none; }
-.chat-menu button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 0.95rem; font-weight: 600; text-align: left; cursor: pointer; }
-.chat-menu button svg { flex: none; font-size: 1.15em; opacity: 0.8; }
+.chat-menu button { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 10px 14px; border: 0; border-radius: 11px; background: transparent; color: var(--text); font: inherit; font-size: 1.05rem; font-weight: 600; text-align: left; cursor: pointer; }
+.chat-menu button svg { flex: none; font-size: 1.2em; opacity: 0.8; }
 .chat-menu button:hover, .chat-menu button:focus-visible { background: rgba(255, 255, 255, 0.08); outline: none; }
 .chat-menu [data-testid="chat-report"] { color: #ffb4b4; }
 /* The search (ChatSearch.tsx): the box as wide as the row allows, what it found, and the buttons that go through it. */
@@ -419,7 +420,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-more .chat-act-words { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .tv-chat-menu { position: absolute; top: calc(100% + 0.5em); right: 0; display: flex; flex-direction: column; min-width: 20em; padding: 0.5em; border-radius: 0.9em; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1em 2.4em rgba(0, 0, 0, 0.6); }
 .tv-chat-menu[hidden] { display: none; }
-.tv-chat-menu button { display: flex; align-items: center; gap: 0.6em; padding: 0.6em 0.8em; border-radius: 0.6em; background: transparent; color: #fff; font-size: 1.35em; font-weight: 600; text-align: left; white-space: nowrap; }
+.tv-chat-menu button { display: flex; align-items: center; gap: 0.6em; padding: 0.65em 0.85em; border-radius: 0.6em; background: transparent; color: #fff; font-size: 1.45em; font-weight: 600; text-align: left; white-space: nowrap; }
 .tv-chat-menu button svg { flex: none; opacity: 0.8; }
 .tv-chat-menu button:hover { background: rgba(255, 255, 255, 0.08); }
 .tv-chat-menu button:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
@@ -810,7 +811,7 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
      than the narrowest phone. As wide as what it says is said outright: it hangs from the ⋯, which is a button wide, and a box that may break its words
      anywhere was made no wider than that, a letter to a line: the owner, 17 Nov.) */
   .tv-chat-menu { min-width: 0; width: max-content; max-width: calc(100vw - 2rem); }
-  .tv-chat-menu button { font-size: 1.25em; white-space: normal; overflow-wrap: break-word; }
+  .tv-chat-menu button { font-size: 1.38em; padding: 0.7em 0.9em; white-space: normal; overflow-wrap: break-word; }
   .tv .chat-lines { width: 100%; max-height: 38vh; font-size: 1.5em; }
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
