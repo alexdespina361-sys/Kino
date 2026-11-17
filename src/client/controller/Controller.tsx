@@ -20,6 +20,7 @@ import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
+import { GetTheAppStrip } from "../app/GetTheApp";
 import { PhoneChat } from "../chat/PhoneChat";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
@@ -667,6 +668,9 @@ export function Controller() {
           </div>
         )}
       </header>
+
+      {/* (On a phone's browser with Android: the line that says there is an app, in the page under its top, until it is put away. The You page has the card instead. See app/GetTheApp.tsx.) */}
+      {!remoteOpen && tabs.tab !== "you" && <GetTheAppStrip />}
 
       {away && (
         <section className="away" data-testid="tv-away">

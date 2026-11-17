@@ -1,0 +1,109 @@
+/* The Android app, offered on a phone's browser (app/GetTheApp.tsx): the card on the profile's page, and the line under the top of the other pages. */
+.get-app {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgb(229 9 20 / 0.2), rgb(255 255 255 / 0.05) 70%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  text-align: left;
+}
+.get-app-icon { flex: none; width: 48px; height: 48px; border-radius: 12px; }
+.get-app-words { display: grid; gap: 6px; min-width: 0; }
+.get-app h2 { margin: 0; font-size: 1.05rem; line-height: 1.25; font-weight: 700; }
+.get-app p { margin: 0; font-size: 0.92rem; line-height: 1.4; color: rgb(255 255 255 / 0.85); overflow-wrap: anywhere; }
+.get-app .get-app-small { font-size: 0.8rem; color: rgb(255 255 255 / 0.62); }
+.get-app-button {
+  justify-self: start;
+  display: inline-grid;
+  place-items: center;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--accent, #e50914);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.get-app-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* On the TV's pages held in the hand (the profile's page of a phone that is the screen): under the head, as wide as it. (A class, not :has(): the build is for
+   Chrome 94, and :has() came in 105.) */
+.tv .tv-profile-head.with-app { flex-wrap: wrap; }
+.tv .get-app.in-profile-head { flex: 1 0 100%; margin-top: 4px; }
+
+/* The line: in the page under its top, as wide as the page's words, pushing what is under it down (never over the top's buttons: the judge, 17 Nov). */
+.get-app-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 6px 8px 10px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgb(229 9 20 / 0.22), rgb(255 255 255 / 0.06) 75%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  color: #fff;
+  font: 600 14px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  text-align: left;
+  animation: get-app-strip-in 0.18s ease-out;
+}
+.get-app-strip-icon { flex: none; width: 32px; height: 32px; border-radius: 8px; }
+.get-app-strip p { display: grid; flex: 1; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.get-app-strip p b { font-weight: 700; }
+.get-app-strip p span { font-weight: 500; font-size: 13px; color: rgb(255 255 255 / 0.7); }
+.get-app-strip-get {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--accent, #e50914);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.get-app-strip-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(255 255 255 / 0.75);
+  cursor: pointer;
+}
+.get-app-strip-get:focus-visible,
+.get-app-strip-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Under the library's top, at the page's edges (polish/tv-phone.css's gutter). */
+.tv .get-app-strip.in-browse { margin: 6px var(--edge-r, 16px) 6px var(--gutter, 16px); }
+/* A narrow phone keeps its width for the words (the icon is the page's own logo anyway). */
+@media (max-width: 399px) {
+  .get-app-strip-icon { display: none; }
+  .get-app-strip-get { padding: 0 14px; }
+}
+/* A screen held sideways has no height to give for it: the rows would be cut. (Sideways only: a keyboard that shrinks an upright page must not take it away and
+   bring it back, the page jumping both ways. GetTheApp.tsx `SIDEWAYS` is the same rule: it does not come in there either.) */
+@media (max-height: 499px) and (orientation: landscape) {
+  .get-app-strip { display: none; }
+}
+@keyframes get-app-strip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .get-app-strip { animation: none; }
+}

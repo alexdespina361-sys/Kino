@@ -3,6 +3,7 @@ import { ratingsShown, tagLabel, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
+import { GetTheApp, useAppRelease } from "../app/GetTheApp";
 import { signedInLine } from "../account/google";
 import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
@@ -142,6 +143,8 @@ export function AccountScreen({
   const friends = useFriends();
   const feedback = useFeedbackEntry();
   const news = useNews();
+  /** The Android app, on a phone's browser with Android (app/GetTheApp.tsx): a card on the front page, for a guest too. */
+  const release = useAppRelease();
   /** An account that has no Google account yet is offered to connect one, here on its profile and not only on the Security page. */
   const canConnectGoogle = useCanConnectGoogle();
   const { settings } = useProfileData();
@@ -362,6 +365,7 @@ export function AccountScreen({
           </section>
           {/* (Who they are to their friends, to give out: people did not know their own name#tag. Only where friends are on: it is for nothing else.) */}
           {friends.on && profile.tag !== undefined && <YourTag label={tagLabel(profile.name, profile.tag)} testId="account-tag" help={false} />}
+          {release && <GetTheApp release={release} />}
           <div className="menu-groups">
             <nav className="menu">
               {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={guarded("picker")} testId="menu-switch" />}
@@ -411,6 +415,7 @@ export function AccountScreen({
             {feedbackRow}
             {newsRow}
           </nav>
+          {release && <GetTheApp release={release} />}
           <p className="muted small center">{t("account.guestNote")}</p>
         </div>
       )}
