@@ -32,6 +32,21 @@ describe("the chat on the TV", () => {
     expect(read({ session: fakeSession({ state: { lines, muted: true } }) })).toContain("Muted");
   });
 
+  it("has Search and the chat's GIFs and stickers behind the ⋯ where a message can be pressed, and not on a TV that is only a remote", () => {
+    const menuOf = (html: string) => html.slice(html.indexOf('data-testid="tv-chat-menu"'));
+    const pointer = menuOf(read({ desk: true, onMedia: () => {} }));
+    for (const id of ["tv-chat-search-open", "tv-chat-media-open"]) expect(has(pointer, id), id).toBe(true);
+    // (in its order: after taking back, before muting)
+    expect(pointer.indexOf("tv-chat-takeback")).toBeLessThan(pointer.indexOf("tv-chat-search-open"));
+    expect(pointer.indexOf("tv-chat-media-open")).toBeLessThan(pointer.indexOf("tv-chat-mute"));
+    const remote = menuOf(read());
+    for (const id of ["tv-chat-search-open", "tv-chat-media-open"]) expect(has(remote, id), id).toBe(false);
+    // (the TV page as a whole: the gallery and the search come only with a pointer)
+    const tv = (desk: boolean) => renderToStaticMarkup(createElement(ChatTv, { name: "Sam", session: fakeSession({ state: { lines } }), report: fakeReport(), desk, onClose: () => {}, now: NOW }));
+    expect(has(tv(true), "tv-chat-media-open")).toBe(true);
+    expect(has(tv(false), "tv-chat-media-open")).toBe(false);
+  });
+
   it("shows a friend's GIF as the picture, and on a child's profile as a line of words, without asking KLIPY for it", () => {
     const gif = "https://static.klipy.com/ii/abc/def/sm/x.webp";
     const withGif = { session: fakeSession({ state: { lines: [line(1, false, gif)] } }) };

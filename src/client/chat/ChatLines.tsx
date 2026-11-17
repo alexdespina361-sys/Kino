@@ -10,6 +10,7 @@ import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
 import { ReactBar, Reactions } from "./Reactions";
 import { QuoteBlock } from "./Reply";
+import { marked } from "./search";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
@@ -53,7 +54,20 @@ export interface ChatLinesProps {
    * saving a friend's into one's own collection, `has` saying which are there already. Without it a message of one says that it is not available.
    */
   personal?: PersonalLines | undefined;
+  /**
+   * A search of the chat (ChatSearch.tsx, search.ts): the messages found are lit, their words that were searched for marked, and the one shown (`current`)
+   * brought into view each time it changes.
+   */
+  found?: SearchFound | undefined;
+  /** A message to bring into view and light for a moment, as a quote's does (the gallery's): again each time `seq` changes. */
+  showing?: { id: number; seq: number } | null | undefined;
   testId?: string;
+}
+
+export interface SearchFound {
+  query: string;
+  ids: ReadonlySet<number>;
+  current: number | null;
 }
 
 export interface PersonalLines {
@@ -96,7 +110,7 @@ export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boole
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, found: search, showing, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -260,10 +274,18 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   // The message a quote names, brought into view and lit for a moment (a quote pressed). One no longer in the chat has no quote to press.
   const shownTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(shownTimer.current), []);
-  const showQuoted = (id: number) => {
-    const item = box.current?.querySelector<HTMLElement>(`li[data-line="${id}"]`);
-    if (!item) return;
+  /** A message brought into view: in the middle of the list, smoothly where motion is welcome. (The list is then read, and no longer kept at its end.) */
+  const bringIntoView = (id: number): HTMLElement | null => {
+    const item = box.current?.querySelector<HTMLElement>(`li[data-line="${id}"]`) ?? null;
+    if (!item) return null;
+    // (Not kept at the end from here: a picture of the list that loads, or a size that changes, would else take it back there as it goes.)
+    atEnd.current = false;
     item.scrollIntoView({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    return item;
+  };
+  const showQuoted = (id: number) => {
+    const item = bringIntoView(id);
+    if (!item) return;
     for (const lit of box.current?.querySelectorAll<HTMLElement>("li[data-shown]") ?? []) delete lit.dataset.shown;
     item.dataset.shown = "true";
     window.clearTimeout(shownTimer.current);
@@ -271,6 +293,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       if (item.isConnected) delete item.dataset.shown;
     }, SHOWN_MS);
   };
+  // The search's message shown, brought into view each time it changes (Earlier, Later, what is typed); the gallery's, lit as a quote's is, each time one is pressed.
+  const current = search?.current ?? null;
+  useEffect(() => {
+    if (current !== null) bringIntoView(current);
+  }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
+  const showingSeq = showing?.seq;
+  useEffect(() => {
+    if (showing) showQuoted(showing.id);
+  }, [showingSeq]); // eslint-disable-line react-hooks/exhaustive-deps
   /**
    * A press beside the messages lets the selection go, as in any messenger: not the press that ended a hold, wherever it ends. The message held can move
    * from under a mouse while it is held (the reactions come under it, and a list at its end stays at its end), and the press then ends beside it, on its
@@ -495,11 +526,13 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
             }
             if (canPress) press();
           };
+          const hit = search?.ids.has(line.id) === true;
           const bubble = (text: ReactNode) => (
             <>
               {showWriter && <span className="chat-writer">{line.mine ? t("chat.you") : name}</span>}
               <span className="chat-text" data-testid="chat-text">
-                {text}
+                {/* (A message the search found has the words searched for marked, as they were written.) */}
+                {hit && search && typeof text === "string" ? <Marked text={text} query={search.query} /> : text}
               </span>
               <span className="chat-time">{stampOf(line.at, language)}</span>
             </>
@@ -542,7 +575,14 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
             </>
           );
           return (
-            <li key={line.id} className={`chat-line ${line.mine ? "chat-mine" : "chat-theirs"}`} data-testid="chat-line" data-line={line.id} data-mine={line.mine}>
+            <li
+              key={line.id}
+              className={`chat-line ${line.mine ? "chat-mine" : "chat-theirs"}`}
+              data-testid="chat-line"
+              data-line={line.id}
+              data-mine={line.mine}
+              {...(hit ? { "data-found": search?.current === line.id ? "current" : "true" } : {})}
+            >
               {startsDay(lines, index) && (
                 <span className="chat-day" data-testid="chat-day">
                   {dayOf(line.at, now, language)}
@@ -565,6 +605,24 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       </ol>
       {enlarged && enlargedThere && <PictureView src={enlarged.src} alt={enlarged.alt} small={enlarged.small} onClose={() => setEnlarged(null)} />}
     </div>
+  );
+}
+
+/** A message's words with those a search looked for marked (search.ts `marked`). */
+function Marked({ text, query }: { text: string; query: string }) {
+  const pieces = useMemo(() => marked(text, query), [text, query]);
+  return (
+    <>
+      {pieces.map((piece, at) =>
+        piece.hit ? (
+          <mark key={at} className="chat-found-words" data-testid="chat-found-words">
+            {piece.text}
+          </mark>
+        ) : (
+          piece.text
+        ),
+      )}
+    </>
   );
 }
 

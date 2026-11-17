@@ -96,9 +96,43 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 /* ------------------------------ the phone ------------------------------ */
 
 .chat { display: flex; flex-direction: column; gap: 10px; height: min(66vh, 540px); min-height: 0; }
-.chat-tools { display: flex; flex: none; flex-wrap: wrap; gap: 8px; }
-/* (Under the sheet's title: whether the friend is online, green as their dot is, else when they last were.) */
-.chat-presence { flex: none; margin: -4px 0 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+/* One row under the sheet's title: when the friend was last online (or the search), what can be done with the message selected, and the ⋮ at the end. */
+.chat-tools { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* (Whether the friend is online, green as their dot is, else when they last were; and "Muted" when they are.) */
+.chat-presence { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.chat-more-wrap { position: relative; flex: none; margin-left: auto; }
+.chat-tool.chat-more { justify-content: center; width: 40px; padding: 0; font-size: 1rem; }
+/* The ⋮'s menu: under it, at its right, over the messages (the sheet's own layer). */
+.chat-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; flex-direction: column; min-width: 13rem; max-width: calc(100vw - 40px); padding: 6px; border-radius: 14px; background: var(--surface-2, #222227); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.6); }
+.chat-menu[hidden] { display: none; }
+.chat-menu button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 0.95rem; font-weight: 600; text-align: left; cursor: pointer; }
+.chat-menu button svg { flex: none; font-size: 1.15em; opacity: 0.8; }
+.chat-menu button:hover, .chat-menu button:focus-visible { background: rgba(255, 255, 255, 0.08); outline: none; }
+.chat-menu [data-testid="chat-report"] { color: #ffb4b4; }
+/* The search (ChatSearch.tsx): the box as wide as the row allows, what it found, and the buttons that go through it. */
+.chat-search { display: flex; flex: 1 1 14rem; align-items: center; gap: 4px; min-width: 0; min-height: 40px; padding: 0 2px 0 12px; border-radius: 999px; background: var(--surface-2); }
+.chat-search-icon { flex: none; color: var(--muted); font-size: 1rem; line-height: 0; }
+.chat-search-box { flex: 1 1 auto; min-width: 3rem; height: 40px; padding: 0 4px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 0.95rem; outline: none; }
+.chat-search-box::-webkit-search-cancel-button { display: none; }
+.chat-search-count { flex: none; color: var(--muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.chat-search-step { display: grid; flex: none; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text); font-size: 1.1rem; cursor: pointer; }
+.chat-search-step:disabled { opacity: 0.35; cursor: default; }
+.chat-search-step:focus-visible, .chat-search:focus-within { outline: 2px solid var(--text); outline-offset: 1px; }
+.chat-search-step:focus-visible { outline-offset: -2px; }
+/* What it found: each message lit at its edge, the one shown more, and the words looked for marked as a highlighter would. (In the highlighter's yellow, not
+   the site's red: one's own messages are red, and a red ring around them was not seen, the screenshots, 17 Nov.) */
+.chat-line[data-found] > .chat-bubble { box-shadow: 0 0 0 2px rgba(255, 213, 74, 0.4); }
+.chat-line[data-found="current"] > .chat-bubble { box-shadow: 0 0 0 3px #ffd54a; }
+.chat-found-words { padding: 0 1px; border-radius: 3px; background: #ffd54a; color: #111; }
+/* The chat's GIFs and stickers (ChatMedia.tsx): small squares, four or more to a row, the newest first. */
+.chat-media { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.chat-media li { min-width: 0; }
+.chat-media-tile { display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 10px; background: var(--surface-2); overflow: hidden; cursor: pointer; }
+.chat-media-tile img { width: 100%; height: 100%; object-fit: cover; }
+.chat-media-tile[data-kind="sticker"] img, .chat-media-tile[data-kind="personal"] img { padding: 8px; box-sizing: border-box; object-fit: contain; }
+.chat-media-tile[data-gone] { background: repeating-linear-gradient(135deg, var(--surface-2), var(--surface-2) 6px, rgba(255, 255, 255, 0.04) 6px, rgba(255, 255, 255, 0.04) 12px); }
+.chat-media-tile:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.chat-media-none { text-align: center; }
 .chat-presence[data-online="true"] { color: #3ddc84; }
 .chat-tool {
   display: inline-flex;
@@ -305,6 +339,22 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-menu button:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 .tv-chat-menu [data-testid="tv-chat-report"] { color: #ffb4b4; }
 .tv-chat-menu [data-testid="tv-chat-report"]:focus-visible { color: #b3261e; }
+/* The search on the TV's pages (ChatSearch.tsx): the head's width, in place of the friend while it is open, drawn as the TV's buttons are. */
+.tv-chat-head .chat-search { flex: 1 1 auto; gap: 0.3em; min-height: 3.4em; padding: 0 0.3em 0 1em; background: rgba(255, 255, 255, 0.08); font-size: 1em; }
+.tv-chat-head .chat-search:focus-within { outline: 0.15em solid rgba(255, 255, 255, 0.85); outline-offset: 0; }
+.tv-chat-head .chat-search-icon { color: rgba(255, 255, 255, 0.6); font-size: 1.5em; }
+.tv-chat-head .chat-search-box { min-width: 4em; height: 2.4em; color: #fff; font-size: 1.4em; }
+.tv-chat-head .chat-search-count { color: rgba(255, 255, 255, 0.65); font-size: 1.2em; }
+.tv-chat-head .chat-search-step { width: 2.8em; height: 2.8em; color: #fff; font-size: 1.5em; }
+.tv-chat-head .chat-search-step:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.tv-chat-head .chat-search-step:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
+/* The chat's GIFs and stickers on a page of their own (ChatMedia.tsx `ChatMediaTv`). */
+.tv-chat-media-list { width: min(100%, 62em); max-height: 62vh; padding: 0.4em; overflow-y: auto; }
+.tv-chat-media-list .chat-media { grid-template-columns: repeat(auto-fit, 9em); justify-content: center; gap: 0.6em; } /* (a few in the middle, under the name) */
+.tv-chat-media-list .chat-media-tile { border-radius: 0.8em; background: rgba(255, 255, 255, 0.08); }
+.tv-chat-media-list .chat-media-tile:hover { box-shadow: inset 0 0 0 0.15em rgba(255, 255, 255, 0.35); }
+.tv-chat-media-list .chat-media-tile:focus-visible { outline: 0.22em solid #fff; outline-offset: 0.15em; }
+.tv-chat-media-list .chat-media-none { color: rgba(255, 255, 255, 0.7); font-size: 1.4em; }
 .tv-chat-window > .chat-lines { flex: 1 1 auto; width: 100%; max-height: none; min-height: 0; padding: 1em 1.4em; font-size: 1.6em; }
 .tv-chat-window .chat-bubble { max-width: 74%; }
 .tv-chat-window .chat-theirs .chat-bubble { background: #2a2a31; }
@@ -571,9 +621,10 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   opacity: 0.55;
 }
 .chat-line[data-swipe="ready"] > .chat-bubble::before { opacity: 1; transform: scale(1.12); }
+/* (A message shown - a quote or the gallery pressed - is lit in white for a moment: the site's red was not seen around one's own red messages.) */
 .chat-line[data-shown] > .chat-bubble { animation: chat-shown 1.4s ease-out; }
-@keyframes chat-shown { 0%, 40% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
-@media (prefers-reduced-motion: reduce) { .chat-line[data-swipe] > :not(.chat-day) { transition: none; } .chat-line[data-shown] > .chat-bubble { animation: none; outline: 2px solid var(--accent); } }
+@keyframes chat-shown { 0%, 40% { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9); } 100% { box-shadow: 0 0 0 3px transparent; } }
+@media (prefers-reduced-motion: reduce) { .chat-line[data-swipe] > :not(.chat-day) { transition: none; } .chat-line[data-shown] > .chat-bubble { animation: none; outline: 2px solid rgba(255, 255, 255, 0.9); } }
 
 /* A hand-held screen: the list takes the width, and stacks above the buttons. */
 @media (max-width: 899px) {
@@ -610,6 +661,11 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv-sticker-screen .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: 100%; }
   .tv-sticker-screen .tv-chat-sticker-list.with-yours .chat-stickers-head { width: 100%; margin: 0.3em auto 0.1em; }
   .tv-sticker-screen .chat-stickers-head { width: 100%; font-size: 1em; }
+  /* The gallery (ChatMedia.tsx): the same whole screen, the squares one list that scrolls under the arrow and the name. */
+  .tv-media-screen .tv-chat-media-list { flex: 1 1 auto; width: 100%; max-height: none; min-height: 0; padding: 0.6em 0.6em max(1.2em, env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+  .tv-media-screen .chat-media { grid-template-columns: repeat(4, minmax(0, 1fr)); justify-content: stretch; gap: 0.45em; }
+  .tv-chat-screen .tv-chat-head[data-searching] { padding-left: 0.8em; } /* (the search clear of the screen's edge, as the arrow was) */
+  .tv-media-screen .chat-media-none { margin-top: 2em; }
 
   /*
    * The chat itself on a hand-held screen is the whole screen, as in any messenger (the owner, 16 Nov): the friend at the top with the arrow back, the

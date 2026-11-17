@@ -186,6 +186,14 @@ async function write(page: Page, text: string) {
   await page.getByTestId("chat-send").click();
 }
 
+/** The phone chat's ⋮ opened, and one of what is behind it pressed: Search, GIFs and stickers, Mute, Report (the owner, 17 Nov: "the three dots vertical"). */
+async function fromMenu(page: Page, testId: string) {
+  await page.getByTestId("chat-more").click();
+  await expect(page.getByTestId("chat-menu")).toBeVisible();
+  await page.getByTestId("chat-menu").getByTestId(testId).click();
+  await expect(page.getByTestId("chat-menu")).toBeHidden();
+}
+
 const bell = (page: Page) => page.getByTestId("bell-button");
 const badge = (page: Page) => page.getByTestId("bell-badge");
 const lines = (page: Page) => page.getByTestId("chat-line");
@@ -328,10 +336,11 @@ test.describe("the chat on the phone", () => {
     await expect(ann.page.getByTestId("chat-empty")).toBeVisible();
     await expect(lines(bob.page)).toHaveCount(0, SOON);
 
-    // Bob mutes her: his chat says so, hers says nothing of it
-    await bob.page.getByTestId("chat-mute").click();
+    // Bob mutes her (behind the ⋮): his chat says so, at the top too, and hers says nothing of it
+    await fromMenu(bob.page, "chat-mute");
     await expect(bob.page.getByTestId("chat-muted")).toContainText(say(en["chat.muted"], { name: ann.name }));
     await expect(bob.page.getByTestId("chat-mute")).toHaveText(en["chat.unmute"]);
+    await expect(bob.page.getByTestId("chat-presence")).toContainText(en["chat.mutedShort"]);
     await write(ann.page, "Are you there?");
     await expect(lines(ann.page)).toHaveCount(1);
     await expect(ann.page.getByTestId("chat-muted")).toHaveCount(0);
@@ -353,9 +362,10 @@ test.describe("the chat on the phone", () => {
     // Bob opens the chat again: both messages are there, and Unmute puts it back
     await openChat(bob.page);
     await expect(lines(bob.page)).toHaveCount(2);
-    await bob.page.getByTestId("chat-mute").click();
+    await fromMenu(bob.page, "chat-mute");
     await expect(bob.page.getByTestId("chat-muted")).toHaveCount(0);
     await expect(bob.page.getByTestId("chat-mute")).toHaveText(en["chat.mute"]);
+    await expect(bob.page.getByTestId("chat-presence")).not.toContainText(en["chat.mutedShort"]);
   });
 
   test("friends can message a profile with no switch for it (the settings say what a chat is kept as); a friend who turned it off before is not written to (the chat says so, in a plain line), has the switch to turn it on, and the box comes back when it is on again", async ({ browser }) => {
@@ -416,7 +426,7 @@ test.describe("the chat on the phone", () => {
 
     await openChat(bob.page);
     await expect(lines(bob.page)).toHaveCount(22);
-    await bob.page.getByTestId("chat-report").click();
+    await fromMenu(bob.page, "chat-report");
     const sheet = bob.page.getByTestId("chat-report-sheet");
     await expect(sheet).toBeVisible();
     await expect(sheet).toContainText(say(en["chat.reportLead"], { name: ann.name }));
@@ -432,7 +442,7 @@ test.describe("the chat on the phone", () => {
     expect(await reportsAbout(bob.page, bob.name)).toHaveLength(0);
 
     // the button sends what was shown
-    await bob.page.getByTestId("chat-report").click();
+    await fromMenu(bob.page, "chat-report");
     await expect(shown).toHaveCount(CHAT_REPORT_LINES);
     await bob.page.getByTestId("chat-report-send").click();
     await expect(bob.page.getByTestId("chat-report-sent")).toHaveText(en["chat.reportSent"]);
@@ -500,11 +510,23 @@ test.describe("the chat on the phone", () => {
     await expect(bob.page.getByTestId("chat-privacy")).toBeVisible();
     // (under the sheet's title: when she was last online, by the day and the clock: "Ultima dată online 7 nov. la 13:10")
     await expect(bob.page.getByTestId("chat-presence")).toHaveText(new RegExp(`^${ro["chat.lastOnlineAt"].replace("{day}", ".+").replace("{time}", "\\d\\d[:.]\\d\\d")}$`));
-    await fit(["chat-sheet", "chat", "chat-presence", "chat-empty", "chat-privacy", "chat-mute", "chat-report", "chat-compose", "chat-input", "chat-send"], "the empty chat");
+    await fit(["chat-sheet", "chat", "chat-presence", "chat-more", "chat-empty", "chat-privacy", "chat-compose", "chat-input", "chat-send"], "the empty chat");
+    // (the ⋮'s menu, open: each of its four on the screen, none over another)
+    await bob.page.getByTestId("chat-more").click();
+    await fit(["chat-menu", "chat-search-open", "chat-media-open", "chat-mute", "chat-report"], "the ⋮'s menu");
     for (const width of widths) {
       await bob.page.setViewportSize({ width, height: 700 });
       await expect.poll(async () => apart(await where(bob.page.getByTestId("chat-mute")), await where(bob.page.getByTestId("chat-report"))), { message: `Mute and Report, ${width} wide` }).toBe(true);
+      await expect.poll(async () => apart(await where(bob.page.getByTestId("chat-search-open")), await where(bob.page.getByTestId("chat-media-open"))), { message: `Search and GIFs and stickers, ${width} wide` }).toBe(true);
     }
+    await bob.page.keyboard.press("Escape"); // (the menu, and only it)
+    await expect(bob.page.getByTestId("chat-menu")).toBeHidden();
+    await expect(bob.page.getByTestId("chat")).toBeVisible();
+    // (the search, open, on the narrowest phone too)
+    await fromMenu(bob.page, "chat-search-open");
+    await fit(["chat-search", "chat-search-box", "chat-search-older", "chat-search-newer", "chat-search-close"], "the search");
+    await bob.page.keyboard.press("Escape"); // (the search, and only it)
+    await expect(bob.page.getByTestId("chat-search")).toHaveCount(0);
     await bob.page.keyboard.press("Escape");
     await backHome(bob.page);
 
@@ -517,13 +539,13 @@ test.describe("the chat on the phone", () => {
     await fit(["bell-sheet", "bell-waiting", "bell-chat-item"], "the bell");
     await bob.page.getByTestId("bell-chat-item").getByTestId("bell-chat-open").click();
     await expect(lines(bob.page)).toHaveCount(1);
-    await fit(["chat-sheet", "chat", "chat-mute", "chat-report", "chat-compose", "chat-input", "chat-send"], "the chat");
+    await fit(["chat-sheet", "chat", "chat-more", "chat-compose", "chat-input", "chat-send"], "the chat");
     await expect(lines(bob.page).first().getByTestId("chat-text")).toHaveText(LONG);
     const overflow = await bob.page.getByTestId("chat-lines").evaluate((box) => [...box.querySelectorAll<HTMLElement>('[data-testid="chat-text"], .chat-bubble')].filter((part) => part.scrollWidth > part.clientWidth + 1).map((part) => part.className));
     expect(overflow, "text that runs out of its bubble").toEqual([]);
 
     // the report with all of it
-    await bob.page.getByTestId("chat-report").click();
+    await fromMenu(bob.page, "chat-report");
     await expect(bob.page.getByTestId("chat-report-lines")).toBeVisible();
     await fit(["chat-report-sheet", "chat-report-lines", "chat-report-send"], "the report");
     await bob.page.keyboard.press("Escape");
@@ -1554,7 +1576,7 @@ test.describe("reactions in a chat", () => {
     await expect.poll(() => reactionsOn(lines(bob.page).first()), SOON).toEqual([`mine:${JOY}`]);
 
     // the report shows the words, not the reactions
-    await ann.page.getByTestId("chat-report").click();
+    await fromMenu(ann.page, "chat-report");
     const report = ann.page.getByTestId("chat-report-lines");
     await expect(report.getByTestId("chat-line")).toHaveCount(1);
     await expect(report.getByTestId("chat-reaction")).toHaveCount(0);
@@ -2274,7 +2296,7 @@ test.describe("personal stickers in a chat", () => {
     await expect.poll(() => stickerLoaded(lines(ann.page).nth(1).getByTestId("chat-personal-sticker"))).toBe(192);
 
     // a report shows the pictures, and the team has them, with the transcript saying which file each is in
-    await bob.page.getByTestId("chat-report").click();
+    await fromMenu(bob.page, "chat-report");
     const shown = bob.page.getByTestId("chat-report-lines");
     await expect(shown.getByTestId("chat-line")).toHaveCount(2);
     await expect.poll(() => stickerLoaded(shown.getByTestId("chat-personal-sticker").first())).toBe(192);
@@ -2464,7 +2486,7 @@ test.describe("personal stickers in a chat", () => {
     expect([seen.type, seen.pages]).toEqual(["image/webp", 3]);
 
     // a report has it as the WebP it is
-    await bob.page.getByTestId("chat-report").click();
+    await fromMenu(bob.page, "chat-report");
     await bob.page.getByTestId("chat-report-send").click();
     await expect(bob.page.getByTestId("chat-report-sent")).toHaveText(en["chat.reportSent"]);
     await bob.page.getByTestId("chat-report-done").click();
@@ -3007,5 +3029,245 @@ test.describe("GIFs in a chat", () => {
     await expect(take).toHaveCount(0);
     await expect(tvLines(bob.page)).toHaveCount(1, SOON);
     await expect(tvLines(bob.page).first().getByTestId("chat-gif")).toHaveCount(0);
+  });
+});
+
+/* ------------------------------ Search and the GIFs and stickers, behind the ⋮ ------------------------------ */
+
+/** Whether a message is in the part of its list that is seen, not scrolled away above or below it. */
+const seen = (line: ReturnType<Page["getByTestId"]>) =>
+  line.evaluate((element) => {
+    const list = element.closest(".chat-lines")!.getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    return box.bottom > list.top + 4 && box.top < list.bottom - 4;
+  });
+/** The message whose words are these. */
+const saying = (all: ReturnType<Page["getByTestId"]>, words: string) => all.filter({ has: all.page().getByTestId("chat-text").filter({ hasText: words }) });
+const counted = (at: number, count: number) => say(en["chat.searchCount"], { at: String(at), count: String(count) });
+/** A few messages between two friends, the one at `at` from the first (odd) or the second (even). */
+async function chatter(first: Page, second: Page, from: number, to: number) {
+  for (let at = from; at <= to; at++) await writes(at % 2 ? first : second, at % 2 ? second : first, `filler ${at}`);
+}
+
+test.describe("searching a chat, and its GIFs and stickers", () => {
+  test("on the phone: Search behind the ⋮ finds every word typed however it was written, the newest first; Enter, Earlier and Later go through what it found, each brought into view and lit, its words marked; Back shuts a picture shown larger and a selection first, then the search", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const { ann, bob } = await twoFriends(browser);
+    await writes(bob.page, ann.page, "Ne vedem mâine la cinema");
+    await writes(ann.page, bob.page, "Mâine nu pot");
+    await chatter(bob.page, ann.page, 1, 16);
+    await writes(bob.page, ann.page, "Poate MAINE seara la Cinema City");
+    await writes(bob.page, ann.page, "\u{1F37F}"); // (a sticker)
+    await chatter(bob.page, ann.page, 17, 22);
+    await openChat(ann.page);
+    await expect(lines(ann.page)).toHaveCount(26);
+
+    const page = ann.page;
+    await fromMenu(page, "chat-search-open");
+    const bar = page.getByTestId("chat-search");
+    const box = page.getByTestId("chat-search-box");
+    const count = page.getByTestId("chat-search-count");
+    const found = page.locator('[data-testid="chat-line"][data-found]');
+    const current = page.locator('[data-testid="chat-line"][data-found="current"]');
+    await expect(bar).toBeVisible();
+    await expect(box).toBeFocused();
+    await expect(page.getByTestId("chat-more")).toHaveCount(0); // (in place of the row's ⋮ while it is open)
+    expect(await outsideTheSides(page, ["chat-search", "chat-search-older", "chat-search-newer", "chat-search-close"])).toEqual([]);
+
+    // what is typed: accents and capitals do not matter, the newest is shown first, lit, its words marked as they were written
+    await box.fill("maine");
+    await expect(count).toHaveText(counted(1, 3));
+    await expect(found).toHaveCount(3);
+    await expect(current).toContainText("Poate MAINE seara");
+    await expect(current.getByTestId("chat-found-words")).toHaveText("MAINE");
+    await expect.poll(() => seen(current)).toBe(true);
+    // Enter: the next earlier one
+    await box.press("Enter");
+    await expect(count).toHaveText(counted(2, 3));
+    await expect(current).toContainText("Mâine nu pot");
+    await expect(current.getByTestId("chat-found-words")).toHaveText("Mâine");
+    await expect.poll(() => seen(current)).toBe(true);
+    // Earlier: the first of the chat, and nothing earlier; the chat is read there, not at its end
+    await page.getByTestId("chat-search-older").click();
+    await expect(count).toHaveText(counted(3, 3));
+    await expect(current).toContainText("Ne vedem mâine la cinema");
+    await expect.poll(() => seen(current)).toBe(true);
+    await expect(page.getByTestId("chat-search-older")).toBeDisabled();
+    await expect.poll(() => seen(saying(lines(page), "filler 22"))).toBe(false);
+    // Later, and Shift+Enter: back the other way, to the newest
+    await page.getByTestId("chat-search-newer").click();
+    await expect(count).toHaveText(counted(2, 3));
+    await box.press("Shift+Enter");
+    await expect(count).toHaveText(counted(1, 3));
+    await expect(page.getByTestId("chat-search-newer")).toBeDisabled();
+    // every word typed, in any order; what is nowhere says so
+    await box.fill("cinema   MÂINE");
+    await expect(count).toHaveText(counted(1, 2));
+    await expect(found).toHaveCount(2);
+    await box.fill("teatru");
+    await expect(count).toHaveText(en["chat.searchNone"]);
+    await expect(found).toHaveCount(0);
+    await expect(page.getByTestId("chat-search-older")).toBeDisabled();
+
+    // a picture shown larger over it: Back puts that away, and only that
+    await box.fill("cinema");
+    await expect(found).toHaveCount(2);
+    await lines(page).filter({ has: page.getByTestId("chat-sticker") }).getByTestId("chat-bubble").click();
+    await expect(page.getByTestId("chat-view")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-view")).toHaveCount(0);
+    await expect(bar).toBeVisible();
+    await expect(found).toHaveCount(2);
+    // a message selected: Back lets it go, and only it
+    await saying(lines(page), "Mâine nu pot").getByTestId("chat-bubble").click();
+    await expect(page.getByTestId("chat-react-bar")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect(bar).toBeVisible();
+    // then Back shuts the search: nothing lit, the ⋮ again, the chat open
+    await page.keyboard.press("Escape");
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByTestId("chat")).toBeVisible();
+    await expect(found).toHaveCount(0);
+    await expect(page.getByTestId("chat-found-words")).toHaveCount(0);
+    await expect(page.getByTestId("chat-more")).toBeVisible();
+    // opened again it starts afresh, and × shuts it too
+    await fromMenu(page, "chat-search-open");
+    await expect(box).toHaveValue("");
+    await expect(count).toHaveCount(0);
+    await box.fill("pizza");
+    await page.getByTestId("chat-search-close").click();
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByTestId("chat")).toBeVisible();
+  });
+
+  test("on the phone: the chat's GIFs and stickers behind the ⋮, the newest first; a press shows its message in the chat, lit and not selected; none says so", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await fakeKlipy(ann.page, { key: false }); // (the GIF's picture comes from the test, not from KLIPY)
+    await openChat(ann.page);
+    const sheet = ann.page.getByTestId("chat-media-sheet");
+    await fromMenu(ann.page, "chat-media-open");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toContainText(say(en["chat.mediaTitle"], { name: bob.name }));
+    await expect(sheet.getByTestId("chat-media-none")).toHaveText(en["chat.mediaNone"]);
+    await ann.page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat")).toBeVisible();
+
+    await writes(bob.page, ann.page, "https://static.klipy.com/ii/test/cat.gif");
+    await writes(ann.page, bob.page, "\u{1F37F}");
+    await chatter(bob.page, ann.page, 1, 20);
+    await writes(bob.page, ann.page, "\u{1F3AC}");
+    await expect(lines(ann.page)).toHaveCount(23, SOON);
+    await fromMenu(ann.page, "chat-media-open");
+    const tiles = sheet.getByTestId("chat-media-tile");
+    await expect(tiles).toHaveCount(3);
+    expect(await tiles.evaluateAll((all) => all.map((each) => each.getAttribute("data-kind")))).toEqual(["sticker", "sticker", "gif"]);
+    await expect(tiles.nth(0)).toHaveAttribute("aria-label", new RegExp(bob.name));
+    await expect(tiles.nth(1)).not.toHaveAttribute("aria-label", new RegExp(bob.name)); // (Ann's own)
+    for (const at of [0, 1, 2]) await expect.poll(() => tiles.nth(at).locator("img").evaluate((picture) => (picture as HTMLImageElement).complete && (picture as HTMLImageElement).naturalWidth > 0)).toBe(true);
+    expect(await gridFaults(tiles)).toEqual([]);
+    expect(await outsideTheSides(ann.page, ["chat-media-sheet", "chat-media"])).toEqual([]);
+
+    // the oldest, the GIF: the sheet goes, and the chat shows its message, lit for a moment, and selects nothing
+    await tiles.nth(2).click();
+    await expect(sheet).toHaveCount(0);
+    const gif = lines(ann.page).first();
+    await expect(gif).toHaveAttribute("data-shown", "true");
+    await expect.poll(() => seen(gif)).toBe(true);
+    await expect.poll(() => seen(lines(ann.page).last())).toBe(false);
+    await expect(ann.page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat")).toBeVisible();
+  });
+
+  test("on the TV's pages: Search and the GIFs and stickers behind the ⋯ on a computer and on a hand-held screen; the search in place of the friend at the top, Back shutting it and giving the keys back to the ⋯; the gallery a page of its own whose press shows the message", async ({ browser }) => {
+    test.setTimeout(200_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob", { viewport: { width: 390, height: 844 } });
+    await meet(ann, bob);
+    await writes(bob.page, ann.page, "Ne vedem mâine la cinema");
+    await chatter(bob.page, ann.page, 1, 14);
+    await writes(bob.page, ann.page, "\u{1F37F}");
+    await writes(ann.page, bob.page, "Mâine?");
+
+    // the computer
+    const page = ann.page;
+    await look(page);
+    await tile(page, bob.name).click();
+    await page.getByTestId("friend-chat").click();
+    await expect(tvLines(page)).toHaveCount(17);
+    await page.getByTestId("tv-chat-more").click();
+    const menu = page.getByTestId("tv-chat-menu");
+    expect(await menu.locator("button").evaluateAll((all) => all.map((each) => each.getAttribute("data-testid")))).toEqual(["tv-chat-reply-last", "tv-chat-react-last", "tv-chat-takeback", "tv-chat-search-open", "tv-chat-media-open", "tv-chat-mute", "tv-chat-report"]);
+    await page.getByTestId("tv-chat-search-open").click();
+    const bar = page.getByTestId("chat-search");
+    const count = page.getByTestId("chat-search-count");
+    const found = page.getByTestId("tv-chat-lines").locator('[data-testid="chat-line"][data-found]');
+    const current = page.getByTestId("tv-chat-lines").locator('[data-testid="chat-line"][data-found="current"]');
+    await expect(bar).toBeVisible();
+    await expect(page.getByTestId("chat-search-box")).toBeFocused();
+    await expect(page.getByTestId("tv-chat-name")).toHaveCount(0); // (in place of the friend at the top)
+    await expect(page.getByTestId("tv-chat-more")).toHaveCount(0);
+    await page.keyboard.type("maine");
+    await expect(count).toHaveText(counted(1, 2));
+    await expect(current).toContainText("Mâine?");
+    await page.keyboard.press("Enter");
+    await expect(count).toHaveText(counted(2, 2));
+    await expect(current).toContainText("Ne vedem mâine la cinema");
+    await expect(current.getByTestId("chat-found-words")).toHaveText("mâine");
+    await expect.poll(() => seen(current)).toBe(true);
+    // Back (Escape, in the box too): the friend at the top again, nothing lit, and the keys on the ⋯
+    await page.keyboard.press("Escape");
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByTestId("tv-chat")).toBeVisible();
+    await expect(page.getByTestId("tv-chat-name")).toHaveText(bob.name);
+    await expect(found).toHaveCount(0);
+    await expect(page.getByTestId("tv-chat-more")).toBeFocused();
+
+    // the gallery: a page of its own, Back to the chat; a press goes back to the chat and shows the message there
+    await page.getByTestId("tv-chat-more").click();
+    await page.getByTestId("tv-chat-media-open").click();
+    const gallery = page.getByTestId("tv-chat-media");
+    await expect(gallery).toBeVisible();
+    await expect(gallery).toContainText(say(en["chat.mediaTitle"], { name: bob.name }));
+    await expect(gallery.getByTestId("chat-media-tile")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(gallery).toHaveCount(0);
+    await expect(page.getByTestId("tv-chat")).toBeVisible();
+    await page.getByTestId("tv-chat-more").click();
+    await page.getByTestId("tv-chat-media-open").click();
+    await gallery.getByTestId("chat-media-tile").click();
+    await expect(gallery).toHaveCount(0);
+    const sticker = tvLines(page).filter({ has: page.getByTestId("chat-sticker") });
+    await expect(sticker).toHaveAttribute("data-shown", "true");
+    await expect.poll(() => seen(sticker)).toBe(true);
+    // (shown that once: the chat back from another page is at its end, as it opens)
+    await page.getByTestId("tv-chat-sticker-btn").click();
+    await page.getByTestId("tv-chat-sticker-back").click();
+    await expect(page.getByTestId("tv-chat")).toBeVisible();
+    await expect(sticker).not.toHaveAttribute("data-shown", "true");
+
+    // the hand-held screen: the same, and all of it on the screen
+    const phone = bob.page;
+    await look(phone);
+    await tile(phone, ann.name).click();
+    await phone.getByTestId("friend-chat").click();
+    await expect(tvLines(phone)).toHaveCount(17, SOON);
+    await phone.getByTestId("tv-chat-more").click();
+    await phone.getByTestId("tv-chat-search-open").click();
+    await expect(phone.getByTestId("chat-search-box")).toBeFocused();
+    await phone.getByTestId("chat-search-box").fill("cinema");
+    await expect(phone.getByTestId("chat-search-count")).toHaveText(counted(1, 1));
+    expect(await outsideTheScreen(phone, "tv-chat", false)).toEqual([]);
+    await phone.getByTestId("chat-search-close").click();
+    await expect(phone.getByTestId("chat-search")).toHaveCount(0);
+    await expect(phone.getByTestId("tv-chat-more")).toBeFocused();
+    await phone.getByTestId("tv-chat-more").click();
+    await phone.getByTestId("tv-chat-media-open").click();
+    await expect(phone.getByTestId("tv-chat-media")).toBeVisible();
+    expect(await outsideTheScreen(phone, "tv-chat-media", false)).toEqual([]);
+    await phone.getByTestId("tv-chat-media-back").click();
+    await expect(phone.getByTestId("tv-chat")).toBeVisible();
   });
 });
