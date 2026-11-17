@@ -473,4 +473,49 @@ describe("keeping it between starts", () => {
       expect(() => chat.load("chat:x:y", broken), JSON.stringify(broken)).toThrow();
     }
   });
+
+  it("takes a chat kept before reactions, and one whose reactions are not right keeps its messages and loses only those", () => {
+    const { chat, clock } = trio();
+    const at = clock.now - 1000;
+    const line = (r?: unknown) => ({ n: 5, from: "sam", at, text: "hi", ...(r === undefined ? {} : { r }) });
+    const kept = (r?: unknown) => ({ v: 1, a: "alex", b: "sam", rev: 5, lines: [line(r)], seen: {}, muted: [] });
+    chat.load("chat:alex:sam", kept());
+    expect(value(chat.read("alex", "sam")).lines).toEqual([{ id: 5, at, mine: false, text: "hi" }]);
+    expect(value(chat.lastLines("alex", "sam")).rev).toBe(5); // (what was said is at the revision the chat was kept at)
+    // (a reaction not of the set, one of somebody who is not in the chat, and one that is right)
+    chat.load("chat:alex:sam", kept({ alex: "\u{1F680}", robin: "\u{1F525}", sam: "\u{1F525}" }));
+    expect(value(chat.read("alex", "sam")).lines).toEqual([{ id: 5, at, mine: false, text: "hi", theirReaction: "\u{1F525}" }]);
+    for (const nonsense of ["\u{1F525}", null, 7, ["\u{1F525}"]]) {
+      expect(() => chat.load("chat:alex:sam", kept(nonsense)), JSON.stringify(nonsense)).not.toThrow();
+      expect(value(chat.read("alex", "sam")).lines, JSON.stringify(nonsense)).toEqual([{ id: 5, at, mine: false, text: "hi" }]);
+    }
+  });
+});
+
+describe("reactions", () => {
+  it("are one from each of the two, on any message there is; the same one twice changes nothing, and they are so many a minute", () => {
+    const { chat, clock } = trio();
+    const id = value(chat.send("sam", "alex", "hi")).lines[0]!.id;
+    const before = value(chat.read("alex", "sam")).rev;
+    expect(value(chat.react("alex", "sam", id, "\u{1F525}")).lines[0]).toMatchObject({ myReaction: "\u{1F525}" });
+    const after = value(chat.read("alex", "sam")).rev;
+    expect(after).toBeGreaterThan(before);
+    expect(value(chat.react("alex", "sam", id, "\u{1F525}")).rev).toBe(after);
+    expect(refusal(chat.react("alex", "sam", id + 1, "\u{1F525}"))).toBe("gone");
+    expect(refusal(chat.react("sam", "robin", id, "\u{1F525}"))).toBe("not_friends");
+    for (let at = 0; at < 50; at++) chat.react("alex", "sam", id, at % 2 ? "\u{1F525}" : null);
+    expect(refusal(chat.react("alex", "sam", id, "\u{1F44D}"))).toBe("rate_limited");
+    clock.now += 60_000;
+    expect(refusal(chat.react("alex", "sam", id, "\u{1F44D}"))).toBeUndefined();
+    // (no message waits for Sam because of a reaction)
+    expect(chat.unread("sam")).toEqual([]);
+  });
+
+  it("go with the message they are on when it is taken back", () => {
+    const { chat } = trio();
+    const id = value(chat.send("sam", "alex", "hi")).lines[0]!.id;
+    value(chat.react("alex", "sam", id, "\u{2764}\u{FE0F}"));
+    expect(value(chat.takeBack("sam", "alex", id)).lines).toEqual([]);
+    expect(refusal(chat.react("alex", "sam", id, null))).toBe("gone");
+  });
 });

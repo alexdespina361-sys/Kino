@@ -2,9 +2,9 @@ import { z } from "zod";
 import { plainText } from "./friends";
 
 /**
- * A small chat between two friends: text and nothing else (no groups, pictures, files, reactions, typing marks or read receipts). It is kept on the
- * server, which is where its rules are kept too: who may write to whom, how much, how often, and for how long a message stays. What is here is what
- * both sides need to agree on.
+ * A small chat between two friends: text, and a reaction from each of the two on a message (no groups, files, typing marks or read receipts; a GIF, a
+ * sticker or a title is text that a screen draws as a picture). It is kept on the server, which is where its rules are kept too: who may write to whom,
+ * how much, how often, and for how long a message stays. What is here is what both sides need to agree on.
  *
  * Messages are stored as they were written, made fit to show (see `plainText`), not encrypted: whoever runs the server could read them. They are
  * never shown as links and never as anything but text.
@@ -21,6 +21,14 @@ export const CHAT_SENDS_PER_MINUTE = 20;
 export const CHAT_REPORT_LINES = 20;
 /** While a chat is open its screen asks what is new this often. */
 export const CHAT_POLL_MS = 3000;
+/**
+ * The reactions a message can have: each of the two can put one on any message (theirs or their own), change it or take it away. They are drawn with the
+ * chat's stickers of the same emoji (client/chat/stickers.ts). How many changes of reactions one profile may make in a minute.
+ */
+export const CHAT_REACTIONS = ["\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F631}", "\u{1F62D}", "\u{1F44D}", "\u{1F525}"] as const;
+export type ChatReaction = (typeof CHAT_REACTIONS)[number];
+export const CHAT_REACTS_PER_MINUTE = 40;
+export const isChatReaction = (value: unknown): value is ChatReaction => typeof value === "string" && (CHAT_REACTIONS as readonly string[]).includes(value);
 
 export type ChatTextProblem = "empty" | "too_long";
 
@@ -39,6 +47,9 @@ export const ChatLineSchema = z.object({
   /** The one who looks is the one who wrote it. */
   mine: z.boolean(),
   text: z.string().max(CHAT_TEXT_MAX),
+  /** The reaction the one who looks put on it, and the friend's (one of `CHAT_REACTIONS`; a string, so that a page made before a new one came does not fail on it). */
+  myReaction: z.string().max(16).optional(),
+  theirReaction: z.string().max(16).optional(),
 });
 export type ChatLine = z.infer<typeof ChatLineSchema>;
 
@@ -59,10 +70,13 @@ export type ChatThread = z.infer<typeof ChatThreadSchema>;
 export const ChatSendSchema = z.object({ text: z.string().max(CHAT_TEXT_MAX * 4) });
 export const ChatMuteSchema = z.object({ muted: z.boolean() });
 export type ChatMute = z.infer<typeof ChatMuteSchema>;
+/** A reaction put on a message, or taken away (null). */
+export const ChatReactSchema = z.object({ reaction: z.enum(CHAT_REACTIONS).nullable() });
 
 /**
  * What a report would send, before anybody has agreed to send it: the last messages of the chat, as they stand at `rev`. Sending is asked for
- * with that `rev`, and is refused if the chat has changed since, so what was shown is what goes.
+ * with that `rev`, and is refused if the chat has changed since, so what was shown is what goes. (Its `rev` is that of what was said: a reaction
+ * does not move it, so the one reported cannot hold a report off by putting reactions on and off; and a report holds the words, not the reactions.)
  */
 export const ChatReportPreviewSchema = z.object({ rev: z.number().int().nonnegative(), lines: z.array(ChatLineSchema).max(CHAT_REPORT_LINES) });
 export type ChatReportPreview = z.infer<typeof ChatReportPreviewSchema>;

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ChatMuteSchema, ChatReportSchema, ChatSendSchema, friendChoices, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
+import { ChatMuteSchema, ChatReactSchema, ChatReportSchema, ChatSendSchema, friendChoices, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
 import type { ChatBook, ChatError, ChatOutcome } from "./chat";
 import type { FriendRouteHelpers } from "./friendRoutes";
 import { RateLimiter } from "./rateLimit";
@@ -53,6 +53,7 @@ type Asked = FastifyRequest & { params: { id: string; fid: string } };
  *   GET    /chat?since=<rev>      the chat, and looking at it is having seen it; without `lines` when it is still at `rev`
  *   POST   /chat                  write to the friend ({ text }): answers with the chat
  *   DELETE /chat/:id              take back a message of one's own: answers with the chat
+ *   PUT    /chat/:id/reaction     put a reaction on a message, change it, or take it away ({ reaction }, null for none): answers with the chat
  *   PUT    /chat/mute             stop hearing of the friend's messages, or hear again ({ muted })
  *   GET    /chat/report           what a report would hold
  *   POST   /chat/report           send it to the team ({ rev }, the one the preview had)
@@ -116,6 +117,17 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (id === undefined) return refuse(reply, "gone");
     const taken = chat.takeBack(me.profileId, me.friendId, id);
     return taken.ok ? reply.send(taken.value) : fail(reply, taken);
+  });
+
+  app.put<{ Params: { id: string; fid: string; n: string } }>(`${base}/:n/reaction`, async (request, reply) => {
+    const me = asker(request, reply, writesByAccount);
+    if (!me) return reply;
+    const id = /^\d{1,16}$/.test(request.params.n) ? Number(request.params.n) : undefined;
+    if (id === undefined) return refuse(reply, "gone");
+    const parsed = ChatReactSchema.safeParse(request.body);
+    if (!parsed.success) return helpers.invalid(reply, parsed.error);
+    const reacted = chat.react(me.profileId, me.friendId, id, parsed.data.reaction);
+    return reacted.ok ? reply.send(reacted.value) : fail(reply, reacted);
   });
 
   app.put<{ Params: { id: string; fid: string } }>(`${base}/mute`, async (request, reply) => {

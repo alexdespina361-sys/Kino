@@ -1,4 +1,16 @@
-import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_REPORT_LINES, CHAT_SENDS_PER_MINUTE, checkChatText, type ChatLine, type ChatNotice, type ChatTextProblem } from "../../shared";
+import {
+  CHAT_KEEP_MAX,
+  CHAT_KEEP_MS,
+  CHAT_REACTS_PER_MINUTE,
+  CHAT_REPORT_LINES,
+  CHAT_SENDS_PER_MINUTE,
+  checkChatText,
+  isChatReaction,
+  type ChatLine,
+  type ChatNotice,
+  type ChatReaction,
+  type ChatTextProblem,
+} from "../../shared";
 import { RateLimiter } from "./rateLimit";
 
 /**
@@ -39,9 +51,11 @@ interface Written {
   from: string;
   at: number;
   text: string;
+  /** The reactions on it: profile -> one of `CHAT_REACTIONS`. Not there when it has none. */
+  r?: Record<string, string>;
 }
 
-/** What is kept of a pair. */
+/** What is kept of a pair. (`said` and the reactions came later, and are optional: a server from before them still reads the document, and ignores them.) */
 interface ChatDoc {
   v: 1;
   /** The two profiles, in the order of the key. */
@@ -49,6 +63,11 @@ interface ChatDoc {
   b: string;
   /** Goes up with every change to the messages, and never below the clock: a chat that is taken off and made again does not repeat a number. */
   rev: number;
+  /**
+   * The `rev` of the last change to what was said (a message sent, taken back, or let go), not to the reactions. A report is checked against it: a reaction
+   * put on and taken off does not make what was shown "changed", so the one reported cannot hold a report off that way (the advisor, 17 Nov).
+   */
+  said?: number;
   lines: Written[];
   /** Who has seen up to which message (the `n` of the newest they have seen). */
   seen: Record<string, number>;
@@ -68,9 +87,11 @@ export class ChatBook {
   /** profile -> the keys of its chats. */
   private readonly of = new Map<string, Set<string>>();
   private readonly sends: RateLimiter;
+  private readonly reacts: RateLimiter;
 
   constructor(private readonly host: ChatHost) {
     this.sends = new RateLimiter(CHAT_SENDS_PER_MINUTE, 60_000, () => host.now());
+    this.reacts = new RateLimiter(CHAT_REACTS_PER_MINUTE, 60_000, () => host.now());
   }
 
   /* ------------------------------ persistence ------------------------------ */
@@ -86,6 +107,14 @@ export class ChatBook {
     if (typeof doc?.a !== "string" || typeof doc.b !== "string" || typeof doc.rev !== "number" || !Array.isArray(doc.lines) || !doc.lines.every(well) || !Array.isArray(doc.muted) || typeof doc.seen !== "object" || doc.seen === null) {
       throw new Error("not a chat"); // (the store skips it and says so: one record that is not right must not stop the others from loading)
     }
+    // (Reactions that are not right are let go, not the chat: they are the least of it.)
+    for (const line of doc.lines) {
+      if (line.r === undefined) continue;
+      const kept = typeof line.r === "object" && line.r !== null ? Object.entries(line.r).filter(([profile, reaction]) => (profile === doc.a || profile === doc.b) && isChatReaction(reaction)) : [];
+      if (kept.length > 0) line.r = Object.fromEntries(kept);
+      else delete line.r;
+    }
+    if (typeof doc.said !== "number") doc.said = doc.rev;
     this.chats.set(key, doc);
     for (const profile of [doc.a, doc.b]) this.of.set(profile, (this.of.get(profile) ?? new Set()).add(key));
     // (What ran out while the server was off is let go now, not whenever somebody next looks.)
@@ -128,6 +157,7 @@ export class ChatBook {
     if (kept.length !== doc.lines.length) {
       doc.lines = kept;
       doc.rev = this.next(doc);
+      doc.said = doc.rev;
       this.host.touch(key);
     }
     if (doc.lines.length === 0 && doc.muted.length === 0 && now - doc.rev >= EMPTY_CHAT_KEEP_MS) {
@@ -149,7 +179,7 @@ export class ChatBook {
     const found = this.find(a, b);
     if (found) return found;
     const [first, second] = a < b ? [a, b] : [b, a];
-    const doc: ChatDoc = { v: 1, a: first, b: second, rev: 0, lines: [], seen: {}, muted: [] };
+    const doc: ChatDoc = { v: 1, a: first, b: second, rev: 0, said: 0, lines: [], seen: {}, muted: [] };
     this.chats.set(key, doc);
     for (const profile of [first, second]) this.of.set(profile, (this.of.get(profile) ?? new Set()).add(key));
     return doc;
@@ -160,7 +190,18 @@ export class ChatBook {
       rev: doc?.rev ?? 0,
       open: this.host.takes(friend),
       muted: doc?.muted.includes(me) ?? false,
-      lines: (doc?.lines ?? []).map((line) => ({ id: line.n, at: line.at, mine: line.from === me, text: line.text })),
+      lines: (doc?.lines ?? []).map((line) => {
+        const mineOn = line.r?.[me];
+        const theirsOn = line.r?.[friend];
+        return {
+          id: line.n,
+          at: line.at,
+          mine: line.from === me,
+          text: line.text,
+          ...(isChatReaction(mineOn) ? { myReaction: mineOn } : {}),
+          ...(isChatReaction(theirsOn) ? { theirReaction: theirsOn } : {}),
+        };
+      }),
     };
   }
 
@@ -205,6 +246,7 @@ export class ChatBook {
     const n = this.next(doc);
     doc.rev = n;
     doc.lines = [...doc.lines, { n, from, at: this.host.now(), text: checked.text }].slice(-CHAT_KEEP_MAX);
+    doc.said = n;
     doc.seen[from] = n;
     this.host.touch(keyOf(from, to));
     return { ok: true, value: this.view(doc, from, to) };
@@ -218,8 +260,34 @@ export class ChatBook {
     if (!doc || at < 0) return no("gone");
     doc.lines = doc.lines.filter((_, index) => index !== at);
     doc.rev = this.next(doc);
+    doc.said = doc.rev;
     this.host.touch(keyOf(me, friend));
     this.tidy(keyOf(me, friend), doc);
+    return { ok: true, value: this.view(doc, me, friend) };
+  }
+
+  /**
+   * `me` puts a reaction on a message (theirs or the friend's), changes it, or takes it away (`null`). The friend sees it at their next look; nothing waits for
+   * them because of it (it is no message). Putting one on is writing to the friend, so it needs what a message needs: friends on, and a friend who takes
+   * messages; taking one away is always possible. So many changes a minute.
+   */
+  react(me: string, friend: string, id: number, reaction: ChatReaction | null): ChatOutcome<ChatView> {
+    if (!this.friendly(me, friend)) return no("not_friends");
+    if (!this.host.on(me)) return no("friends_off");
+    if (reaction !== null && !this.host.takes(friend)) return no("chat_off");
+    const doc = this.find(me, friend);
+    const line = doc?.lines.find((written) => written.n === id);
+    if (!doc || !line) return no("gone");
+    if ((line.r?.[me] ?? null) === reaction) return { ok: true, value: this.view(doc, me, friend) };
+    const wait = this.reacts.wait(me);
+    if (wait > 0) return no("rate_limited", wait);
+    this.reacts.hit(me);
+    const others = Object.entries(line.r ?? {}).filter(([profile]) => profile !== me);
+    const now = reaction === null ? others : [...others, [me, reaction] as const];
+    if (now.length > 0) line.r = Object.fromEntries(now);
+    else delete line.r;
+    doc.rev = this.next(doc); // (the screens that have the chat open see it at their next look; `said` does not move)
+    this.host.touch(keyOf(me, friend));
     return { ok: true, value: this.view(doc, me, friend) };
   }
 
@@ -241,7 +309,10 @@ export class ChatBook {
   lastLines(me: string, friend: string, count = CHAT_REPORT_LINES): ChatOutcome<{ rev: number; lines: ChatLine[] }> {
     const read = this.read(me, friend);
     if (!read.ok) return read;
-    return { ok: true, value: { rev: read.value.rev, lines: read.value.lines.slice(-count) } };
+    // (What was said, and its revision: the reactions are not part of a report, and do not make one "changed". See `said`.)
+    const doc = this.find(me, friend);
+    const lines = read.value.lines.slice(-count).map(({ id, at, mine, text }) => ({ id, at, mine, text }));
+    return { ok: true, value: { rev: doc ? (doc.said ?? doc.rev) : read.value.rev, lines } };
   }
 
   /* ------------------------------ what waits ------------------------------ */
