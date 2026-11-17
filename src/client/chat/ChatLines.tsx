@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
@@ -13,7 +13,7 @@ import { QuoteBlock } from "./Reply";
 import { pictureOf, toggleKept, useSavedPictures, type KeptNote } from "./saved";
 import { marked } from "./search";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
-import { dayOf, stampOf, startsDay } from "./state";
+import { dayOf, stampOf, startsDay, ticksOf, type ChatState } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
 import { onlyNames, titleIn, titleLabel, type OpenTitle, type TitleInText } from "./titles";
 import { formatTime } from "../shared/format";
@@ -64,6 +64,8 @@ export interface ChatLinesProps {
   /** A message to bring into view and light for a moment, as a quote's does (the gallery's): again each time `seq` changes. */
   showing?: { id: number; seq: number } | null | undefined;
   testId?: string;
+  /** How far the friend has seen one's messages, and has them: the ticks beside the time of one's own (`ticksOf`). Without it no ticks (a report). */
+  receipts?: Pick<ChatState, "theirSeen" | "theirGot"> | undefined;
 }
 
 export interface SearchFound {
@@ -112,7 +114,7 @@ export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boole
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, found: search, showing, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, found: search, showing, testId = "chat-lines", receipts }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -579,12 +581,24 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                 {/* (A message the search found has the words searched for marked, as they were written.) */}
                 {hit && search && typeof text === "string" ? <Marked text={text} query={search.query} /> : text}
               </span>
-              <span className="chat-time">{stampOf(line.at, language)}</span>
+              {line.mine && receipts && !showWriter ? (
+                // (The time is dimmed on its own, not with the ticks: two lit ticks dimmed too were hard to see. The judge, 17 Nov.)
+                <span className="chat-time chat-time-ticked">
+                  <span className="chat-stamp">{stampOf(line.at, language)}</span>
+                  <Ticks count={ticksOf(receipts, line.id)} />
+                </span>
+              ) : (
+                <span className="chat-time">{stampOf(line.at, language)}</span>
+              )}
             </>
           );
           // (The message it answers, over it, while that message is in the chat. A report sends the words alone, and shows no quote.)
           const quoted = !showWriter && line.replyTo !== undefined ? byId.get(line.replyTo) : undefined;
           const replyTo = line.replyTo;
+          const held = holds(canPress ? () => onPick?.(line.id) : null, answers && onReply ? () => onReply(line.id) : null);
+          // (A title's card is held and drawn aside as its message is - it is what a finger takes, the owner, 17 Nov: "replies work on movies too"; the press that
+          // ends a hold or a draw does not open the title, `onClickCapture`.)
+          const heldCard = (card: ReactNode) => (isValidElement<Record<string, unknown>>(card) ? cloneElement(card, held) : card);
           const said = (text: ReactNode, card: ReactNode) => (
             <>
               {quoted && replyTo !== undefined && (
@@ -596,7 +610,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                   className={`chat-bubble${picture}${open ? " chat-picked" : ""}`}
                   {...(canPress ? { "aria-expanded": open } : {})}
                   onClick={pressed}
-                  {...holds(canPress ? () => onPick?.(line.id) : null, answers && onReply ? () => onReply(line.id) : null)}
+                  {...held}
                   {...(remote ? { tabIndex: keyboard && line.id === tabStop ? 0 : -1 } : {})}
                   data-testid={canPress ? "chat-bubble" : "chat-picture"}
                 >
@@ -605,7 +619,7 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
               ) : (
                 <div className={`chat-bubble${picture}`}>{bubble(text)}</div>
               )}
-              {card}
+              {heldCard(card)}
               {!showWriter && <Reactions line={line} name={name} />}
               {open && onReact && (
                 <ReactBar
@@ -650,6 +664,21 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       </ol>
       {enlarged && enlargedThere && <PictureView src={enlarged.src} alt={enlarged.alt} small={enlarged.small} onClose={() => setEnlarged(null)} />}
     </div>
+  );
+}
+
+/** One tick: a screen of the friend's has the message; two: the friend has seen it (lit). None before either (the owner, 17 Nov). */
+function Ticks({ count }: { count: 0 | 1 | 2 }) {
+  const t = useT();
+  if (count === 0) return null;
+  const label = t(count === 2 ? "chat.seen" : "chat.received");
+  return (
+    <span className={`chat-ticks${count === 2 ? " chat-ticks-seen" : ""}`} role="img" aria-label={label} title={label} data-testid="chat-ticks" data-ticks={count}>
+      <svg viewBox={count === 2 ? "0 0 22 12" : "0 0 16 12"} aria-hidden="true" focusable="false">
+        <path d="M1.5 6.5l3.6 3.6L13.5 1.6" />
+        {count === 2 && <path d="M9.3 9.4l0.7 0.7L19.5 1.6" />}
+      </svg>
+    </span>
   );
 }
 

@@ -99,6 +99,8 @@ export const chatRo: ChatDictionary = {
   "chat.more": "Mai multe",
   "chat.lastOnlineAt": "Ultima dată online {day} la {time}",
   "chat.reply": "Răspunde",
+  "chat.received": "Primit",
+  "chat.seen": "Văzut",
   "chat.replyingTo": "Îi răspunzi lui {name}",
   "chat.replyingToMine": "Răspunzi la mesajul tău",
   "chat.replyCancel": "Anulează răspunsul",

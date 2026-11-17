@@ -104,6 +104,8 @@ export const chatEn = {
   "chat.more": "More",
   "chat.lastOnlineAt": "Last online {day} at {time}",
   "chat.reply": "Reply",
+  "chat.received": "Received",
+  "chat.seen": "Seen",
   "chat.replyingTo": "Replying to {name}",
   "chat.replyingToMine": "Replying to your message",
   "chat.replyCancel": "Cancel reply",

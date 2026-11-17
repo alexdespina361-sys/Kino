@@ -136,14 +136,14 @@ describe("writing and reading", () => {
 
     const seen = await sam.call("GET", sam.chatWith(alex));
     expect(seen.statusCode).toBe(200);
-    expect(seen.data).toEqual({ rev: sent.data.rev, open: true, muted: false, lines: [{ id: sent.data.lines[0].id, at: clock.now, mine: false, text: "hello there" }] });
+    expect(seen.data).toEqual({ rev: sent.data.rev, open: true, muted: false, theirSeen: sent.data.rev, theirGot: sent.data.rev, lines: [{ id: sent.data.lines[0].id, at: clock.now, mine: false, text: "hello there" }] });
   });
 
   it("is answered with no messages when nothing changed since the revision the page has, and with them when something did", async () => {
     const { alex, sam, clock } = await friends();
     const first = (await write(alex, sam, "one")).data as ChatThread;
     const quiet = await sam.call("GET", `${sam.chatWith(alex)}?since=${first.rev}`);
-    expect(quiet.data).toEqual({ rev: first.rev, open: true, muted: false });
+    expect(quiet.data).toEqual({ rev: first.rev, open: true, muted: false, theirSeen: first.rev, theirGot: first.rev });
     clock.now += 10;
     await write(alex, sam, "two");
     const news = await sam.call("GET", `${sam.chatWith(alex)}?since=${first.rev}`);
@@ -327,7 +327,7 @@ describe("reactions", () => {
     const old = (await alex.call("GET", `${alex.chatWith(sam)}?since=${before.rev}`)).data as ChatThread;
     expect(old.reactions).toBeUndefined();
     expect(old.lines).toHaveLength(2);
-    expect((await alex.call("GET", `${alex.chatWith(sam)}?since=${compact.rev}&reactions=1`)).data).toEqual({ rev: compact.rev, open: true, muted: false });
+    expect((await alex.call("GET", `${alex.chatWith(sam)}?since=${compact.rev}&reactions=1`)).data).toEqual({ rev: compact.rev, open: true, muted: false, theirSeen: expect.any(Number), theirGot: expect.any(Number) });
   });
 
   it("are one of the set, on a message that is there, from a friend, and only to one who takes messages (taking one away always works)", async () => {

@@ -24,9 +24,15 @@ export interface ChatState {
   muted: boolean;
   /** Oldest first. */
   lines: readonly ChatLine[];
+  /** How far the friend has seen one's messages (two ticks), and how far a screen of theirs has them (one tick): the `id` of the newest, 0 for none. */
+  theirSeen: number;
+  theirGot: number;
 }
 
-export const FRESH_CHAT: ChatState = { rev: null, open: true, muted: false, lines: [] };
+export const FRESH_CHAT: ChatState = { rev: null, open: true, muted: false, lines: [], theirSeen: 0, theirGot: 0 };
+
+/** The ticks of one's own message: 2 when the friend has seen it, 1 when a screen of theirs has it, 0 before (the owner, 17 Nov). */
+export const ticksOf = (state: Pick<ChatState, "theirSeen" | "theirGot">, id: number): 0 | 1 | 2 => (id <= state.theirSeen ? 2 : id <= state.theirGot ? 1 : 0);
 
 /**
  * The chat after an answer. An answer older than what the page has (it was slow, and a later one came first) is ignored, and so is one at the same revision
@@ -38,7 +44,10 @@ export const FRESH_CHAT: ChatState = { rev: null, open: true, muted: false, line
 export function applyThread(state: ChatState, answer: ChatThread, keepMuted = false, older = false): ChatState {
   if (state.rev !== null && (answer.rev < state.rev || (answer.rev === state.rev && older))) return state;
   const lines = answer.lines ?? (answer.reactions ? withReactions(state.lines, answer.reactions) : state.lines);
-  return { rev: answer.rev, open: answer.open, muted: keepMuted ? state.muted : answer.muted, lines };
+  // (They only go forward: an answer that started before the friend looked does not take a tick away.)
+  const theirSeen = Math.max(state.theirSeen, answer.theirSeen ?? 0);
+  const theirGot = Math.max(state.theirGot, theirSeen, answer.theirGot ?? 0);
+  return { rev: answer.rev, open: answer.open, muted: keepMuted ? state.muted : answer.muted, lines, theirSeen, theirGot };
 }
 
 /** The messages with the reactions an answer says they have now (a message it does not name keeps its own). */

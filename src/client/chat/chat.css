@@ -42,6 +42,15 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 .chat-writer { display: block; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; opacity: 0.75; }
 .chat-text { display: block; }
 .chat-time { display: block; margin-top: 2px; font-size: 0.7em; opacity: 0.7; text-align: right; }
+/* One's own message's ticks, after its time: one when a screen of the friend's has it, two (lit) when the friend has seen it. */
+.chat-ticks { display: inline-block; margin-left: 0.35em; vertical-align: -0.1em; line-height: 0; }
+.chat-ticks svg { height: 0.95em; width: auto; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+/* (The time beside them is dimmed on its own and so is one tick; the two lit ones are not, in a colour of 3:1 or more on each accent's bubble.) */
+.chat-time-ticked { opacity: 1; }
+.chat-time-ticked .chat-stamp, .chat-time-ticked .chat-ticks:not(.chat-ticks-seen) { opacity: 0.7; }
+.chat-ticks-seen { color: #9be7ff; }
+.chat-ticks-seen svg { stroke-width: 2.3; }
+:root:is([data-accent="green"], [data-accent="orange"], [data-accent="pink"]) .chat-mine .chat-bubble:not(.chat-bubble-gif, .chat-bubble-sticker) .chat-ticks-seen { color: #00406e; }
 /* (A message is held to select it: the phone's own selecting of its words, and its menu for a picture, stay away. Words in a button were never selected.) */
 button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer; }
 /* What can be done with the selected message (ChatLines `PickedActions`), at the top of the chat: the phone's sheet draws them as its Mute and Report, on the
@@ -762,7 +771,9 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
 .tv .chat-reply-cancel:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 .tv-chat-quote[data-replying] .tv-chat-quote-lead { color: #fff; font-weight: 700; }
 /* (A finger draws a message across, not the page: up and down still scroll the list from a message, and two fingers still zoom the page: the judge, 17 Nov.) */
-.chat-lines-swipe .chat-bubble { touch-action: pan-y pinch-zoom; }
+.chat-lines-swipe :is(.chat-bubble, .chat-card) { touch-action: pan-y pinch-zoom; }
+/* (A title's card is held as its message is: no long-press menu or picture callout of the phone's own.) */
+.chat-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* (What a line holds is drawn across, by `--swipe` (ChatLines.tsx), not the line: the day over its first message stays. Only while it is drawn, and as it
    goes back ("back"): a transform is no thing to leave on every message. The list never scrolls sideways for it: a message of one's own, on the right, goes
    past the edge as it is drawn.) */

@@ -47,6 +47,8 @@ export interface ChatView {
   rev: number;
   open: boolean;
   muted: boolean;
+  theirSeen?: number;
+  theirGot?: number;
   lines: ChatLine[];
 }
 
@@ -82,6 +84,11 @@ interface ChatDoc {
   lines: Written[];
   /** Who has seen up to which message (the `n` of the newest they have seen). */
   seen: Record<string, number>;
+  /**
+   * Whose screens have been told of the messages up to which (the `n` of the newest): a screen of theirs asked what waits for them (`unread`), or had the chat open.
+   * The writer's one tick (the owner, 17 Nov: "one checkmark is received, 2 is seen"). Came later, so optional.
+   */
+  got?: Record<string, number>;
   /** Who has muted the other. */
   muted: string[];
 }
@@ -130,6 +137,12 @@ export class ChatBook {
     // (A quote that is not one is let go: the line is a message that answers nothing.)
     for (const line of doc.lines) if (line.q !== undefined && !(Number.isSafeInteger(line.q) && line.q >= 0 && line.q < line.n)) delete line.q;
     if (typeof doc.said !== "number") doc.said = doc.rev;
+    // (What was received that is not right is let go: the ticks then say as much as `seen` does.)
+    if (doc.got !== undefined) {
+      const got = typeof doc.got === "object" && doc.got !== null ? Object.entries(doc.got).filter(([profile, n]) => (profile === doc.a || profile === doc.b) && Number.isSafeInteger(n) && n >= 0) : [];
+      if (got.length > 0) doc.got = Object.fromEntries(got);
+      else delete doc.got;
+    }
     // (A line whose reactions last changed nobody knows when, as of now: a screen that has an older revision is told its reactions, which is a few bytes and
     // never wrong. See `readSince`.)
     for (const line of doc.lines) if (typeof line.rr !== "number" || line.rr > doc.rev) line.rr = doc.rev;
@@ -204,10 +217,15 @@ export class ChatBook {
   }
 
   private view(doc: ChatDoc | undefined, me: string, friend: string): ChatView {
+    // (How far the friend has seen, and been told of, the messages: one's own up to there have two ticks, and one.)
+    const theirSeen = doc?.seen[friend] ?? 0;
+    const theirGot = Math.max(theirSeen, doc?.got?.[friend] ?? 0);
     return {
       rev: doc?.rev ?? 0,
       open: this.host.takes(friend),
       muted: doc?.muted.includes(me) ?? false,
+      ...(theirSeen > 0 ? { theirSeen } : {}),
+      ...(theirGot > 0 ? { theirGot } : {}),
       lines: (doc?.lines ?? []).map((line) => {
         const mineOn = line.r?.[me];
         const theirsOn = line.r?.[friend];
@@ -383,18 +401,27 @@ export class ChatBook {
 
   /* ------------------------------ what waits ------------------------------ */
 
-  /** The messages from friends that `me` has not looked at, a friend at a time, the newest first. Not the ones from a friend that is muted. */
-  unread(me: string): ChatNotice[] {
+  /**
+   * The messages from friends that `me` has not looked at, a friend at a time, the newest first. Not the ones from a friend that is muted. `received`
+   * false leaves them without their one tick: a profile that chose not to be seen online is not shown as having a screen open by it.
+   */
+  unread(me: string, received = true): ChatNotice[] {
     const waiting: ChatNotice[] = [];
     for (const key of [...(this.of.get(me) ?? [])]) {
       const doc = this.chats.get(key);
       if (!doc || !this.tidy(key, doc)) continue;
       const friend = doc.a === me ? doc.b : doc.a;
-      if (doc.muted.includes(me) || !this.host.areFriends(me, friend)) continue;
+      if (!this.host.areFriends(me, friend)) continue;
       const seen = doc.seen[me] ?? 0;
       const fresh = doc.lines.filter((line) => line.from === friend && line.n > seen);
       const newest = fresh.at(-1);
-      if (newest) waiting.push({ friend, count: fresh.length, at: newest.at });
+      // (A screen of `me`'s is being told of them: they are received, the friend's one tick. A muted chat's too: the friend is not told it is muted, and a
+      // message that never got its tick would tell them.)
+      if (received && newest && (doc.got?.[me] ?? 0) < newest.n) {
+        doc.got = { ...doc.got, [me]: newest.n };
+        this.host.touch(key);
+      }
+      if (newest && !doc.muted.includes(me)) waiting.push({ friend, count: fresh.length, at: newest.at });
     }
     return waiting.sort((x, y) => y.at - x.at);
   }
