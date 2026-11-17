@@ -926,6 +926,90 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     }
   });
 
+  it("walks multi-cour HiAnime entries for a named TMDB season (e.g. Bleach S2 E14 -> The Separation E1, skipping recaps and duplicates)", async () => {
+    const bleachTmdb = {
+      id: 30984,
+      name: "Bleach",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+      seasons: [
+        { season_number: 1, name: "Bleach", episode_count: 366 },
+        { season_number: 2, name: "Thousand-Year Blood War", episode_count: 50 },
+      ],
+    };
+
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/30984")) {
+        return { ok: true, status: 200, json: async () => bleachTmdb };
+      }
+
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`
+            <div class="film_list-wrap">
+              <h3 class="film-name"><a href="/bleach-1369" title="Bleach">Bleach</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-1234" title="Bleach: Thousand-Year Blood War Arc">TYBW 1</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-recap-3863" title="Bleach: Thousand-Year Blood War - The Separation Recap">Recap</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-sep-1009" title="Bleach: Thousand-Year Blood War - The Separation">TYBW 2</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-sep-dup-9999" title="BLEACH: Thousand-Year Blood War - The Separation">TYBW 2 Dup</a></h3>
+              <h3 class="film-name"><a href="/bleach-tybw-conf-3859" title="Bleach: Thousand-Year Blood War - The Conflict">TYBW 3</a></h3>
+            </div>
+          `);
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/1234")) {
+          const epHtml = Array.from({ length: 13 }, (_, i) => `<a class="ep-item" data-id="${21000 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/1009")) {
+          const epHtml = Array.from({ length: 13 }, (_, i) => `<a class="ep-item" data-id="${22000 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/3859")) {
+          const epHtml = Array.from({ length: 14 }, (_, i) => `<a class="ep-item" data-id="${23000 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "0";
+          const subEmbed = `https://zokoanime.video/stream/mal/bleach/${epId}/sub`;
+          return text(JSON.stringify({
+            status: true,
+            html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+          }));
+        }
+      }
+
+      if (u.hostname === "zokoanime.video") {
+        const epId = u.pathname.split("/")[4] || "0";
+        const blob = makeZokoBlob({
+          src: `https://cdn.hianime.test/bleach/${epId}/master.m3u8`,
+          subtitles: [{ lang: "en", label: "English", src: `https://cdn.hianime.test/bleach/${epId}/sub.vtt`, default: true }],
+        });
+        return text(`<html><script>window.__P="${blob}";</script></html>`);
+      }
+
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fetcher });
+
+    // S2 E14 -> Cour 2 (1009) Ep 1 -> data-id 22001
+    const ep14 = await adapter.resolve(new URL("https://filmpire.sc/watch/30984?s=2&e=14"));
+    expect(ep14.status).toBe("success");
+    if (ep14.status === "success") {
+      expect(ep14.media.stream.directUrl).toContain("cdn.hianime.test/bleach/22001/master.m3u8");
+    }
+
+    // S2 E27 -> Cour 3 (3859) Ep 1 -> data-id 23001
+    const ep27 = await adapter.resolve(new URL("https://filmpire.sc/watch/30984?s=2&e=27"));
+    expect(ep27.status).toBe("success");
+    if (ep27.status === "success") {
+      expect(ep27.media.stream.directUrl).toContain("cdn.hianime.test/bleach/23001/master.m3u8");
+    }
+  });
+
   it("resolves direct ZokoAnime and HiAnime URLs via createHiAnimeAdapter", async () => {
     const subEmbed = "https://zokoanime.video/stream/mal/40351/1/sub";
     const blob = makeZokoBlob({

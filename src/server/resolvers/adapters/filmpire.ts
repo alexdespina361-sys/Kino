@@ -976,15 +976,30 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               if (hiResults.length === 0) return null;
 
               let hiMatched: { title: string; href: string; id: string } | undefined;
+              let hiCours: Array<{ title: string; href: string; id: string }> = [];
               let hiEpisodeToFind = targetEpisode;
 
+              const isExtra = (t: string) => /\b(?:movie|film|special|ova|recap|omake|anniversary)\b/i.test(t);
+              const dedupByTitle = (list: Array<{ title: string; href: string; id: string }>) => {
+                const seen = new Set<string>();
+                return list.filter((r) => {
+                  const nt = normalizeTitle(r.title);
+                  if (seen.has(nt)) return false;
+                  seen.add(nt);
+                  return true;
+                });
+              };
+
               if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-                hiMatched = hiResults.find((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
-                if (hiMatched) {
+                hiCours = dedupByTitle(
+                  hiResults.filter((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !isExtra(r.title)),
+                );
+                if (hiCours.length > 0) {
+                  hiMatched = hiCours[0];
                   hiEpisodeToFind = targetEpisode;
                 } else {
                   for (const r of hiResults) {
-                    if (!belongsToShow(r.title) || /\b(?:movie|film|special|ova)\b/i.test(r.title)) continue;
+                    if (!belongsToShow(r.title) || isExtra(r.title)) continue;
                     const offset = umbrellaSeasonOffset(r.title);
                     if (offset > 0) {
                       hiMatched = r;
@@ -996,13 +1011,19 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               }
 
               if (!hiMatched && targetSeason > 1) {
-                const matchedSeasonList = hiResults.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
-                hiMatched = matchedSeasonList[0];
+                const matchedSeasonList = dedupByTitle(
+                  hiResults.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title) && !isExtra(r.title)),
+                );
+                if (matchedSeasonList.length > 0) {
+                  hiCours = matchedSeasonList;
+                  hiMatched = matchedSeasonList[0];
+                }
                 if (!hiMatched) {
                   hiMatched = hiResults.find(
                     (r) =>
                       belongsToShow(r.title) &&
                       !otherSeason(r.title) &&
+                      !isExtra(r.title) &&
                       (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
                         r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
                         r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
@@ -1014,7 +1035,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               if (!hiMatched) {
                 if (targetSeason === 1) {
-                  const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+                  const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !isExtra(r.title);
                   hiMatched = hiResults.find((r) => first(r) && itself(r.title)) ?? hiResults.find((r) => first(r) && !sequel(r.title));
                   if (hiMatched) hiEpisodeToFind = targetEpisode;
                 } else if (absoluteEpisode) {
@@ -1028,8 +1049,28 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               if (!hiMatched) return null;
 
-              const eps = await getHiAnimeEpisodes(hiMatched.id, get);
-              const targetEp = eps.find((ep) => ep.num === hiEpisodeToFind) ?? (eps.length === 1 ? eps[0] : undefined);
+              let targetEp: { num: number; id: string; title?: string } | undefined;
+              if (hiCours.length > 1) {
+                let remaining = hiEpisodeToFind;
+                for (const cour of hiCours) {
+                  const courEps = await getHiAnimeEpisodes(cour.id, get);
+                  if (courEps.length === 0) continue;
+                  const found = courEps.find((ep) => ep.num === remaining);
+                  if (found) {
+                    hiMatched = cour;
+                    targetEp = found;
+                    break;
+                  }
+                  if (remaining > courEps.length) {
+                    remaining -= courEps.length;
+                  } else {
+                    break;
+                  }
+                }
+              } else {
+                const eps = await getHiAnimeEpisodes(hiMatched.id, get);
+                targetEp = eps.find((ep) => ep.num === hiEpisodeToFind) ?? (eps.length === 1 && hiEpisodeToFind === 1 ? eps[0] : undefined);
+              }
               if (!targetEp) return null;
 
               const prefAudio = url.searchParams.get("audio") || (url.searchParams.get("mode") === "dub" ? "eng" : undefined);
