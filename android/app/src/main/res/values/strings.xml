@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kino</string>
+    <string name="offline_title">Kino can\'t reach the site. Check the connection.</string>
+    <string name="offline_again">Try again</string>
+</resources>

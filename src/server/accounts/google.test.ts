@@ -816,3 +816,122 @@ describe("profileNameOf", () => {
     expect(profileNameOf(given)).toBe(name);
   });
 });
+
+/* ------------------------------ the Android app's round trip ------------------------------ */
+
+describe("signing in with Google from the Android app", () => {
+  /** The app's secret and its hash, as android/.../GoogleTrip.java makes them. */
+  const appSecret = () => {
+    const verifier = randomBytes(32).toString("base64url");
+    return { verifier, challenge: s256(verifier) };
+  };
+
+  /** The trip in the phone's browser (a Custom Tab: cookies of its own, no session), from the start with `app=` (or a ticket) to the way back to the app. */
+  async function viaAppBrowser(app: FastifyInstance, start: string, sub = ANA) {
+    const tab = new Browser(app);
+    const first = await tab.get(start, { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" });
+    expect(first.statusCode).toBe(302);
+    const to = new URL(String(first.headers.location));
+    const code = google.issue({
+      challenge: to.searchParams.get("code_challenge") ?? "",
+      redirectUri: to.searchParams.get("redirect_uri") ?? "",
+      claims: claimsFor(to.searchParams.get("nonce") ?? "", sub),
+    });
+    const back = await tab.get(`/api/auth/google/callback?state=${encodeURIComponent(to.searchParams.get("state") ?? "")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE);
+    return { tab, back, where: String(back.headers.location) };
+  }
+  const handoffOf = (where: string) => {
+    const url = new URL(where);
+    expect(`${url.protocol}//${url.host}${url.pathname}`).toBe("kino4tv://google");
+    return url.searchParams.get("code") ?? "";
+  };
+
+  it("goes out to the phone's browser and back to the app, and the WebView is signed in with the code and the app's secret: the browser itself is not", async () => {
+    const { app } = await site();
+    const { verifier, challenge } = appSecret();
+    const { tab, where } = await viaAppBrowser(app, `/api/auth/google/start?device=tv&next=%2Ftv&app=${challenge}`);
+    const code = handoffOf(where);
+    expect(code).toMatch(/^[\w-]{43}$/);
+    expect(await meOf(tab)).toBeNull(); // (the browser is not signed in)
+
+    const webview = new Browser(app);
+    const claimed = await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`, { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" });
+    expect(claimed.statusCode).toBe(302);
+    expect(claimed.headers.location).toBe("/tv");
+    expect((await meOf(webview)).profiles[0].name).toBe("Ana");
+    // (good once)
+    const again = new Browser(app);
+    expect((await again.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`)).headers.location).toBe("/?google=failed");
+    expect(await meOf(again)).toBeNull();
+  });
+
+  it("is no use to another app that caught the code: without the secret nothing is signed in, and the code is gone", async () => {
+    const { app } = await site();
+    const { verifier, challenge } = appSecret();
+    const code = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?device=remote&next=%2F&app=${challenge}`)).where);
+    const thief = new Browser(app);
+    expect((await thief.get(`/api/auth/google/app-claim?code=${code}&verifier=${appSecret().verifier}`)).headers.location).toBe("/?google=failed");
+    expect(await meOf(thief)).toBeNull();
+    const owner = new Browser(app);
+    expect((await owner.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`)).headers.location).toBe("/?google=failed");
+    expect(await meOf(owner)).toBeNull();
+  });
+
+  it("lasts two minutes", async () => {
+    const { app } = await site();
+    const { verifier, challenge } = appSecret();
+    const code = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?device=remote&next=%2F&app=${challenge}`)).where);
+    clock.now += 2 * 60_000 + 1;
+    const webview = new Browser(app);
+    expect((await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`)).headers.location).toBe("/?google=failed");
+    expect(await meOf(webview)).toBeNull();
+  });
+
+  it("comes back to the app when it went wrong too, with what to say", async () => {
+    const { app } = await site();
+    const { verifier, challenge } = appSecret();
+    const tab = new Browser(app);
+    const first = await tab.get(`/api/auth/google/start?device=remote&next=%2F&app=${challenge}`);
+    const state = new URL(String(first.headers.location)).searchParams.get("state") ?? "";
+    const back = await tab.get(`/api/auth/google/callback?state=${state}&error=access_denied`, FROM_GOOGLE);
+    const webview = new Browser(app);
+    expect((await webview.get(`/api/auth/google/app-claim?code=${handoffOf(String(back.headers.location))}&verifier=${verifier}`)).headers.location).toBe("/?google=denied");
+    expect(await meOf(webview)).toBeNull();
+  });
+
+  it("connects Google to the account of the WebView with a ticket the WebView asked for, and a ticket is good once; nobody signed in gets none", async () => {
+    const { app, store } = await site();
+    const webview = await withPassword(app);
+    const { verifier, challenge } = appSecret();
+    expect((await new Browser(app).post("/api/auth/google/app-ticket", { mode: "link", challenge })).statusCode).toBe(401);
+    expect((await webview.post("/api/auth/google/app-ticket", { mode: "signin", challenge })).statusCode).toBe(400);
+    const { ticket } = (await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge, device: "remote", next: "/" })).data;
+    expect(ticket).toMatch(/^[\w-]{43}$/);
+
+    const { where } = await viaAppBrowser(app, `/api/auth/google/start?ticket=${ticket}`, BEN);
+    expect((await webview.get(`/api/auth/google/app-claim?code=${handoffOf(where)}&verifier=${verifier}`)).headers.location).toBe("/?google=linked");
+    expect(store.findByGoogle(BEN)?.email).toBe("robert");
+    // (The ticket is used up: a browser that brings it again is sent back saying it went wrong, and goes nowhere near Google.)
+    expect((await new Browser(app).get(`/api/auth/google/start?ticket=${ticket}`)).headers.location).toBe("/?google=failed");
+  });
+
+  it("confirms the WebView's own session with a ticket for reauth", async () => {
+    const { app, store } = await site();
+    const { verifier: v1, challenge: c1 } = appSecret();
+    const first = new Browser(app);
+    expect((await first.get(`/api/auth/google/app-claim?code=${handoffOf((await viaAppBrowser(app, `/api/auth/google/start?app=${c1}`)).where)}&verifier=${v1}`)).statusCode).toBe(302);
+    const sessionId = [...(store as unknown as { sessions: Map<string, { id: string }> }).sessions.values()][0]!.id;
+    expect(store.confirmedNow(sessionId)).toBe(false);
+    const { verifier, challenge } = appSecret();
+    const { ticket } = (await first.post("/api/auth/google/app-ticket", { mode: "reauth", challenge })).data;
+    const { where } = await viaAppBrowser(app, `/api/auth/google/start?ticket=${ticket}`);
+    expect((await first.get(`/api/auth/google/app-claim?code=${handoffOf(where)}&verifier=${verifier}`)).headers.location).toBe("/?google=reauth");
+    expect(store.confirmedNow(sessionId)).toBe(true);
+  });
+
+  it("is a browser's ordinary round trip without `app=`, and `app=` that is no hash is not the app's", async () => {
+    const { app } = await site();
+    const { where } = await viaAppBrowser(app, "/api/auth/google/start?device=remote&next=%2F&app=short");
+    expect(where).toBe("/");
+  });
+});

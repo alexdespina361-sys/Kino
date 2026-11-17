@@ -4,6 +4,25 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.3",
+    date: "2026-11-17",
+    en: [
+      "Kino for Android: an app that tells you when a friend writes or invites you, and updates itself.",
+      "Stickers of your own: make one from a picture and send it in a chat; your friend can save it too.",
+      "On an upright phone, your profile's page and a friend's page scroll as a whole, so more of the screen is for what's below.",
+    ],
+    ro: [
+      "Kino pentru Android: o aplicație care îți spune când îți scrie sau te invită un prieten și se actualizează singură.",
+      "Stickere din pozele tale: faci unul dintr-o poză și îl trimiți în chat; prietenul îl poate salva și el.",
+      "Pe telefonul ținut vertical, pagina profilului și pagina unui prieten se derulează cu totul, ca să rămână mai mult ecran pentru ce e dedesubt.",
+    ],
+    it: [
+      "Kino per Android: un'app che ti avvisa quando un amico ti scrive o ti invita, e si aggiorna da sola.",
+      "Sticker dalle tue foto: ne fai uno da una foto e lo mandi in chat; anche l'amico può salvarlo.",
+      "Col telefono in verticale la pagina del profilo e quella di un amico scorrono per intero, così resta più schermo per quello che c'è sotto.",
+    ],
+  },
+  {
     version: "0.4.2",
     date: "2026-11-17",
     en: [

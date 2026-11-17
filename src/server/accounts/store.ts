@@ -78,7 +78,18 @@ interface SessionDoc {
   expiresAt: number;
   /** Until when the person on this device has just proved again who they are (by signing in to Google again: what an account without a known password is deleted with). */
   reauthUntil?: number;
+  /**
+   * The Android app on this device (push/push.ts): where Firebase reaches it, and the profile it is on, whose friends' messages it is told of. It is the session's, so
+   * signing out, or the sign-in ending any way, forgets it; choosing another profile in the app says so again.
+   */
+  push?: { token: string; profileId: string; at: number };
 }
+
+/** Something a profile is told of on its phones (push/push.ts): a friend wrote, or put something in its inbox. */
+export type StoreNotice = { kind: "chat"; from: string; to: string } | { kind: "inbox"; from: string; to: string; what: "recommend" | "party" | "together" | "plan" | "planYes" | "planNo" };
+
+/** How long a device token can be (Firebase's are about 160 characters) and what it is made of. */
+export const PUSH_TOKEN_PATTERN = /^[A-Za-z0-9:_-]{20,4096}$/;
 interface ProfileData {
   rev: number;
   collections: Record<CollectionName, Map<string, Stamped>>;
@@ -159,7 +170,12 @@ export class AccountStore {
   /** What a profile is called by name -> the tags in use with it -> whose they are (see `takeTag`). */
   private readonly tags = new Map<string, Map<number, string>>();
   /** Who is whose friend, the codes that make friends and the inboxes (see friends.ts); kept and written like the rest. */
-  private readonly book = new FriendBook({ touch: (key) => this.touch(key), drop: (key) => this.drop(key), now: () => this.now() });
+  private readonly book = new FriendBook({
+    touch: (key) => this.touch(key),
+    drop: (key) => this.drop(key),
+    now: () => this.now(),
+    delivered: (to, from, what) => this.tell({ kind: "inbox", from, to, what }),
+  });
   /** What friends have written to each other (see chat.ts); kept and written like the rest. Who may write to whom is read from the friends and the settings as they are. */
   private readonly talk = new ChatBook({
     touch: (key) => this.touch(key),
@@ -168,7 +184,22 @@ export class AccountStore {
     areFriends: (a, b) => this.book.areFriends(a, b),
     on: (profileId) => friendChoices(this.settingsOf(profileId)).friends,
     takes: (profileId) => takesMessages(this.settingsOf(profileId)),
+    wrote: (from, to) => this.tell({ kind: "chat", from, to }),
   });
+
+  /** Who hears of what a profile is told of (push/push.ts): nobody unless the app's notifications are on. */
+  private listener: ((notice: StoreNotice) => void) | undefined;
+  /** `listener` hears of every message and inbox item a profile gets from now on (one listener: the last one given). */
+  onNotice(listener: ((notice: StoreNotice) => void) | undefined): void {
+    this.listener = listener;
+  }
+  private tell(notice: StoreNotice): void {
+    try {
+      this.listener?.(notice);
+    } catch (error) {
+      this.options.log?.warn(`A notice was not passed on: ${(error as Error).message}`);
+    }
+  }
 
   /** When a screen of each profile last looked, to the moment (see `markSeen`): what is written down of it is a little older. */
   private readonly seen = new Map<string, number>();
@@ -700,6 +731,54 @@ export class AccountStore {
 
   endSessionByToken(token: string) {
     this.endSession(sha256(token));
+  }
+
+  /* ------------------------------ the app's notifications ------------------------------ */
+
+  /**
+   * The Android app on this session's device is reached by Firebase at `token`, and is on `profileId` (one of the account's). A token is one device's: if another
+   * session of the account had it (the app signed in again, and the old session was not ended), that one has it no more. (Only of the same account: what one account
+   * says must not take away what another's devices are told of, the authorization sweep's finding.)
+   */
+  setPush(sessionId: string, token: string, profileId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || !PUSH_TOKEN_PATTERN.test(token) || this.profileOwner.get(profileId) !== session.accountId) return false;
+    for (const other of this.sessions.values()) {
+      if (other !== session && other.accountId === session.accountId && other.push?.token === token) {
+        delete other.push;
+        this.touch(`session:${other.id}`);
+      }
+    }
+    if (session.push?.token === token && session.push.profileId === profileId) return true;
+    session.push = { token, profileId, at: this.now() };
+    this.touch(`session:${session.id}`);
+    return true;
+  }
+
+  /** The app on this session's device is told of nothing any more (it said so, or its notifications were turned off). */
+  clearPush(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session?.push) return;
+    delete session.push;
+    this.touch(`session:${session.id}`);
+  }
+
+  /** Firebase no longer knows this token: whichever session has it forgets it. */
+  dropPushToken(token: string): void {
+    for (const session of this.sessions.values()) if (session.push?.token === token) this.clearPush(session.id);
+  }
+
+  /** Where the phones of a profile are reached: the tokens of the sessions that are on it, still signed in, of the account that has it. */
+  pushTokensOf(profileId: string): string[] {
+    const accountId = this.profileOwner.get(profileId);
+    if (!accountId) return [];
+    const now = this.now();
+    return [...this.sessions.values()].filter((session) => session.accountId === accountId && session.expiresAt > now && session.push?.profileId === profileId).map((session) => session.push!.token);
+  }
+
+  /** How many devices have the app's notifications on (the owner's stats). */
+  countPushDevices(): number {
+    return [...this.sessions.values()].filter((session) => session.push).length;
   }
 
   /* ------------------------------ what a profile keeps ------------------------------ */

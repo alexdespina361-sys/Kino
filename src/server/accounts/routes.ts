@@ -26,7 +26,7 @@ import { LinkRegistry } from "./links";
 import { decoyHash, hashPassword, verifyPassword, type PasswordCost } from "./password";
 import { RateLimiter } from "./rateLimit";
 import type { ScreenProofs } from "./screens";
-import { SESSION_TTL_MS, type AccountStore, type StoreError } from "./store";
+import { PUSH_TOKEN_PATTERN, SESSION_TTL_MS, type AccountStore, type StoreError } from "./store";
 
 export interface AccountRoutesOptions {
   store: AccountStore;
@@ -61,6 +61,7 @@ const PasswordChangeSchema = z.object({ current: z.string().max(200), next: NewP
 const ConfirmSchema = z.object({ password: z.string().max(200) });
 const PinCheckSchema = z.object({ pin: ChildPinSchema });
 const CreateProfileSchema = NewProfileSchema.partial({ avatar: true });
+const PushDeviceSchema = z.object({ token: z.string().regex(PUSH_TOKEN_PATTERN), profileId: z.string().min(1).max(64) });
 
 /** The messages the forms know how to word; anything else the person typed wrong is just "invalid". */
 const FORM_ERRORS = new Set(["invalid_email", "weak_password", "invalid_name"]);
@@ -218,6 +219,25 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     const token = readCookie(request.headers.cookie, COOKIE);
     if (token) store.endSessionByToken(token);
     signOutCookie(request, reply);
+    return reply.code(204).send();
+  });
+
+  /* ------------------------------ the app's notifications ------------------------------ */
+
+  // The Android app says where Firebase reaches it and which profile it is on (push/push.ts); it is kept with this device's sign-in, so signing out forgets it.
+  app.put("/api/push", async (request, reply) => {
+    const auth = authenticate(request);
+    if (!auth) return signedOut(reply);
+    const parsed = PushDeviceSchema.safeParse(request.body);
+    if (!parsed.success) return invalid(reply, parsed.error);
+    if (!store.setPush(auth.sessionId, parsed.data.token, parsed.data.profileId)) return reply.code(404).send({ error: "not_found" });
+    return reply.code(204).send();
+  });
+
+  app.delete("/api/push", async (request, reply) => {
+    const auth = authenticate(request);
+    if (!auth) return signedOut(reply);
+    store.clearPush(auth.sessionId);
     return reply.code(204).send();
   });
 

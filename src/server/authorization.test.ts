@@ -405,6 +405,11 @@ const ROWS: Row[] = [
   // (The owner has no PIN to check: "no_pin" is its answer, and anybody else's too, about their own account.)
   row("POST /api/me/child-pin/check", {}, { body: () => ({ pin: "1234" }), ok: (reply) => [204, 404].includes(reply.statusCode) }),
   row("POST /api/auth/logout", {}, { anon: (reply) => reply.statusCode === 204 }),
+  // the Android app on this device: which profile it is told of (only one of the account's own) and that it is told of nothing any more
+  row("PUT /api/push", { pid: asking }, { body: (slot) => ({ token: "device-token-of-the-owners-phone-0000", profileId: slot.pid }), ok: (reply) => reply.statusCode === 204 }),
+  row("DELETE /api/push", {}, { ok: (reply) => reply.statusCode === 204 }),
+  // (The app's ticket for a round trip to Google is the session's own; the world here has no Google, which is a 400 for the owner as well.)
+  row("POST /api/auth/google/app-ticket", {}, { body: () => ({ mode: "link", challenge: "c".repeat(43) }), ok: (reply) => [200, 400].includes(reply.statusCode) }),
   // the devices it is signed in on
   row("GET /api/sessions"),
   row("PATCH /api/sessions/:id", { id: "session" }, { body: () => ({ label: "Somebody else's name" }) }),
@@ -489,6 +494,11 @@ const PUBLIC: Record<string, string> = {
   "GET /api/auth/google/start": "sends the browser to Google with a flow of its own; connecting or confirming needs the browser's own session, and the answer is only a redirect (google.test.ts)",
   "GET /api/auth/google/callback":
     "Google's way back: it does something only for the browser that holds the flow's cookie, and connects or confirms only for the account that started the flow (google.test.ts)",
+  "GET /api/auth/google/app-claim":
+    "the Android app's way back from Google: it signs in only with a code that is good once, for two minutes, and the secret of the app that started the trip (google.test.ts)",
+  "GET /api/app/android": "which version of the Android app is the newest: the same for everybody",
+  "GET /app/android/:file": "the Android app itself: the same for everybody",
+  "GET /app/kino.apk": "the newest Android app under one address: the same for everybody",
   "POST /api/link/start": "a TV that is not signed in asks for a code to show (see 'signing a TV in')",
   "POST /api/link/poll": "that TV asks if the code was approved, with a secret only it holds (see 'signing a TV in')",
   "POST /api/feedback": "anybody may send a report: it belongs to the key its page made (see 'feedback that belongs to a key')",

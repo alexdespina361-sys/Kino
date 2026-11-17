@@ -200,7 +200,40 @@ interface Flow {
   /** `link` and `reauth`: the account that asked, which has to be the one signed in when the browser comes back. */
   accountId?: string;
   startedAt: number;
+  /** A round trip for the Android app (see `AppTrip`). */
+  app?: AppTrip;
 }
+
+/**
+ * The Android app shows the site in a WebView, which Google does not sign anybody in from (`disallowed_useragent`): its "Continue with Google" goes out to the
+ * phone's browser (a Custom Tab), and comes back to the app with a code that only the app can use. The app makes a secret of its own and gives the start its hash
+ * (`app=`, as PKCE does); the way back does not sign the browser in but leaves what came of it under a one-time code, and sends the browser to the app
+ * (`kino4tv://google?code=`), which brings the code and its secret to `/api/auth/google/app-claim` in its WebView: that is where it is signed in. A code caught
+ * by another app on the phone is no use without the secret. Connecting Google, or confirming who is here, needs the WebView's own session: the WebView asks for a
+ * ticket first (`/api/auth/google/app-ticket`, this site's own page only), and the browser starts with the ticket.
+ */
+interface AppTrip {
+  challenge: string;
+  /** `reauth`: the WebView's session, the one that is confirmed. */
+  sessionId?: string;
+}
+
+/** What a round trip of the app came to, kept for the app to claim (see `AppTrip`). */
+interface Handoff {
+  challenge: string;
+  next: "/" | "/tv";
+  device: DeviceKind;
+  /** Signing in: the account the WebView is signed in to. */
+  accountId?: string;
+  outcome?: GoogleOutcome;
+  at: number;
+}
+
+/** The app's own address scheme (android/app/src/main/AndroidManifest.xml). */
+export const APP_SCHEME = "kino4tv";
+const APP_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+const HANDOFF_MS = 2 * 60_000;
+const TICKET_MS = 5 * 60_000;
 
 export interface GoogleHelpers {
   store: AccountStore;
@@ -233,24 +266,51 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
   const { store } = helpers;
   const flows = new Map<string, Flow>();
   const startsByIp = new RateLimiter(30, FLOW_MS);
+  // (The app's: see `AppTrip`.)
+  const tickets = new Map<string, { mode: "link" | "reauth"; device: DeviceKind; next: "/" | "/tv"; accountId: string; sessionId: string; challenge: string; at: number }>();
+  const handoffs = new Map<string, Handoff>();
+  const claimsByIp = new RateLimiter(30, FLOW_MS);
+
+  app.post<{ Body: Record<string, unknown> }>("/api/auth/google/app-ticket", async (request, reply) => {
+    const auth = helpers.authenticate(request);
+    if (!auth) return reply.code(401).send({ error: "signed_out" });
+    const body = request.body ?? {};
+    const mode = body.mode === "link" || body.mode === "reauth" ? body.mode : undefined;
+    const challenge = typeof body.challenge === "string" && APP_CHALLENGE.test(body.challenge) ? body.challenge : undefined;
+    if (!config || !mode || !challenge) return reply.code(400).send({ error: "invalid_request" });
+    if (startsByIp.wait(request.ip) > 0) return reply.code(429).send({ error: "rate_limited" });
+    const ticket = secret();
+    const device = DeviceKindSchema.safeParse(body.device).data ?? "browser";
+    remember(tickets, ticket, { mode, device, next: body.next === "/tv" ? "/tv" : "/", accountId: auth.accountId, sessionId: auth.sessionId, challenge, at: store.clock() }, MAX_FLOWS);
+    return reply.send({ ticket });
+  });
 
   app.get<{ Querystring: Record<string, unknown> }>("/api/auth/google/start", async (request, reply) => {
     const query = request.query ?? {};
-    const next = query.next === "/tv" ? "/tv" : "/";
-    const device = DeviceKindSchema.safeParse(query.device).data ?? "browser";
-    const mode = MODES.find((each) => each === query.mode) ?? "signin";
+    const ticketId = typeof query.ticket === "string" ? query.ticket : "";
+    const ticket = ticketId ? tickets.get(ticketId) : undefined;
+    if (ticket) tickets.delete(ticketId); // (good once)
+    const fresh = ticket && store.clock() - ticket.at <= TICKET_MS ? ticket : undefined;
+    const next = fresh?.next ?? (query.next === "/tv" ? "/tv" : "/");
+    const device = fresh?.device ?? DeviceKindSchema.safeParse(query.device).data ?? "browser";
+    const mode = fresh?.mode ?? (ticketId ? "signin" : (MODES.find((each) => each === query.mode) ?? "signin"));
+    const challenge = typeof query.app === "string" && APP_CHALLENGE.test(query.app) ? query.app : undefined;
+    const trip: AppTrip | undefined = fresh ? { challenge: fresh.challenge, ...(fresh.mode === "reauth" ? { sessionId: fresh.sessionId } : {}) } : challenge && mode === "signin" ? { challenge } : undefined;
     const back = (outcome: GoogleOutcome) => reply.redirect(`${next}?google=${outcome}`);
     const redirectUri = config && redirectFor(config, request);
     if (!config || !redirectUri) return back("unavailable");
+    if (ticketId && !fresh) return back("failed");
     if (startsByIp.wait(request.ip) > 0) return back("busy");
-    const auth = mode === "signin" ? undefined : helpers.authenticate(request);
-    if (mode !== "signin" && !auth) return back("failed");
+    // (The app's browser has no session: a ticket says whose account it is.)
+    const auth = mode === "signin" || fresh ? undefined : helpers.authenticate(request);
+    if (mode !== "signin" && !auth && !fresh) return back("failed");
     startsByIp.hit(request.ip);
 
     const state = secret();
     const nonce = secret();
     const verifier = secret();
-    remember(flows, state, { nonce, verifier, redirectUri, mode, device, next, ...(auth ? { accountId: auth.accountId } : {}), startedAt: store.clock() }, MAX_FLOWS);
+    const accountId = fresh?.accountId ?? auth?.accountId;
+    remember(flows, state, { nonce, verifier, redirectUri, mode, device, next, ...(accountId ? { accountId } : {}), ...(trip ? { app: trip } : {}), startedAt: store.clock() }, MAX_FLOWS);
     reply.header("Set-Cookie", flowCookie(state, request.protocol === "https", FLOW_MS / 1000));
     const target = new URL(config.authorizeUrl ?? GOOGLE_AUTHORIZE_URL);
     target.search = new URLSearchParams({
@@ -277,7 +337,13 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     const flow = state ? flows.get(state) : undefined;
     if (flow) flows.delete(state); // (good once, whatever comes of it)
     const next = flow?.next ?? "/";
-    const back = (outcome?: GoogleOutcome) => reply.redirect(outcome ? `${next}?google=${outcome}` : next);
+    // (A round trip of the app goes back to the app, which claims what came of it in its WebView: see `AppTrip`.)
+    const toApp = (handoff: Omit<Handoff, "challenge" | "next" | "device" | "at">) => {
+      const code = secret();
+      remember(handoffs, code, { ...handoff, challenge: flow!.app!.challenge, next, device: flow!.device, at: store.clock() }, MAX_FLOWS);
+      return reply.redirect(`${APP_SCHEME}://google?code=${code}`);
+    };
+    const back = (outcome?: GoogleOutcome) => (flow?.app ? toApp(outcome ? { outcome } : {}) : reply.redirect(outcome ? `${next}?google=${outcome}` : next));
     const refuse = (why: string) => {
       request.log.warn(`Google sign-in refused: ${why}.`);
       return back("failed");
@@ -289,7 +355,8 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     if (query.error !== undefined) return back(query.error === "access_denied" ? "denied" : "failed");
     const code = typeof query.code === "string" && query.code.length <= 2048 ? query.code : "";
     if (!code) return refuse("no code");
-    const auth = flow.mode === "signin" ? undefined : helpers.authenticate(request);
+    // (The app's browser has no session: the ticket it started with said whose account it is, and which session is confirmed.)
+    const auth = flow.mode === "signin" ? undefined : flow.app ? { accountId: flow.accountId!, sessionId: flow.app.sessionId ?? "" } : helpers.authenticate(request);
     if (flow.mode !== "signin" && (!auth || auth.accountId !== flow.accountId)) return refuse("not the account that started it");
 
     const posted = await postForm(
@@ -315,6 +382,7 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     }
     const found = store.findByGoogle(claims.sub);
     if (found) {
+      if (flow.app) return toApp({ accountId: found.id });
       helpers.signIn(request, reply, found.id, flow.device);
       return back();
     }
@@ -324,8 +392,34 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     helpers.signUpByIp.hit(request.ip);
     const made = store.createGoogleAccount(claims.sub, profileNameOf(claims.givenName), await hashPassword(secret(), helpers.passwordCost));
     if (!made.ok) return refuse("the account was made a moment ago");
+    if (flow.app) return toApp({ accountId: made.value.id });
     helpers.signIn(request, reply, made.value.id, flow.device);
     return back();
+  });
+
+  // The app's WebView brings the code its browser came back with, and the secret only the app knows: the WebView is signed in here (see `AppTrip`).
+  // (Its address has the code and the secret in it: Fastify's line for each request is not written for this route.)
+  app.get<{ Querystring: Record<string, unknown> }>("/api/auth/google/app-claim", { logLevel: "warn" }, async (request, reply) => {
+    const query = request.query ?? {};
+    const code = typeof query.code === "string" ? query.code : "";
+    const handoff = code ? handoffs.get(code) : undefined;
+    if (handoff) handoffs.delete(code); // (good once, whatever comes of it)
+    const next = handoff?.next ?? "/";
+    const failed = (why: string) => {
+      request.log.warn(`The app's Google sign-in refused: ${why}.`);
+      return reply.redirect(`${next}?google=failed`);
+    };
+    if (claimsByIp.wait(request.ip) > 0) return reply.redirect(`${next}?google=busy`);
+    claimsByIp.hit(request.ip);
+    if (!handoff) return failed("no such code");
+    if (store.clock() - handoff.at > HANDOFF_MS) return failed("too late");
+    const verifier = typeof query.verifier === "string" ? query.verifier : "";
+    if (!verifier || challengeOf(verifier) !== handoff.challenge) return failed("not the app that started it");
+    if (handoff.accountId) {
+      if (!store.getAccount(handoff.accountId)) return failed("the account is gone");
+      helpers.signIn(request, reply, handoff.accountId, handoff.device);
+    }
+    return reply.redirect(handoff.outcome ? `${next}?google=${handoff.outcome}` : next);
   });
 
   return { here: (request) => Boolean(config && redirectFor(config, request)) };
