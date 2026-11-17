@@ -28,6 +28,7 @@ import {
   type LiveListName,
   type LiveProgress,
   type LiveRating,
+  type LiveSaved,
   type LiveWatched,
   type NormalizedMedia,
   type Playback,
@@ -66,6 +67,8 @@ export interface Snapshot {
   /** What the profile rated: titles and seasons, the one changed last first. */
   ratings: LiveRating[];
   settings: Settings;
+  /** The chat's pictures the profile keeps (a GIF, one of Kino's stickers), the one kept last first. Read through client/chat/saved.ts, which checks each. */
+  saved: LiveSaved[];
   /**
    * A profile this screen has never kept a copy of, opened just now: its settings are the defaults until the server's first answer,
    * which is not the same as having chosen them (a child's profile is not one until that answer says so).
@@ -163,6 +166,7 @@ export class ProfileStore {
         list: byNewest(live(this.data.list)).filter((item) => known.has(listOf(item))),
         ratings: byNewest(live(this.data.ratings)),
         settings: resolveSettings(this.data.settings),
+        saved: byNewest(live(this.data.saved)),
         waiting: !this.answered,
       };
     }
@@ -466,6 +470,16 @@ export class ProfileStore {
     this.put("settings", (value === undefined ? { key, at, deleted: true } : { key, at, value }) as SettingItem);
   }
 
+  /**
+   * Keep a picture of the chat (`text`: the message as the chat sends it) at the top of the panel, or (`undefined`) let it go. `key` and `text` come from
+   * client/chat/saved.ts, which knows what is one. One kept again moves to the front. When as many are kept as there can be, the oldest goes.
+   */
+  setSaved(key: string, text: string | undefined) {
+    if (key.length > 400 || (text !== undefined && (text.length === 0 || text.length > 400))) return;
+    const at = this.now();
+    this.put("saved", text === undefined ? { key, at, deleted: true } : ({ key, at, text } satisfies LiveSaved));
+  }
+
   /* ------------------------------ staying in step with the server ------------------------------ */
 
   /** What to tell the server: what changed here and has not been confirmed, and where this copy is up to. `sent` goes back to `accept`. */
@@ -484,7 +498,15 @@ export class ProfileStore {
 
   /** The server answered: take in what other screens did, and note that what was sent is safe (unless it changed again meanwhile). */
   accept(response: SyncResponse, sent: ReadonlyMap<string, number>): void {
-    const incoming: ProfileData = { progress: response.progress, watched: response.watched, list: response.list, listNames: response.listNames, ratings: response.ratings, settings: response.settings };
+    const incoming: ProfileData = {
+      progress: response.progress,
+      watched: response.watched,
+      list: response.list,
+      listNames: response.listNames,
+      ratings: response.ratings,
+      settings: response.settings,
+      saved: response.saved,
+    };
     // What the server answers about a thing this screen has just sent is the server's word, even when its copy is the older: it holds back
     // the time of a clock that runs ahead (this screen would otherwise keep its copy over every later change made on another screen, and
     // show a switch that is not the one the server acts on), and it may have preferred another screen's copy. So a thing that was sent and
@@ -509,6 +531,7 @@ export class ProfileStore {
             listNames: without("listNames", this.data.listNames),
             ratings: without("ratings", this.data.ratings),
             settings: without("settings", this.data.settings),
+            saved: without("saved", this.data.saved),
           };
     const merged = mergeData(kept, incoming, this.now());
     const different = JSON.stringify(merged) !== JSON.stringify(this.data);

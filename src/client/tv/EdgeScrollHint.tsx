@@ -5,15 +5,19 @@ import { DWELL_MS, EdgeScroll, type Edge, type EdgeHint, type EdgeWorld, type Pa
 /**
  * Scrolling the TV's pages with nothing but a pointer: resting it against the top or the bottom edge of the screen for a second scrolls the page
  * that way (the rule is in edgeScroll.ts; this is the page it scrolls, what is shown while it waits, and the events that end it).
- * A key, a press or a touch ends it, a wheel ends it for good, and nothing that is not a mouse starts it.
+ * A key, a press, a turn of the wheel or a touch ends it (the pointer then leaves the edge and comes back to start it again), and nothing that is not a mouse
+ * starts it.
  */
 
 /** What scrolls by itself and is no page: a text box, a list box, the picture. */
 const NOT_A_PAGE = "textarea, input, select, video";
 /** A box with less than this to scroll is a row going sideways, or a rounding, not a page. */
 const WORTH_SCROLLING = 12;
-/** The menu rail opens under a pointer that rests on it, so a pointer there is not waiting for a page. */
-const RAIL = ".tv-rail";
+/**
+ * The menu rail opens under a pointer that rests on it, and the buttons of the top corner (the bell, the profile, full screen) are in the top strip, where
+ * a pointer is on its way to press one: a pointer on either is not waiting for a page.
+ */
+const RAIL = ".tv-rail, .tv-browse-corner";
 
 /** The nearest box, from `start` outwards, that scrolls up and down. */
 function scrollerFrom(start: Element | null): HTMLElement | null {
@@ -76,13 +80,9 @@ export function EdgeScrollHint() {
       const busy = () => event.buttons !== 0 || (event.target instanceof Element && event.target.closest(RAIL) !== null);
       if (machine.move({ x: event.clientX, y: event.clientY, height: window.innerHeight, mouse: event.pointerType === "mouse", busy })) run();
     };
+    // (A key, a press, or the wheel: whoever turns it is scrolling with it, and a pointer that lies at the edge meanwhile is not to scroll as well.)
     const onOther = () => {
       machine.other();
-      run();
-    };
-    // (A screen that turns a wheel, or a trackpad, can scroll: it is not offered this again.)
-    const onWheel = () => {
-      machine.retire();
       run();
     };
     const onStand = () => {
@@ -96,7 +96,7 @@ export function EdgeScrollHint() {
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerdown", onOther, { capture: true, passive: true });
     window.addEventListener("keydown", onOther, { passive: true });
-    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("wheel", onOther, { passive: true });
     window.addEventListener("blur", onStand);
     document.addEventListener("visibilitychange", onHidden);
     document.documentElement.addEventListener("pointerleave", onStand);
@@ -106,7 +106,7 @@ export function EdgeScrollHint() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onOther, { capture: true });
       window.removeEventListener("keydown", onOther);
-      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("wheel", onOther);
       window.removeEventListener("blur", onStand);
       document.removeEventListener("visibilitychange", onHidden);
       document.documentElement.removeEventListener("pointerleave", onStand);

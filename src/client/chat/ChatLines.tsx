@@ -10,6 +10,7 @@ import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
 import { ReactBar, Reactions } from "./Reactions";
 import { QuoteBlock } from "./Reply";
+import { pictureOf, toggleKept, useSavedPictures, type KeptNote } from "./saved";
 import { marked } from "./search";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
@@ -719,7 +720,8 @@ function PictureView({ src, alt, small, onClose }: { src: string; alt: string; s
 }
 
 /**
- * What can be done with the message that is selected, besides reacting to it: Save for a friend's personal sticker, Take back for one's own. They are drawn
+ * What can be done with the message that is selected, besides reacting to it: Reply; Save for a friend's personal sticker (into "Yours"); Save for a GIF or one
+ * of Kino's stickers, anybody's (to the top of its tab in the panel, saved.ts), or Remove from saved for one that is; Take back for one's own. They are drawn
  * by the page that shows the list, at the top of the chat beside its ⋯ (the owner, 17 Nov: "the delete should appear up near the triple dots like WhatsApp").
  * Nothing while no message is selected, or when there is nothing to do with the one that is.
  */
@@ -729,6 +731,8 @@ export function PickedActions({
   onReply,
   onTakeBack,
   onSaved,
+  gifs = false,
+  onKept,
   className,
   nav = false,
 }: {
@@ -738,20 +742,29 @@ export function PickedActions({
   /** Answer it (Reply.tsx): none while the friend takes no messages. */
   onReply?: ((id: number) => void) | undefined;
   onTakeBack?: ((id: number) => void) | undefined;
-  /** After Save was pressed: the selection is let go. */
+  /** After Save was pressed (either): the selection is let go. */
   onSaved?: (() => void) | undefined;
+  /** The panel has GIFs (KLIPY's): only then is a GIF saved, since only there is it shown again. */
+  gifs?: boolean;
+  /** What came of saving a GIF or a sticker (or letting it go), for the page to say for a moment. Without it, neither is saved here. */
+  onKept?: ((note: KeptNote) => void) | undefined;
   /** The class of each button: the page's own round button. */
   className: string;
   /** The TV's pages: the buttons are stops of the arrow keys. */
   nav?: boolean;
 }) {
   const t = useT();
+  const kept = useSavedPictures();
   if (!line) return null;
   const own = line.sticker ?? null;
   const saving = own !== null && !line.mine && personal?.onSave ? personal : null;
   const taking = line.mine && onTakeBack !== undefined;
-  if (!saving && !taking && !onReply) return null;
+  const found = onKept ? pictureOf(line) : null;
+  const picture = found && (found.kind === "sticker" || gifs) ? found : null;
+  if (!saving && !taking && !onReply && !picture) return null;
   const has = saving && own ? (saving.has?.(own) ?? false) : false;
+  const isKept = picture ? kept.has(picture) : false;
+  const keepWords = t(isKept ? "chat.pictureUnsave" : "chat.pictureSave");
   const steps = nav ? { "data-nav": true } : {};
   return (
     <>
@@ -759,6 +772,24 @@ export function PickedActions({
         <button type="button" className={`${className} chat-act chat-act-reply`} onClick={() => onReply(line.id)} aria-label={t("chat.reply")} title={t("chat.reply")} {...steps} data-testid="chat-reply">
           <ReplyIcon />
           <span className="chat-act-words">{t("chat.reply")}</span>
+        </button>
+      )}
+      {picture && (
+        <button
+          type="button"
+          className={`${className} chat-act chat-act-save chat-act-picture${isKept ? " chat-act-kept" : ""}`}
+          onClick={() => {
+            onKept?.(toggleKept(kept, picture));
+            onSaved?.();
+          }}
+          aria-label={keepWords}
+          title={keepWords}
+          {...steps}
+          data-kept={isKept ? "yes" : "no"}
+          data-testid="chat-picture-save"
+        >
+          <StarIcon filled={isKept} />
+          <span className="chat-act-words">{keepWords}</span>
         </button>
       )}
       {saving && own && (

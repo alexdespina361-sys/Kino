@@ -4,6 +4,8 @@ import { useT, type Key } from "../i18n";
 import { opensFolder, pickFrom, useKinoApp } from "../app/kinoApp";
 import { MessageIcon } from "../shared/icons";
 import { ownStickerSrc, useMovingStickersOn, useMyStickers, usePersonalStickersOn, type StickerAddProblem } from "./personalStickers";
+import { useSavedPictures } from "./saved";
+import { SavedPictures } from "./SavedPick";
 import { STICKERS, stickerSrc, type Sticker } from "./stickers";
 import type { ChatSession } from "./useChat";
 
@@ -69,7 +71,24 @@ const ADD_PROBLEM: Record<StickerAddProblem, Key> = {
  * move as well (personalStickers.ts `movingPicture`), a picture that moves is made one, and the app has "WhatsApp GIFs" too: the folder of the GIFs WhatsApp was
  * sent (short videos). Else one that moves is made of its first picture.
  */
-function YourStickers({ session, grid, className, nav, pointer, onSent }: { session: ChatSession; grid: string; className: string; nav: boolean; pointer: boolean; onSent: () => void }) {
+function YourStickers({
+  session,
+  grid,
+  className,
+  nav,
+  pointer,
+  onSent,
+  headed = false,
+}: {
+  session: ChatSession;
+  grid: string;
+  className: string;
+  nav: boolean;
+  pointer: boolean;
+  onSent: () => void;
+  /** There is something above (the saved ones): Kino's keep their heading when there is nothing of the profile's own to show. */
+  headed?: boolean;
+}) {
   const t = useT();
   const mine = useMyStickers(session.profileId, true, true);
   const file = useRef<HTMLInputElement>(null);
@@ -122,7 +141,7 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
     void pickFrom(from).then(() => input.click());
   };
 
-  if (!pointer && stickers.length === 0 && mine.status !== "failed") return null;
+  if (!pointer && stickers.length === 0 && mine.status !== "failed") return headed ? <h2 className="chat-stickers-head">{t("chat.stickersBuiltIn")}</h2> : null;
   return (
     <>
       <section className="chat-stickers-yours" data-testid="chat-stickers-yours">
@@ -178,7 +197,7 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
               <span>{t("chat.stickerWhatsAppGifs")}</span>
             </button>
           )}
-          {stickers.map((sticker) => (
+          {stickers.map((sticker, at) => (
             <span className="chat-sticker-mine" key={sticker.id}>
               <button
                 type="button"
@@ -192,6 +211,8 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
                 disabled={session.sending || editing}
                 aria-label={t(sticker.mine ? "chat.stickerYours" : "chat.stickerSavedOne")}
                 {...(nav && !editing ? { "data-nav": true } : {})}
+                // (A remote lands on the first of them when the tab opens: Kino's, under them, may be out of sight below, the judge, 17 Nov.)
+                {...(nav && !editing && at === 0 ? { "data-autofocus": true } : {})}
                 data-personal={sticker.id}
                 data-testid="chat-sticker-mine"
               >
@@ -246,12 +267,18 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
  * can add a sticker of its own.
  */
 export function StickerPane({ session, tv, nav, pointer, onSent }: { session: ChatSession; tv: boolean; nav: boolean; pointer: boolean; onSent: () => void }) {
+  const t = useT();
   const personal = usePersonalStickersOn();
+  // (The stickers the profile saved from its chats come first, under "Saved": the owner's "save/pin", saved.ts.)
+  const saved = useSavedPictures().stickers.length > 0;
   const grid = tv ? "tv-chat-stickers" : "chat-stickers";
   const button = tv ? "tv-chat-sticker-btn" : "chat-sticker-btn";
   return (
-    <div className={`${tv ? "tv-chat-sticker-list" : "chat-sticker-list"}${personal ? " with-yours" : ""}`} data-testid={tv ? "tv-chat-sticker-list" : "chat-sticker-list"}>
-      {personal && <YourStickers session={session} grid={grid} className={button} nav={nav} pointer={pointer} onSent={onSent} />}
+    <div className={`${tv ? "tv-chat-sticker-list" : "chat-sticker-list"}${personal || saved ? " with-yours" : ""}`} data-testid={tv ? "tv-chat-sticker-list" : "chat-sticker-list"}>
+      {saved && <SavedPictures kind="sticker" session={session} grid={grid} className={button} nav={nav} onSent={onSent} />}
+      {personal && <YourStickers session={session} grid={grid} className={button} nav={nav} pointer={pointer} onSent={onSent} headed={saved} />}
+      {/* (Kino's have a heading of their own once there is anything above them.) */}
+      {!personal && saved && <h2 className="chat-stickers-head">{t("chat.stickersBuiltIn")}</h2>}
       <div className={grid} data-testid={grid}>
         {STICKERS.map((sticker, at) => (
           <StickerButton

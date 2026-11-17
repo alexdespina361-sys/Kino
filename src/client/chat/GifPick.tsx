@@ -1,6 +1,8 @@
 import { checkChatText } from "../../shared";
 import { useT } from "../i18n";
 import type { Gif } from "./gifs";
+import { useSavedPictures } from "./saved";
+import { SavedPictures } from "./SavedPick";
 import type { ChatSession } from "./useChat";
 import { useGifSearch, type GifSearch } from "./useGifs";
 
@@ -88,11 +90,21 @@ function GifSearchBox({ search, className, testId, focusFirst = false }: { searc
 export function GifPane({ gifKey, session, tv, nav, onSent }: { gifKey: string; session: ChatSession; tv: boolean; nav: boolean; onSent: () => void }) {
   const t = useT();
   const search = useGifSearch(gifKey);
+  const saved = useSavedPictures();
   const prefix = tv ? "tv-chat" : "chat";
+  // (The GIFs the profile saved, first, while nothing is searched: a grid of their own, apart from KLIPY's Trending, which follows in KLIPY's order under its
+  // own heading. A search shows KLIPY's answer only.)
+  const withSaved = search.query.trim() === "" && saved.gifs.length > 0;
   return (
     <div className={`${prefix}-gif-pane`} data-testid={`${prefix}-gif-pane`}>
       <GifSearchBox search={search} className={`${prefix}-gif-search`} testId={`${prefix}-gif-search`} />
-      <div className={`${prefix}-gif-list`} data-testid={`${prefix}-gif-list`}>
+      <div className={`${prefix}-gif-list${withSaved ? " with-saved" : ""}`} data-testid={`${prefix}-gif-list`}>
+        {withSaved && (
+          <>
+            <SavedPictures kind="gif" session={session} grid={`${prefix}-gifs`} className={`${prefix}-gif`} nav={nav} onSent={onSent} />
+            <h2 className="chat-stickers-head chat-gif-head">{t("chat.gifTrending")}</h2>
+          </>
+        )}
         <GifState search={search} prefix={prefix} />
         {search.gifs.length > 0 && (
           <div className={`${prefix}-gifs`} data-testid={`${prefix}-gifs`}>

@@ -345,7 +345,20 @@ export function resolveSettings(items: readonly SettingItem[]): Settings {
   return settings as Settings;
 }
 
-export const LIMITS = { progress: 60, watched: 600, list: 400, listNames: MAX_LISTS, ratings: 500, settings: SETTING_KEYS.length } as const;
+/**
+ * A picture of the chat that a profile keeps (the owner, 17 Nov 2026: "can save/pin stickers and gifs"): a GIF, or one of Kino's stickers, at the top of its tab
+ * in the chat's panel on every screen of the profile. `text` is the message as the chat sends it (a GIF's address, a sticker's emoji), and the key says which
+ * it is (`gif:` the address, `sticker:` the sticker's name). The screens draw only what they would draw in a chat (client/chat/saved.ts), so a copy made by
+ * hand shows nothing and asks nobody for anything. Each is an item of its own, so that one kept on the phone and another kept on the TV before either was in
+ * step with the server are both kept.
+ */
+export const SAVED_PICTURES_MAX = 60;
+const SavedLive = z.object({ key: KeySchema.regex(/^(gif|sticker):/), at: AtSchema, text: z.string().min(1).max(400) });
+export const SavedItemSchema = orRemoved(SavedLive);
+export type SavedItem = z.infer<typeof SavedItemSchema>;
+export type LiveSaved = z.infer<typeof SavedLive>;
+
+export const LIMITS = { progress: 60, watched: 600, list: 400, listNames: MAX_LISTS, ratings: 500, settings: SETTING_KEYS.length, saved: SAVED_PICTURES_MAX } as const;
 
 /** Everything one profile keeps, as the two screens hold it and as it travels. */
 export interface ProfileData {
@@ -355,10 +368,12 @@ export interface ProfileData {
   listNames: ListNameItem[];
   ratings: RatingItem[];
   settings: SettingItem[];
+  /** The chat's pictures kept at the top of the panel (`SavedItemSchema`). */
+  saved: SavedItem[];
 }
-export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] });
+export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], saved: [] });
 /** The parts of `ProfileData`, which is what a sync goes through one by one. */
-export const COLLECTIONS = ["progress", "watched", "list", "listNames", "ratings", "settings"] as const satisfies readonly (keyof ProfileData)[];
+export const COLLECTIONS = ["progress", "watched", "list", "listNames", "ratings", "settings", "saved"] as const satisfies readonly (keyof ProfileData)[];
 export type CollectionName = (typeof COLLECTIONS)[number];
 
 /** What a screen sends to bring the server up to date and ask what it missed. `since` is the last `rev` it was told of. */
@@ -370,6 +385,8 @@ export const SyncRequestSchema = z.object({
   listNames: z.array(ListNameItemSchema).max(LIMITS.listNames + 160).default([]),
   ratings: z.array(RatingItemSchema).max(LIMITS.ratings + 160).default([]),
   settings: z.array(SettingItemSchema).max(40).default([]),
+  /** (A screen older than the server sends none.) */
+  saved: z.array(SavedItemSchema).max(LIMITS.saved + 160).default([]),
 });
 export type SyncRequest = z.input<typeof SyncRequestSchema>;
 
@@ -390,6 +407,14 @@ export const SyncResponseSchema = z.object({
     .array(z.unknown())
     .transform((items) => items.flatMap((item) => {
       const known = SettingItemSchema.safeParse(item);
+      return known.success ? [known.data] : [];
+    })),
+  /** (A server older than the screen keeps none. One that cannot be read is left out, as a setting is, rather than the whole answer being refused.) */
+  saved: z
+    .array(z.unknown())
+    .default([])
+    .transform((items) => items.flatMap((item) => {
+      const known = SavedItemSchema.safeParse(item);
       return known.success ? [known.data] : [];
     })),
 });
@@ -485,6 +510,8 @@ export function mergeData(a: ProfileData, b: ProfileData, now = Date.now()): Pro
     listNames: mergeCollection(a.listNames, b.listNames, { limit: LIMITS.listNames, now }),
     ratings: mergeCollection(a.ratings, b.ratings, { limit: LIMITS.ratings, now }),
     settings: mergeCollection(a.settings, b.settings, { limit: LIMITS.settings, now }),
+    // (A copy kept before there were saved pictures has none.)
+    saved: mergeCollection(a.saved ?? [], b.saved ?? [], { limit: LIMITS.saved, now }),
   };
 }
 
