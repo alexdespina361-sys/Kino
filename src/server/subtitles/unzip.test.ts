@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import zlib from "node:zlib";
 import {
   decodeSubtitleBuffer,
+  extractSubtitlesFromArchive,
   extractSubtitlesFromZip,
   parseSeasonAndEpisode,
 } from "./unzip";
@@ -105,6 +106,28 @@ describe("unzip subtitles", () => {
       expect(extracted[1]!.season).toBe(1);
       expect(extracted[1]!.episode).toBe(2);
       expect(extracted[1]!.text).toContain("Episode 2 dialogue");
+    });
+  });
+
+  describe("extractSubtitlesFromArchive", () => {
+    it("extracts raw SRT directly", async () => {
+      const rawSrt = Buffer.from("1\n00:00:01,000 --> 00:00:04,000\nDirect subtitle text", "utf8");
+      const res = await extractSubtitlesFromArchive(rawSrt);
+      expect(res).toHaveLength(1);
+      expect(res[0]!.text).toContain("Direct subtitle text");
+    });
+
+    it("extracts from PKZIP buffer", async () => {
+      const zip = makeZipBuffer([
+        {
+          name: "Movie.2024.ro.srt",
+          content: "1\n00:00:01,000 --> 00:00:04,000\nSubtitrare in romana",
+        },
+      ]);
+      const res = await extractSubtitlesFromArchive(zip);
+      expect(res).toHaveLength(1);
+      expect(res[0]!.name).toBe("Movie.2024.ro.srt");
+      expect(res[0]!.text).toContain("Subtitrare in romana");
     });
   });
 });

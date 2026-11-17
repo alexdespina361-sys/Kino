@@ -265,8 +265,11 @@ export class FallbackSubtitleManager {
     const packLinks = [...seasonHtml.matchAll(/<a\s+href="subtitle-(\d+)-(\d+)-([a-z]{2})\.html">/g)];
     if (packLinks.length === 0) return [];
 
-    // We can fetch up to 5 diverse season packs (e.g. en, ro, es, fr, de)
-    const packsToFetch = packLinks.slice(0, 5);
+    // Prioritize English ('en') and Romanian ('ro') season packs first
+    const targetLangs = new Set(["en", "ro"]);
+    const priorityPacks = packLinks.filter((p) => targetLangs.has(p[3] ?? ""));
+    const otherPacks = packLinks.filter((p) => !targetLangs.has(p[3] ?? ""));
+    const packsToFetch = [...priorityPacks, ...otherPacks].slice(0, 6);
 
     await Promise.allSettled(
       packsToFetch.map(async (p) => {

@@ -1308,12 +1308,9 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       // Special-case titles and fast-path resolution:
       // For all Kino titles (filmpire.sc), cartoons, anime, and clean-release titles (1400837):
       // Resolve immediately via fast providers (HiAnime for anime, VidLink & VixSrc for Western content), bypassing slow 15s upstream retries
-      if (id === "1400837" || isAnimeOrCartoon || url.hostname === "filmpire.sc") {
+      if (id === "1400837" || isAnimeOrCartoon) {
         const fastResult = await runFallback();
         if (fastResult) return fastResult;
-        if (url.hostname === "filmpire.sc") {
-          return { status: "unsupported", reason: "No video stream is currently available for this title." };
-        }
       }
 
       // 3. Request embed player from screenfetch4 / vidsrc
