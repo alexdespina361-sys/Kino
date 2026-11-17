@@ -96,14 +96,16 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     return () => watcher.disconnect();
   }, []);
 
-  const pressable = (line: ChatLine) => onPick !== undefined && (line.mine || onReact !== undefined);
+  // (A message can be pressed for what is under it: its reactions, Take back for one's own, and Save for a friend's personal sticker, which stays possible
+  // while the friend takes no messages, as the server allows: the judge, 17 Nov.)
+  const pressable = (line: ChatLine) => onPick !== undefined && (line.mine || onReact !== undefined || (line.sticker !== undefined && !showWriter && personal?.onSave !== undefined));
   /** On a computer (`keyboard`), the one message Tab stops on: the one the keys were last on while it is there, else the newest that can be pressed. */
   const [stop, setStop] = useState<number | null>(null);
   const tabStop = useMemo(() => {
     if (!keyboard) return null;
     if (stop !== null && lines.some((line) => line.id === stop && pressable(line))) return stop;
     return [...lines].reverse().find(pressable)?.id ?? null;
-  }, [keyboard, stop, lines, onPick, onReact]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [keyboard, stop, lines, onPick, onReact, showWriter, personal?.onSave]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // (A message pressed and then gone, taken back by its sender or let go, or one that can no longer be pressed (a friend's, once the friend takes no messages):
   // what was pressed is forgotten, on every screen that keeps it, and its reactions do not come back by themselves later: the judge, 17 Nov.)
@@ -370,32 +372,73 @@ function StickerPicture({ sticker }: { sticker: Sticker }) {
   return <img className="chat-sticker" src={stickerSrc(sticker)} alt={sticker.emoji} width={192} height={192} decoding="async" draggable={false} onError={() => setFailed(true)} data-testid="chat-sticker" data-sticker={sticker.id} />;
 }
 
+/** How often a personal sticker's picture on the screen is asked for again: a browser keeps one five minutes (stickerRoutes.ts), and one taken down goes. */
+export const PERSONAL_RECHECK_MS = 5 * 60_000;
+/** How long after a picture did not come it is asked for again (one that did not come is not gone until the server says so). */
+const PERSONAL_RETRY_MS = [5_000, 15_000, 45_000, 120_000] as const;
+
 /**
  * A message that is a personal sticker (personalStickers.ts): its picture, from this site, big and with no bubble, as the built-in ones are. One nobody has any
- * more (or the team took down, or while the host has them off) says so in a line, where a broken picture would have been. The picture is asked for only when
- * it comes near the view (a chat with many is not a hundred pictures at once).
+ * more (or the team took down, or while the host has them off) says so in a line, where a broken picture would have been: when the server says it is not
+ * there (404), not when the network failed for a moment, which only makes it asked for again a little later. The picture on the screen is asked for again
+ * every five minutes, so that one taken down goes from a chat that stays open (the judge, 17 Nov). It is asked for only when it comes near the view (a chat
+ * with many is not a hundred pictures at once).
  */
 function PersonalPicture({ src, name }: { src: string | null; name: string }) {
   const t = useT();
-  const [gone, setGone] = useState(false);
-  if (!src || gone) {
+  const [state, setState] = useState<"showing" | "waiting" | "gone">("showing");
+  const [tries, setTries] = useState(0);
+  const [period, setPeriod] = useState(() => Math.floor(Date.now() / PERSONAL_RECHECK_MS));
+  useEffect(() => {
+    const timer = window.setInterval(() => setPeriod(Math.floor(Date.now() / PERSONAL_RECHECK_MS)), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const live = useRef(true);
+  const retry = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    live.current = true; // (again, when React mounts it a second time to check it)
+    return () => {
+      live.current = false;
+      window.clearTimeout(retry.current);
+    };
+  }, []);
+  const address = src ? `${src}?v=${period}${tries > 0 ? `.${tries}` : ""}` : null;
+  const failed = async () => {
+    if (!address) return;
+    const status = await fetch(address, { cache: "no-store", credentials: "same-origin" }).then(
+      (answer) => answer.status,
+      () => 0,
+    );
+    if (!live.current) return;
+    if (status === 404 || status === 410) return setState("gone");
+    setState("waiting");
+    window.clearTimeout(retry.current);
+    retry.current = window.setTimeout(() => {
+      setTries((before) => before + 1);
+      setState("showing");
+    }, PERSONAL_RETRY_MS[Math.min(tries, PERSONAL_RETRY_MS.length - 1)]);
+  };
+  if (!address || state === "gone") {
     return (
       <span className="chat-gif-gone" data-testid="chat-personal-gone">
         {t("chat.stickerGone")}
       </span>
     );
   }
+  if (state === "waiting") {
+    return <span className="chat-sticker chat-sticker-personal chat-sticker-waiting" role="img" aria-label={t("chat.stickerOf", { name })} data-testid="chat-personal-waiting" />;
+  }
   return (
     <img
       className="chat-sticker chat-sticker-personal"
-      src={src}
+      src={address}
       alt={t("chat.stickerOf", { name })}
       width={192}
       height={192}
       loading="lazy"
       decoding="async"
       draggable={false}
-      onError={() => setGone(true)}
+      onError={() => void failed()}
       data-testid="chat-personal-sticker"
     />
   );

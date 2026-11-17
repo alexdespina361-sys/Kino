@@ -22,6 +22,10 @@ export const PERSONAL_STICKER = {
   perProfile: 24,
   /** How many an account may make in a day. */
   madePerDay: 20,
+  /** How many pictures an account may ask for in a minute (its collection's and its chats' together: a chat opening asks for many at once). */
+  picturesPerMinute: 600,
+  /** How many pictures are on their way to the server at once: one an account, so many for the whole site (each is held in memory until it is read). */
+  uploadsAtOnce: 4,
   /** How many the whole site keeps, and how many megabytes (unless the host says another: env PERSONAL_STICKERS_MB). */
   siteMax: 3000,
   siteMegabytes: 200,

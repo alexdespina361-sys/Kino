@@ -6,6 +6,8 @@ import { RateLimiter } from "./rateLimit";
 import type { StickerBook } from "./stickers";
 
 const MINUTE = 60_000;
+/** How long a picture let in has to arrive (a quarter of a megabyte: a slow phone's mobile data takes a few seconds). */
+const UPLOAD_MS = 30_000;
 const STATUS: Record<StickerProblem | "gone" | "friends_off", number> = {
   off: 404,
   gone: 404,
@@ -54,8 +56,25 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
   const { store } = helpers;
   const readsByAccount = new RateLimiter(120, MINUTE);
   const writesByAccount = new RateLimiter(30, MINUTE);
-  const picturesByAccount = new RateLimiter(600, MINUTE);
   const base = "/api/profiles/:id/stickers";
+
+  /**
+   * A picture on its way in is let in before its body is read, not after (the judge, 17 Nov: a body of a quarter of a megabyte was read, then refused, for
+   * anybody): the account is signed in, owns the profile, has not made too many, and has no other on its way; and the whole site has so many on their way at
+   * most (`PERSONAL_STICKER.uploadsAtOnce`). Who was let in is kept here for the handler, and let go however the request ends: its answer sent, refused, or the
+   * asker gone at any moment. The picture has `UPLOAD_MS` to arrive, a slow phone's many times over: one sent a byte at a time is let go then, and its request
+   * ended, so a few such cannot keep everybody else's out (the server itself has no such limit: Fastify's `requestTimeout` is 0).
+   */
+  const uploadMs = stickers.options.uploadMs ?? UPLOAD_MS;
+  const uploading = new Set<string>();
+  const letIn = new WeakMap<FastifyRequest, { accountId: string; profileId: string; deadline: ReturnType<typeof setTimeout> }>();
+  const done = (request: FastifyRequest) => {
+    const me = letIn.get(request);
+    if (!me) return;
+    clearTimeout(me.deadline);
+    letIn.delete(request);
+    uploading.delete(me.accountId);
+  };
 
   function asker(request: Asked, reply: FastifyReply, limiter: RateLimiter): { accountId: string; profileId: string } | undefined {
     const auth = helpers.authenticate(request);
@@ -77,18 +96,44 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
     return reply.header("Cache-Control", "no-store").send(stickers.of(me.profileId));
   });
 
-  app.post<{ Params: { id: string } }>(base, { bodyLimit: Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096 }, async (request, reply) => {
-    const me = asker(request, reply, writesByAccount);
-    if (!me) return reply;
-    const parsed = StickerMakeSchema.safeParse(request.body);
-    if (!parsed.success) return stickerRefusal(reply, "too_big");
-    const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"));
-    if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
-    return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
-  });
+  app.post<{ Params: { id: string } }>(
+    base,
+    {
+      bodyLimit: Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096,
+      onRequest: async (request, reply) => {
+        const me = asker(request as Asked, reply, writesByAccount);
+        if (!me) return reply;
+        if (uploading.has(me.accountId) || uploading.size >= PERSONAL_STICKER.uploadsAtOnce) {
+          return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
+        }
+        uploading.add(me.accountId);
+        // (A picture that has not come by then is let go, and its request ended.)
+        const deadline = setTimeout(() => {
+          done(request);
+          request.raw.destroy();
+        }, uploadMs);
+        letIn.set(request, { ...me, deadline });
+        reply.raw.once("close", () => done(request));
+        return undefined;
+      },
+      // (Each of these, and the answer's `close`, lets it go: whichever comes first; letting go twice is nothing.)
+      onResponse: async (request) => done(request),
+      onRequestAbort: async (request) => done(request),
+    },
+    async (request, reply) => {
+      const me = letIn.get(request);
+      if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 }); // (never: the hook let it in)
+      clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
+      const parsed = StickerMakeSchema.safeParse(request.body);
+      if (!parsed.success) return stickerRefusal(reply, "too_big");
+      const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"));
+      if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
+      return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
+    },
+  );
 
   app.get<{ Params: { id: string; sid: string } }>(`${base}/:sid`, async (request, reply) => {
-    const me = asker(request, reply, picturesByAccount);
+    const me = asker(request, reply, stickers.pictureReads);
     if (!me) return reply;
     const { sid } = request.params;
     if (!isStickerId(sid) || !stickers.holds(me.profileId, sid)) return stickerRefusal(reply, "gone");
