@@ -12,7 +12,7 @@ export interface RomanianSubtitle {
   id: string;
   label: string;
   vtt: string;
-  source: "subs.ro" | "subtitrari-noi" | "opensubtitles";
+  source: "subs.ro" | "subtitrari-noi" | "titrari.ro" | "opensubtitles";
   release?: string;
 }
 
@@ -374,11 +374,16 @@ export class RomanianSubtitleManager {
     };
     const quietly = (found: Promise<RomanianSubtitle[]>): Promise<RomanianSubtitle[]> => found.catch(() => []);
 
-    // 1 and 2. Subs.ro (human translations and retail) and Subtitrari-Noi (translation community and retail), asked at once; Subs.ro's come first, and
-    // Subtitrari-Noi's only while Subs.ro's are few.
-    const [subsRoSubs, subtNoiSubs, osSubs] = await Promise.all([quietly(this.fetchFromSubsRo(params)), quietly(this.fetchFromSubtitrariNoi(params)), params.imdbId ? quietly(this.fetchFromOpenSubtitles(params)) : Promise.resolve([])]);
+    // 1, 2 and 3: Subs.ro, Subtitrari-Noi, and Titrari.ro (direct IMDB index), asked at once.
+    const [subsRoSubs, subtNoiSubs, titrariSubs, osSubs] = await Promise.all([
+      quietly(this.fetchFromSubsRo(params)),
+      quietly(this.fetchFromSubtitrariNoi(params)),
+      params.imdbId ? quietly(this.fetchFromTitrariRo(params)) : Promise.resolve([]),
+      params.imdbId ? quietly(this.fetchFromOpenSubtitles(params)) : Promise.resolve([]),
+    ]);
     for (const s of subsRoSubs) addSub(s);
     for (const s of subtNoiSubs) addSub(s);
+    for (const s of titrariSubs) addSub(s);
     for (const s of osSubs) addSub(s);
 
     // 3. Fallback to OpenSubtitles Stremio endpoint if needed
@@ -572,6 +577,85 @@ export class RomanianSubtitleManager {
       }),
     );
     for (const found of archives) list.push(...found);
+    return list;
+  }
+
+  private async fetchFromTitrariRo(params: SubtitleSearchParams): Promise<RomanianSubtitle[]> {
+    const list: RomanianSubtitle[] = [];
+    const imdbId = params.imdbId ? params.imdbId.replace(/^tt/, "") : undefined;
+    if (!imdbId) return list;
+
+    const season = params.season ? Number(params.season) : undefined;
+    const episode = params.episode ? Number(params.episode) : undefined;
+
+    const searchUrl = `https://www.titrari.ro/index.php?page=cautamainaltaparte&z8=1&z5=${encodeURIComponent(imdbId)}`;
+    const res = await this.get(searchUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Referer: "https://www.titrari.ro/",
+      },
+      signal: AbortSignal.timeout(3_500),
+    });
+    if (!res.ok) return list;
+    const html = (await pageText(res)) ?? "";
+    const downloadMatches = [...html.matchAll(/href=get\.php\?id=(\d+)/gi)];
+    if (downloadMatches.length === 0) return list;
+
+    const chosenIds = downloadMatches.slice(0, 3).map((m) => m[1]!);
+    const downloads = await Promise.all(
+      chosenIds.map(async (subId, n): Promise<RomanianSubtitle[]> => {
+        try {
+          const dlRes = await this.get(`https://www.titrari.ro/get.php?id=${subId}`, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+              Referer: "https://www.titrari.ro/",
+            },
+            signal: AbortSignal.timeout(3_500),
+          });
+          if (!dlRes.ok) return [];
+          const buf = await readCapped(dlRes, MAX_ARCHIVE_BYTES);
+          if (!buf || buf.length < 10) return [];
+
+          const found: RomanianSubtitle[] = [];
+
+          // 1. Raw SRT
+          if (buf[0] === 0x31 || buf.subarray(0, 50).includes(Buffer.from("-->"))) {
+            const text = decodeSubtitleBytes(buf);
+            if (text.includes("-->")) {
+              found.push({
+                id: `titrari_${subId}_${n + 1}`,
+                label: `Romanian (Titrari) #${subId}`.slice(0, 100),
+                vtt: srtToVtt(text),
+                source: "titrari.ro",
+                release: `Titrari #${subId}`,
+              });
+            }
+          }
+          // 2. ZIP archive
+          else if (buf[0] === 0x50 && buf[1] === 0x4b) {
+            for (const item of extractSrtFromZip(buf)) {
+              if (season && episode && !matchesEpisode(item.name, season, episode)) continue;
+              if (/english|eng\.srt/i.test(item.name) && !/romanian|ro/i.test(item.name)) continue;
+              const baseName = item.name.split("/").pop()?.replace(/\.srt$/i, "") || item.name;
+              found.push({
+                id: `titrari_${subId}_${found.length + 1}`,
+                label: `Romanian (Titrari) · ${baseName}`.slice(0, 100),
+                vtt: srtToVtt(item.content),
+                source: "titrari.ro",
+                release: baseName,
+              });
+              if (found.length >= 2) break;
+            }
+          }
+
+          return found;
+        } catch {
+          return [];
+        }
+      }),
+    );
+
+    for (const d of downloads) list.push(...d);
     return list;
   }
 

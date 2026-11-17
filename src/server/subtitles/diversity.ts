@@ -28,7 +28,7 @@ export function inferSubtitleSource(track: SubtitleTrack & { source?: SubtitleSo
   if (u.includes("/api/subtitles/official/") || l.includes("kino official")) {
     return "official";
   }
-  if (u.includes("/api/subtitles/ro/") || l.includes("subs.ro") || l.includes("subtitrari-noi") || l.includes("retail / subtitrari")) {
+  if (u.includes("/api/subtitles/ro/") || l.includes("subs.ro") || l.includes("subtitrari-noi") || l.includes("titrari") || l.includes("retail / subtitrari")) {
     return "romanian";
   }
   if (u.includes("/api/subtitles/fallback/") || u.includes("tvsubtitles") || l.includes("tvsubtitles")) {
