@@ -204,6 +204,7 @@ describe("createLibrary title", () => {
     await library.get();
     expect(await library.title("soap")).toMatchObject({ id: "soap" });
     expect((await library.search("hidden soap")).items.map((found) => found.id)).toEqual([]);
+    expect(library.known("soap")).toMatchObject({ title: "Hidden Soap" }); // (what is said of it keeps its name)
   });
 
   it("is none for a title that would not play, as the lists leave it out", async () => {

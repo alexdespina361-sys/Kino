@@ -1053,12 +1053,25 @@ describe("filmpireSource episodes", () => {
       expect(lists.map((list) => list.length)).toEqual([24, 24, 11]);
     });
 
-    it("of 59 the check told of as 24 and 23: the last part takes the episodes beyond them, so none is lost", async () => {
+    it("of 59 the check told of as 24 and 23: the episodes beyond them follow as a part of their own, so none is lost", async () => {
       const source = filmpireSource({ fetch: tmdb({ 1: 59 }) as never, probeFetch: told({ "1": run(24), "2": run(23) }) as never, verifyPlayback: true, filterTrash: false });
       const { seasons, lists } = await all(source, 95482);
-      expect(seasons).toEqual([1, 2]);
-      expect(lists.map((list) => list.length)).toEqual([24, 35]);
+      expect(seasons).toEqual([1, 2, 3]);
+      expect(lists.map((list) => list.length)).toEqual([24, 23, 12]);
       expect(lists.flat().map((episode) => episode.title)).toEqual(episodesOf(59).map((episode) => episode.name));
+    });
+
+    it("cuts a show as the check's last answer said while it has none: the same parts for its seasons and its episodes", async () => {
+      let clock = 1_000_000;
+      let up = true;
+      const probe = vi.fn(async () => (up ? json({ status_code: "200", data: { title: "Show", eps: { "1": run(12), "2": run(12) } } }) : Promise.reject(new Error("offline"))));
+      const source = filmpireSource({ fetch: tmdb({ 1: 24 }) as never, probeFetch: probe as never, verifyPlayback: true, filterTrash: false, now: () => clock });
+      expect((await all(source, 95486)).lists.map((list) => list.length)).toEqual([12, 12]);
+      up = false;
+      clock += 30 * 24 * 60 * 60 * 1000; // (long after the answer is out of date)
+      const { seasons, lists } = await all(source, 95486);
+      expect(seasons).toEqual([1, 2]);
+      expect(lists.map((list) => list.length)).toEqual([12, 12]);
     });
 
     it("of 59 with the last 5 not out yet: parts over the 54 that are out", async () => {

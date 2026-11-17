@@ -452,13 +452,15 @@ export class RomanianSubtitleManager {
     const text = (await pageText(searchRes)) ?? "";
 
     const matches = [...text.matchAll(/href="https:\/\/subs\.ro\/subtitrare\/([^\/]+)\/(\d+)"/g)];
-    const targetYear = params.year ? Number(params.year) : undefined;
-    const target = params.title ? wordsOf(params.title) : [];
+    const year = params.year ? Number(params.year) : NaN;
+    const targetYear = Number.isFinite(year) ? year : undefined;
+    // (An address may write "Schindler's" as `schindlers` or as `schindler-s`: both are tried.)
+    const targets = params.title ? [wordsOf(params.title), wordsOf(params.title.replace(/['’`]/g, " "))] : [];
 
     const filteredMatches = matches.filter((m) => {
       // If we searched with external_id (imdbId), Subs.ro already strictly matched the title
       if (imdbId) return true;
-      if (target.length === 0) return true;
+      if (targets.length === 0 || targets[0]!.length === 0) return true;
       const slug = m[1]!;
       const yMatch = slug.match(/-(\d{4})$/);
       const slugYear = yMatch ? Number(yMatch[1]) : undefined;
@@ -467,11 +469,13 @@ export class RomanianSubtitleManager {
       // (The title's words, accents or not, at the end of the address, or at its start with nothing after them but a season: "amelie" is
       // Amélie, "the-office-sezonul-2" is The Office, "amelie-goes-home" is another film. The judge, 17 Nov.)
       const words = wordsOf(slugBase);
-      const from = (at: number) => at >= 0 && target.every((word, n) => words[at + n] === word);
-      const after = words[target.length];
-      // (At the end only for a title of two words or more, or with the year agreeing: "her" would be the end of "kill-her" and of any film.)
-      const atEnd = (target.length >= 2 || (targetYear !== undefined && slugYear !== undefined)) && from(words.length - target.length);
-      return (from(0) && (after === undefined || /^(sezon|sezonul|season|seria|s\d+)$/.test(after))) || atEnd;
+      return targets.some((target) => {
+        const from = (at: number) => at >= 0 && target.every((word, n) => words[at + n] === word);
+        const after = words[target.length];
+        // (At the end only for a title of two words or more, or with the year agreeing: "her" would be the end of "kill-her" and of any film.)
+        const atEnd = (target.length >= 2 || (targetYear !== undefined && slugYear !== undefined)) && from(words.length - target.length);
+        return (from(0) && (after === undefined || /^(sezon|sezonul|season|seria|s\d+)$/.test(after))) || atEnd;
+      });
     });
     const chosenMatches = (filteredMatches.length > 0 ? filteredMatches : (imdbId ? matches : [])).slice(0, 3);
 

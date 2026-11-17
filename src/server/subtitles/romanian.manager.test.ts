@@ -94,8 +94,8 @@ describe("a title with no IMDb id, matched by its name (the judge, 17 Nov)", () 
       }) as typeof globalThis.fetch;
     const her = await new RomanianSubtitleManager(undefined, answer(["her/31", "kill-her/32"])).getSubtitles({ title: "Her" });
     expect(her.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · her"]);
-    const list = await new RomanianSubtitleManager(undefined, answer(["schindlers-list-1993/41"])).getSubtitles({ title: "Schindler's List", year: 1993 });
-    expect(list.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · schindlers-list-1993"]);
+    const list = await new RomanianSubtitleManager(undefined, answer(["schindlers-list-1993/41", "schindler-s-list-1993/42"])).getSubtitles({ title: "Schindler's List", year: 1993 });
+    expect(list.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · schindlers-list-1993", "Romanian (Subs.ro) · schindler-s-list-1993"]);
   });
 
   it("tells an English file of an archive by its words, and keeps Thrones and Bros", () => {
