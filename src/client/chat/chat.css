@@ -378,6 +378,9 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
  * button that adds one and, after Edit, the cross that removes one. The two grids are one list that scrolls, on a TV as on a hand-held screen.
  */
 .chat-sticker-personal { object-fit: cover; border-radius: 22px; }
+/* (A picture that did not come, while it is asked for again: its place, quietly.) */
+.chat-sticker-waiting { background: var(--surface-2); }
+.tv .chat-sticker-waiting { background: #2a2a31; }
 .tv .chat-sticker-personal { border-radius: 1.2em; }
 .chat-stickers-yours { display: flex; flex: none; flex-direction: column; gap: 6px; width: 100%; }
 .chat-stickers-headrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

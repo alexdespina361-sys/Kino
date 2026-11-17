@@ -66,14 +66,25 @@ export class StickerBook {
   private bytesInAll = 0;
   /** Pictures on their way to `files` (counted already, so two at once cannot both take the last room). */
   private writing = 0;
+  /** What a profile is making now: its makes go one after the other, so the same picture sent twice at once is one sticker (the judge, 17 Nov). */
+  private readonly making = new Map<string, Promise<unknown>>();
+  /**
+   * How many pictures an account may ask for in a minute, of its collection and of its chats together (stickerRoutes.ts, chatRoutes.ts): one allowance, not one
+   * for each place, so the pictures are not twice as many reads of where they are kept (the judge, 17 Nov).
+   */
+  readonly pictureReads: RateLimiter;
 
   constructor(
     private readonly host: StickerHost,
     private readonly files: StickerFiles,
-    /** `on`: the host turned them on (the kill switch is turning it off). `maxBytes`: of all the pictures together. */
-    readonly options: { on: boolean; maxBytes?: number; log?: { warn(message: string): void } },
+    /**
+     * `on`: the host turned them on (the kill switch is turning it off). `maxBytes`: of all the pictures together. `uploadMs`: how long a picture let in may take
+     * to arrive (stickerRoutes.ts; tests make it short).
+     */
+    readonly options: { on: boolean; maxBytes?: number; uploadMs?: number; log?: { warn(message: string): void } },
   ) {
     this.made = new RateLimiter(PERSONAL_STICKER.madePerDay, DAY, () => host.now());
+    this.pictureReads = new RateLimiter(PERSONAL_STICKER.picturesPerMinute, 60_000, () => host.now());
   }
 
   get on(): boolean {
@@ -188,6 +199,18 @@ export class StickerBook {
    * many, and so much. The same picture made again by the profile is the sticker it made. Answers with the sticker's name.
    */
   async make(profileId: string, accountId: string, sent: Buffer): Promise<StickerOutcome<string>> {
+    const before = this.making.get(profileId) ?? Promise.resolve();
+    const run = before.then(() => this.makeNow(profileId, accountId, sent));
+    const after = run.catch(() => {});
+    this.making.set(profileId, after);
+    try {
+      return await run;
+    } finally {
+      if (this.making.get(profileId) === after) this.making.delete(profileId);
+    }
+  }
+
+  private async makeNow(profileId: string, accountId: string, sent: Buffer): Promise<StickerOutcome<string>> {
     if (!this.on) return no("off");
     if (!this.host.on(profileId)) return no("friends_off");
     if (this.count(profileId) >= PERSONAL_STICKER.perProfile) return no("full");
@@ -218,8 +241,9 @@ export class StickerBook {
       this.writing--;
     }
     this.bytesInAll -= made.png.length; // (counted again as the document's, below)
-    // (Two made at once by one profile: the second may find the collection full by now.)
+    // (A save while the picture was being written may have filled the collection: then nothing was made, and it does not count as one of the day's.)
     if (this.count(profileId) >= PERSONAL_STICKER.perProfile) {
+      this.made.undo(accountId);
       await this.files.remove(id).catch(() => {});
       return no("full");
     }

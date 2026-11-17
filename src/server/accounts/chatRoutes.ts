@@ -238,7 +238,8 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
   });
 
   app.get<{ Params: { id: string; fid: string; sid: string } }>(`${base}/stickers/:sid`, async (request, reply) => {
-    const me = asker(request, reply, picturesByAccount);
+    // (The same allowance as the pictures of one's own collection: see `StickerBook.pictureReads`.)
+    const me = asker(request, reply, stickers?.pictureReads ?? picturesByAccount);
     if (!me) return reply;
     const book = stickersOn();
     if (!book) return stickerRefusal(reply, "off");
