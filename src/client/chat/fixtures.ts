@@ -7,12 +7,15 @@ export function fakeSession(parts: Omit<Partial<ChatSession>, "state"> & { state
   const calls: string[] = [];
   const { state, ...rest } = parts;
   return {
+    profileId: "me",
+    friendId: "friend",
     state: { ...FRESH_CHAT, rev: 1, ...state },
     loaded: true,
     ended: null,
     problem: null,
     sending: false,
     send: async (text) => (calls.push(`send:${text}`), true),
+    sendSticker: async (id) => (calls.push(`sticker:${id}`), true),
     takeBack: async (id) => void calls.push(`takeBack:${id}`),
     react: async (id, reaction) => void calls.push(`react:${id}:${reaction ?? "none"}`),
     setMuted: async (muted) => void calls.push(`mute:${muted}`),

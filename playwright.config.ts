@@ -40,7 +40,8 @@ export default defineConfig({
     // DATA_DIR=memory: accounts made by the tests are not kept (and do not end up in a data folder).
     // SIGNUPS_PER_HOUR: every test is the same address, and the limit (10 an hour) is for a public server, not for a suite that makes an account in each of its account tests.
     // FEEDBACK_ADMIN_TOKEN and FEEDBACK_SENDS_PER_10_MIN: the same for the feedback (6 reports in ten minutes), and the feedback specs read what was sent with the token.
-    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", PAIRINGS_PER_HOUR: "100000",FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000" },
+    // PERSONAL_STICKERS=on: the chat specs try them (a host has them off until its owner turns them on, see src/server/accounts/stickers.ts).
+    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", PAIRINGS_PER_HOUR: "100000", FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000", PERSONAL_STICKERS: "on" },
     reuseExistingServer: false,
     timeout: 120_000,
   },

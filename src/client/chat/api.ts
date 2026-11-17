@@ -9,6 +9,8 @@ export const chatApi = {
   read: (profileId: string, friendId: string, since?: number) => ask(ChatThreadSchema, "GET", `${base(profileId, friendId)}${since === undefined ? "" : `?since=${since}`}`),
   /** Write to the friend: the answer is the chat, with the message in it. */
   send: (profileId: string, friendId: string, text: string) => ask(ChatThreadSchema, "POST", base(profileId, friendId), { text }),
+  /** Send one of one's personal stickers (its name): the answer is the chat, with it in it. */
+  sendSticker: (profileId: string, friendId: string, id: string) => ask(ChatThreadSchema, "POST", `${base(profileId, friendId)}/sticker`, { id }),
   /** Take back one of one's own messages: gone for both. The answer is the chat. */
   takeBack: (profileId: string, friendId: string, id: number) => ask(ChatThreadSchema, "DELETE", `${base(profileId, friendId)}/${id}`),
   /** Put a reaction on a message (one's own or the friend's), change it, or take it away (null). The answer is the chat. */

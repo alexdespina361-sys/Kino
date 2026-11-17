@@ -3,9 +3,10 @@ import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } fro
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
 import { FilmIcon, GifIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
-import { ChatLines } from "./ChatLines";
+import { ChatLines, type PersonalLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
+import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
 import { StickerPickSheet } from "./StickerPick";
 import { afterSent, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
@@ -49,6 +50,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   /** The sheet of stickers is open (StickerPick.tsx). */
   const [stickerPicking, setStickerPicking] = useState(false);
   const blocked = whyNotWrite(session);
+  const personal = usePersonalLines(session, true);
 
   return (
     <>
@@ -92,7 +94,13 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               }}
               {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) })}
               onOpenTitle={onOpenTitle}
+              personal={personal.lines}
             />
+          )}
+          {personal.note && (
+            <p className="chat-note" role="status" data-testid="chat-sticker-note">
+              {t(SAVE_NOTE[personal.note])}
+            </p>
           )}
 
           <ChatNotices name={name} session={session} receiving={receiving} prefix="chat" />
@@ -109,7 +117,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
       {picking && !blocked && <TitlePickSheet name={name} session={session} onClose={() => setPicking(false)} />}
       {gifPicking && gifKey && !blocked && <GifPickSheet name={name} gifKey={gifKey} session={session} onClose={() => setGifPicking(false)} />}
       {stickerPicking && !blocked && <StickerPickSheet name={name} session={session} onClose={() => setStickerPicking(false)} />}
-      {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} />}
+      {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} personal={personal.lines} />}
     </>
   );
 }
@@ -166,7 +174,7 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
 }
 
 /** What a report would hold, shown in full, and the one button that sends it. Nothing is sent before the button. */
-export function ChatReportSheet({ name, report, now }: { name: string; report: ChatReport; now: number }) {
+export function ChatReportSheet({ name, report, now, personal }: { name: string; report: ChatReport; now: number; personal?: PersonalLines | undefined }) {
   const t = useT();
   const lines = report.preview?.lines ?? [];
   const sent = report.stage === "sent";
@@ -193,7 +201,7 @@ export function ChatReportSheet({ name, report, now }: { name: string; report: C
               {t("chat.reportNone")}
             </p>
           ) : (
-            lines.length > 0 && <ChatLines lines={lines} name={name} now={now} showWriter testId="chat-report-lines" />
+            lines.length > 0 && <ChatLines lines={lines} name={name} now={now} showWriter personal={personal && { src: personal.src }} testId="chat-report-lines" />
           )}
           {report.problem && (
             <p className="chat-problem" role="alert" data-testid="chat-report-problem">

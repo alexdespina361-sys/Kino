@@ -18,6 +18,8 @@ data/
 .feedback/
 # the Kino Official subtitles the team saves to correct (scripts/official.mjs): subtitle text, never in this public repo
 .official/
+# the pictures of personal stickers the team saves to look at (scripts/stickers.mjs): people's pictures, never in this public repo
+.stickers/
 .kino-cat/
 
 scratch/

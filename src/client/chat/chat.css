@@ -372,6 +372,38 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-sticker-btn:focus-visible { outline: none; background: #34343c; box-shadow: 0 0 0 0.2em #fff; }
 
 /*
+ * Personal stickers (personalStickers.ts): a picture of one's own, its corners rounded (a photo, not a cut-out); in the grid, "Yours" over Kino's, with the
+ * button that adds one and, after Edit, the cross that removes one. The two grids are one list that scrolls, on a TV as on a hand-held screen.
+ */
+.chat-sticker-personal { object-fit: cover; border-radius: 22px; }
+.tv .chat-sticker-personal { border-radius: 1.2em; }
+.chat-stickers-yours { display: flex; flex: none; flex-direction: column; gap: 6px; width: 100%; }
+.chat-stickers-headrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-stickers-yours > .chat-note, .chat-stickers-yours > .chat-privacy { margin-inline: 2px; text-align: left; }
+.tv .chat-stickers-yours > .chat-note, .tv .chat-stickers-yours > .chat-privacy { margin-inline: 0.5em; }
+.chat-stickers-head { margin: 6px 2px 2px; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+.tv .chat-stickers-head { width: min(100%, 74em); margin: 0.3em auto 0.1em; font-size: 1.15em; text-align: left; }
+.chat-stickers-yours .chat-stickers { max-height: none; overflow: visible; }
+/*
+ * (On a TV with the profile's own, the two grids are one list that scrolls: the remote's next sticker is brought into view, wherever it is. The list is as wide
+ * as the grid of seven, 7 x 6.5em with its gaps and edges, so that the headings and both grids start at the same place.)
+ */
+.tv-chat-sticker-list.with-yours { display: flex; flex: none; flex-direction: column; align-items: stretch; width: min(100%, 50.7em); margin-inline: auto; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
+.tv-chat-sticker-list.with-yours .tv-chat-stickers { width: auto; justify-content: start; max-height: none; overflow: visible; }
+.tv-chat-sticker-list.with-yours .chat-stickers-head { width: auto; margin: 0.3em 0.45em 0.1em; }
+.chat-sticker-mine { position: relative; display: block; }
+.chat-sticker-mine > button:first-child { width: 100%; }
+.chat-sticker-mine img { border-radius: 18%; object-fit: cover; }
+.chat-sticker-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.7rem; line-height: 1.15; text-align: center; }
+.chat-sticker-add-plus { font-size: 1.7rem; line-height: 1; }
+.tv-chat-sticker-btn.chat-sticker-add { border: 0.12em dashed rgba(255, 255, 255, 0.35); color: #c9c9d1; font-size: 0.85em; }
+.tv-chat-sticker-btn .chat-sticker-add-plus { font-size: 2.4em; }
+.chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+.tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
+.chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }
+.chat-sticker-save:disabled { opacity: 0.6; }
+
+/*
  * Reactions (Reactions.tsx): what is on a message, small and under it on its side, a little over the bubble's edge as a messenger draws them; the bar of
  * six that comes under a pressed message; on a TV that is only a remote, a page of six big buttons. Each is its sticker's picture (the emoji if it did not come).
  */
@@ -405,8 +437,9 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-window { width: 100%; height: auto; max-height: none; }
   .tv-chat-window > .chat-lines { max-height: 50vh; font-size: 1.4em; }
   .tv-chat-name { font-size: 1.7em; }
-  .tv-chat-menu { min-width: 0; }
-  .tv-chat-menu button { font-size: 1.25em; }
+  /* (the ⋯ as wide as the screen allows, its lines wrapping: "Reacționează la ultimul mesaj al lui <a long name>" is wider than the narrowest phone) */
+  .tv-chat-menu { min-width: 0; max-width: calc(100vw - 2rem); }
+  .tv-chat-menu button { font-size: 1.25em; white-space: normal; overflow-wrap: anywhere; }
   .tv .chat-lines { width: 100%; max-height: 38vh; font-size: 1.5em; }
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
@@ -428,6 +461,10 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-stickers { grid-template-columns: repeat(auto-fill, minmax(5.5em, 1fr)); justify-content: stretch; max-height: 62vh; }
   .tv-sticker-screen .tv-chat-sticker-list { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; width: 100%; min-height: 0; padding: 0.6em 0.6em max(1.2em, env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
   .tv-sticker-screen .tv-chat-stickers { width: 100%; max-height: none; padding: 0; overflow: visible; gap: 0.45em; }
+  .tv-sticker-screen .tv-chat-sticker-list.with-yours { flex: 1 1 auto; align-items: center; width: 100%; max-height: none; margin: 0; }
+  .tv-sticker-screen .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: 100%; }
+  .tv-sticker-screen .tv-chat-sticker-list.with-yours .chat-stickers-head { width: 100%; margin: 0.3em auto 0.1em; }
+  .tv-sticker-screen .chat-stickers-head { width: 100%; font-size: 1em; }
 
   /*
    * The chat itself on a hand-held screen is the whole screen, as in any messenger (the owner, 16 Nov): the friend at the top with the arrow back, the

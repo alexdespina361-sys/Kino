@@ -30,7 +30,7 @@ export function chatTranscript(report: ChatReport): string {
     "",
     ...report.lines.map((line) => `[${stamp(line.at)}] ${who(line.from)}: ${said(line)}`),
     "",
-    ...(pictures.size > 0 ? ["A personal sticker is taken down everywhere with: node scripts/stickers.mjs remove <its name>", ""] : []),
+    ...(pictures.size > 0 ? ["A personal sticker is taken down everywhere with: node scripts/stickers.mjs remove <its name> --yes", ""] : []),
   ].join("\n");
 }
 
