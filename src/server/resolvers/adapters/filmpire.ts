@@ -1,7 +1,7 @@
 import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { withAnimeHint, sourceSkipTimes, type AnimeFacts } from "../../anime/hint";
 import { remember } from "../../boundedMap";
-import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
+import { FILMPIRE_TMDB_API_KEY, playerSeasonCounts, probePlayback, type ProbeRecord } from "../../library/filmpire";
 import { noteExtrasWait } from "../lookup";
 import { providerFetch } from "../providerFetch";
 import type { ResolveResult, SiteAdapter } from "../types";
@@ -584,6 +584,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
   const get = options.fetch ?? providerFetch();
   const extras = options.extras ?? lookForExtras;
   const extrasGraceMs = options.extrasGraceMs ?? EXTRAS_GRACE_MS;
+  const resolverProbeCache = new Map<string, ProbeRecord>();
   const fetchJson = <T = Record<string, unknown>>(url: string, headers: Record<string, string> = {}): Promise<T> => getJson<T>(get, url, headers);
   const fetchText = (url: string, headers: Record<string, string> = {}): Promise<string> => getText(get, url, headers);
   return {
@@ -717,6 +718,47 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       };
       let pendingExtras: Extras | undefined = tmdbImdbId ? askExtras(tmdbImdbId) : undefined;
 
+      // Mirror library/filmpire.ts `partsOf` when TMDB keeps a long show as season 1 alone (>30 eps):
+      // map `?s=k&e=n` back to the absolute episode within TMDB's season 1, and note whether the cut matches provider seasons.
+      const validTmdbSeasons = (tmdbSeasons ?? []).filter((sn) => (sn.season_number ?? 0) >= 1 && (sn.episode_count ?? 0) > 0);
+      const isSingleLongTmdbSeason =
+        isTv &&
+        validTmdbSeasons.length === 1 &&
+        validTmdbSeasons[0]!.season_number === 1 &&
+        (validTmdbSeasons[0]!.episode_count ?? 0) > 30;
+
+      let partMappingPromise: Promise<{ absoluteEpisode: number; cutByProvider: boolean } | null> | undefined;
+      const getSingleSeasonPartMapping = (): Promise<{ absoluteEpisode: number; cutByProvider: boolean } | null> => {
+        if (!isSingleLongTmdbSeason) return Promise.resolve(null);
+        const reqS = Number(s || "1");
+        const reqE = Number(e || "1");
+        if (reqS <= 1) return Promise.resolve({ absoluteEpisode: reqE, cutByProvider: true });
+        partMappingPromise ??= (async () => {
+          let counts: Record<number, number> | undefined;
+          try {
+            const probe = await probePlayback(Number(id), "tv", get, resolverProbeCache, Date.now, 2000);
+            if (probe.ok) counts = probe.seasonCounts;
+          } catch {
+            // (no answer: the seasons the library's check last told of, as the list was cut by them; else 24-episode parts)
+          }
+          counts ??= playerSeasonCounts(Number(id));
+          const told = Object.entries(counts ?? {})
+            .map(([seasonNum, episodes]) => ({ season: Number(seasonNum), episodes }))
+            .filter((part) => Number.isInteger(part.season) && part.season >= 1 && Number.isInteger(part.episodes) && part.episodes > 0)
+            .sort((a, b) => a.season - b.season);
+          const hasContiguousProviderParts = told.length > 1 && told.every((part, idx) => part.season === idx + 1);
+          if (hasContiguousProviderParts) {
+            let prevCount = 0;
+            for (let sn = 1; sn < reqS; sn++) {
+              prevCount += counts?.[sn] ?? 24;
+            }
+            return { absoluteEpisode: prevCount + reqE, cutByProvider: reqS <= told.length };
+          }
+          return { absoluteEpisode: (reqS - 1) * 24 + reqE, cutByProvider: false };
+        })();
+        return partMappingPromise;
+      };
+
       // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated or has a Western original language is not looked for there.)
       const fallbackAnime = async (preferredProvider?: "hianime" | "animeheaven"): Promise<ResolveResult | null> => {
         if (!rawShowTitle || animated === false) return null;
@@ -744,9 +786,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             /^season\s*\d+$/i.test(normSeasonName) ||
             normSeasonName === "specials";
 
-          // Calculate absolute episode number by summing earlier seasons' episode counts (e.g. for Conan, One Piece)
+          // Calculate absolute episode number:
+          // - For single-season TMDB shows cut into parts (e.g. JJK), use the part cut (never TMDB's whole S1 count!).
+          // - For multi-season TMDB shows (e.g. Conan, One Piece, Yu Yu Hakusho), sum earlier seasons' episode counts.
           let absoluteEpisode: number | undefined;
-          if (tmdbSeasons && targetSeason > 1) {
+          const partMapping = await getSingleSeasonPartMapping();
+          if (partMapping && targetSeason > 1) {
+            absoluteEpisode = partMapping.absoluteEpisode;
+          } else if (tmdbSeasons && targetSeason > 1 && !isSingleLongTmdbSeason) {
             let prevCount = 0;
             let allPrevFound = true;
             for (let sn = 1; sn < targetSeason; sn++) {
@@ -778,14 +825,20 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
           const extractAnimeSeason = (tTitle: string): number => {
             const t = tTitle.toLowerCase();
-            if (/\b(?:season\s*2|2nd\s*season|second\s*season|part\s*2)\b/i.test(t)) return 2;
-            if (/\b(?:season\s*3|3rd\s*season|third\s*season|part\s*3|culling\s*game)\b/i.test(t)) return 3;
-            if (/\b(?:season\s*4|4th\s*season|fourth\s*season|part\s*4|final\s*season)\b/i.test(t)) return 4;
-            if (/\b(?:season\s*5|5th\s*season|fifth\s*season|part\s*5)\b/i.test(t)) return 5;
-            const sMatch = t.match(/\b(?:season|part)\s*(\d+)\b/i) || t.match(/\b(\d+)(?:st|nd|rd|th)\s*season\b/i);
-            if (sMatch) return Number(sMatch[1]);
+            // Check explicit season markers BEFORE any "part" word so "Season 3 Part 2" or "Final Season Part 2" are never misclassified as Season 2.
+            const explicitNum = t.match(/\bseason\s*(\d+)\b/i) || t.match(/\b(\d+)(?:st|nd|rd|th)\s*season\b/i);
+            if (explicitNum) return Number(explicitNum[1]);
+            if (/\bsecond\s*season\b/i.test(t)) return 2;
+            if (/\b(?:third\s*season|culling\s*game)\b/i.test(t)) return 3;
+            if (/\b(?:fourth\s*season|final\s*season)\b/i.test(t)) return 4;
+            if (/\bfifth\s*season\b/i.test(t)) return 5;
             if (/\b(?:movie|film|special|ova)\b/i.test(t) || /\b0\b/.test(t)) return 0;
             return 1;
+          };
+
+          const extractCourPart = (tTitle: string): number => {
+            const m = tTitle.match(/\b(?:part|cour)\s*(\d+)\b/i) || tTitle.match(/\b(\d+)(?:st|nd|rd|th)\s*(?:part|cour)\b/i);
+            return m ? Number(m[1]) : 1;
           };
 
           const namedSeasons = (tmdbSeasons ?? []).flatMap((sn) => {
@@ -810,18 +863,40 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             return named !== undefined && named !== targetSeason;
           };
 
+          const primaryPrefix = rawShowTitle.split(/[:\-–—]/)[0]?.trim() || "";
+          const cleanPrimary = normalizeTitle(primaryPrefix);
+          const GENERIC_WORDS = new Set(["the", "a", "an", "my", "our", "new", "one", "black", "dark", "red", "blue", "white", "last", "final", "super", "season", "series", "movie", "film", "part"]);
+
           const belongsToShow = (tTitle: string): boolean => {
             const norm = normalizeTitle(tTitle);
+            if (!norm || !cleanShow) return false;
             if (norm === cleanShow) return true;
-            if (norm.startsWith(`${cleanShow} `) || norm.startsWith(`${cleanShow}:`)) return true;
-            if (cleanShow.startsWith(`${norm} `)) return true;
+            if (norm.startsWith(`${cleanShow} `) || cleanShow.startsWith(`${norm} `)) return true;
             for (const q of searchQueries) {
               const nq = normalizeTitle(q);
               if (nq && (norm === nq || norm.startsWith(`${nq} `) || nq.startsWith(`${norm} `))) return true;
             }
-            const showWords = cleanShow.split(/\s+/).filter((w) => w.length >= 4 && !["season", "series", "the", "movie", "part"].includes(w));
-            const candidateWords = new Set(norm.split(/\s+/));
-            if (showWords.length > 0 && showWords.some((w) => candidateWords.has(w))) return true;
+            // Match romaji/localized variants sharing the distinctive main title before a colon/dash (e.g. "Frieren: Beyond Journey's End" <-> "Sousou no Frieren").
+            if (cleanPrimary && cleanPrimary !== cleanShow && cleanPrimary.length >= 4 && !GENERIC_WORDS.has(cleanPrimary)) {
+              if (` ${norm} `.includes(` ${cleanPrimary} `)) return true;
+            }
+            return false;
+          };
+
+          /** Strict movie title matcher: never matches a franchise's TV series or a different numbered film. */
+          const matchesAnimeMovie = (tTitle: string): boolean => {
+            const norm = normalizeTitle(tTitle);
+            if (!norm || !cleanShow) return false;
+            if (norm === cleanShow) return true;
+            const stripMovieNoise = (sVal: string) =>
+              sVal.replace(/\b(?:the\s+movie|movie|film|the)\b/g, " ").replace(/\s+/g, " ").trim();
+            const wantedCore = stripMovieNoise(cleanShow);
+            const candCore = stripMovieNoise(norm);
+            if (!wantedCore || !candCore) return false;
+            if (candCore === wantedCore) return true;
+            const wantedWords = wantedCore.split(" ").filter((w) => w.length >= 3);
+            const candWords = new Set(candCore.split(" "));
+            if (wantedWords.length >= 2 && wantedWords.every((w) => candWords.has(w))) return true;
             return false;
           };
 
@@ -885,38 +960,43 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               let matched: { title: string; url: string } | undefined;
               let episodeToFind = targetEpisode;
 
-              if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-                matched = results.find((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
-                if (matched) episodeToFind = targetEpisode;
-              }
-
-              if (!matched && targetSeason > 1) {
-                const matchedSeasonList = results.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
-                matched = matchedSeasonList[0];
-                if (!matched) {
-                  matched = results.find(
-                    (r) =>
-                      belongsToShow(r.title) &&
-                      !otherSeason(r.title) &&
-                      (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
-                        r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
-                        r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
-                        r.title.toLowerCase().includes(`${targetSeason}th season`)),
-                  );
-                }
-                if (matched) episodeToFind = targetEpisode;
-              }
-
-              if (!matched) {
-                if (targetSeason === 1) {
-                  const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
-                  matched = results.find((r) => first(r) && itself(r.title)) ?? results.find((r) => first(r) && !sequel(r.title));
+              if (!isTv) {
+                matched = results.find((r) => matchesAnimeMovie(r.title));
+                episodeToFind = 1;
+              } else {
+                if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
+                  matched = results.find((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
                   if (matched) episodeToFind = targetEpisode;
-                } else if (absoluteEpisode) {
-                  const baseMatch = results.find((r) => belongsToShow(r.title) && (normalizeTitle(r.title) === cleanShow || itself(r.title)));
-                  if (baseMatch) {
-                    matched = baseMatch;
-                    episodeToFind = absoluteEpisode;
+                }
+
+                if (!matched && targetSeason > 1) {
+                  const matchedSeasonList = results.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
+                  matched = matchedSeasonList[0];
+                  if (!matched) {
+                    matched = results.find(
+                      (r) =>
+                        belongsToShow(r.title) &&
+                        !otherSeason(r.title) &&
+                        (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                          r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                          r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                          r.title.toLowerCase().includes(`${targetSeason}th season`)),
+                    );
+                  }
+                  if (matched) episodeToFind = targetEpisode;
+                }
+
+                if (!matched) {
+                  if (targetSeason === 1) {
+                    const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+                    matched = results.find((r) => first(r) && itself(r.title)) ?? results.find((r) => first(r) && !sequel(r.title));
+                    if (matched) episodeToFind = targetEpisode;
+                  } else if (absoluteEpisode) {
+                    const baseMatch = results.find((r) => belongsToShow(r.title) && (normalizeTitle(r.title) === cleanShow || itself(r.title)));
+                    if (baseMatch) {
+                      matched = baseMatch;
+                      episodeToFind = absoluteEpisode;
+                    }
                   }
                 }
               }
@@ -924,6 +1004,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               if (!matched) return null;
 
               const eps = await ah.episodes(matched.url, 1);
+              if (!isTv && eps.length !== 1) return null;
               const targetEp = eps.find((ep) => ep.episode === episodeToFind);
               if (!targetEp?.url) return null;
 
@@ -957,7 +1038,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           // 2. Try HiAnime / ZokoAnime
           const tryHiAnime = async (): Promise<ResolveResult | null> => {
             try {
-              const { searchHiAnime, getHiAnimeEpisodes, resolveHiAnimeEpisodeStream } = await import("../../library/hianime");
+              const { searchHiAnime, getHiAnimeAiredTime, getHiAnimeEpisodes, resolveHiAnimeEpisodeStream } = await import("../../library/hianime");
               const hiResults: Array<{ title: string; href: string; id: string }> = [];
               const seenHiIds = new Set<string>();
               for (const query of searchQueries) {
@@ -990,59 +1071,64 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 });
               };
 
-              if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-                hiCours = dedupByTitle(
-                  hiResults.filter((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !isExtra(r.title)),
-                );
-                if (hiCours.length > 0) {
-                  hiMatched = hiCours[0];
-                  hiEpisodeToFind = targetEpisode;
-                } else {
-                  for (const r of hiResults) {
-                    if (!belongsToShow(r.title) || isExtra(r.title)) continue;
-                    const offset = umbrellaSeasonOffset(r.title);
-                    if (offset > 0) {
-                      hiMatched = r;
-                      hiEpisodeToFind = offset + targetEpisode;
-                      break;
+              if (!isTv) {
+                hiMatched = hiResults.find((r) => matchesAnimeMovie(r.title));
+                hiEpisodeToFind = 1;
+              } else {
+                if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
+                  hiCours = dedupByTitle(
+                    hiResults.filter((r) => belongsToShow(r.title) && seasonOfTitle(r.title) === targetSeason && !isExtra(r.title)),
+                  );
+                  if (hiCours.length > 0) {
+                    hiMatched = hiCours[0];
+                    hiEpisodeToFind = targetEpisode;
+                  } else {
+                    for (const r of hiResults) {
+                      if (!belongsToShow(r.title) || isExtra(r.title)) continue;
+                      const offset = umbrellaSeasonOffset(r.title);
+                      if (offset > 0) {
+                        hiMatched = r;
+                        hiEpisodeToFind = offset + targetEpisode;
+                        break;
+                      }
                     }
                   }
                 }
-              }
 
-              if (!hiMatched && targetSeason > 1) {
-                const matchedSeasonList = dedupByTitle(
-                  hiResults.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title) && !isExtra(r.title)),
-                );
-                if (matchedSeasonList.length > 0) {
-                  hiCours = matchedSeasonList;
-                  hiMatched = matchedSeasonList[0];
-                }
-                if (!hiMatched) {
-                  hiMatched = hiResults.find(
-                    (r) =>
-                      belongsToShow(r.title) &&
-                      !otherSeason(r.title) &&
-                      !isExtra(r.title) &&
-                      (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
-                        r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
-                        r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
-                        r.title.toLowerCase().includes(`${targetSeason}th season`)),
+                if (!hiMatched && targetSeason > 1) {
+                  const matchedSeasonList = dedupByTitle(
+                    hiResults.filter((r) => belongsToShow(r.title) && extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title) && !isExtra(r.title)),
                   );
-                }
-                if (hiMatched) hiEpisodeToFind = targetEpisode;
-              }
-
-              if (!hiMatched) {
-                if (targetSeason === 1) {
-                  const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !isExtra(r.title);
-                  hiMatched = hiResults.find((r) => first(r) && itself(r.title)) ?? hiResults.find((r) => first(r) && !sequel(r.title));
+                  if (matchedSeasonList.length > 0) {
+                    hiCours = matchedSeasonList;
+                    hiMatched = matchedSeasonList[0];
+                  }
+                  if (!hiMatched) {
+                    hiMatched = hiResults.find(
+                      (r) =>
+                        belongsToShow(r.title) &&
+                        !otherSeason(r.title) &&
+                        !isExtra(r.title) &&
+                        (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                          r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                          r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                          r.title.toLowerCase().includes(`${targetSeason}th season`)),
+                    );
+                  }
                   if (hiMatched) hiEpisodeToFind = targetEpisode;
-                } else if (absoluteEpisode) {
-                  const baseMatch = hiResults.find((r) => belongsToShow(r.title) && (normalizeTitle(r.title) === cleanShow || itself(r.title)));
-                  if (baseMatch) {
-                    hiMatched = baseMatch;
-                    hiEpisodeToFind = absoluteEpisode;
+                }
+
+                if (!hiMatched) {
+                  if (targetSeason === 1) {
+                    const first = (r: { title: string }) => belongsToShow(r.title) && extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !isExtra(r.title);
+                    hiMatched = hiResults.find((r) => first(r) && itself(r.title)) ?? hiResults.find((r) => first(r) && !sequel(r.title));
+                    if (hiMatched) hiEpisodeToFind = targetEpisode;
+                  } else if (absoluteEpisode) {
+                    const baseMatch = hiResults.find((r) => belongsToShow(r.title) && (normalizeTitle(r.title) === cleanShow || itself(r.title)));
+                    if (baseMatch) {
+                      hiMatched = baseMatch;
+                      hiEpisodeToFind = absoluteEpisode;
+                    }
                   }
                 }
               }
@@ -1051,10 +1137,22 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
               let targetEp: { num: number; id: string; title?: string } | undefined;
               if (hiCours.length > 1) {
+                // Sort cours chronologically by HiAnime air date (then explicit Part/Cour number, then original order).
+                const airedTimes = await Promise.all(hiCours.map((c) => getHiAnimeAiredTime(c.href, get)));
+                const orderedCours = hiCours
+                  .map((cour, idx) => ({ cour, idx, aired: airedTimes[idx] ?? null, part: extractCourPart(cour.title) }))
+                  .sort((a, b) => {
+                    if (a.aired !== null && b.aired !== null && a.aired !== b.aired) return a.aired - b.aired;
+                    if (a.part !== b.part) return a.part - b.part;
+                    return a.idx - b.idx;
+                  })
+                  .map((entry) => entry.cour);
+
                 let remaining = hiEpisodeToFind;
-                for (const cour of hiCours) {
+                for (const cour of orderedCours) {
                   const courEps = await getHiAnimeEpisodes(cour.id, get);
-                  if (courEps.length === 0) continue;
+                  // Never skip an empty/failed cour without knowing its episode count — doing so would shift later cours to the wrong episode.
+                  if (courEps.length === 0) break;
                   const found = courEps.find((ep) => ep.num === remaining);
                   if (found) {
                     hiMatched = cour;
@@ -1069,6 +1167,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 }
               } else {
                 const eps = await getHiAnimeEpisodes(hiMatched.id, get);
+                if (!isTv && eps.length !== 1) return null;
                 targetEp = eps.find((ep) => ep.num === hiEpisodeToFind) ?? (eps.length === 1 && hiEpisodeToFind === 1 ? eps[0] : undefined);
               }
               if (!targetEp) return null;
@@ -1296,6 +1395,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       };
 
       const fallbackStreams = async (): Promise<ResolveResult | null> => {
+        // For synthetic 24-cut parts of a single-season TMDB show, map ?s=k&e=n back to TMDB's season 1 absolute episode for players.
+        const partMap = await getSingleSeasonPartMapping();
+        const playerS = partMap && !partMap.cutByProvider ? "1" : s;
+        const playerE = partMap && !partMap.cutByProvider ? String(partMap.absoluteEpisode) : e;
+
         const isAnime = Boolean(
           originalLang === "ja" ||
           originalLang === "zh" ||
@@ -1315,7 +1419,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
           // Priority #2 for Anime: VidLink fallback
           try {
-            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
+            const vl = await resolveVidLinkStream(get, id, isTv, playerS, playerE, VIDLINK_ANIME_TIMEOUT_MS);
             if (vl) return await buildVidLinkResult(vl);
           } catch {
             // ignore
@@ -1334,7 +1438,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
         // Priority #1 for Western Movies & Series: VidLink
         try {
-          const vl = await resolveVidLinkStream(get, id, isTv, s, e);
+          const vl = await resolveVidLinkStream(get, id, isTv, playerS, playerE);
           if (vl) return await buildVidLinkResult(vl);
         } catch {
           // ignore
@@ -1342,7 +1446,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
         // Priority #2 for Western Movies & Series: VixSrc
         try {
-          const vx = await resolveVixSrcStream(get, id, isTv, s, e);
+          const vx = await resolveVixSrcStream(get, id, isTv, playerS, playerE);
           if (vx) return await buildVixSrcResult(vx);
         } catch {
           // ignore

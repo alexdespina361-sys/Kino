@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deobfuscateZokoBlob,
   extractZokoStream,
+  getHiAnimeAiredTime,
   getHiAnimeEpisodes,
   getHiAnimeServers,
   normalizeAnimeTitle,
@@ -222,8 +223,29 @@ describe("hianime library", () => {
     expect(result).not.toBeNull();
     expect(result?.type).toBe("sub");
     expect(result?.stream.src).toBe("https://hls.test/9901/sub.m3u8");
-    // MegaPlay was tried once and not retried when looking for an alternate
-    expect(asked.filter((u) => u === megaDub)).toHaveLength(1);
+    // Non-Zoko MegaPlay is skipped without wasting a network request
+    expect(asked.filter((u) => u === megaDub)).toHaveLength(0);
+  });
+
+  it("returns no results on a HiAnime zero-match page instead of scraping #main-sidebar (One Piece)", async () => {
+    const emptySearchHtml = `
+      <div id="main-content"><div class="block_area_content"><p>No results found</p></div></div>
+      <div id="main-sidebar">
+        <div class="film-detail"><h3 class="film-name"><a href="/one-piece-1" title="One Piece">One Piece</a></h3></div>
+      </div>
+    `;
+    const fakeFetch = (async () => ({ ok: true, text: async () => emptySearchHtml })) as unknown as typeof fetch;
+    const results = await searchHiAnime("walpurgisnacht-no-match-unique", fakeFetch);
+    expect(results).toEqual([]);
+  });
+
+  it("parses start air timestamp from HiAnime title pages", async () => {
+    const fakeFetch = (async () => ({
+      ok: true,
+      text: async () => `<div class="item-title"><span class="item-head">Aired:</span> <span class="name">Oct 10, 2022 to Dec 27, 2022</span></div>`,
+    })) as unknown as typeof fetch;
+    const ts = await getHiAnimeAiredTime("https://hianime.at/bleach-tybw-1234", fakeFetch);
+    expect(ts).toBe(Date.parse("Oct 10, 2022"));
   });
 
   it("moves on to the next server when the first ZokoAnime server fails or throws", async () => {

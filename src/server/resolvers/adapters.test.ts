@@ -4,6 +4,7 @@ import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createHiAnimeAdapter } from "./adapters/hianime";
 import { createFilmpireAdapter, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
+import { rememberPlayerSeasons } from "../library/filmpire";
 
 describe("adapters streaming proxy configuration", () => {
   const originalEnv = { ...process.env };
@@ -1008,6 +1009,221 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     if (ep27.status === "success") {
       expect(ep27.media.stream.directUrl).toContain("cdn.hianime.test/bleach/23001/master.m3u8");
     }
+  });
+
+  it("sorts multi-cour entries by air date and aborts instead of shifting when an earlier cour fails", async () => {
+    const tmdbShow = {
+      id: 88801,
+      name: "Chronicle Blade",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+      seasons: [
+        { season_number: 1, name: "Season 1", episode_count: 12 },
+        { season_number: 2, name: "Eclipse War", episode_count: 26 },
+      ],
+    };
+
+    const makeFetcher = (failFirstCour: boolean) =>
+      (async (url: string | URL) => {
+        const u = new URL(String(url));
+        const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+        if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/88801")) {
+          return { ok: true, status: 200, json: async () => tmdbShow };
+        }
+        if (u.hostname.endsWith("hianime.at")) {
+          // Deliberately returned in REVERSE air order in search results!
+          if (u.pathname === "/search") {
+            return text(`
+              <div class="film_list-wrap">
+                <h3 class="film-name"><a href="/chronicle-blade-eclipse-war-b-8802" title="Chronicle Blade: Eclipse War - Act Two">Act Two</a></h3>
+                <h3 class="film-name"><a href="/chronicle-blade-eclipse-war-a-8801" title="Chronicle Blade: Eclipse War - Act One">Act One</a></h3>
+              </div>
+            `);
+          }
+          if (u.pathname === "/chronicle-blade-eclipse-war-b-8802") {
+            return text(`<span class="item-head">Aired:</span> <span class="name">Jul 8, 2023 to Sep 30, 2023</span>`);
+          }
+          if (u.pathname === "/chronicle-blade-eclipse-war-a-8801") {
+            return text(`<span class="item-head">Aired:</span> <span class="name">Oct 10, 2022 to Dec 27, 2022</span>`);
+          }
+          if (u.pathname.endsWith("/api/theme/episode/list/8801")) {
+            if (failFirstCour) return { ok: false, status: 500 };
+            const epHtml = Array.from({ length: 13 }, (_, i) => `<a class="ep-item" data-id="${88100 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+            return text(JSON.stringify({ status: true, html: epHtml }));
+          }
+          if (u.pathname.endsWith("/api/theme/episode/list/8802")) {
+            const epHtml = Array.from({ length: 13 }, (_, i) => `<a class="ep-item" data-id="${88200 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+            return text(JSON.stringify({ status: true, html: epHtml }));
+          }
+          if (u.pathname.startsWith("/api/theme/episode/servers")) {
+            const epId = u.searchParams.get("episodeId") || "0";
+            const subEmbed = `https://zokoanime.video/stream/mal/88801/${epId}/sub`;
+            return text(JSON.stringify({
+              status: true,
+              html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+            }));
+          }
+        }
+        if (u.hostname === "zokoanime.video") {
+          const epId = u.pathname.split("/")[4] || "0";
+          const blob = makeZokoBlob({ src: `https://cdn.hianime.test/chronicle/${epId}/master.m3u8`, subtitles: [] });
+          return text(`<html><script>window.__P="${blob}";</script></html>`);
+        }
+        return { ok: false, status: 404 };
+      }) as unknown as typeof fetch;
+
+    // 1. If the earlier cour fails, must NOT shift and play Act Two for S2 E14 (must return not-success)!
+    const failed = await createFilmpireAdapter({ fetch: makeFetcher(true) }).resolve(new URL("https://filmpire.sc/watch/88801?s=2&e=14"));
+    expect(failed.status).not.toBe("success");
+
+    // 2. When both cours load, air-date sort puts Act One (Oct 2022) before Act Two (Jul 2023),
+    //    so S2 E1 plays Act One (88101) and S2 E14 plays Act Two (88201)!
+    const okAdapter = createFilmpireAdapter({ fetch: makeFetcher(false) });
+    const ep1 = await okAdapter.resolve(new URL("https://filmpire.sc/watch/88801?s=2&e=1"));
+    expect(ep1.status).toBe("success");
+    if (ep1.status === "success") expect(ep1.media.stream.directUrl).toContain("cdn.hianime.test/chronicle/88101/master.m3u8");
+
+    const ep14 = await okAdapter.resolve(new URL("https://filmpire.sc/watch/88801?s=2&e=14"));
+    expect(ep14.status).toBe("success");
+    if (ep14.status === "success") expect(ep14.media.stream.directUrl).toContain("cdn.hianime.test/chronicle/88201/master.m3u8");
+  });
+
+  it("never plays One Piece, earlier movies, or the TV series for an unreleased anime movie (Walpurgisnacht: Rising)", async () => {
+    const madokaMovie = {
+      id: 822653,
+      title: "Puella Magi Madoka Magica the Movie -Walpurgisnacht: Rising-",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+    };
+
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/movie/822653")) {
+        return { ok: true, status: 200, json: async () => madokaMovie };
+      }
+      if (u.hostname.endsWith("hianime.at") && u.pathname === "/search") {
+        return text(`
+          <div class="film_list-wrap">
+            <h3 class="film-name"><a href="/puella-magi-madoka-magica-100" title="Puella Magi Madoka Magica">TV</a></h3>
+            <h3 class="film-name"><a href="/puella-magi-madoka-magica-rebellion-2688" title="Puella Magi Madoka Magica the Movie 3: Rebellion">Rebellion</a></h3>
+          </div>
+          <div id="main-sidebar">
+            <h3 class="film-name"><a href="/one-piece-1" title="One Piece">One Piece</a></h3>
+          </div>
+        `);
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const res = await createFilmpireAdapter({ fetch: fetcher }).resolve(new URL("https://filmpire.sc/watch/822653"));
+    expect(res.status).not.toBe("success");
+  });
+
+  it("maps single-season TMDB shows cut into parts back to the part's absolute episode (not whole S1 count)", async () => {
+    const singleSeasonShow = {
+      id: 88802,
+      name: "Long Single Season Show",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+      seasons: [{ season_number: 1, name: "Season 1", episode_count: 59 }],
+    };
+
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/88802")) {
+        return { ok: true, status: 200, json: async () => singleSeasonShow };
+      }
+      if (u.hostname === "data.vidsrc.sh") {
+        // Probe says S1=24, S2=23 (like JJK)
+        return text(JSON.stringify({
+          status_code: "200",
+          data: { eps: { "1": Array(24).fill("1"), "2": Array(23).fill("1") } },
+        }));
+      }
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`
+            <div class="film_list-wrap">
+              <h3 class="film-name"><a href="/long-single-season-show-8882" title="Long Single Season Show">Long Single Season Show</a></h3>
+            </div>
+          `);
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/8882")) {
+          const epHtml = Array.from({ length: 59 }, (_, i) => `<a class="ep-item" data-id="${88500 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "0";
+          const subEmbed = `https://zokoanime.video/stream/mal/88802/${epId}/sub`;
+          return text(JSON.stringify({
+            status: true,
+            html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+          }));
+        }
+      }
+      if (u.hostname === "zokoanime.video") {
+        const epId = u.pathname.split("/")[4] || "0";
+        const blob = makeZokoBlob({ src: `https://cdn.hianime.test/single/${epId}/master.m3u8`, subtitles: [] });
+        return text(`<html><script>window.__P="${blob}";</script></html>`);
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fetcher });
+    // Part 2 E3 -> 24 + 3 = 27 (data-id 88527), NOT 59 + 3 = 62!
+    const p2e3 = await adapter.resolve(new URL("https://filmpire.sc/watch/88802?s=2&e=3"));
+    expect(p2e3.status).toBe("success");
+    if (p2e3.status === "success") {
+      expect(p2e3.media.stream.directUrl).toContain("cdn.hianime.test/single/88527/master.m3u8");
+    }
+    // Part 3 E1 -> 24 + 23 + 1 = 48 (data-id 88548)
+    const p3e1 = await adapter.resolve(new URL("https://filmpire.sc/watch/88802?s=3&e=1"));
+    expect(p3e1.status).toBe("success");
+    if (p3e1.status === "success") {
+      expect(p3e1.media.stream.directUrl).toContain("cdn.hianime.test/single/88548/master.m3u8");
+    }
+  });
+
+  it("with no answer from its own video check in time, a part is played as the library's last check cut it", async () => {
+    // The list was cut by the players' seasons of 20 and 23 (the library's check, remembered); the look-up's own check fails now.
+    rememberPlayerSeasons(88803, { 1: 20, 2: 23 });
+    const show = { id: 88803, name: "Another Long Show", original_language: "ja", genres: [{ id: 16 }], seasons: [{ season_number: 1, name: "Season 1", episode_count: 59 }] };
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/88803")) return { ok: true, status: 200, json: async () => show };
+      if (u.hostname === "data.vidsrc.sh") return { ok: false, status: 503, text: async () => "" };
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`<div class="film_list-wrap"><h3 class="film-name"><a href="/another-long-show-8883" title="Another Long Show">Another Long Show</a></h3></div>`);
+        }
+        if (u.pathname.endsWith("/api/theme/episode/list/8883")) {
+          const epHtml = Array.from({ length: 59 }, (_, i) => `<a class="ep-item" data-id="${88600 + i + 1}" data-number="${i + 1}" title="Ep ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "0";
+          const subEmbed = `https://zokoanime.video/stream/mal/88803/${epId}/sub`;
+          return text(JSON.stringify({ status: true, html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>` }));
+        }
+      }
+      if (u.hostname === "zokoanime.video") {
+        const epId = u.pathname.split("/")[4] || "0";
+        return text(`<html><script>window.__P="${makeZokoBlob({ src: `https://cdn.hianime.test/single/${epId}/master.m3u8`, subtitles: [] })}";</script></html>`);
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fetcher });
+    // Part 2 E3 -> 20 + 3 = 23 (data-id 88623), not 24 + 3 = 27
+    const p2e3 = await adapter.resolve(new URL("https://filmpire.sc/watch/88803?s=2&e=3"));
+    expect(p2e3.status).toBe("success");
+    if (p2e3.status === "success") expect(p2e3.media.stream.directUrl).toContain("cdn.hianime.test/single/88623/master.m3u8");
   });
 
   it("resolves direct ZokoAnime and HiAnime URLs via createHiAnimeAdapter", async () => {
