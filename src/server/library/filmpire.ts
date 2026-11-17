@@ -709,18 +709,17 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         const tmdbSeason = TmdbSeasonSchema.parse(await res.json());
         const validEps = tmdbSeason.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
 
-        // If this is season 1, and the provider divided the series into multiple seasons
-        // (e.g. JJK where TMDB season 1 has 59 episodes, but provider season 1 only has 24):
-        const expectedCount = counts?.[season] ?? (season === 1 && validEps.length > 30 ? 24 : undefined);
-        if (season === 1 && expectedCount && validEps.length > expectedCount) {
+        // If this season has a known provider count (e.g. provider divided season differently):
+        const expectedCount = counts?.[season];
+        if (expectedCount && validEps.length > expectedCount) {
           return validEps.slice(0, expectedCount).map((episode, idx) => ({
-            season: 1,
+            season,
             episode: idx + 1,
             ...(episode.name?.trim() ? { title: episode.name.trim().slice(0, 200) } : {}),
             ...(episode.overview?.trim() ? { overview: episode.overview.trim().slice(0, 400) } : {}),
             ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
             ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-            url: `https://filmpire.sc/watch/${title.id}?s=1&e=${idx + 1}`,
+            url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${idx + 1}`,
           }));
         }
 
