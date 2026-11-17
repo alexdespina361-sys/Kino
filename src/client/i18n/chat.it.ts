@@ -29,6 +29,7 @@ export const chatIt: ChatDictionary = {
   "chat.gifMore": "Altre GIF",
   "chat.gifAlt": "GIF",
   "chat.gifGone": "Una GIF non più disponibile",
+  "chat.gifChild": "Una GIF (sul profilo di un bambino le GIF non si vedono)",
   "chat.takeBack": "Ritira",
   "chat.takeBackLast": "Ritira l'ultimo messaggio",
   "chat.mute": "Silenzia",

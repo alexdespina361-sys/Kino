@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatLine, LibraryItem } from "../../shared";
+import { useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
 import { actionForKey } from "../tv/keys";
@@ -213,11 +214,20 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
 
 /**
  * A message that is a GIF (gifs.ts): the picture, at the height every GIF has here (the list does not move while it comes, only its width settles), never a
- * link. It comes from KLIPY to this browser as any picture does. One KLIPY has taken away says so, in a line, instead of a broken picture.
+ * link. It comes from KLIPY to this browser as any picture does. One KLIPY has taken away says so, in a line, instead of a broken picture. On a child's
+ * profile it is a line too, and nothing is asked of KLIPY: a friend chose it from what KLIPY shows grown-ups (and the child's own profile has no GIF button).
  */
 function GifPicture({ url }: { url: string }) {
   const t = useT();
+  const child = useProfileData().settings.child === true;
   const [gone, setGone] = useState(false);
+  if (child) {
+    return (
+      <span className="chat-gif-gone" data-testid="chat-gif-child">
+        {t("chat.gifChild")}
+      </span>
+    );
+  }
   if (gone) {
     return (
       <span className="chat-gif-gone" data-testid="chat-gif-gone">

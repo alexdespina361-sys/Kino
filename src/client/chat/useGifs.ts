@@ -5,7 +5,7 @@ import { gifPageOf, klipyAddress, klipyCustomer, klipyKey, klipyLocale, type Gif
 
 /**
  * The site's KLIPY key once `/api/features` has said it (see gifs.ts), else null: the GIF button is there only with one, and never on a child's profile
- * (what it may watch is chosen for it; a GIF a friend sends is still shown, as any message of an approved friend is).
+ * (what it may watch is chosen for it; a GIF a friend sends is a line of words there, not the picture: see ChatLines.tsx `GifPicture`).
  */
 export function useGifKey(): string | null {
   const child = useProfileData().settings.child === true;

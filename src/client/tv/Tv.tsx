@@ -1146,8 +1146,10 @@ export function Tv() {
 
   // The Next episode button's count. A profile that plays the next episode only on request gets the button without one, and so does a button that came early
   // (as the credits started) until the last seconds come, unless the profile skips credits: then it fills up over `AUTO_SKIP_SECONDS`, and plays the next
-  // one. The count waits while the picture is paused or filling: it is the end of the episode (or of the credits) that it counts down to.
-  const countingDown = player.state === "playing" || ended;
+  // one. The count waits while the picture is paused or filling, and goes at the picture's speed: it is the end of the episode (or of the credits) that it
+  // counts down to, in the episode's seconds (at half speed the last 15 s of an episode are 30 real ones).
+  const countingDown = (player.state === "playing" && !player.buffering) || ended;
+  const countSpeed = ended ? 1 : Math.min(4, Math.max(0.25, player.playbackRate || 1));
   useEffect(() => {
     if (upNextCountdown === null || !autoplay || upNextHeld) return;
     if (upNextCountdown <= 0) {
@@ -1157,9 +1159,9 @@ export function Tv() {
     if (!countingDown) return;
     const timer = setTimeout(() => {
       setUpNextCountdown((prev) => (prev !== null ? prev - 1 : null));
-    }, 1000);
+    }, 1000 / countSpeed);
     return () => clearTimeout(timer);
-  }, [upNextCountdown, autoplay, countingDown, upNextHeld]);
+  }, [upNextCountdown, autoplay, countingDown, upNextHeld, countSpeed]);
 
   // The Next episode button comes: as the credits start when they run to the end (see `nextFrom`), else in the last seconds. One that came early and
   // waits counts down as always once the last seconds come.

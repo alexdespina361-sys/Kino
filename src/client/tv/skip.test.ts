@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { creditsRunToEnd, nextButtonFrom, segmentAt } from "./skip";
 
 const LENGTH = 1420;
-const TIMES = { recap: { start: 0, end: 60 }, intro: { start: 85, end: 175 }, outro: { start: 1330, end: 1410 } };
+const TIMES = { recap: { start: 0, end: 60 }, intro: { start: 85, end: 175 }, outro: { start: 1330, end: 1417 } };
 
 describe("the Skip button", () => {
   it("is up while the picture is in a part, and names it", () => {
     expect(segmentAt(TIMES, 10, LENGTH, false)).toMatchObject({ kind: "recap", start: 0, end: 60 });
     expect(segmentAt(TIMES, 85, LENGTH, false)).toMatchObject({ kind: "intro", start: 85, end: 175, key: "intro:85" });
-    expect(segmentAt(TIMES, 1340, LENGTH, false)).toMatchObject({ kind: "credits", start: 1330, end: 1410 });
+    expect(segmentAt(TIMES, 1340, LENGTH, false)).toMatchObject({ kind: "credits", start: 1330, end: 1417 });
     expect(segmentAt(TIMES, 70, LENGTH, false)).toBeNull(); // between the "previously on" and the opening
     expect(segmentAt(TIMES, 84.9, LENGTH, false)).toBeNull();
     expect(segmentAt(TIMES, 174.6, LENGTH, false)).toBeNull(); // (not in its last half second: a button that comes and goes at once is a flicker)
@@ -17,13 +17,15 @@ describe("the Skip button", () => {
   });
 
   it("leaves credits that run to the end of an episode to the Next episode button, when there is a next episode", () => {
-    expect(creditsRunToEnd(TIMES, LENGTH)).toBe(true); // they end ten seconds before the end
+    expect(creditsRunToEnd(TIMES, LENGTH)).toBe(true); // they end three seconds before the end
     expect(segmentAt(TIMES, 1340, LENGTH, true)).toBeNull();
     expect(segmentAt(TIMES, 100, LENGTH, true)).toMatchObject({ kind: "intro" }); // (the opening is still the Skip button's)
-    // Credits with a while after them (a scene, the next one's preview) are skipped to that, and Next episode comes at the end.
+    // Credits with a while after them (a scene, the next one's preview) are skipped to that, and Next episode comes at the end: ten seconds after them
+    // are a while (a scene of ten seconds is still story).
     const early = { outro: { start: 1250, end: 1340 } };
     expect(creditsRunToEnd(early, LENGTH)).toBe(false);
     expect(segmentAt(early, 1260, LENGTH, true)).toMatchObject({ kind: "credits", end: 1340 });
+    expect(creditsRunToEnd({ outro: { start: 1320, end: 1410 } }, LENGTH)).toBe(false);
   });
 });
 

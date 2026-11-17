@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { profileStore } from "../account/store";
 import { ChatTv, ReadTv, ReportTv, WriteTv } from "./ChatTv";
 import { count, fakeReport, fakeSession, has, line, tagOf } from "./fixtures";
 
@@ -29,6 +30,21 @@ describe("the chat on the TV", () => {
     const menu = html.slice(html.indexOf('data-testid="tv-chat-menu"'));
     for (const id of ["tv-chat-takeback", "tv-chat-mute", "tv-chat-report"]) expect(has(menu, id), id).toBe(true);
     expect(read({ session: fakeSession({ state: { lines, muted: true } }) })).toContain("Muted");
+  });
+
+  it("shows a friend's GIF as the picture, and on a child's profile as a line of words, without asking KLIPY for it", () => {
+    const gif = "https://static.klipy.com/ii/abc/def/sm/x.webp";
+    const withGif = { session: fakeSession({ state: { lines: [line(1, false, gif)] } }) };
+    expect(tagOf(read(withGif), "chat-gif")).toContain(`src="${gif}"`);
+    profileStore.setSetting("child", true);
+    try {
+      const html = read(withGif);
+      expect(has(html, "chat-gif")).toBe(false);
+      expect(has(html, "chat-gif-child")).toBe(true);
+      expect(html).not.toContain("static.klipy.com");
+    } finally {
+      profileStore.setSetting("child", undefined);
+    }
   });
 
   it("on a TV, the box at the bottom opens the page that writes, and shows what was typed and not sent", () => {
