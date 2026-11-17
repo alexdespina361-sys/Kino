@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type SetStateAction } from "react";
-import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
+import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, MoreIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
@@ -11,15 +11,14 @@ import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
-import { gifOf } from "./gifs";
 import { GifPickTv } from "./GifPick";
+import { lastTheirs, ReactTv } from "./Reactions";
 import { StickerPickTv } from "./StickerPick";
-import { stickerOf } from "./stickers";
 import { afterSent, cutTo, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
-import { problemText } from "./words";
+import { problemText, quoteOf } from "./words";
 import "./chat.css";
 
 /** The marks a message can use besides letters and digits, on keys of the page (six: with the letters of Romanian or Italian they still fit in four rows). */
@@ -67,6 +66,9 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   const gifs = (desk || narrow) && gifKey ? gifKey : null;
   /** The page of stickers is open (see StickerPick.tsx): on every screen, a TV that is only a remote too (they are picked, not typed). */
   const [stickerPicking, setStickerPicking] = useState(false);
+  /** The page that puts a reaction on a message is open, for this one (see Reactions.tsx): the remote's way to react. */
+  const [reacting, setReacting] = useState<number | null>(null);
+  const reactingTo = reacting === null ? undefined : session.state.lines.find((line) => line.id === reacting);
   /** What has been typed and not sent stays while the chat is open: Back from the writing does not lose it. */
   const [draft, setDraft] = useState("");
 
@@ -74,6 +76,8 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
   if (picking && !whyNotWrite(session)) return <TitlePickTv name={name} session={session} onBack={() => setPicking(false)} />;
   if (gifPicking && gifs && !whyNotWrite(session)) return <GifPickTv name={name} gifKey={gifs} session={session} narrow={narrow} onBack={() => setGifPicking(false)} />;
   if (stickerPicking && !whyNotWrite(session)) return <StickerPickTv name={name} session={session} narrow={narrow} onBack={() => setStickerPicking(false)} />;
+  // (A message taken back while its page is open: the page goes, and the chat is shown.)
+  if (reactingTo && !whyNotWrite(session)) return <ReactTv name={name} line={reactingTo} session={session} onBack={() => setReacting(null)} />;
   if (writing) {
     return (
       <WriteTv
@@ -108,6 +112,7 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       onPickTitle={() => setPicking(true)}
       {...(gifs ? { onPickGif: () => setGifPicking(true) } : {})}
       onPickSticker={() => setStickerPicking(true)}
+      onReactTo={setReacting}
       onClose={onClose}
       onOpenTitle={onOpenTitle}
     />
@@ -131,6 +136,7 @@ export function ReadTv({
   onPickTitle,
   onPickGif,
   onPickSticker,
+  onReactTo,
   onClose,
   onOpenTitle,
 }: {
@@ -154,6 +160,8 @@ export function ReadTv({
   onPickGif?: (() => void) | undefined;
   /** The button nearest the box, that sends a sticker (none: no such button). */
   onPickSticker?: (() => void) | undefined;
+  /** "React to Sam's last message" behind the ⋯ opens the page that does it, for that message (none: not there). */
+  onReactTo?: ((id: number) => void) | undefined;
   onClose: () => void;
   onOpenTitle?: ((item: LibraryItem) => void) | undefined;
 }) {
@@ -161,6 +169,10 @@ export function ReadTv({
   const { state } = session;
   const blocked = whyNotWrite(session);
   const mine = lastOwn(state.lines);
+  const theirs = lastTheirs(state.lines);
+  /** A computer or a hand-held screen: a message is clicked or touched, and its reactions (and Take back, for one's own) come under it. */
+  const [picked, setPicked] = useState<number | null>(null);
+  const pointer = desk || narrow;
   const [menu, setMenu] = useState(false);
   const more = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -258,6 +270,11 @@ export function ReadTv({
             </button>
             {/* (There all along, and hidden: what it holds is no stop for the remote, and no click, until the ⋯ opens it.) */}
             <div className="tv-chat-menu" hidden={!menu} data-testid="tv-chat-menu">
+              {theirs && onReactTo && !blocked && (
+                <button type="button" onClick={pick(() => onReactTo(theirs.id))} data-nav data-testid="tv-chat-react-last">
+                  <HeartIcon /> {t("chat.reactLast", { name })}
+                </button>
+              )}
               {mine && (
                 <button type="button" onClick={pick(() => void session.takeBack(mine.id))} data-nav data-testid="tv-chat-takeback">
                   <TrashIcon /> {t("chat.takeBackLast")}
@@ -284,7 +301,26 @@ export function ReadTv({
             </p>
           </div>
         ) : (
-          <ChatLines lines={state.lines} name={name} now={now} remote onOpenTitle={onOpenTitle} testId="tv-chat-lines" />
+          <ChatLines
+            lines={state.lines}
+            name={name}
+            now={now}
+            remote
+            onOpenTitle={onOpenTitle}
+            {...(pointer
+              ? {
+                  picked,
+                  onPick: setPicked,
+                  onTakeBack: (id: number) => {
+                    setPicked(null);
+                    void session.takeBack(id);
+                  },
+                  // (Reactions while one can write: a friend who takes no messages takes no reactions either, see server/accounts/chat.ts `react`.)
+                  ...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) }),
+                }
+              : {})}
+            testId="tv-chat-lines"
+          />
         )}
         <div className="tv-chat-foot">
           <ChatNotices name={name} session={session} receiving={receiving} prefix="tv-chat" />
@@ -411,7 +447,7 @@ export function WriteTv({
       <h1 className="tv-headline tv-headline-small">{t("chat.writeTitle", { name })}</h1>
       {last && (
         <p className="tv-chat-quote" data-testid="tv-chat-quote">
-          <b>{last.mine ? t("chat.you") : name}</b> {gifOf(last.text) ? t("chat.gifAlt") : stickerOf(last.text) ? t("chat.stickerSaid", { emoji: last.text.trim() }) : last.text}
+          <b>{last.mine ? t("chat.you") : name}</b> {quoteOf(t, last.text)}
         </p>
       )}
       <form className="profile-editor profile-editor-tv list-editor-tv chat-editor-tv" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-form">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CHAT_POLL_MS, type ChatReportPreview, type ChatThread } from "../../shared";
+import { CHAT_POLL_MS, type ChatReaction, type ChatReportPreview, type ChatThread } from "../../shared";
 import { chatApi } from "./api";
 import { applyThread, endsChat, FRESH_CHAT, problemOf, type ChatProblem, type ChatState } from "./state";
 
@@ -16,6 +16,8 @@ export interface ChatSession {
   /** Write to the friend. True when it went (so that the box can be emptied); when it did not, `problem` says why. */
   send: (text: string) => Promise<boolean>;
   takeBack: (id: number) => Promise<void>;
+  /** Put a reaction on a message, change it, or take it away (null). */
+  react: (id: number, reaction: ChatReaction | null) => Promise<void>;
   setMuted: (muted: boolean) => Promise<void>;
   /** The person is writing again: what was said about the last failure is old news. */
   settle: () => void;
@@ -144,6 +146,23 @@ export function useChat(profileId: string, friendId: string, options: { active?:
     [profileId, friendId, take, fail, read],
   );
 
+  // (A reading that started before the answer and comes after it is older, and is not taken: see `applyThread`. A message taken back meanwhile is quiet:
+  // the page is only made right.)
+  const react = useCallback(
+    async (id: number, reaction: ChatReaction | null): Promise<void> => {
+      setFailure(null);
+      const started = ++clock.current.tick;
+      try {
+        take(await chatApi.react(profileId, friendId, id, reaction), started);
+        setOffline(false);
+      } catch (error) {
+        if (problemOf(error) === "gone") void read();
+        else fail(error);
+      }
+    },
+    [profileId, friendId, take, fail, read],
+  );
+
   const setMuted = useCallback(
     async (muted: boolean): Promise<void> => {
       setFailure(null);
@@ -161,7 +180,7 @@ export function useChat(profileId: string, friendId: string, options: { active?:
 
   const settle = useCallback(() => setFailure(null), []);
 
-  return { state, loaded, ended, problem: failure ?? (offline ? "offline" : null), sending, send, takeBack, setMuted, settle };
+  return { state, loaded, ended, problem: failure ?? (offline ? "offline" : null), sending, send, takeBack, react, setMuted, settle };
 }
 
 /** Where a report of the chat is: closed, being fetched, shown (and waiting for a yes), on its way, or sent. */

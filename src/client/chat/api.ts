@@ -1,4 +1,4 @@
-import { ChatMuteSchema, ChatReportPreviewSchema, ChatThreadSchema } from "../../shared";
+import { ChatMuteSchema, ChatReportPreviewSchema, ChatThreadSchema, type ChatReaction } from "../../shared";
 import { ask, request } from "../account/api";
 
 const base = (profileId: string, friendId: string) => `/api/profiles/${encodeURIComponent(profileId)}/friends/${encodeURIComponent(friendId)}/chat`;
@@ -11,6 +11,8 @@ export const chatApi = {
   send: (profileId: string, friendId: string, text: string) => ask(ChatThreadSchema, "POST", base(profileId, friendId), { text }),
   /** Take back one of one's own messages: gone for both. The answer is the chat. */
   takeBack: (profileId: string, friendId: string, id: number) => ask(ChatThreadSchema, "DELETE", `${base(profileId, friendId)}/${id}`),
+  /** Put a reaction on a message (one's own or the friend's), change it, or take it away (null). The answer is the chat. */
+  react: (profileId: string, friendId: string, id: number, reaction: ChatReaction | null) => ask(ChatThreadSchema, "PUT", `${base(profileId, friendId)}/${id}/reaction`, { reaction }),
   /** Stop hearing of the friend's messages (the friend is not told), or hear again. */
   mute: (profileId: string, friendId: string, muted: boolean) => ask(ChatMuteSchema, "PUT", `${base(profileId, friendId)}/mute`, { muted }),
   /** What a report would hold: the last messages, and the revision they are at. */

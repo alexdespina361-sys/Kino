@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { ChatLine, LibraryItem } from "../../shared";
+import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
 import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
+import { ReactBar, Reactions } from "./Reactions";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
 import { dayOf, stampOf, startsDay } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
@@ -18,10 +19,14 @@ export interface ChatLinesProps {
   now: number;
   /** Say who wrote each line (a report shows what would be sent, and whose words they are). */
   showWriter?: boolean;
-  /** The phone: a line of one's own can be pressed, and a button to take it back shows under it. Without `onPick` the lines are only read. */
+  /**
+   * A screen that is touched or clicked: a line can be pressed, and under it come the reactions to pick from (with `onReact`, on any line) and the button that
+   * takes it back (a line of one's own). Without `onPick` the lines are only read.
+   */
   picked?: number | null;
   onPick?: (id: number | null) => void;
   onTakeBack?: (id: number) => void;
+  onReact?: (id: number, reaction: ChatReaction | null) => void;
   /** The TV: the list is a place the remote can land on, and Up and Down scroll it while there is more to see that way (and step onto the titles in it). */
   remote?: boolean;
   /** A title a message names was pressed (see titles.ts). Without it the cards are only shown. */
@@ -41,7 +46,7 @@ const CARD = ".chat-card[data-title]";
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, remote = false, onOpenTitle, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, onReact, remote = false, onOpenTitle, testId = "chat-lines" }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -164,8 +169,13 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     >
       <ol className="chat-list" ref={content}>
         {lines.map((line, index) => {
-          const pressable = line.mine && onPick !== undefined;
+          const pressable = onPick !== undefined && (line.mine || onReact !== undefined);
           const open = pressable && picked === line.id;
+          // (In the TV's list a press gives the keys back to the list, which walks it: a message pressed with a mouse is no stop of the remote's.)
+          const press = () => {
+            onPick?.(open ? null : line.id);
+            if (remote) box.current?.focus({ preventScroll: true });
+          };
           const found = titles[index] ?? null;
           const gif = gifs[index] ?? null;
           const sticker = stickers[index] ?? null;
@@ -182,14 +192,25 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
           const said = (text: ReactNode, card: ReactNode) => (
             <>
               {pressable ? (
-                <button type="button" className={`chat-bubble${picture}${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={() => onPick(open ? null : line.id)} data-testid="chat-bubble">
+                <button type="button" className={`chat-bubble${picture}${open ? " chat-picked" : ""}`} aria-expanded={open} onClick={press} {...(remote ? { tabIndex: -1 } : {})} data-testid="chat-bubble">
                   {bubble(text)}
                 </button>
               ) : (
                 <div className={`chat-bubble${picture}`}>{bubble(text)}</div>
               )}
               {card}
-              {open && onTakeBack && (
+              {!showWriter && <Reactions line={line} name={name} />}
+              {open && onReact && (
+                <ReactBar
+                  current={line.myReaction}
+                  onReact={(reaction) => {
+                    onPick?.(null);
+                    onReact(line.id, reaction);
+                    if (remote) box.current?.focus({ preventScroll: true });
+                  }}
+                />
+              )}
+              {open && line.mine && onTakeBack && (
                 <button type="button" className="chat-takeback" onClick={() => onTakeBack(line.id)} data-testid="chat-takeback">
                   {t("chat.takeBack")}
                 </button>

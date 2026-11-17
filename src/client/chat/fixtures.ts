@@ -14,6 +14,7 @@ export function fakeSession(parts: Omit<Partial<ChatSession>, "state"> & { state
     sending: false,
     send: async (text) => (calls.push(`send:${text}`), true),
     takeBack: async (id) => void calls.push(`takeBack:${id}`),
+    react: async (id, reaction) => void calls.push(`react:${id}:${reaction ?? "none"}`),
     setMuted: async (muted) => void calls.push(`mute:${muted}`),
     settle: () => void calls.push("settle"),
     ...rest,
