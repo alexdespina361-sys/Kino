@@ -990,6 +990,38 @@ describe("filmpireSource seasons", () => {
       expect.anything(),
     );
   });
+
+  it("ignores preloaded seasons when Season 1 is missing (e.g. Bleach where probe starts at Season 3) and queries TMDB", async () => {
+    const get = vi.fn(async () =>
+      json({
+        seasons: [
+          { season_number: 1, episode_count: 366 },
+          { season_number: 2, episode_count: 50 },
+        ],
+      })
+    );
+    // Probe returns seasons starting at 3 (like data.vidsrc.sh did for Bleach)
+    const probe = vi.fn(async () =>
+      json({
+        status_code: "200",
+        data: {
+          title: "Bleach",
+          eps: { "3": ["1"], "4": ["1"], "16": ["1"] },
+        },
+      })
+    );
+    const source = filmpireSource({ fetch: get as never, probeFetch: probe as never, verifyPlayback: true });
+    // First trigger a search so the probe preloads seasons
+    await source.search!("bleach");
+
+    // When querying seasons for Bleach (watch/30984), probe seasons [3, 4, 16] must NOT override TMDB [1, 2]
+    const seasons = await source.seasons!("https://filmpire.sc/watch/30984?type=series");
+    expect(seasons).toEqual([1, 2]);
+    expect(get).toHaveBeenCalledWith(
+      expect.stringContaining("/tv/30984?"),
+      expect.anything(),
+    );
+  });
 });
 
 describe("the video checks of a search", () => {

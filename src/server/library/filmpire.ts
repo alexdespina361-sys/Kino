@@ -709,20 +709,6 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         const tmdbSeason = TmdbSeasonSchema.parse(await res.json());
         const validEps = tmdbSeason.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
 
-        // If this season has a known provider count (e.g. provider divided season differently):
-        const expectedCount = counts?.[season];
-        if (expectedCount && validEps.length > expectedCount) {
-          return validEps.slice(0, expectedCount).map((episode, idx) => ({
-            season,
-            episode: idx + 1,
-            ...(episode.name?.trim() ? { title: episode.name.trim().slice(0, 200) } : {}),
-            ...(episode.overview?.trim() ? { overview: episode.overview.trim().slice(0, 400) } : {}),
-            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-            url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${idx + 1}`,
-          }));
-        }
-
         return validEps.map((episode) => {
           const name = episode.name?.trim();
           const overview = episode.overview?.trim();
@@ -783,7 +769,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
       const preloaded = preloadedSeasons.get(title.id);
-      if (preloaded && preloaded.length > 0) return preloaded;
+      if (preloaded && preloaded.length > 0 && preloaded.includes(1)) return preloaded;
       // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (res.status === 404) return [];
@@ -791,16 +777,16 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       knownTvIds.add(title.id);
       const day = today();
       const parsed = TmdbShowSchema.parse(await res.json());
-      const counts = preloadedSeasonCounts.get(title.id);
-      if (counts) {
-        const cSeasons = Object.keys(counts).map(Number).filter((n) => Number.isInteger(n) && n >= 1).sort((a, b) => a - b);
-        if (cSeasons.length > 0) return cSeasons;
-      }
       const valid = parsed.seasons
         .filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
         .map((season) => season.season_number)
         .sort((a, b) => a - b);
       if (valid.length === 1 && valid[0] === 1) {
+        const counts = preloadedSeasonCounts.get(title.id);
+        if (counts) {
+          const cSeasons = Object.keys(counts).map(Number).filter((n) => Number.isInteger(n) && n >= 1).sort((a, b) => a - b);
+          if (cSeasons.length > 0) return cSeasons;
+        }
         const s1 = parsed.seasons.find((s) => s.season_number === 1);
         if (s1 && (s1.episode_count ?? 0) > 30) {
           const derived = Math.ceil(s1.episode_count! / 24);

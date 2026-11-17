@@ -857,6 +857,75 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     }
   });
 
+  it("resolves Yu Yu Hakusho S1 E1 to Ghost Files and never matches One Piece from search results", async () => {
+    const yuyuTmdb = {
+      id: 30669,
+      name: "Yu Yu Hakusho",
+      original_name: "幽☆遊☆白書",
+      original_language: "ja",
+      genres: [{ id: 16 }],
+      seasons: [
+        { season_number: 1, name: "The Spirit Detective", episode_count: 25 },
+        { season_number: 2, name: "The Dark Tournament", episode_count: 41 },
+      ],
+    };
+
+    const fetcher = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith("/tv/30669")) {
+        return { ok: true, status: 200, json: async () => yuyuTmdb };
+      }
+
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`
+            <div class="film_list-wrap">
+              <div class="film-detail">
+                <h3 class="film-name"><a href="/yu-yu-hakusho-ghost-files-906" title="Yu Yu Hakusho: Ghost Files">Yu Yu Hakusho: Ghost Files</a></h3>
+              </div>
+            </div>
+            <div id="main-sidebar">
+              <div class="film-detail">
+                <h3 class="film-name"><a href="/one-piece-1" title="One Piece">One Piece</a></h3>
+              </div>
+            </div>
+          `);
+        }
+        if (u.pathname.startsWith("/api/theme/episode/list/906")) {
+          const epHtml = Array.from({ length: 112 }, (_, i) => `<a class="ep-item" data-id="${15000 + i + 1}" data-number="${i + 1}" title="Episode ${i + 1}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "15001";
+          const subEmbed = `https://zokoanime.video/stream/mal/392/${epId}/sub`;
+          return text(JSON.stringify({
+            status: true,
+            html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+          }));
+        }
+      }
+
+      if (u.hostname === "zokoanime.video") {
+        const blob = makeZokoBlob({
+          src: "https://cdn.hianime.test/yuyu/1/master.m3u8",
+          subtitles: [{ lang: "en", label: "English", src: "https://cdn.hianime.test/yuyu/1/sub.vtt", default: true }],
+        });
+        return text(`<html><script>window.__P="${blob}";</script></html>`);
+      }
+
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const res = await createFilmpireAdapter({ fetch: fetcher }).resolve(new URL("https://filmpire.sc/watch/30669?s=1&e=1"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.directUrl).toContain("cdn.hianime.test/yuyu/1/master.m3u8");
+      expect(res.media.title).toBe("Yu Yu Hakusho · S1 E1");
+    }
+  });
+
   it("resolves direct ZokoAnime and HiAnime URLs via createHiAnimeAdapter", async () => {
     const subEmbed = "https://zokoanime.video/stream/mal/40351/1/sub";
     const blob = makeZokoBlob({

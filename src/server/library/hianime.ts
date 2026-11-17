@@ -104,7 +104,13 @@ export async function searchHiAnime(
   }
 
   const html = await res.text();
-  const matches = [...html.matchAll(/<h3 class="film-name">\s*<a href="([^"]+)"\s*title="([^"]+)"/g)];
+  let searchHtml = html;
+  const wrapStart = html.indexOf('class="film_list-wrap"');
+  if (wrapStart !== -1) {
+    const sidebarIdx = html.indexOf('id="main-sidebar"', wrapStart);
+    searchHtml = sidebarIdx !== -1 ? html.slice(wrapStart, sidebarIdx) : html.slice(wrapStart);
+  }
+  const matches = [...searchHtml.matchAll(/<h3 class="film-name">\s*<a href="([^"]+)"\s*title="([^"]+)"/g)];
   const results: HiAnimeSearchResult[] = [];
   const seenHrefs = new Set<string>();
 
