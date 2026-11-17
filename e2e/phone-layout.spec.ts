@@ -389,6 +389,74 @@ test.describe("a phone used as the screen, held upright", () => {
     await expect(bare.getByTestId("tv-feature")).toHaveCount(0);
   });
 
+  test("the profile's page scrolls as a whole: its head goes up with the places under it, the page opens at its top, and the remote brings a button of the head back into view", async ({ browser }) => {
+    // (The owner, 17 Nov, on a phone: the head stayed where it was and only what was under Copy tag moved, a small part of a big screen.)
+    // (The lowest screen held upright that is laid out this way, compact.ts: a guest's page is more than a screen of it there.)
+    const tv = await screen(browser, { name: "320 by 480", width: 320, height: 480 });
+    const rows = tv.locator(".tv-rows");
+    await rows.evaluate((element) => element.scrollTo({ top: 600 })); // (Home left scrolled down: the profile's page is the same box of rows)
+    await tv.getByTestId("tv-account-chip").tap();
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+    const head = tv.getByTestId("tv-hero");
+    const settings = tv.getByTestId("tv-profile-settings");
+    await expect(tv.getByTestId("tv-profile-signin"), "a guest's remote starts on Sign in").toBeFocused();
+    expect(await head.evaluate((element) => element.closest(".tv-rows") !== null), "the head is in the page that scrolls").toBe(true);
+    await expect(head, "the page opens at its top").toBeInViewport({ ratio: 1 });
+    const page = (await rows.boundingBox())!;
+    expect(page.y, "what scrolls starts right under the top's buttons").toBeLessThan(80);
+
+    const before = (await head.boundingBox())!.y;
+    const by = await rows.evaluate((element) => {
+      element.scrollTo({ top: element.scrollHeight });
+      return element.scrollTop;
+    });
+    expect(by, "there is more than a screen of it").toBeGreaterThan(0);
+    await expect.poll(async () => Math.round((await head.boundingBox())!.y), { message: "the head went up with the page" }).toBe(Math.round(before - by));
+    const gone = (await settings.boundingBox())!;
+    expect(gone.y, "Settings went up out of what shows").toBeLessThan(page.y - gone.height / 2);
+
+    // (The remote puts its ring on a button without scrolling to it: the page brings it into view.)
+    await tv.keyboard.press("ArrowRight");
+    await expect(settings).toBeFocused();
+    await expect.poll(async () => { const box = (await settings.boundingBox())!; return box.y >= page.y && box.y + box.height <= page.y + page.height; }, { message: "Settings is in view again" }).toBe(true);
+  });
+
+  test("a page of titles scrolls as a whole: its name and its buttons go up with the titles, and the remote brings a button back into view", async ({ browser }) => {
+    // (The owner, 17 Nov, on a friend's page: the name and the buttons stayed, and only the titles under Chat moved. The lists' page is the same page.)
+    const tv = await screen(browser, { name: "320 by 480", width: 320, height: 480 });
+    for (let i = 0; i < 5; i++) {
+      // (By its name, and the shelf's own: the list, once it has one, is a row of its own at the top of Home.)
+      await tv.locator(`.tv-tile[title="Shelf 2 film ${i + 1}"]`).last().tap();
+      await tv.getByTestId("tv-detail-list").tap();
+      await settled(tv.getByTestId("tv-detail-close"));
+      await tv.getByTestId("tv-detail-close").tap();
+      await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    }
+    await tv.getByTestId("rail-list").tap();
+    const grid = tv.locator(".tv-grid");
+    await expect(grid.locator(".tv-tile")).toHaveCount(5);
+    const title = tv.getByTestId("tv-view-title");
+    expect(await title.evaluate((element) => element.closest(".tv-grid") !== null), "the page's name is in the grid that scrolls").toBe(true);
+    const page = (await grid.boundingBox())!;
+    expect(page.y, "what scrolls starts right under the top's buttons").toBeLessThan(80);
+    const by = await grid.evaluate((element) => {
+      element.scrollTo({ top: element.scrollHeight });
+      return element.scrollTop;
+    });
+    expect(by, "there is more than a screen of it").toBeGreaterThan(0);
+    const gone = (await tv.getByTestId("list-edit").boundingBox())!;
+    expect(gone.y, "the list's buttons went up out of what shows").toBeLessThan(page.y - gone.height / 2);
+
+    // (The remote puts its ring on a button without scrolling to it: Up from the titles to the list's buttons brings them into view.)
+    await grid.locator(".tv-tile").last().evaluate((element: HTMLElement) => element.focus({ preventScroll: true }));
+    const onAButton = () => tv.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.zone === "chips");
+    for (let step = 0; step < 4 && !(await onAButton()); step++) await tv.keyboard.press("ArrowUp");
+    expect(await onAButton(), "Up from the titles reaches the list's buttons").toBe(true);
+    await expect
+      .poll(() => tv.evaluate(({ top, bottom }) => { const box = document.activeElement!.getBoundingClientRect(); return box.top >= top && box.bottom <= bottom; }, { top: page.y, bottom: page.y + page.height }), { message: "the button is in view" })
+      .toBe(true);
+  });
+
   for (const size of [SIZES[0]!, SIZES[2]!]) {
     test(`at ${size.name}: a tap on a title's picture, or on the empty part beside its words, leaves its page open, and its Close button closes it`, async ({ browser }) => {
       // (A title with a picture: its page keeps the top of the screen for it, and the words begin under it. The picture itself does not take a tap, so a tap lands on the page.)

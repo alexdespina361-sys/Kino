@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type FocusEvent } from "react";
 import type { AvatarId } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { GoogleMark } from "../account/GoogleButton";
@@ -19,8 +19,8 @@ interface ProfileHeadProps {
   canSignIn: boolean;
   onSignIn: () => void;
   onSettings: () => void;
-  /** The remote came to the button at this place of the banner's row (the library keeps it, to come back to it from Settings). */
-  onArrive: (col: number) => void;
+  /** The remote came to the button at this place of the banner's row (the library keeps it, to come back to it from Settings; on a phone, where the head scrolls with the page, it brings the button into view). */
+  onArrive: (col: number, button: HTMLElement) => void;
   /** After Feedback, the menu's lines that a phone's bar of four has no room for (the watch party, the phone), as buttons. */
   places: readonly RailEntry[];
   /** Given for an account that has no Google account yet, where Google sign-in is on: the button, last of all, that goes to Google to connect one. */
@@ -39,7 +39,7 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
   const feedback = useFeedbackEntry();
   const tagShown = useRef<HTMLElement>(null);
   const [copying, copyTag] = useCopy(tag ?? "", tagShown);
-  const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: () => onArrive(col) });
+  const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: (event: FocusEvent<HTMLElement>) => onArrive(col, event.currentTarget) });
   const settingsCol = signedIn || !canSignIn ? 0 : 1; // (a guest's Sign in is the button before it)
   const googleCol = settingsCol + 2 + places.length;
   return (

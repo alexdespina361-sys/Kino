@@ -583,6 +583,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     setDeep(false);
     setRailOpen(false);
     setPending(CONTENT);
+    // (The profile's page opens at its top: on a phone its head is in the page that scrolls, which another page of rows may have left scrolled down.)
+    if (next.kind === "profile") rowsRef.current?.scrollTo({ top: 0 });
   };
   // A profile that becomes a child's while the library is open (another profile chosen, or the switch turned on elsewhere) leaves what a child's has not: the page of
   // another section or of friends, a title's page that is not for children, a page over the library. Its Home is the Cartoons' (see `child`).
@@ -1116,7 +1118,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       setDeep(pos.row > 0);
       slideAlong(element);
       const scroller = element.parentElement!;
-      rowsRef.current?.scrollTo({ top: scroller.closest<HTMLElement>(".tv-row")!.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
+      const rowBox = scroller.closest<HTMLElement>(".tv-row")!;
+      const rows = rowsRef.current;
+      // (On a phone held upright, a row taller than the page that shows it - the places of the profile, two across under its head, or the friends' - is kept in view
+      // a line at a time: its top would leave the place the remote is on below the screen.)
+      if (rows && latest.current.compact && rowBox.offsetHeight > rows.clientHeight) keepInView(rows, element);
+      else rows?.scrollTo({ top: rowBox.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
       // The remote moves a title at a time and a script scrolls: nothing here is a scroll the page could notice from far off, so the library is asked for more as the remote nears the end,
       // of the page (the rows that come next) and of the row (more of its titles).
       const { homeRows: laid, view: page, pageSection: section, growing: more } = latest.current;
@@ -1384,6 +1391,283 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     choose({ kind: "home" });
     rowsRef.current?.scrollTo({ top: 0 });
   };
+  /** On a phone held upright the profile's head goes up with the places under it (it is in the first row); elsewhere, and while there are no places, it is the banner. */
+  const headInRows = compact && view.kind === "profile" && drawnRows.length > 0;
+  const profileHead =
+    view.kind === "profile" ? (
+      <ProfileHead
+        name={signedIn && profile ? profile.name : t("profile.guest")}
+        avatar={signedIn ? profile?.avatar : undefined}
+        line={me ? signedInLine(me) : canSignIn ? t("auth.pitchDetail") : ""}
+        signedIn={signedIn}
+        canSignIn={canSignIn}
+        onSignIn={onSignIn}
+        onSettings={onSettings}
+        onArrive={(col, button) => {
+          remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col };
+          // (The remote is put on a button without scrolling to it: in the page that scrolls, it is brought into view here - Up from the places, back from Settings.)
+          if (headInRows && rowsRef.current) keepInView(rowsRef.current, button);
+        }}
+        places={places}
+        onConnectGoogle={connectGoogle}
+        tag={myTag}
+      />
+    ) : null;
+  /**
+   * On a phone held upright, the head of a page of titles (its name, what it says, its buttons) and a friend's foot go up and down with the titles, in the
+   * grid that scrolls (the owner, 17 Nov, on a friend's page: only the titles under Chat moved); elsewhere, and on a page with no titles, they stay over
+   * and under it.
+   */
+  const headInGrid = compact && grid !== null && grid.entries.length > 0;
+  const viewHead = grid ? (
+    <>
+      {view.kind === "friend" && friend ? (
+        // (A friend's page: who they are in one block, their picture beside their name, what they are doing, and why some of it is not shown.)
+        <div className="tv-friend-head">
+          <span className="tv-person-pic" data-online={friend.on && friend.online ? "true" : undefined}>
+            <Avatar id={friend.avatar} />
+          </span>
+          <div className="tv-friend-names">
+            <h1 className="tv-view-title" data-testid="tv-view-title">
+              {grid.title}
+            </h1>
+            {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+            {grid.hint && (
+              <p className="tv-view-hint" data-testid="tv-view-hint">
+                {grid.hint}
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <h1 className="tv-view-title" data-testid="tv-view-title">
+            {grid.title}
+          </h1>
+          {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+          {grid.hint && (
+            <p className="tv-view-hint" data-testid="tv-view-hint">
+              {grid.hint}
+            </p>
+          )}
+        </>
+      )}
+      {view.kind === "ratings" && ratingOptions && ratingChipRows.length > 0 && (
+        // (The owner: "a simple filter around rating". Each button says how many it keeps.)
+        <div className="tv-rating-filters" data-testid="rating-filters">
+          {ratingRows.sections.length > 0 && (
+            <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterKind")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+              {ratingRows.sections.map((section, col) => {
+                const pos: Pos = { zone: "chips", row: 0, col };
+                const count = section ? (ratingOptions.sections.find((each) => each.section === section)?.count ?? 0) : data.ratings.length;
+                return (
+                  <button
+                    key={section ?? "all"}
+                    className="tv-choice"
+                    role="radio"
+                    aria-checked={ratingFilter.section === section}
+                    data-testid={`rating-filter-${section ?? "all"}`}
+                    data-zone={pos.zone}
+                    data-row={pos.row}
+                    data-col={pos.col}
+                    onClick={() => selectRatings({ ...ratingFilter, section })}
+                    onFocus={() => (remembered.focus[viewKey(view)] = pos)}
+                  >
+                    {t(section === undefined ? "tv.filterAll" : section === "movie" ? "tv.filterMovies" : section === "series" ? "tv.filterSeries" : section === "cartoon" ? "tv.filterCartoons" : "tv.filterAnime")}
+                    <span className="tv-choice-count">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {ratingRows.scores.length > 0 && (
+            <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterScores")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+              {ratingRows.scores.map((score, col) => {
+                const pos: Pos = { zone: "chips", row: scoreRow, col };
+                const count = score === undefined ? ratingOptions.scores.reduce((sum, each) => sum + each.count, 0) : (ratingOptions.scores.find((each) => each.score === score)?.count ?? 0);
+                return (
+                  <button
+                    key={score ?? "any"}
+                    className="tv-choice"
+                    role="radio"
+                    aria-checked={ratingFilter.score === score}
+                    {...(score !== undefined ? { "aria-label": `${t("rating.filterScore", { score })} (${count})` } : {})}
+                    data-testid={`rating-score-${score ?? "any"}`}
+                    data-zone={pos.zone}
+                    data-row={pos.row}
+                    data-col={pos.col}
+                    onClick={() => selectRatings({ ...ratingFilter, score })}
+                    onFocus={() => (remembered.focus[viewKey(view)] = pos)}
+                  >
+                    {score === undefined ? (
+                      t("rating.filterAnyScore")
+                    ) : (
+                      <>
+                        <StarIcon filled /> {score}
+                      </>
+                    )}
+                    <span className="tv-choice-count">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {view.kind === "list" && !canAdd && (
+        <p className="tv-view-meta" data-testid="lists-full">
+          {t("lists.full", { count: MAX_LISTS })}
+        </p>
+      )}
+      {view.kind === "list" && (
+        // (A list's own button is there to pick it from the others: with one list, the page's name is all it would say again - the judge, 16 Nov.)
+        <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+          {listChips.map((info, col) => (
+            <button
+              key={info.id}
+              className="tv-choice"
+              role="radio"
+              aria-checked={info.id === shownId}
+              data-testid={`list-chip-${info.id}`}
+              data-zone="chips"
+              data-row={0}
+              data-col={col}
+              onClick={() => selectList(info.id)}
+              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col })}
+            >
+              {listName(info)}
+            </button>
+          ))}
+          {canAdd && (
+            <button
+              className="tv-choice"
+              data-testid="list-new"
+              data-zone="chips"
+              data-row={0}
+              data-col={listChips.length}
+              onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: listChips.length } })}
+              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length })}
+            >
+              <PlusIcon /> {t("lists.new")}
+            </button>
+          )}
+          <button
+            className="tv-choice"
+            data-testid="list-edit"
+            data-zone="chips"
+            data-row={0}
+            data-col={listChips.length + (canAdd ? 1 : 0)}
+            onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) } })}
+            onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) })}
+          >
+            <PencilIcon /> {t("lists.edit")}
+          </button>
+        </div>
+      )}
+      {view.kind === "friend" && friend && (
+        // One line for the remote, in two groups to the eye: the way back and what to see of them (their lists or their ratings, one switch of two) on the left,
+        // what to do with them (watch together, plan it, chat) on the right. The order is the remote's, left to right, as it always was.
+        <div className="tv-filters tv-filters-friend" role="toolbar" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+          <button
+            className="tv-choice tv-choice-round"
+            data-testid="tv-friend-back"
+            data-zone="chips"
+            data-row={0}
+            data-col={0}
+            aria-label={t("common.back")}
+            title={t("common.back")}
+            onClick={() => choose({ kind: "friends" })}
+            onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 0 })}
+          >
+            <ChevronIcon className="flip" />
+          </button>
+          <span className="tv-segmented tv-friend-tabs" role="radiogroup" aria-label={friend.name}>
+          {FRIEND_TABS.map((value, index) => (
+            <button
+              key={value}
+              className="tv-choice"
+              role="radio"
+              aria-checked={friendTab === value}
+              data-testid={`friend-tab-${value}`}
+              data-zone="chips"
+              data-row={0}
+              data-col={1 + index}
+              onClick={() => selectTab(friend.id, value)}
+              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + index })}
+            >
+              {t(value === "lists" ? "friends.tabLists" : "friends.tabRatings")}
+            </button>
+          ))}
+          </span>
+          <span className="tv-friend-gap" aria-hidden="true" />
+          {canAskTogether(friend) && (
+            <>
+              <button
+                className="tv-choice tv-choice-primary"
+                data-testid="friend-together"
+                title={t("friends.askTogether")}
+                data-zone="chips"
+                data-row={0}
+                data-col={1 + FRIEND_TABS.length}
+                onClick={() => void askToWatch(friend.id)}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + FRIEND_TABS.length })}
+              >
+                <UsersIcon /> {t("friends.togetherShort")}
+              </button>
+              <button
+                className="tv-choice"
+                data-testid="friend-plan"
+                title={t("friends.planButton")}
+                data-zone="chips"
+                data-row={0}
+                data-col={2 + FRIEND_TABS.length}
+                onClick={() => setOverlay({ kind: "planPick", friend: friend.id, back: { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length })}
+              >
+                <ClockIcon /> {t("friends.planShort")}
+              </button>
+            </>
+          )}
+          {/* (Last, so that the others keep their places: a friend who does not take invitations still has a chat.) */}
+          <button
+            className="tv-choice"
+            data-testid="friend-chat"
+            data-zone="chips"
+            data-row={0}
+            data-col={chatChip}
+            onClick={() => setOverlay({ kind: "chat", friend: friend.id, back: { zone: "chips", row: 0, col: chatChip } })}
+            onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: chatChip })}
+          >
+            <MessageIcon /> {t("chat.open")}
+            {waitingFrom(friends.state, friend.id) > 0 && (
+              <small className="tv-badge" data-testid="friend-chat-unread">
+                {waitingFrom(friends.state, friend.id)}
+              </small>
+            )}
+          </button>
+        </div>
+      )}
+    </>
+  ) : null;
+  const viewFoot = view.kind === "friend" && friend ? (
+    <div className="tv-view-foot tv-friend-foot">
+      <button
+        className="tv-choice tv-choice-danger"
+        data-testid="friend-remove"
+        data-zone="foot"
+        data-row={0}
+        data-col={0}
+        onClick={() => setOverlay({ kind: "unfriend", id: friend.id, name: friend.name, back: { zone: "foot", row: 0, col: 0 } })}
+        onFocus={() => (remembered.focus[viewKey(view)] = { zone: "foot", row: 0, col: 0 })}
+      >
+        <CloseIcon /> {t("friends.remove")}
+      </button>
+    </div>
+  ) : null;
+  /** The remote puts its ring on a button without scrolling to it: in the grid that scrolls, the button is brought into view. */
+  const intoGridView = (event: FocusEvent<HTMLElement>) => {
+    if (gridRef.current) keepInView(gridRef.current, event.target as HTMLElement);
+  };
 
   return (
     <section
@@ -1446,25 +1730,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               ))}
             </div>
           )}
+          {!headInRows && (
           <div
             className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : friendsHead ? " tv-hero-friends" : ""}`}
             data-testid="tv-hero"
             data-poster={heroPoster && view.kind !== "profile" ? "true" : undefined}
           >
             {view.kind === "profile" ? (
-              <ProfileHead
-                name={signedIn && profile ? profile.name : t("profile.guest")}
-                avatar={signedIn ? profile?.avatar : undefined}
-                line={me ? signedInLine(me) : canSignIn ? t("auth.pitchDetail") : ""}
-                signedIn={signedIn}
-                canSignIn={canSignIn}
-                onSignIn={onSignIn}
-                onSettings={onSettings}
-                onArrive={(col) => (remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col })}
-                places={places}
-                onConnectGoogle={connectGoogle}
-                tag={myTag}
-              />
+              profileHead
             ) : friendsHead ? (
               <div className="tv-hero-text tv-friends-head" key="friends-head">
                 <h1 className="tv-hero-title" data-testid="tv-friends-title">
@@ -1531,6 +1804,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               </>
             )}
           </div>
+          )}
 
           <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
             {homeRows.length > 0
@@ -1544,6 +1818,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                     data-grouped={row.group ? "true" : undefined}
                     aria-label={row.title}
                   >
+                    {/* (A phone held upright: the profile's head is the top of the page that scrolls, not a block over it that stays - the owner, 17 Nov: only what was under
+                        Copy tag moved. In the first row, like the poster of Home, so that the page, which brings a row to its top, brings the head with the first places.) */}
+                    {headInRows && r === 0 && (
+                      <div className="tv-hero tv-hero-profile" data-testid="tv-hero">
+                        {profileHead}
+                      </div>
+                    )}
                     {row.group && homeRows[r - 1]?.group !== row.group && (
                       // (Inside the first row of its group, so that the page, which brings a row to its top, brings the heading too.)
                       <h2 className="tv-row-group" data-testid="tv-row-group">
@@ -1600,234 +1881,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {grid && (
         <div className="tv-view" data-testid={view.kind === "category" ? "tv-category" : `tv-${view.kind}`}>
-          {view.kind === "friend" && friend ? (
-            // (A friend's page: who they are in one block, their picture beside their name, what they are doing, and why some of it is not shown.)
-            <div className="tv-friend-head">
-              <span className="tv-person-pic" data-online={friend.on && friend.online ? "true" : undefined}>
-                <Avatar id={friend.avatar} />
-              </span>
-              <div className="tv-friend-names">
-                <h1 className="tv-view-title" data-testid="tv-view-title">
-                  {grid.title}
-                </h1>
-                {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
-                {grid.hint && (
-                  <p className="tv-view-hint" data-testid="tv-view-hint">
-                    {grid.hint}
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              <h1 className="tv-view-title" data-testid="tv-view-title">
-                {grid.title}
-              </h1>
-              {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
-              {grid.hint && (
-                <p className="tv-view-hint" data-testid="tv-view-hint">
-                  {grid.hint}
-                </p>
-              )}
-            </>
-          )}
-          {view.kind === "ratings" && ratingOptions && ratingChipRows.length > 0 && (
-            // (The owner: "a simple filter around rating". Each button says how many it keeps.)
-            <div className="tv-rating-filters" data-testid="rating-filters">
-              {ratingRows.sections.length > 0 && (
-                <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterKind")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-                  {ratingRows.sections.map((section, col) => {
-                    const pos: Pos = { zone: "chips", row: 0, col };
-                    const count = section ? (ratingOptions.sections.find((each) => each.section === section)?.count ?? 0) : data.ratings.length;
-                    return (
-                      <button
-                        key={section ?? "all"}
-                        className="tv-choice"
-                        role="radio"
-                        aria-checked={ratingFilter.section === section}
-                        data-testid={`rating-filter-${section ?? "all"}`}
-                        data-zone={pos.zone}
-                        data-row={pos.row}
-                        data-col={pos.col}
-                        onClick={() => selectRatings({ ...ratingFilter, section })}
-                        onFocus={() => (remembered.focus[viewKey(view)] = pos)}
-                      >
-                        {t(section === undefined ? "tv.filterAll" : section === "movie" ? "tv.filterMovies" : section === "series" ? "tv.filterSeries" : section === "cartoon" ? "tv.filterCartoons" : "tv.filterAnime")}
-                        <span className="tv-choice-count">{count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {ratingRows.scores.length > 0 && (
-                <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterScores")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-                  {ratingRows.scores.map((score, col) => {
-                    const pos: Pos = { zone: "chips", row: scoreRow, col };
-                    const count = score === undefined ? ratingOptions.scores.reduce((sum, each) => sum + each.count, 0) : (ratingOptions.scores.find((each) => each.score === score)?.count ?? 0);
-                    return (
-                      <button
-                        key={score ?? "any"}
-                        className="tv-choice"
-                        role="radio"
-                        aria-checked={ratingFilter.score === score}
-                        {...(score !== undefined ? { "aria-label": `${t("rating.filterScore", { score })} (${count})` } : {})}
-                        data-testid={`rating-score-${score ?? "any"}`}
-                        data-zone={pos.zone}
-                        data-row={pos.row}
-                        data-col={pos.col}
-                        onClick={() => selectRatings({ ...ratingFilter, score })}
-                        onFocus={() => (remembered.focus[viewKey(view)] = pos)}
-                      >
-                        {score === undefined ? (
-                          t("rating.filterAnyScore")
-                        ) : (
-                          <>
-                            <StarIcon filled /> {score}
-                          </>
-                        )}
-                        <span className="tv-choice-count">{count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          {view.kind === "list" && !canAdd && (
-            <p className="tv-view-meta" data-testid="lists-full">
-              {t("lists.full", { count: MAX_LISTS })}
-            </p>
-          )}
-          {view.kind === "list" && (
-            // (A list's own button is there to pick it from the others: with one list, the page's name is all it would say again - the judge, 16 Nov.)
-            <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-              {listChips.map((info, col) => (
-                <button
-                  key={info.id}
-                  className="tv-choice"
-                  role="radio"
-                  aria-checked={info.id === shownId}
-                  data-testid={`list-chip-${info.id}`}
-                  data-zone="chips"
-                  data-row={0}
-                  data-col={col}
-                  onClick={() => selectList(info.id)}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col })}
-                >
-                  {listName(info)}
-                </button>
-              ))}
-              {canAdd && (
-                <button
-                  className="tv-choice"
-                  data-testid="list-new"
-                  data-zone="chips"
-                  data-row={0}
-                  data-col={listChips.length}
-                  onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: listChips.length } })}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length })}
-                >
-                  <PlusIcon /> {t("lists.new")}
-                </button>
-              )}
-              <button
-                className="tv-choice"
-                data-testid="list-edit"
-                data-zone="chips"
-                data-row={0}
-                data-col={listChips.length + (canAdd ? 1 : 0)}
-                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) } })}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) })}
-              >
-                <PencilIcon /> {t("lists.edit")}
-              </button>
-            </div>
-          )}
-          {view.kind === "friend" && friend && (
-            // One line for the remote, in two groups to the eye: the way back and what to see of them (their lists or their ratings, one switch of two) on the left,
-            // what to do with them (watch together, plan it, chat) on the right. The order is the remote's, left to right, as it always was.
-            <div className="tv-filters tv-filters-friend" role="toolbar" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-              <button
-                className="tv-choice tv-choice-round"
-                data-testid="tv-friend-back"
-                data-zone="chips"
-                data-row={0}
-                data-col={0}
-                aria-label={t("common.back")}
-                title={t("common.back")}
-                onClick={() => choose({ kind: "friends" })}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 0 })}
-              >
-                <ChevronIcon className="flip" />
-              </button>
-              <span className="tv-segmented tv-friend-tabs" role="radiogroup" aria-label={friend.name}>
-              {FRIEND_TABS.map((value, index) => (
-                <button
-                  key={value}
-                  className="tv-choice"
-                  role="radio"
-                  aria-checked={friendTab === value}
-                  data-testid={`friend-tab-${value}`}
-                  data-zone="chips"
-                  data-row={0}
-                  data-col={1 + index}
-                  onClick={() => selectTab(friend.id, value)}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + index })}
-                >
-                  {t(value === "lists" ? "friends.tabLists" : "friends.tabRatings")}
-                </button>
-              ))}
-              </span>
-              <span className="tv-friend-gap" aria-hidden="true" />
-              {canAskTogether(friend) && (
-                <>
-                  <button
-                    className="tv-choice tv-choice-primary"
-                    data-testid="friend-together"
-                    title={t("friends.askTogether")}
-                    data-zone="chips"
-                    data-row={0}
-                    data-col={1 + FRIEND_TABS.length}
-                    onClick={() => void askToWatch(friend.id)}
-                    onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + FRIEND_TABS.length })}
-                  >
-                    <UsersIcon /> {t("friends.togetherShort")}
-                  </button>
-                  <button
-                    className="tv-choice"
-                    data-testid="friend-plan"
-                    title={t("friends.planButton")}
-                    data-zone="chips"
-                    data-row={0}
-                    data-col={2 + FRIEND_TABS.length}
-                    onClick={() => setOverlay({ kind: "planPick", friend: friend.id, back: { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length } })}
-                    onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length })}
-                  >
-                    <ClockIcon /> {t("friends.planShort")}
-                  </button>
-                </>
-              )}
-              {/* (Last, so that the others keep their places: a friend who does not take invitations still has a chat.) */}
-              <button
-                className="tv-choice"
-                data-testid="friend-chat"
-                data-zone="chips"
-                data-row={0}
-                data-col={chatChip}
-                onClick={() => setOverlay({ kind: "chat", friend: friend.id, back: { zone: "chips", row: 0, col: chatChip } })}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: chatChip })}
-              >
-                <MessageIcon /> {t("chat.open")}
-                {waitingFrom(friends.state, friend.id) > 0 && (
-                  <small className="tv-badge" data-testid="friend-chat-unread">
-                    {waitingFrom(friends.state, friend.id)}
-                  </small>
-                )}
-              </button>
-            </div>
-          )}
+          {!headInGrid && viewHead}
           {grid.entries.length > 0 ? (
             <div className={`tv-grid${grid.layout === "categories" ? " tv-grid-categories" : posterGrid ? " tv-grid-posters" : ""}`} ref={gridRef} onScroll={askTitles} style={{ "--cols": gridColumns } as CSSProperties}>
+              {headInGrid && (
+                <div className="tv-view-head" onFocus={intoGridView}>
+                  {viewHead}
+                </div>
+              )}
               {grid.entries.map((entry, i) => {
                 const at: { row: number; col: number; heading?: string } = sectionPlace?.[i] ?? { row: Math.floor(i / gridColumns), col: i % gridColumns };
                 return (
@@ -1845,27 +1906,18 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               {view.kind === "category" &&
                 loadingTitles(feeding, view.rowId) &&
                 Array.from({ length: gridColumns }, (_, i) => <div className="tv-tile tv-skeleton" data-testid="tv-grid-waiting" aria-hidden="true" key={`waiting-${i}`} />)}
+              {headInGrid && viewFoot && (
+                <div className="tv-view-tail" onFocus={intoGridView}>
+                  {viewFoot}
+                </div>
+              )}
             </div>
           ) : (
             <p className="tv-view-empty" data-testid="tv-view-empty">
               {grid.empty}
             </p>
           )}
-          {view.kind === "friend" && friend && (
-            <div className="tv-view-foot tv-friend-foot">
-              <button
-                className="tv-choice tv-choice-danger"
-                data-testid="friend-remove"
-                data-zone="foot"
-                data-row={0}
-                data-col={0}
-                onClick={() => setOverlay({ kind: "unfriend", id: friend.id, name: friend.name, back: { zone: "foot", row: 0, col: 0 } })}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "foot", row: 0, col: 0 })}
-              >
-                <CloseIcon /> {t("friends.remove")}
-              </button>
-            </div>
-          )}
+          {!headInGrid && viewFoot}
         </div>
       )}
 
