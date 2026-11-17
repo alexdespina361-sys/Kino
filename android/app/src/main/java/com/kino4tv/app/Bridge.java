@@ -108,7 +108,9 @@ final class Bridge implements WebViewCompat.WebMessageListener {
     private JSONObject hello() {
         JSONObject hello = state("hello");
         put(hello, "version", BuildConfig.VERSION_NAME);
-        put(hello, "folders", new JSONArray().put(Folders.WHATSAPP_STICKERS));
+        JSONArray folders = new JSONArray();
+        for (String folder : Folders.all()) folders.put(folder);
+        put(hello, "folders", folders);
         return hello;
     }
 

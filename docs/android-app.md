@@ -5,7 +5,7 @@ Kino for Android (`android/`) is the site in a WebView, for phones and for Andro
 - **Notifications** from friends: a message, a title sent, an invitation to a watch party or to watch together, a plan or the answer to one.
 - **Updates of itself**: the app installs a new version on its own once the server says one is out.
 - **Google sign-in** that works inside the app. Google signs nobody in from a WebView, so the button goes out to the phone's browser and back.
-- **Stickers from WhatsApp** (0.2.0): "From WhatsApp" in the stickers opens the phone's file chooser in the folder where WhatsApp keeps the stickers it was sent. Several can be chosen at once; each becomes a personal sticker (one that moves becomes its first picture).
+- **Stickers from WhatsApp** (0.2.0): "From WhatsApp" in the stickers opens the phone's file chooser in the folder where WhatsApp keeps the stickers it was sent. Several can be chosen at once; each becomes a personal sticker (one that moves becomes its first picture). The app knows WhatsApp's GIFs folder too (`whatsapp-gifs`, MP4 and GIF files); the site has no button for it until stickers that move are on.
 
 It is Java, with no framework: `MainActivity` (the WebView), `Bridge` (`window.KinoApp` for the site's pages), `Folders`, `GoogleTrip`, `KinoMessaging` (Firebase), `Notices`, `Updates` and `UpdateWork` (WorkManager). It is
 built with AGP 8.13, Gradle 8.14.3, SDK 36, minimum Android 7.0 (API 24). Lint runs on every release build, and an error stops it.
@@ -19,7 +19,7 @@ From 0.2.0 the page and the app talk by messages (`WebViewCompat.addWebMessageLi
 | `{call: "hello"}` | `{kind: "hello", version, folders, notify, token}` |
 | `{call: "pushToken"}` | (the phone may ask whether the app may notify) then `{kind: "state", notify, token}` |
 | `{call: "setStrings", json}` | nothing: the notifications' words in the profile's language |
-| `{call: "pickFrom", folder}` | `{kind: "picking", folder, known}`, and the next file chooser (within 10 s) opens in that folder |
+| `{call: "pickFrom", folder}` | `{kind: "picking", folder, known}`, and the next file chooser (within 10 s) opens in that folder (`whatsapp-stickers`: pictures; `whatsapp-gifs`: MP4 and GIF) |
 | `{call: "googleTicket", ticket}` | (`GoogleTrip`'s own script sends it) the Custom Tab opens |
 
 The app sends `{kind: "state", notify, token}` again whenever either changes (a token arrives, the notifications are turned off or on in the phone's settings). `client/app/kinoApp.ts` is the page's side, and still speaks to a 0.1.0 app the old way.
