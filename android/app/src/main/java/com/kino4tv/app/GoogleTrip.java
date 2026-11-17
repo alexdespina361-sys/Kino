@@ -13,9 +13,10 @@ import java.security.SecureRandom;
 
 /**
  * "Continue with Google" from the app (src/server/accounts/google.ts, `AppTrip`): Google signs nobody in from a WebView, so the trip goes out to the phone's browser
- * (a Custom Tab) with the hash of a secret only this app knows, and comes back as kino4tv://google?code=...; the WebView then brings the code and the secret to the
- * site, which signs the WebView in. Connecting Google to the account, or confirming who is here, needs the WebView's own session: the WebView asks the site for a
- * ticket first, and the browser starts with that.
+ * (a Custom Tab) with the hash of a secret only this app knows, and comes back as kino4tv://google?code=... (an intent for this app's package alone: no other app is
+ * given it); the WebView then brings the code and the secret to the site, which signs the WebView in. Connecting Google to the account, or confirming who is here,
+ * needs the WebView's own session: the WebView asks the site for a ticket first, the browser starts with that, and the site connects or confirms only when this
+ * same WebView brings the code back.
  */
 final class GoogleTrip {
     private GoogleTrip() {}
@@ -48,21 +49,38 @@ final class GoogleTrip {
         return challengeOf(verifier);
     }
 
+    /** The page's start without an `app=` of its own (only the app's secret goes): the other parameters as they were. */
+    private static Uri.Builder without(Uri start, String name) {
+        Uri.Builder clean = start.buildUpon().clearQuery();
+        for (String key : start.getQueryParameterNames()) {
+            if (key.equals(name)) continue;
+            for (String value : start.getQueryParameters(key)) clean.appendQueryParameter(key, value);
+        }
+        return clean;
+    }
+
     /** The page went to `/api/auth/google/start?...`: out to the browser, signing in with the app's secret, or after asking for a ticket. */
     static void start(MainActivity activity, Uri start) {
         String origin = Site.originOf(start);
-        String challenge = newChallenge(activity, origin);
         String mode = start.getQueryParameter("mode");
         if (mode == null || mode.equals("signin")) {
-            openTab(activity, start.buildUpon().appendQueryParameter("app", challenge).build());
+            String challenge = newChallenge(activity, origin);
+            openTab(activity, without(start, "app").appendQueryParameter("app", challenge).build());
             return;
         }
+        // (Connecting or confirming needs the WebView's own session: its ticket comes back by the bridge, which a WebView too old for it does not have.)
+        if (!activity.bridged()) {
+            activity.web().loadUrl(origin + ("/tv".equals(start.getQueryParameter("next")) ? "/tv" : "/") + "?google=failed");
+            return;
+        }
+        String challenge = newChallenge(activity, origin);
         String device = start.getQueryParameter("device");
         String next = start.getQueryParameter("next");
         String body = "{\"mode\":" + quote(mode) + ",\"challenge\":" + quote(challenge) + ",\"device\":" + quote(device == null ? "browser" : device)
                 + ",\"next\":" + quote("/tv".equals(next) ? "/tv" : "/") + "}";
         String script = "fetch('/api/auth/google/app-ticket',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:" + quote(body) + "})"
-                + ".then(function(r){return r.ok?r.json():{}}).then(function(j){KinoApp.googleTicket(j.ticket||'')},function(){KinoApp.googleTicket('')})";
+                + ".then(function(r){return r.ok?r.json():{}},function(){return {}})"
+                + ".then(function(j){KinoApp.postMessage(JSON.stringify({call:'googleTicket',ticket:(j&&j.ticket)||''}))})";
         activity.web().evaluateJavascript(script, null);
     }
 

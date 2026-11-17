@@ -30,6 +30,14 @@ final class Site {
         return url != null && isOwn(Uri.parse(url));
     }
 
+    /** The origins of the site's pages, as Android's message bridge takes them: only pages of these have `window.KinoApp` (Bridge). */
+    static Set<String> origins() {
+        Set<String> origins = new HashSet<>();
+        for (String host : HOSTS) if (!host.isEmpty()) origins.add("https://" + host);
+        origins.add(originOf(HOME));
+        return origins;
+    }
+
     /** `https://host` of a page of the site (the origin a round trip to Google started from). */
     static String originOf(Uri uri) {
         return uri.getScheme() + "://" + uri.getHost() + (uri.getPort() == -1 ? "" : ":" + uri.getPort());

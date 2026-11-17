@@ -840,9 +840,11 @@ describe("signing in with Google from the Android app", () => {
     const back = await tab.get(`/api/auth/google/callback?state=${encodeURIComponent(to.searchParams.get("state") ?? "")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE);
     return { tab, back, where: String(back.headers.location) };
   }
+  /** The code of the way back to the app: an intent for the app's package alone (no other app that opens `kino4tv:` addresses can be given it), else the site. */
   const handoffOf = (where: string) => {
     const url = new URL(where);
-    expect(`${url.protocol}//${url.host}${url.pathname}`).toBe("kino4tv://google");
+    expect(`${url.protocol}//${url.host}${url.pathname}`).toBe("intent://google");
+    expect(url.hash.slice(1).split(";")).toEqual(["Intent", "scheme=kino4tv", "package=com.kino4tv.app", expect.stringMatching(/^S\.browser_fallback_url=https?%3A%2F%2F[^;%]+%2F(tv)?$/), "end"]);
     return url.searchParams.get("code") ?? "";
   };
 
@@ -909,6 +911,7 @@ describe("signing in with Google from the Android app", () => {
     expect(ticket).toMatch(/^[\w-]{43}$/);
 
     const { where } = await viaAppBrowser(app, `/api/auth/google/start?ticket=${ticket}`, BEN);
+    expect(store.findByGoogle(BEN), "nothing is connected in the browser: only when the WebView claims it").toBeUndefined();
     expect((await webview.get(`/api/auth/google/app-claim?code=${handoffOf(where)}&verifier=${verifier}`)).headers.location).toBe("/?google=linked");
     expect(store.findByGoogle(BEN)?.email).toBe("robert");
     // (The ticket is used up: a browser that brings it again is sent back saying it went wrong, and goes nowhere near Google.)
@@ -927,6 +930,52 @@ describe("signing in with Google from the Android app", () => {
     const { where } = await viaAppBrowser(app, `/api/auth/google/start?ticket=${ticket}`);
     expect((await first.get(`/api/auth/google/app-claim?code=${handoffOf(where)}&verifier=${verifier}`)).headers.location).toBe("/?google=reauth");
     expect(store.confirmedNow(sessionId)).toBe(true);
+  });
+
+  it("connects nothing for a ticket claimed by another session (even with the app's secret), or once the session that asked was signed out (the judge, 17 Nov)", async () => {
+    const { app, store } = await site();
+    const webview = await withPassword(app);
+    // (another session of the same account, the one a thief would have, claims with the secret: nothing, and the code is used up)
+    const stolen = appSecret();
+    const first = (await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: stolen.challenge })).data.ticket;
+    const code = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?ticket=${first}`, BEN)).where);
+    const other = new Browser(app);
+    expect((await other.post("/api/auth/login", { email: "robert", password: "correct horse" })).statusCode).toBe(200);
+    expect((await other.get(`/api/auth/google/app-claim?code=${code}&verifier=${stolen.verifier}`)).headers.location).toBe("/?google=failed");
+    expect((await new Browser(app).get(`/api/auth/google/app-claim?code=${code}&verifier=${stolen.verifier}`)).headers.location).toBe("/?google=failed");
+    expect((await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${stolen.verifier}`)).headers.location).toBe("/?google=failed");
+    expect(store.findByGoogle(BEN)).toBeUndefined();
+    // (the session that asked signs out while the browser is at Google: nothing either)
+    const late = appSecret();
+    const second = (await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: late.challenge })).data.ticket;
+    const code2 = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?ticket=${second}`, BEN)).where);
+    await webview.post("/api/auth/logout");
+    expect((await webview.get(`/api/auth/google/app-claim?code=${code2}&verifier=${late.verifier}`)).headers.location).toBe("/?google=failed");
+    expect(store.findByGoogle(BEN)).toBeUndefined();
+    // (and a reauth claimed by another session confirms nothing)
+    const { app: app2, store: store2 } = await site();
+    const { verifier: v1, challenge: c1 } = appSecret();
+    const phone = new Browser(app2);
+    await phone.get(`/api/auth/google/app-claim?code=${handoffOf((await viaAppBrowser(app2, `/api/auth/google/start?app=${c1}`)).where)}&verifier=${v1}`);
+    const { verifier, challenge } = appSecret();
+    const reauth = (await phone.post("/api/auth/google/app-ticket", { mode: "reauth", challenge })).data.ticket;
+    const code3 = handoffOf((await viaAppBrowser(app2, `/api/auth/google/start?ticket=${reauth}`)).where);
+    const elsewhere = new Browser(app2);
+    const third = appSecret();
+    await elsewhere.get(`/api/auth/google/app-claim?code=${handoffOf((await viaAppBrowser(app2, `/api/auth/google/start?app=${third.challenge}`)).where)}&verifier=${third.verifier}`);
+    expect((await meOf(elsewhere)).profiles[0].name, "another session of the same account").toBe("Ana");
+    expect((await elsewhere.get(`/api/auth/google/app-claim?code=${code3}&verifier=${verifier}`)).headers.location).toBe("/?google=failed");
+    const sessions = [...(store2 as unknown as { sessions: Map<string, { id: string }> }).sessions.values()];
+    expect(sessions.map((session) => store2.confirmedNow(session.id))).not.toContain(true);
+  });
+
+  it("gives an account ten tickets in ten minutes, and no more (the judge, 17 Nov)", async () => {
+    const { app } = await site();
+    const webview = await withPassword(app);
+    for (let at = 0; at < 10; at++) expect((await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: appSecret().challenge })).statusCode).toBe(200);
+    expect((await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: appSecret().challenge })).statusCode).toBe(429);
+    clock.now += 10 * 60_000 + 1;
+    expect((await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: appSecret().challenge })).statusCode).toBe(200);
   });
 
   it("is a browser's ordinary round trip without `app=`, and `app=` that is no hash is not the app's", async () => {

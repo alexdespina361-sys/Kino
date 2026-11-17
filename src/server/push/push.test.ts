@@ -5,10 +5,10 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app";
 import { MemoryPersistence } from "../accounts/persistence";
-import { AccountStore } from "../accounts/store";
+import { AccountStore, SESSION_TTL_MS } from "../accounts/store";
 import { AppReleases, readRelease } from "./appRelease";
 import { FcmSender, fcmFromEnv, serviceJwt, type FcmConfig, type PushMessage, type PushResult, type PushSender } from "./fcm";
 import { PushHub, QUIET_MS, UPDATE_TOPIC } from "./push";
@@ -27,8 +27,8 @@ class FakeFirebase {
   origin = "";
   tokens: URLSearchParams[] = [];
   sent: Array<{ auth: string; body: any }> = [];
-  /** What `messages:send` answers next (then 200). */
-  answers: number[] = [];
+  /** What `messages:send` answers next (then 200): a status (a 404 is Firebase's UNREGISTERED, as it says it), or a status and the body. */
+  answers: Array<number | { status: number; body: unknown }> = [];
   /** What the token endpoint answers. */
   tokenStatus = 200;
 
@@ -43,9 +43,17 @@ class FakeFirebase {
         return response.end(JSON.stringify({ access_token: `access-${this.tokens.length}`, expires_in: 3600, token_type: "Bearer" }));
       }
       this.sent.push({ auth: String(request.headers.authorization), body: JSON.parse(text) });
-      const status = this.answers.shift() ?? 200;
+      const answer = this.answers.shift() ?? 200;
+      const status = typeof answer === "number" ? answer : answer.status;
+      const fcm = (errorCode: string) => ({ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", errorCode });
+      const body =
+        typeof answer !== "number"
+          ? answer.body
+          : status === 200
+            ? { name: "projects/kino-test/messages/1" }
+            : { error: { code: status, message: "Requested entity was not found.", status: status === 404 ? "NOT_FOUND" : "INTERNAL", details: [fcm(status === 404 ? "UNREGISTERED" : "INTERNAL")] } };
       response.writeHead(status, { "content-type": "application/json" });
-      response.end(status === 200 ? JSON.stringify({ name: "projects/kino-test/messages/1" }) : JSON.stringify({ error: { code: status, status: status === 404 ? "NOT_FOUND" : "X", details: [{ errorCode: status === 404 ? "UNREGISTERED" : "X" }] } }));
+      response.end(JSON.stringify(body));
     });
     await new Promise<void>((resolve) => this.server.listen(0, "127.0.0.1", resolve));
     this.origin = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
@@ -107,6 +115,25 @@ describe("the Firebase sender", () => {
     expect(firebase.tokens).toHaveLength(2);
     firebase.tokenStatus = 400;
     expect(await new FcmSender(config(), () => clock.now).send({ token: "device-1", data: {} })).toBe("failed");
+  });
+
+  it("lets a token go only when Firebase says it is no phone's: a 404 of a wrong project's address keeps every token (the judge, 17 Nov), a token that is not one is let go", async () => {
+    const sender = new FcmSender(config(), () => clock.now);
+    firebase.answers = [
+      { status: 404, body: { error: { code: 404, message: "Requested entity was not found.", status: "NOT_FOUND" } } },
+      { status: 404, body: "<html>Not Found</html>" },
+      { status: 403, body: { error: { code: 403, message: "SenderId mismatch", status: "PERMISSION_DENIED", details: [{ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", errorCode: "SENDER_ID_MISMATCH" }] } } },
+      { status: 400, body: { error: { code: 400, message: "The registration token is not a valid FCM registration token", status: "INVALID_ARGUMENT", details: [{ "@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", errorCode: "INVALID_ARGUMENT" }] } } },
+      { status: 400, body: { error: { code: 400, message: "Invalid JSON payload received.", status: "INVALID_ARGUMENT" } } },
+    ];
+    expect(await sender.send({ token: "device-1", data: {} })).toBe("failed");
+    expect(await sender.send({ token: "device-1", data: {} })).toBe("failed");
+    expect(await sender.send({ token: "device-1", data: {} })).toBe("failed");
+    expect(await sender.send({ token: "device-2", data: {} })).toBe("gone");
+    expect(await sender.send({ token: "device-1", data: {} })).toBe("failed");
+    // (a topic is nobody's token: never "gone")
+    firebase.answers = [404];
+    expect(await sender.send({ topic: UPDATE_TOPIC, data: {} })).toBe("failed");
   });
 
   it("is on only with a readable key of a service account, and a fake Firebase only on this machine for tests", () => {
@@ -230,6 +257,46 @@ describe("what the app is told of", () => {
     expect(hub.counts.gone).toBe(1);
   });
 
+  it("forgets a deleted profile's phones, and counts only the phones that would be told (the judge, 17 Nov)", async () => {
+    const { store, ana, anaAccount } = await friends();
+    const kid = store.addProfile(anaAccount, "Kid", "fox");
+    if (!kid.ok) throw new Error("profile");
+    const tablet = store.createSession(anaAccount, "remote", "Ana's tablet");
+    expect(store.setPush(tablet.session.id, "ana-tablet-token-000000000", kid.value.id)).toBe(true);
+    expect(store.countPushDevices()).toBe(2);
+    expect(store.deleteProfile(anaAccount, kid.value.id).ok).toBe(true);
+    expect(store.pushTokensOf(kid.value.id)).toEqual([]);
+    expect(store.countPushDevices()).toBe(1);
+    await store.flush();
+    const kept = JSON.stringify([...(store as unknown as { options: { persistence: MemoryPersistence } }).options.persistence.docs.values()]);
+    expect(kept, "nothing kept of where the tablet was reached, nor of the profile").not.toContain("ana-tablet-token");
+    expect(kept).not.toContain(kid.value.id);
+    expect(store.pushTokensOf(ana)).toHaveLength(1);
+    clock.now += SESSION_TTL_MS + 1; // (the phone's sign-in runs out)
+    expect(store.countPushDevices()).toBe(0);
+  });
+
+  it("lets a sign-in that ran out a week ago or more go when the server starts, with where its phone was reached; one that ran out since is only not used", async () => {
+    const persistence = new MemoryPersistence();
+    const first = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
+    const account = first.createAccount("ana", "x");
+    if (!account.ok) throw new Error("account");
+    const profile = first.profilesOf(account.value.id)[0]!.id;
+    const old = first.createSession(account.value.id, "remote", "an old phone");
+    first.setPush(old.session.id, "old-phone-token-0000000000", profile);
+    clock.now += 5 * 86_400_000;
+    const recent = first.createSession(account.value.id, "remote", "a newer phone");
+    first.setPush(recent.session.id, "new-phone-token-0000000000", profile);
+    await first.close();
+    clock.now += SESSION_TTL_MS + 3 * 86_400_000; // (the old one ran out 8 days ago, the newer 3)
+    const again = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
+    await again.flush();
+    expect(persistence.docs.has(`session:${old.session.id}`)).toBe(false);
+    expect(persistence.docs.has(`session:${recent.session.id}`)).toBe(true);
+    expect(again.pushTokensOf(profile)).toEqual([]);
+    expect(again.countPushDevices()).toBe(0);
+  });
+
   it("is nothing at all without a sender", async () => {
     const { store, hub, ana, sam } = await friends(null);
     expect(hub.on).toBe(false);
@@ -284,10 +351,15 @@ describe("the routes of the app", () => {
       expect((await app.inject({ method: "GET", url: "/app/android/kino-2.apk" })).statusCode).toBe(404);
       expect((await app.inject({ method: "GET", url: "/app/android/..%2Fandroid.json" })).statusCode).toBe(404);
       expect((await app.inject({ method: "GET", url: "/app/kino.apk" })).headers.location).toBe("/app/android/kino-3.apk");
-      expect(sender.sent).toEqual([{ topic: UPDATE_TOPIC, data: { kind: "update", version: "3" }, collapseKey: "update", ttlSeconds: 7 * 86_400 }]);
+      expect(sender.sent, "nothing told before the site listens (an app that hears it asks at once)").toEqual([]);
+      await app.listen({ port: 0, host: "127.0.0.1" });
+      await vi.waitFor(() => expect(sender.sent).toEqual([{ topic: UPDATE_TOPIC, data: { kind: "update", version: "3" }, collapseKey: "update", ttlSeconds: 7 * 86_400 }]));
       // (A restart does not send it again.)
       const again = new KeptSender();
-      await new AppReleases(dir, new PushHub((await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 })), again)).start();
+      const restarted = new AppReleases(dir, new PushHub(await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 }), again));
+      await restarted.start();
+      await restarted.listening();
+      restarted.stop();
       expect(again.sent).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });

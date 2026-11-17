@@ -19,6 +19,7 @@
 
     <application
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction"
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -37,7 +38,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- The way back from Google (the phone's browser sends kino4tv://google?code=...). -->
+            <!-- The way back from Google: the site sends the phone's browser to an intent for this package alone, kino4tv://google?code=... -->
+
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -61,5 +63,12 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="friends" />
+        <!-- The phone is registered with Firebase only once its notifications are on and somebody is signed in (KinoMessaging), never by itself at start. -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
     </application>
 </manifest>

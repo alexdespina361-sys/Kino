@@ -303,6 +303,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const releases = options.androidAppDir ? new AppReleases(options.androidAppDir, pushHub, app.log) : undefined;
   if (releases) {
     await releases.start();
+    // (The apps hear of a new version once the site listens: each asks for it at once.)
+    app.addHook("onListen", async () => releases.listening());
     app.addHook("onClose", async () => releases.stop());
   }
   appReleaseRoutes(app, releases);

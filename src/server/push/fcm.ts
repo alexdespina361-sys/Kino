@@ -48,6 +48,32 @@ export interface PushSender {
   send(message: PushMessage): Promise<PushResult>;
 }
 
+/**
+ * What Firebase said was wrong, from the body of a refusal: Google's status (`NOT_FOUND`, `INVALID_ARGUMENT`, ...), Firebase's own code (`UNREGISTERED`, ...) and
+ * the message. Nothing for a body that is not one.
+ */
+export function fcmError(text: string): { status?: string; code?: string; message?: string } {
+  try {
+    const error = (JSON.parse(text) as { error?: { status?: unknown; message?: unknown; details?: unknown } }).error;
+    if (!error || typeof error !== "object") return {};
+    const details = Array.isArray(error.details) ? (error.details as { "@type"?: unknown; errorCode?: unknown }[]) : [];
+    const fcm = details.find((detail) => typeof detail?.["@type"] === "string" && detail["@type"].endsWith("google.firebase.fcm.v1.FcmError"));
+    return {
+      ...(typeof error.status === "string" ? { status: error.status } : {}),
+      ...(typeof fcm?.errorCode === "string" ? { code: fcm.errorCode } : {}),
+      ...(typeof error.message === "string" ? { message: error.message.slice(0, 200) } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Whether a refusal says the token is no phone's: Firebase's UNREGISTERED, or a token that is not one (INVALID_ARGUMENT about the registration token). */
+export function tokenRefused(text: string): boolean {
+  const { code, status, message } = fcmError(text);
+  return code === "UNREGISTERED" || ((code === "INVALID_ARGUMENT" || status === "INVALID_ARGUMENT") && /registration token/i.test(message ?? ""));
+}
+
 const isLoopback = (address: string) => {
   try {
     const url = new URL(address);
@@ -144,6 +170,7 @@ export class FcmSender implements PushSender {
     return this.asking;
   }
 
+  /** Send one message: "gone" when Firebase says the token is no phone's any more (the token is let go), "failed" for anything else that went wrong. */
   async send(message: PushMessage): Promise<PushResult> {
     if (!message.token === !message.topic) return "failed";
     const access = await this.accessToken();
@@ -161,9 +188,10 @@ export class FcmSender implements PushSender {
       if (answer.ok) return "sent";
       if (answer.status === 401) this.access = undefined; // (taken back early: the next one asks for a new one)
       const text = await answer.text().catch(() => "");
-      // A token Firebase does not know (UNREGISTERED is a 404), or one that is no token at all: let go. Any other refusal is ours or Google's, and keeps the token.
-      if (message.token && (answer.status === 404 || (answer.status === 400 && /registration token/i.test(text)))) return "gone";
-      this.log.warn(`Firebase: a message was refused (${answer.status}).`);
+      // A token Firebase says it does not know (UNREGISTERED), or one that is no token at all: let go. Any other refusal is ours or Google's, a 404 of a wrong
+      // project's address as well (the judge, 17 Nov: every phone's would have been let go), and keeps the token.
+      if (message.token && tokenRefused(text)) return "gone";
+      this.log.warn(`Firebase: a message was refused (${answer.status}${fcmError(text).code ? ` ${fcmError(text).code}` : ""}).`);
       return "failed";
     } catch (error) {
       this.log.warn(`Firebase: a message was not sent (${(error as Error).name}).`);

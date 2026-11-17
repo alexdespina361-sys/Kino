@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.UiModeManager;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
@@ -11,6 +12,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -36,6 +38,9 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * The app: the site in a WebView, full screen (docs/android-app.md). Only the site's own pages are shown here; any other address opens in the phone's browser,
  * and "Continue with Google" goes out to it as well (Google signs nobody in from a WebView: see GoogleTrip). A video's full screen is the phone's, Back is the
@@ -44,10 +49,14 @@ import androidx.core.view.WindowInsetsControllerCompat;
 public class MainActivity extends ComponentActivity {
     /** Whether the app is on the screen: then the friends' notifications are not shown (the site shows its own). */
     static volatile boolean onScreen;
-    /** The page's host, for the bridge to check (it answers only the site's own pages). */
-    volatile String pageHost;
     /** The one that is open, for the messaging service to tell of a new token. */
     static volatile MainActivity open;
+    /** How the site's pages and the app talk (nothing on a WebView too old for it). */
+    private Bridge bridge;
+    /** The folder the page's next file chooser opens in (Bridge `pickFrom`), for a few seconds. */
+    private String nextFolder;
+    private long nextFolderAt;
+    private static final long FOLDER_MS = 10_000L;
 
     private WebView web;
     private FrameLayout root;
@@ -75,7 +84,7 @@ public class MainActivity extends ComponentActivity {
 
         pickFiles = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
             if (picked == null) return;
-            picked.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), result.getData()));
+            picked.onReceiveValue(chosen(result.getResultCode(), result.getData()));
             picked = null;
         });
         askCamera = registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -84,7 +93,10 @@ public class MainActivity extends ComponentActivity {
             else cameraAsked.deny();
             cameraAsked = null;
         });
-        askNotifications = registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {});
+        askNotifications = registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+            if (granted) KinoMessaging.fetchToken(this);
+            notificationsChanged();
+        });
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         root = new FrameLayout(this);
@@ -112,7 +124,7 @@ public class MainActivity extends ComponentActivity {
         settings.setSupportMultipleWindows(false);
         settings.setUserAgentString(settings.getUserAgentString() + " KinoApp/" + BuildConfig.VERSION_NAME);
         CookieManager.getInstance().setAcceptCookie(true);
-        web.addJavascriptInterface(new Bridge(this), "KinoApp");
+        bridge = Bridge.install(this, web);
         web.setWebViewClient(new Pages());
         web.setWebChromeClient(new Chrome());
         web.setDownloadListener((url, agent, disposition, type, length) -> openOutside(Uri.parse(url)));
@@ -127,7 +139,7 @@ public class MainActivity extends ComponentActivity {
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         if (web.copyBackForwardList().getSize() == 0) web.loadUrl(BuildConfig.SITE + "/");
         handle(getIntent());
-        Updates.checkSoon(this, false);
+        Updates.checkSoon(this);
     }
 
     @Override
@@ -154,6 +166,10 @@ public class MainActivity extends ComponentActivity {
         super.onResume();
         onScreen = true;
         web.onResume();
+        // (The notifications may have been turned off, or on, in the phone's settings meanwhile: the phone is let go of Firebase, or registered again.)
+        if (!Notices.enabled(this)) KinoMessaging.stop(this);
+        else if (Prefs.of(this).getBoolean(Prefs.WANTS_PUSH, false)) KinoMessaging.fetchToken(this);
+        notificationsChanged();
     }
 
     @Override
@@ -195,9 +211,39 @@ public class MainActivity extends ComponentActivity {
         else finish();
     }
 
-    /** Where the site's pages tell the server a new token: the page hears it from the bridge's event. */
-    void tokenChanged() {
-        runOnUiThread(() -> web.evaluateJavascript("window.dispatchEvent(new Event('kinoapp:push-token'))", null));
+    /** The token, or whether the notifications are on, may have changed: the page is told (it tells the server, or has it forget this phone). */
+    void notificationsChanged() {
+        runOnUiThread(() -> {
+            if (bridge != null) bridge.stateChanged();
+        });
+    }
+
+    /** The page's next file chooser opens in `folder` (for a few seconds): false for a folder the app does not know. */
+    boolean pickNextFrom(String folder) {
+        if (!Folders.known(folder)) return false;
+        nextFolder = folder;
+        nextFolderAt = SystemClock.elapsedRealtime();
+        return true;
+    }
+
+    /** What was chosen: one file or several (Android says several in its ClipData), or nothing. */
+    private static Uri[] chosen(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null) return null;
+        ClipData clip = data.getClipData();
+        if (clip != null && clip.getItemCount() > 0) {
+            List<Uri> uris = new ArrayList<>();
+            for (int at = 0; at < clip.getItemCount(); at++) {
+                Uri uri = clip.getItemAt(at).getUri();
+                if (uri != null) uris.add(uri);
+            }
+            if (!uris.isEmpty()) return uris.toArray(new Uri[0]);
+        }
+        return data.getData() == null ? null : new Uri[] {data.getData()};
+    }
+
+    /** Whether the bridge is there (a WebView too old for it has none: then nothing of the app's own can be asked by the page). */
+    boolean bridged() {
+        return bridge != null;
     }
 
     /** Asked the first time a page wants the token (somebody is signed in on a profile): Android 13 and later ask the person whether the app may notify. */
@@ -251,16 +297,6 @@ public class MainActivity extends ComponentActivity {
         }
 
         @Override
-        public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
-            pageHost = Site.isOwn(url) ? Uri.parse(url).getHost() : null;
-        }
-
-        @Override
-        public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-            pageHost = Site.isOwn(url) ? Uri.parse(url).getHost() : null;
-        }
-
-        @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             if (!request.isForMainFrame()) return;
             // (No connection: a page of the app's own says so, and tries again with a press.)
@@ -296,6 +332,17 @@ public class MainActivity extends ComponentActivity {
         public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
             if (picked != null) picked.onReceiveValue(null);
             picked = callback;
+            // (The folder the page asked for just now, if it did: once.)
+            String folder = nextFolder != null && SystemClock.elapsedRealtime() - nextFolderAt < FOLDER_MS ? nextFolder : null;
+            nextFolder = null;
+            if (folder != null) {
+                try {
+                    pickFiles.launch(Folders.chooser(folder, params));
+                    return true;
+                } catch (ActivityNotFoundException | SecurityException noFiles) {
+                    // (no file chooser of Android's own on this phone: the page's as it is)
+                }
+            }
             try {
                 pickFiles.launch(params.createIntent());
             } catch (ActivityNotFoundException error) {

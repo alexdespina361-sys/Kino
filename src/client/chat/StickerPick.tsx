@@ -2,7 +2,8 @@ import { useRef, useState, type ChangeEvent } from "react";
 import { checkChatText, PERSONAL_STICKER } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT, type Key } from "../i18n";
-import { ChevronLeftIcon } from "../shared/icons";
+import { opensFolder, pickFrom, useKinoApp } from "../app/kinoApp";
+import { ChevronLeftIcon, MessageIcon } from "../shared/icons";
 import { BackButton, Screen } from "../tv/Idle";
 import { ownStickerSrc, useMyStickers, usePersonalStickersOn, type StickerAddProblem } from "./personalStickers";
 import { STICKERS, stickerSrc, type Sticker } from "./stickers";
@@ -64,8 +65,9 @@ const ADD_PROBLEM: Record<StickerAddProblem, Key> = {
 
 /**
  * The profile's own stickers, first in the grid, and the heading of Kino's after them: each sends itself as the built-in ones do. `pointer`: a screen that is
- * touched or clicked, which can add one (a file it chooses) and, after Edit, remove one. A TV that is only a remote and has none shows nothing of them (it
- * could not add one: its page stays as it was, Kino's all in view).
+ * touched or clicked, which can add one (a file it chooses, or several) and, after Edit, remove one. A TV that is only a remote and has none shows nothing of
+ * them (it could not add one: its page stays as it was, Kino's all in view). In the Android app (from 0.2.0), "From WhatsApp" opens the chooser in the folder
+ * where WhatsApp keeps the stickers it was sent (app/kinoApp.ts `pickFrom`); they are made into stickers as any picture is (one that moves, its first picture).
  */
 function YourStickers({ session, grid, className, nav, pointer, onSent }: { session: ChatSession; grid: string; className: string; nav: boolean; pointer: boolean; onSent: () => void }) {
   const t = useT();
@@ -74,20 +76,36 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
   const [problem, setProblem] = useState<StickerAddProblem | null>(null);
+  const app = useKinoApp();
+  const whatsapp = pointer && opensFolder(app, "whatsapp-stickers");
   const stickers = mine.stickers ?? [];
   const full = stickers.length >= PERSONAL_STICKER.perProfile;
 
+  // (Several can be chosen at once, WhatsApp's say: made one after another, as many as there is room for. What stops the rest (the collection is full, the day's
+  // are made, the site has no room) is what is said; else the last that could not be made, and the rest are made.)
   const chosen = async (event: ChangeEvent<HTMLInputElement>) => {
-    const picked = event.target.files?.[0];
+    const picked = [...(event.target.files ?? [])];
     event.target.value = ""; // (the same file chosen again is a choice again)
-    if (!picked) return;
+    if (picked.length === 0) return;
+    const room = PERSONAL_STICKER.perProfile - stickers.length;
     setProblem(null);
     setAdding(true);
     try {
-      setProblem(await mine.add(picked));
+      let said: StickerAddProblem | null = null;
+      for (const one of picked.slice(0, Math.max(0, room))) {
+        const problem = await mine.add(one);
+        if (problem) said = problem;
+        if (problem === "full" || problem === "too_many" || problem === "site_full") break;
+      }
+      setProblem(said ?? (picked.length > room ? "full" : null));
     } finally {
       setAdding(false);
     }
+  };
+  // (WhatsApp's: the app is asked for the folder first, and the chooser opens once it answered, a moment later, still within the press.)
+  const open = (fromWhatsApp: boolean) => {
+    if (!fromWhatsApp) return file.current?.click();
+    void pickFrom("whatsapp-stickers").then(() => file.current?.click());
   };
 
   if (!pointer && stickers.length === 0 && mine.status !== "failed") return null;
@@ -107,7 +125,7 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
             <button
               type="button"
               className={`${className} chat-sticker-add`}
-              onClick={() => file.current?.click()}
+              onClick={() => open(false)}
               disabled={adding || full}
               {...(nav ? { "data-nav": true } : {})}
               data-testid="chat-sticker-add"
@@ -116,6 +134,19 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
                 +
               </span>
               <span>{t(adding ? "chat.stickerAdding" : "chat.stickerAdd")}</span>
+            </button>
+          )}
+          {whatsapp && !editing && (
+            <button
+              type="button"
+              className={`${className} chat-sticker-add`}
+              onClick={() => open(true)}
+              disabled={adding || full}
+              {...(nav ? { "data-nav": true } : {})}
+              data-testid="chat-sticker-whatsapp"
+            >
+              <MessageIcon className="chat-sticker-add-icon" aria-hidden="true" />
+              <span>{t("chat.stickerFromWhatsApp")}</span>
             </button>
           )}
           {stickers.map((sticker) => (
@@ -153,7 +184,7 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
             </span>
           ))}
         </div>
-        {pointer && <input ref={file} type="file" accept="image/*" hidden onChange={(event) => void chosen(event)} data-testid="chat-sticker-file" />}
+        {pointer && <input ref={file} type="file" accept="image/*" multiple hidden onChange={(event) => void chosen(event)} data-testid="chat-sticker-file" />}
         {problem ? (
           <p className="chat-note" role="alert" data-testid="chat-sticker-problem">
             {t(ADD_PROBLEM[problem])}

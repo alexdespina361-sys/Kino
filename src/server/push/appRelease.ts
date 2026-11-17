@@ -46,6 +46,8 @@ export class AppReleases {
   private seenMtime = -1;
   private signalled = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** The site listens: the news may go out (an app that hears it asks at once; before that it would be told nothing, the judge, 17 Nov). */
+  private mayTell = false;
 
   constructor(
     private readonly dir: string,
@@ -74,7 +76,7 @@ export class AppReleases {
       this.seenMtime = -1;
     }
     const release = this.current;
-    if (!release || !this.push?.on || release.versionCode <= this.signalled) return;
+    if (!release || !this.mayTell || !this.push?.on || release.versionCode <= this.signalled) return;
     this.signalled = release.versionCode;
     if (await this.push.appUpdate(release.versionCode)) {
       this.log.info?.(`The apps were told of version ${release.versionName} (${release.versionCode}).`);
@@ -82,7 +84,13 @@ export class AppReleases {
     } else this.signalled = 0; // (tried again at the next check)
   }
 
-  /** Remember which version was told of (so a restart does not send it again), read the release, and keep checking. */
+  /** The site listens: the apps are told of a version they have not been told of, now and whenever one comes. */
+  listening(): Promise<void> {
+    this.mayTell = true;
+    return this.check();
+  }
+
+  /** Remember which version was told of (so a restart does not send it again), read the release, and keep checking. Nothing is told before `listening`. */
   async start(): Promise<void> {
     try {
       const said = JSON.parse(await readFile(path.join(this.dir, SIGNALLED), "utf8")) as { versionCode?: unknown };

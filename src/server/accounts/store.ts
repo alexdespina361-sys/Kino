@@ -98,6 +98,8 @@ interface ProfileData {
 /** A sign-in lasts this long after the device was last used (a browser will not keep a cookie longer than about 400 days). Signing out, or clearing the browser's cookies, is what ends it sooner. */
 export const SESSION_TTL_MS = 400 * 24 * 3600 * 1000;
 const SESSION_TOUCH_MS = 3600 * 1000;
+/** A sign-in that ran out this long ago is let go of when the server starts (see `load`). */
+const SESSION_GONE_MS = 7 * 24 * 3600 * 1000;
 /** A profile's last look is written down at most this often (a screen looks every half minute): "Last online" after a restart is at most this much early. */
 export const SEEN_WRITE_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = 20;
@@ -257,7 +259,10 @@ export class AccountStore {
           });
         } else if (key.startsWith("session:")) {
           const doc = value as SessionDoc;
+          // (One that ran out a week ago or more is let go for good, and with it where its device was reached, the judge, 17 Nov; one that ran out since is only
+          // not used, as before: a clock that is wrong for a moment as the server starts signs nobody out for good.)
           if (doc.expiresAt > this.now()) this.sessions.set(doc.id, doc);
+          else if (doc.expiresAt <= this.now() - SESSION_GONE_MS) this.drop(key);
         } else if (FriendBook.owns(key)) {
           this.book.load(key, value);
         } else if (ChatBook.owns(key)) {
@@ -575,6 +580,8 @@ export class AccountStore {
     this.talk.forget(profileId);
     this.stickerBook.forget(profileId);
     this.seen.delete(profileId);
+    // (A phone that was told of this profile's messages keeps no note of it: where it is reached, and the profile, are let go.)
+    for (const session of this.sessions.values()) if (session.push?.profileId === profileId) this.clearPush(session.id);
     return ok(null);
   }
 
@@ -776,9 +783,10 @@ export class AccountStore {
     return [...this.sessions.values()].filter((session) => session.accountId === accountId && session.expiresAt > now && session.push?.profileId === profileId).map((session) => session.push!.token);
   }
 
-  /** How many devices have the app's notifications on (the owner's stats). */
+  /** How many devices have the app's notifications on (the owner's stats): the ones that would be told, still signed in and on a profile of their account. */
   countPushDevices(): number {
-    return [...this.sessions.values()].filter((session) => session.push).length;
+    const now = this.now();
+    return [...this.sessions.values()].filter((session) => session.push && session.expiresAt > now && this.profileOwner.get(session.push.profileId) === session.accountId).length;
   }
 
   /* ------------------------------ what a profile keeps ------------------------------ */

@@ -399,10 +399,12 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-mine { position: relative; display: block; }
 .chat-sticker-mine > button:first-child { width: 100%; }
 .chat-sticker-mine img { border-radius: 18%; object-fit: cover; }
-.chat-sticker-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.7rem; line-height: 1.15; text-align: center; }
+.chat-sticker-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; overflow: hidden; padding: 4px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.68rem; line-height: 1.1; text-align: center; overflow-wrap: anywhere; } /* (a square of the grid whatever its words: min-height 0 lets the square win over them) */
 .chat-sticker-add-plus { font-size: 1.7rem; line-height: 1; }
 .tv-chat-sticker-btn.chat-sticker-add { border: 0.12em dashed rgba(255, 255, 255, 0.35); color: #c9c9d1; font-size: 0.85em; }
 .tv-chat-sticker-btn .chat-sticker-add-plus { font-size: 2.4em; }
+.chat-sticker-add-icon { font-size: 1.45rem; margin-bottom: 2px; } /* (From WhatsApp, in the Android app) */
+.tv-chat-sticker-btn .chat-sticker-add-icon { font-size: 2em; }
 .chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }

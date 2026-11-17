@@ -58,6 +58,18 @@ final class Notices {
         return Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
+    /**
+     * Whether the friends' notifications can be shown: the app may notify (Android 13 and later ask; before, it is a switch in the phone's settings), and their
+     * channel is not turned off. While they cannot, the phone is not registered with Firebase at all (KinoMessaging), and the site is told of no phone.
+     */
+    static boolean enabled(Context context) {
+        if (!allowed(context) || !NotificationManagerCompat.from(context).areNotificationsEnabled()) return false;
+        if (Build.VERSION.SDK_INT < 26) return true;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        NotificationChannel friends = manager == null ? null : manager.getNotificationChannel(FRIENDS);
+        return friends == null || friends.getImportance() != NotificationManager.IMPORTANCE_NONE;
+    }
+
     private static PendingIntent openApp(Context context, Intent intent, int code) {
         return PendingIntent.getActivity(context, code, intent.setClass(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
