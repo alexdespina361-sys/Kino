@@ -455,6 +455,16 @@ test.describe("a phone used as the screen, held upright", () => {
     await expect
       .poll(() => tv.evaluate(({ top, bottom }) => { const box = document.activeElement!.getBoundingClientRect(); return box.top >= top && box.bottom <= bottom; }, { top: page.y, bottom: page.y + page.height }), { message: "the button is in view" })
       .toBe(true);
+
+    // (Turned on its side and back, the head is drawn afresh over the grid and then in it again: the remote stays on the button it was on - the judge, 17 Nov.)
+    const onNow = () => tv.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid ?? document.activeElement?.tagName);
+    const button = await onNow();
+    expect(button).toMatch(/^list-/);
+    for (const [size, inGrid] of [[{ width: 480, height: 320 }, false], [{ width: 320, height: 480 }, true]] as const) {
+      await tv.setViewportSize(size);
+      await expect.poll(() => title.evaluate((element) => element.closest(".tv-grid") !== null), { message: `the head ${inGrid ? "in" : "over"} the grid` }).toBe(inGrid);
+      expect(await onNow(), `the remote is still on ${button}`).toBe(button);
+    }
   });
 
   for (const size of [SIZES[0]!, SIZES[2]!]) {
