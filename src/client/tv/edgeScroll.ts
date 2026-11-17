@@ -4,9 +4,11 @@
  * rule of that, apart from the page it scrolls (`EdgeWorld`; the DOM and the stylesheet are in EdgeScrollHint.tsx).
  *
  * It must be no surprise to anybody else, so it starts only from a pointer that has just moved into the strip, and everything else that gets a
- * person about ends it: a key, a press, a finger, or leaving the strip. After one of those the pointer has to go out of the strip and come back
- * before it counts again (a pointer left lying at the edge while the remote is used, or after a click, moves nothing). A wheel turned once ends
- * it for good (`retire`): a screen with a wheel or a trackpad has no use for it, and is never bothered by it again.
+ * person about ends it: a key, a press, a turn of the wheel, a finger, or leaving the strip. After one of those the pointer has to go out of the strip
+ * and come back before it counts again (a pointer left lying at the edge while the remote or the wheel is used, or after a click, moves nothing).
+ *
+ * (Until 17 Nov 2026 a wheel turned once ended it for good, as a screen with a wheel seemed to have no use for it. The owner found it missing on a
+ * computer and on a TV whose remote has a wheel: every computer's mouse has one, so it was never there. A wheel is now one more thing that ends a wait.)
  */
 
 export type Edge = "top" | "bottom";
@@ -26,8 +28,12 @@ export const LOOK_MS = 150;
 /** ...and how often one that finds nothing to scroll, or a page at its end, does (the library brings more rows as a page nears its end, and a pointer that rests goes on then). */
 export const IDLE_MS = 400;
 
-/** How thick the strip is on a screen `height` tall: thin, so that only a pointer that is pushed against the edge is in it (and not one that is on the way to the buttons of the corner). */
-export const stripOf = (height: number): number => Math.round(Math.min(40, Math.max(16, height * 0.025)));
+/**
+ * How thick the strip is on a screen `height` tall: thin, so that only a pointer that is pushed against the edge is in it (and not one that is on the way to
+ * the buttons of the corner), but not so thin that a browser's window, whose pointer does not stop at the edge of the page but goes on into the bar of the
+ * tabs or the taskbar, cannot be held in it (it was 18 px on a 720 px screen, and was missed: now 32, and 48 at most).
+ */
+export const stripOf = (height: number): number => Math.round(Math.min(48, Math.max(24, height * 0.045)));
 
 /** The edge the pointer at `y` is in, or none. One that is in it stays in it until it is well out: `was` is the edge it was in. */
 export function edgeAt(y: number, height: number, was: Edge | null = null): Edge | null {
@@ -80,8 +86,6 @@ export class EdgeScroll {
   private edge: Edge | null = null;
   /** The pointer is in the strip, but a key, a wheel or a press has since said it is not to count until it has gone out and come back. */
   private spent = false;
-  /** A wheel has turned: this screen has no need of it. */
-  private retired = false;
   private x = 0;
   private page: Page | null = null;
   private looked = -Infinity;
@@ -100,7 +104,6 @@ export class EdgeScroll {
 
   /** The pointer moved. True when `frame` has something to look at now (it came into a strip). */
   move(point: PointerMove): boolean {
-    if (this.retired) return false;
     if (!point.mouse) return this.stand();
     this.x = point.x;
     let edge = edgeAt(point.y, point.height, this.edge);
@@ -110,17 +113,14 @@ export class EdgeScroll {
     return edge !== null;
   }
 
-  /** A key was pressed, or a button went down: somebody is using something else, and what rests in a strip waits for the pointer to leave it and come back. */
+  /**
+   * A key was pressed, a button went down, or the wheel turned: somebody is using something else, and what rests in a strip waits for the pointer to leave
+   * it and come back.
+   */
   other(): void {
     if (this.edge === null || this.spent) return;
     this.spent = true;
     this.halt();
-  }
-
-  /** The wheel turned: whoever it is can scroll without this, and it is not offered to them again (until the page is opened anew). */
-  retire(): void {
-    this.retired = true;
-    this.begin(null);
   }
 
   /** The pointer left the page, or the page lost the screen, or a finger is on it: there is no pointer that rests. */
