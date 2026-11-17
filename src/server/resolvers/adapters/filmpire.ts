@@ -672,7 +672,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let pendingExtras: Extras | undefined = tmdbImdbId ? askExtras(tmdbImdbId) : undefined;
 
       // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated or has a Western original language is not looked for there.)
-      const fallbackAnime = async (): Promise<ResolveResult | null> => {
+      const fallbackAnime = async (preferredProvider?: "hianime" | "animeheaven"): Promise<ResolveResult | null> => {
         if (!rawShowTitle || animated === false) return null;
         if (originalLang && originalLang !== "ja" && originalLang !== "zh") return null;
         try {
@@ -962,10 +962,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               if (!hiMatched) return null;
 
               const eps = await getHiAnimeEpisodes(hiMatched.id, get);
-              const targetEp = eps.find((ep) => ep.num === hiEpisodeToFind);
+              const targetEp = eps.find((ep) => ep.num === hiEpisodeToFind) ?? (eps.length === 1 ? eps[0] : undefined);
               if (!targetEp) return null;
 
-              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, hiEpisodeToFind, { fetcher: get });
+              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, targetEp.num, { fetcher: get });
               if (!resolved) return null;
 
               const proxiedUrl = streamAddress(resolved.stream.src, resolved.embedUrl, process.env, false);
@@ -1010,10 +1010,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                   // (HiAnime's own times for its own stream, the main one: the player takes them over AniSkip's, and only while it plays this stream.)
                   ...sourceSkipTimes(resolved.stream.skip),
                   page: url.href,
-                  series: {
-                    season: targetSeason,
-                    episode: targetEpisode,
-                  },
+                  ...(isTv
+                    ? {
+                        series: {
+                          season: targetSeason,
+                          episode: targetEpisode,
+                        },
+                      }
+                    : {}),
                 },
               };
             } catch {
@@ -1021,28 +1025,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             }
           };
 
-          const [ahRes, hiRes] = await Promise.allSettled([
-            tryAnimeHeaven(),
-            tryHiAnime(),
-          ]);
-          const ah = ahRes.status === "fulfilled" ? ahRes.value : null;
-          const hi = hiRes.status === "fulfilled" ? hiRes.value : null;
-
-          if (hi && hi.status === "success" && ah && ah.status === "success") {
-            const alternates = [...(hi.media.alternates ?? [])];
-            alternates.push({
-              label: "Server (AnimeHeaven)",
-              stream: ah.media.stream,
-            });
-            return {
-              ...hi,
-              media: {
-                ...hi.media,
-                alternates: alternates.slice(0, MAX_ALTERNATES),
-              },
-            };
+          if (preferredProvider === "hianime") {
+            return await tryHiAnime();
           }
+          if (preferredProvider === "animeheaven") {
+            return await tryAnimeHeaven();
+          }
+          const hi = await tryHiAnime();
           if (hi && hi.status === "success") return hi;
+          const ah = await tryAnimeHeaven();
           if (ah && ah.status === "success") return ah;
           return null;
         } catch {
@@ -1203,34 +1194,35 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       };
 
       const fallbackStreams = async (): Promise<ResolveResult | null> => {
-        const isAnime = isTv && (originalLang === "ja" || originalLang === "zh");
+        const isAnime = Boolean(
+          originalLang === "ja" ||
+          originalLang === "zh" ||
+          sectionHint === "anime" ||
+          (animated === true && (originalLang === "ja" || originalLang === "zh" || originalLang === "ko")) ||
+          url.searchParams.get("category")?.match(/anime/i)
+        );
+
         if (isAnime) {
-          // For anime series, VidLink either responds in <300ms or times out after 12s.
-          // If VidLink hasn't responded within 2000ms, start fallbackAnime in parallel. (Its answer is still taken last, after Buzz's, as for every
-          // other title: VidLink, then Buzz, then the anime site; starting it early only saves the wait.)
-          let animePromise: Promise<ResolveResult | null> | undefined;
-          const animeTimer = setTimeout(() => {
-            animePromise = fallbackAnime().catch(() => null);
-          }, 2000);
-
+          // Priority #1 for Anime: HiAnime / ZokoAnime (1080p master HLS, embedded subtitles, skip times)
           try {
-            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
-            clearTimeout(animeTimer);
-            if (vl) return await buildVidLinkResult(vl);
-          } catch {
-            clearTimeout(animeTimer);
-          }
-
-          try {
-            const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-            if (buzz) return await buildBuzzResult(buzz);
+            const hi = await fallbackAnime("hianime");
+            if (hi && hi.status === "success") return hi;
           } catch {
             // ignore
           }
 
+          // Priority #2 for Anime: VidLink fallback
           try {
-            const alt = animePromise ? await animePromise : await fallbackAnime();
-            if (alt) return alt;
+            const vl = await resolveVidLinkStream(get, id, isTv, s, e, VIDLINK_ANIME_TIMEOUT_MS);
+            if (vl) return await buildVidLinkResult(vl);
+          } catch {
+            // ignore
+          }
+
+          // Priority #3 for Anime: AnimeHeaven
+          try {
+            const ah = await fallbackAnime("animeheaven");
+            if (ah && ah.status === "success") return ah;
           } catch {
             // ignore
           }
@@ -1238,24 +1230,24 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           return null;
         }
 
+        // Priority #1 for Western Movies & Series: VidLink
         try {
           const vl = await resolveVidLinkStream(get, id, isTv, s, e);
           if (vl) return await buildVidLinkResult(vl);
         } catch {
           // ignore
         }
-        try {
-          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-          if (buzz) return await buildBuzzResult(buzz);
-        } catch {
-          // ignore
+
+        // Secondary fallback for animated titles
+        if (animated === true) {
+          try {
+            const alt = await fallbackAnime();
+            if (alt && alt.status === "success") return alt;
+          } catch {
+            // ignore
+          }
         }
-        try {
-          const alt = await fallbackAnime();
-          if (alt) return alt;
-        } catch {
-          // ignore
-        }
+
         return null;
       };
 
@@ -1265,10 +1257,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         return fallbackPromise;
       };
 
-      // Special-case titles:
-      // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
-      // 2. Cartoons & Anime (isAnimeOrCartoon): skip slow 15s upstream retries and resolve via fast provider immediately
-      if (id === "1400837" || isAnimeOrCartoon) {
+      // Special-case titles and fast-path resolution:
+      // For all Kino titles (filmpire.sc), cartoons, anime, and clean-release titles (1400837):
+      // Resolve immediately via fast providers (HiAnime for anime, VidLink for Western content), bypassing slow 15s upstream retries
+      if (id === "1400837" || isAnimeOrCartoon || url.hostname === "filmpire.sc") {
         const fastResult = await runFallback();
         if (fastResult) return fastResult;
       }

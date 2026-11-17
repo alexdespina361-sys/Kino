@@ -4,7 +4,7 @@ import { remember } from "../boundedMap";
 import { hasRomanianDub, hasRomanianDubSync, romanianDubsOn } from "../dubs/romanian";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
-import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
+import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, UNSCRIPTED_TV_GENRES, type FilmpireCategory } from "./shelves";
 
 export type { FilmpireCategory };
 
@@ -263,6 +263,10 @@ const hasGenre = (doc: z.infer<typeof TmdbItemSchema>, genre: number): boolean =
 const CHILDREN_GENRES = [10751, 10762] as const;
 const forKids = (doc: z.infer<typeof TmdbItemSchema>): boolean => CHILDREN_GENRES.some((genre) => hasGenre(doc, genre));
 
+/** Tells if a TV title is unscripted (News: 10763, Soap: 10766, Talk: 10767) which has no playback availability. Scripted content is kept. */
+export const isUnscriptedTv = (doc: z.infer<typeof TmdbItemSchema>): boolean =>
+  UNSCRIPTED_TV_GENRES.some((genre) => hasGenre(doc, genre));
+
 /** How many titles of a page of TMDB's answers are taken: a page has twenty, and whatever more one says it has is not looked at (each title of a search's first page is checked for video). */
 export const PAGE_TITLES = 20;
 
@@ -356,6 +360,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   if (!title) return null;
 
   const isTv = doc.media_type ? doc.media_type === "tv" : (defaultType ? defaultType === "tv" : Boolean(doc.first_air_date));
+  if (isTv && isUnscriptedTv(doc)) return null;
   if (isTv) knownTvIds.add(doc.id);
   const rawDate = doc.release_date || doc.first_air_date;
   if (rawDate && rawDate.slice(0, 10) > today()) return null; // not out yet: nothing to play
@@ -425,6 +430,8 @@ function isTrashItem(raw: unknown): boolean {
   if (!parsed.success) return true;
   const doc = parsed.data;
   if (doc.media_type === "person") return true;
+  const isTv = doc.media_type ? doc.media_type === "tv" : Boolean(doc.first_air_date);
+  if (isTv && isUnscriptedTv(doc)) return true;
   const title = (doc.title || doc.name)?.trim();
   if (!title) return true;
   const lower = title.toLowerCase();
