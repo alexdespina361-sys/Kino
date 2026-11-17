@@ -1613,6 +1613,13 @@ test.describe("reactions in a chat", () => {
     await tvLines(bob.page).first().getByTestId("chat-bubble").click();
     await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible();
     await expect(bob.page.getByTestId("chat-takeback")).toBeVisible();
+    // (Take back is at the top of the chat, beside the ⋯, and the keys get to it from there)
+    const head = await where(bob.page.locator(".tv-chat-head"));
+    const take = await where(bob.page.getByTestId("chat-takeback"));
+    expect(take.y >= head.y && take.y + take.height <= head.y + head.height, "Take back is in the top of the chat").toBe(true);
+    await bob.page.getByTestId("tv-chat-more").focus();
+    await bob.page.keyboard.press("ArrowLeft");
+    await expect(bob.page.getByTestId("chat-takeback")).toBeFocused();
     await reactWith(bob.page, JOY).click();
     await expect(bob.page.getByTestId("chat-react-bar")).toHaveCount(0);
     await expect.poll(() => reactionsOn(tvLines(bob.page).first())).toEqual([`theirs:${FIRE}`, `mine:${JOY}`]);
@@ -1902,22 +1909,56 @@ test.describe("personal stickers in a chat", () => {
     const theirs = lines(bob.page).first().getByTestId("chat-personal-sticker");
     await expect.poll(() => stickerLoaded(theirs)).toBe(192);
     await expect(theirs).toHaveAttribute("alt", say(en["chat.stickerOf"], { name: ann.name }));
-    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    // (a press of a picture shows it larger, in the middle of the screen, and selects nothing; Back puts it away, and the chat is still there)
+    const bubble = lines(bob.page).first().getByTestId("chat-bubble");
     const save = bob.page.getByTestId("chat-sticker-save");
+    const view = bob.page.getByTestId("chat-view");
+    await bubble.click();
+    await expect(view).toBeVisible();
+    await expect(save).toHaveCount(0);
+    const screen = bob.page.viewportSize()!;
+    const larger = (await bob.page.getByTestId("chat-view-picture").boundingBox())!;
+    expect(larger.width, "larger than in the chat").toBeGreaterThan(250);
+    expect(Math.abs(larger.x + larger.width / 2 - screen.width / 2), "in the middle, sideways").toBeLessThan(2);
+    expect(Math.abs(larger.y + larger.height / 2 - screen.height / 2), "in the middle, up and down").toBeLessThan(2);
+    expect(larger.x >= 0 && larger.y >= 0 && larger.x + larger.width <= screen.width && larger.y + larger.height <= screen.height, "inside the screen").toBe(true);
+    await expect(bob.page.getByTestId("chat-view-close")).toBeFocused();
+    await bob.page.keyboard.press("Escape");
+    await expect(view).toHaveCount(0);
+    await expect(bob.page.getByTestId("chat")).toBeVisible();
+    await bubble.click();
+    await expect(view).toBeVisible();
+    await view.click({ position: { x: 8, y: 8 } }); // (a press anywhere puts it away too, and does not shut the sheet under it)
+    await expect(view).toHaveCount(0);
+    await expect(bob.page.getByTestId("chat")).toBeVisible();
+    // (held, it is selected: the reactions under it, and Save at the top of the chat beside Mute and Report, not under the message)
+    await bubble.click({ delay: 650 });
     await expect(save).toHaveText(en["chat.stickerSave"]);
+    await expect(view, "the press that ended the hold is not one more press").toHaveCount(0);
     await expect(bob.page.getByTestId("chat-react-bar")).toBeVisible(); // (the reactions are there too)
+    expect((await save.boundingBox())!.y, "at the top of the chat").toBeLessThan((await bob.page.getByTestId("chat-lines").boundingBox())!.y);
     await save.click();
     await expect(bob.page.getByTestId("chat-sticker-note")).toHaveText(en["chat.stickerSavedNote"]);
-    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await expect(save, "saved: nothing is selected any more").toHaveCount(0);
+    await bubble.click({ delay: 650 });
     await expect(save).toBeDisabled();
     await expect(save).toHaveText(en["chat.stickerSaved"]);
-    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    // (Back lets the selection go before it shuts the chat)
+    await bob.page.keyboard.press("Escape");
     await expect(save).toHaveCount(0);
-    // (Ann's own message has no Keep: Take back, as any of hers)
-    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(bob.page.getByTestId("chat")).toBeVisible();
+    // (the right button of a mouse selects as a hold does, and a press beside the messages lets it go)
+    await bubble.click({ button: "right" });
+    await expect(save).toBeVisible();
+    await bob.page.getByTestId("chat-lines").click({ position: { x: 4, y: 4 } });
+    await expect(save).toHaveCount(0);
+    // (Ann's own message has no Keep: Take back, as any of hers; a press of it while it is selected only lets it go)
+    await lines(ann.page).first().getByTestId("chat-bubble").click({ delay: 650 });
     await expect(ann.page.getByTestId("chat-takeback")).toBeVisible();
     await expect(ann.page.getByTestId("chat-sticker-save")).toHaveCount(0);
     await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await expect(ann.page.getByTestId("chat-takeback")).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-view")).toHaveCount(0);
 
     // it is in Bob's stickers, the same one, and he sends it on
     await bob.page.getByTestId("chat-sticker-btn").click();
@@ -2306,7 +2347,8 @@ test.describe("personal stickers in a chat", () => {
     await chose(ann.page, { friendsMessages: false });
     await expect(bob.page.getByTestId("chat-closed")).toBeVisible(SOON);
     await expect.poll(() => delivered !== undefined, { message: "Bob's page asked for his stickers" }).toBe(true);
-    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    // (selected with the keys here: Enter selects a picture, where a finger's press would show it larger)
+    await lines(bob.page).first().getByTestId("chat-bubble").press("Enter");
     await expect(bob.page.getByTestId("chat-react-bar")).toHaveCount(0);
     await bob.page.getByTestId("chat-sticker-save").click();
     await expect(bob.page.getByTestId("chat-sticker-note")).toHaveText(en["chat.stickerSavedNote"]);
@@ -2314,10 +2356,11 @@ test.describe("personal stickers in a chat", () => {
     late();
     await delivered;
     await bob.page.unroute(collection);
-    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await lines(bob.page).first().getByTestId("chat-bubble").press("Enter");
     await expect(bob.page.getByTestId("chat-sticker-save")).toBeDisabled();
     await expect(bob.page.getByTestId("chat-sticker-save")).toHaveText(en["chat.stickerSaved"]);
-    await lines(bob.page).first().getByTestId("chat-bubble").click();
+    await lines(bob.page).first().getByTestId("chat-bubble").press("Enter");
+    await expect(bob.page.getByTestId("chat-sticker-save")).toHaveCount(0);
 
     // the team takes it down: the open chat says so once its picture is asked for again, in five minutes at most
     expect((await bob.page.request.delete(`/api/admin/stickers/${id}`, { headers: AUTH })).status()).toBe(200);
@@ -2599,5 +2642,54 @@ test.describe("GIFs in a chat", () => {
     await expect(tvLines(bob.page).first().getByTestId("chat-gif")).toHaveAttribute("src", gifAddress("t1"));
     await expect.poll(() => tvLines(bob.page).first().getByTestId("chat-gif").evaluate((picture) => (picture as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     await expect(bob.page.getByTestId("tv-chat-gif-btn")).toHaveCount(0);
+
+    // The owner, 17 Nov: a press of the picture shows it larger in the middle of the screen (Back puts it away); held, it is selected, with the reactions
+    // under it and Take back at the top beside the ⋯, as in WhatsApp; Back lets the selection go, and only then would leave the chat.
+    const sent = tvLines(ann.page).first().getByTestId("chat-bubble");
+    const view = ann.page.getByTestId("chat-view");
+    const take = ann.page.getByTestId("chat-takeback");
+    await expect.poll(() => tvLines(ann.page).first().getByTestId("chat-gif").evaluate((picture) => (picture as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    const small = await where(tvLines(ann.page).first().getByTestId("chat-gif"));
+    await sent.click();
+    await expect(view).toBeVisible();
+    await expect(take).toHaveCount(0);
+    const larger = await where(ann.page.getByTestId("chat-view-picture"));
+    expect(larger.width, "larger than in the chat").toBeGreaterThan(small.width * 1.3);
+    expect(larger.x >= 0 && larger.x + larger.width <= 320 && larger.y >= 0 && larger.y + larger.height <= 640, "inside the screen").toBe(true);
+    await ann.page.keyboard.press("Escape");
+    await expect(view).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await sent.click({ delay: 650 });
+    await expect(take).toBeVisible();
+    await expect(view, "the press that ended the hold is not one more press").toHaveCount(0);
+    await expect(ann.page.getByTestId("chat-react-bar")).toBeVisible();
+    const head = await where(ann.page.locator(".tv-chat-head"));
+    const at = await where(take);
+    expect(at.y >= head.y && at.y + at.height <= head.y + head.height, "Take back is in the top of the chat").toBe(true);
+    expect(at.x + at.width, "beside the ⋯").toBeLessThanOrEqual((await where(ann.page.getByTestId("tv-chat-more"))).x + 1);
+    expect(at.width, "big enough for a finger").toBeGreaterThanOrEqual(40);
+    expect(await outsideTheScreen(ann.page, "tv-chat", false), "the chat with a message selected").toEqual([]);
+    await ann.page.keyboard.press("Escape");
+    await expect(take).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    // The newest message, held with a mouse, moves from under it (the reactions come under it, and the list stays at its end): the press that ends the hold
+    // then ends beside it, and does not let it go again (the screenshots, 17 Nov: it was selected and at once let go).
+    await ann.page.getByTestId("tv-chat-box").click();
+    await ann.page.keyboard.type("Ready?");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(2);
+    const newest = tvLines(ann.page).nth(1).getByTestId("chat-bubble");
+    await newest.click({ delay: 650 });
+    await expect(take).toBeVisible();
+    await expect(newest).toHaveAttribute("aria-expanded", "true");
+    await ann.page.keyboard.press("Escape");
+    await expect(take).toHaveCount(0);
+    await sent.click({ delay: 650 });
+    await take.click();
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(tvLines(ann.page).first().getByTestId("chat-gif")).toHaveCount(0);
+    await expect(take).toHaveCount(0);
+    await expect(tvLines(bob.page)).toHaveCount(1, SOON);
+    await expect(tvLines(bob.page).first().getByTestId("chat-gif")).toHaveCount(0);
   });
 });

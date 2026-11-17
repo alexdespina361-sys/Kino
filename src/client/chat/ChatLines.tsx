@@ -147,8 +147,17 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       select?.();
     },
   });
-  /** A press beside the messages lets the selection go, as in any messenger. */
+  /**
+   * A press beside the messages lets the selection go, as in any messenger: not the press that ended a hold, wherever it ends. The message held can move
+   * from under a mouse while it is held (the reactions come under it, and a list at its end stays at its end), and the press then ends beside it, on its
+   * line: it had selected the message and at once let it go again (the screenshots, 17 Nov). A touch's long hold ends with no press at all, so what is left
+   * of a hold is forgotten at the next touch of the list (`onPointerDown` below).
+   */
   const pressBeside = (event: MouseEvent<HTMLDivElement>) => {
+    if (heldNow.current && event.detail > 0) {
+      heldNow.current = false;
+      return;
+    }
     if (picked !== null && !(event.target instanceof Element && event.target.closest("button"))) onPick?.(null);
   };
   /** On a computer (`keyboard`), the one message Tab stops on: the one the keys were last on while it is there, else the newest that can be pressed. */
@@ -300,6 +309,9 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       onFocus={onFocus}
       onBlur={onBlur}
       onClick={pressBeside}
+      onPointerDown={() => {
+        heldNow.current = false; // (a message's own `onPointerDown` came first, and its hold sets this again when it has lasted)
+      }}
       role="log"
       aria-label={t("chat.title", { name })}
       // (Elsewhere it is no stop of Tab's, and can still be given the keys when what they were on goes: see `held`.)

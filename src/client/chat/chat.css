@@ -53,7 +53,7 @@ button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch
 .chat-act:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 /* A picture of the chat shown larger (ChatLines `PictureView`), over whatever the chat is in (a sheet is 50, the TV's pages 80 and their notes 90) and under
    the question asked before the site is left (100). It is drawn at the end of the page, outside the chat's own colours: its own are said here. */
-.chat-view { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.8); cursor: zoom-out; animation: chat-view-in 0.14s ease-out; }
+.chat-view { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.9); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: zoom-out; animation: chat-view-in 0.14s ease-out; }
 .chat-view-picture { display: block; width: min(92vw, 640px); height: auto; max-height: 72vh; border-radius: 14px; object-fit: contain; }
 .chat-view-small { width: min(78vw, 60vh, 384px); border-radius: 0; }
 .chat-view-close { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 22px; cursor: pointer; }
@@ -538,6 +538,9 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
   .tv-chat-screen .tv-chat-window > .chat-lines > .chat-list { margin-top: auto; } /* (a few messages sit over the box, where the eye is, as in any messenger) */
   .tv-chat-screen .tv-chat-head { gap: 0.6em; padding: max(0.7em, env(safe-area-inset-top)) 0.8em 0.7em 0.4em; }
   .tv-chat-screen .tv-chat-pic { font-size: 3em; }
+  /* (the ⋯, and what is done with a selected message beside it: a finger's size on the narrowest phone too, where 3.4em was 34 pixels) */
+  .tv-chat-screen .tv-chat-more { width: max(3.4em, 40px); height: max(3.4em, 40px); }
+  .tv-chat-screen .tv-chat-more.chat-act { margin-right: -0.2em; }
   .tv-chat-screen .tv-chat-foot { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
   /* The bar, in the sizes of a thumb (as the phone's own, `.chat-pill`): 48px high on one line, the buttons in it 42 by 44, Send 48 round beside it, both
      at the bar's foot when a long message has made it tall. */
