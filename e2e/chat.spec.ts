@@ -1816,6 +1816,25 @@ test.describe("personal stickers in a chat", () => {
       await expect(page.getByTestId("chat-personal-gone")).toHaveCount(2);
       await expect(page.getByTestId("chat-personal-gone").first()).toHaveText(en["chat.stickerGone"]);
     }
+
+    // a WebP file of 512 by 512 with see-through corners (what a messenger's sticker is, saved as a file) is taken as any picture: made here by the browser
+    const webp = await ann.page.evaluate(async () => {
+      const canvas = Object.assign(document.createElement("canvas"), { width: 512, height: 512 });
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "rgb(30, 30, 220)";
+      context.beginPath();
+      context.arc(256, 256, 200, 0, Math.PI * 2);
+      context.fill();
+      const blob = await new Promise<Blob>((done) => canvas.toBlob((made) => done(made!), "image/webp", 0.9));
+      return { type: blob.type, bytes: [...new Uint8Array(await blob.arrayBuffer())] };
+    });
+    expect(webp.type).toBe("image/webp");
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    await ann.page.getByTestId("chat-sticker-file").setInputFiles({ name: "sticker.webp", mimeType: "image/webp", buffer: Buffer.from(webp.bytes) });
+    await expect(mine).toHaveCount(1);
+    const fromWebp = await pictureAt(ann.page, (await mine.locator("img").getAttribute("src"))!);
+    expect([fromWebp.width, fromWebp.height, colourAt(fromWebp, 96, 96)]).toEqual([192, 192, "blue"]);
+    expect(fromWebp.data[3], "a see-through corner stays see-through").toBe(0);
   });
 
   test("on a TV that is only a remote: none of its own shows nothing of them; the profile's own come first, with nothing to add or edit there, the list scrolls to what the remote is on, and OK sends one, which the friend's phone sees", async ({ browser }) => {
