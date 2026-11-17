@@ -92,6 +92,16 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("account-screen")).toBeVisible();
   });
 
+  test("a guest has What's new in the account's menu too", async ({ browser }) => {
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await phone.getByTestId("account-button").click();
+    await expect(phone.getByTestId("menu-news")).toContainText(`Kino ${LATEST.version}`);
+    await phone.getByTestId("menu-news").click();
+    await expect(phone.getByTestId("news-page")).toBeVisible();
+    await expect(phone.locator(".news-lines li").first()).toBeVisible();
+  });
+
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
     test.setTimeout(60_000);
     // A name and a password of one character: what somebody who only wants to watch types.
