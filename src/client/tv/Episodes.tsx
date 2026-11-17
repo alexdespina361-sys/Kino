@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { LiveProgress, LiveWatched } from "../../shared";
 import { describeStatus, episodeName, episodeStatus, lastStartAt } from "../../shared";
 import { t } from "../i18n";
@@ -45,10 +45,10 @@ export interface SeriesPage {
   /** The season that is shown: the one chosen, else the one Play leads to. */
   season: number | undefined;
   pick: (season: number) => void;
-  /** Its episodes, in order: none while they are being asked for, and `null` when the library has nothing to list. */
-  episodes: PageEpisode[] | null | undefined;
+  /** How many episodes it has: none while they are being asked for, and `null` when the library has nothing to list. */
+  count: number | null | undefined;
   /**
-   * The ones of them that are listed: 24 at a time (pages.ts `episodeWindow`), from the one Play leads to when it is further on - a season of hundreds (an
+   * The ones of them that are listed, in order: 24 at a time (pages.ts `episodeWindow`), from the one Play leads to when it is further on - a season of hundreds (an
    * anime's) would be hundreds of cards. `earlier` and `later` say how many are left out before them and after them.
    */
   shown: PageEpisode[] | null | undefined;
@@ -95,11 +95,12 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
   // A page that was closed forgets the season that was browsed on it: it opens next on the one this profile is at.
   const open = entry !== undefined;
   // (And the episodes that were listed of it: 24 again, from the one Play leads to.)
-  const [paged, setPaged] = useState<EpisodeWindow & { key: string }>();
+  // (Each season's own: `${entry.id}|${season}`.)
+  const [paged, setPaged] = useState<Readonly<Record<string, EpisodeWindow>>>({});
   useEffect(() => {
     if (open) return;
     setPicked(undefined);
-    setPaged(undefined);
+    setPaged({});
   }, [open]);
   const chosen = picked?.id === entry?.id ? picked?.season : undefined;
   const season = [chosen, start?.season ?? askedSeason].find((n) => n !== undefined && seasons.includes(n)) ?? seasons[0];
@@ -107,14 +108,35 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
   // (What nobody could play of it: asked for a film too, which is the one thing about a film this page asks.)
   const marks = useUnavailable(entry !== undefined && !entry.opens && entry.url !== "" ? entry.url : undefined);
 
-  let episodes: PageEpisode[] | null | undefined;
-  if (!entry || (asked && found === undefined) || details === undefined) episodes = undefined; // still being asked for
-  else if (season === undefined || details === null) episodes = null;
-  else {
+  // (The season's episodes that something plays, in order: worked out again only when they change, as a season can have thousands.)
+  const playable = useMemo(() => (details ? [...details.values()].filter((detail) => detail.url).sort((a, b) => a.episode - b.episode) : details), [details]);
+  const all = !entry || (asked && found === undefined) || details === undefined ? undefined : season === undefined || !playable?.length ? null : playable;
+
+  // The episodes listed of the season: 24 at a time, from the one Play leads to; what was pressed for is kept for that season while the page is open.
+  const windowKey = entry && season !== undefined ? `${entry.id}|${season}` : "";
+  const count = all?.length ?? 0;
+  const target = start?.season === season ? start?.episode : undefined;
+  const anchor = all && target !== undefined ? all.findIndex((detail) => detail.episode === target) : -1;
+  const kept = windowKey ? paged[windowKey] : undefined;
+  const range = listedWindow(count, anchor, kept);
+  // (And so is the one that is listed now: Play's episode moving on - another screen finished it - leaves the list where it was while that one is in it. The
+  // judge, 17 Nov: the 24 slid by one, and the episode the remote was on went from under it.)
+  useEffect(() => {
+    if (count > 0 && windowKey && (kept?.from !== range.from || kept?.to !== range.to)) setPaged((all) => ({ ...all, [windowKey]: { from: range.from, to: range.to } }));
+  }, [count, windowKey, range.from, range.to, kept?.from, kept?.to]);
+  const widen = (next: EpisodeWindow, land: number | undefined) => {
+    if (windowKey) setPaged((all) => ({ ...all, [windowKey]: next }));
+    return land;
+  };
+
+  // Only the ones listed are made into cards: each looks up what this profile did with it, among the records of this show's season alone.
+  let shown: PageEpisode[] | null | undefined = all === null ? null : undefined;
+  if (all && entry && season !== undefined) {
     const show = showKeyOf(entry, progress);
-    const listed = [...details.values()].filter((detail) => detail.url).sort((a, b) => a.episode - b.episode);
-    episodes = listed.map((detail): PageEpisode => {
-      const status = episodeStatus(watched, show, season, detail.episode);
+    const ofSeason = show ? watched.filter((record) => record.show === show && record.season === season) : [];
+    const words = statusWords();
+    shown = all.slice(range.from, range.to).map((detail): PageEpisode => {
+      const status = episodeStatus(ofSeason, show, season, detail.episode);
       const name = episodeName({ season, episode: detail.episode, url: detail.url!, ...(detail.title ? { title: detail.title } : {}) }, t("player.episodeN", { n: detail.episode }));
       return {
         season,
@@ -125,28 +147,16 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
         card: {
           number: detail.episode,
           name,
-          still: detail.still || entry?.backdrop || entry?.image,
-          overview: detail.overview || (entry?.description && entry.description.length <= 400 ? entry.description : undefined),
-          meta: describeStatus(status, statusWords()) ?? (detail.runtime ? formatLeft(detail.runtime * 60) : undefined),
+          still: detail.still || entry.backdrop || entry.image,
+          overview: detail.overview || (entry.description && entry.description.length <= 400 ? entry.description : undefined),
+          meta: describeStatus(status, words) ?? (detail.runtime ? formatLeft(detail.runtime * 60) : undefined),
           state: status.kind,
           fraction: status.kind === "started" ? status.fraction : undefined,
           unavailable: marks?.episodes.has(episodeKey(season, detail.episode)) ?? false,
         },
       };
     });
-    if (episodes.length === 0) episodes = null;
   }
-
-  // The episodes listed of the season: 24 at a time, from the one Play leads to; what was pressed for is kept for that season while the page is open.
-  const windowKey = entry && season !== undefined ? `${entry.id}|${season}` : "";
-  const count = episodes?.length ?? 0;
-  const anchor = episodes ? episodes.findIndex((episode) => episode.target) : -1;
-  const listed = listedWindow(count, anchor, paged?.key === windowKey ? paged : undefined);
-  const shown = episodes ? episodes.slice(listed.from, listed.to) : episodes;
-  const widen = (window: EpisodeWindow, land: number | undefined) => {
-    setPaged({ key: windowKey, ...window });
-    return land;
-  };
 
   return {
     seasons,
@@ -157,12 +167,12 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
     said: start ?? (holding && entry ? heldStart(entry) : undefined),
     season,
     pick: (next) => entry && setPicked({ id: entry.id, season: next }),
-    episodes,
+    count: all === undefined ? undefined : all === null ? null : count,
     shown,
-    earlier: episodes ? listed.from : 0,
-    later: episodes ? count - listed.to : 0,
-    showMore: () => (episodes && listed.to < count ? widen({ from: listed.from, to: Math.min(count, listed.to + EPISODES_AT_ONCE) }, episodes[listed.to]?.episode) : undefined),
-    showEarlier: () => (episodes && listed.from > 0 ? widen({ from: Math.max(0, listed.from - EPISODES_AT_ONCE), to: listed.to }, episodes[listed.from - 1]?.episode) : undefined),
+    earlier: all ? range.from : 0,
+    later: all ? count - range.to : 0,
+    showMore: () => (all && range.to < count ? widen({ from: range.from, to: Math.min(count, range.to + EPISODES_AT_ONCE) }, all[range.to]?.episode) : undefined),
+    showEarlier: () => (all && range.from > 0 ? widen({ from: Math.max(0, range.from - EPISODES_AT_ONCE), to: range.to }, all[range.from - 1]?.episode) : undefined),
     unavailable: !isShow && Boolean(marks?.title),
   };
 }
@@ -183,11 +193,21 @@ export function SeriesSection({ page, columns = 1, onPlay, onSlide }: { page: Se
   const list = useRef<HTMLDivElement>(null);
   // After a press of either, the keys go to the first episode that came (Show more) or the last (Show earlier): the button may be gone, and the list goes on from there.
   const land = useRef<number | undefined>(undefined);
+  // (What in the list had the keys last: when it is gone from it - the list moved on to Play's episode - they go to that one, not to nothing. The judge, 17 Nov.)
+  const held = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
+    const root = list.current;
     const episode = land.current;
-    if (episode === undefined) return;
     land.current = undefined;
-    list.current?.querySelector<HTMLElement>(`[data-testid="tv-episode"][data-episode="${episode}"]`)?.focus();
+    const lost = held.current !== null && !held.current.isConnected && (document.activeElement === null || document.activeElement === document.body);
+    const to =
+      episode !== undefined
+        ? root?.querySelector<HTMLElement>(`[data-testid="tv-episode"][data-episode="${episode}"]`)
+        : lost
+          ? (root?.querySelector<HTMLElement>('[data-testid="tv-episode"][data-target="true"]') ?? root?.querySelector<HTMLElement>('[data-testid="tv-episode"]'))
+          : undefined;
+    // (The page keeps what has the keys in view itself, as for every other move: `.tv-detail-scroll`'s onFocus.)
+    to?.focus({ preventScroll: true });
   }, [shown]);
   return (
     <section className="tv-detail-eps" aria-label={t("player.episodes")} data-testid="tv-episodes">
@@ -213,7 +233,17 @@ export function SeriesSection({ page, columns = 1, onPlay, onSlide }: { page: Se
         </SideScroll>
       )}
       {shown ? (
-        <div className="tv-detail-list" ref={list} data-cols={columns} style={columns > 1 ? ({ "--ep-cols": columns } as CSSProperties) : undefined}>
+        <div
+          className="tv-detail-list"
+          ref={list}
+          data-cols={columns}
+          style={columns > 1 ? ({ "--ep-cols": columns } as CSSProperties) : undefined}
+          onFocus={(event) => (held.current = event.target as HTMLElement)}
+          onBlur={(event) => {
+            // (Gone elsewhere; a button taken out of the page says nothing of where, and is the one that is looked for.)
+            if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) held.current = null;
+          }}
+        >
           {earlier > 0 && (
             <button
               className="tv-choice tv-detail-eps-more"

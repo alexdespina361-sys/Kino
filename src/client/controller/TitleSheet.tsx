@@ -122,7 +122,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
           {...(play ? { onPlay: (episode: PageEpisode) => play(episode.url, episode.startAt) } : {})}
           seasonRating={
             ratings && series.season !== undefined ? (
-              <RatingBox key={series.season} entry={entry} isShow season={series.season} total={series.episodes?.length} title={t("rating.seasonRating", { n: series.season })} testId="rate-season" />
+              <RatingBox key={series.season} entry={entry} isShow season={series.season} total={series.count ?? undefined} title={t("rating.seasonRating", { n: series.season })} testId="rate-season" />
             ) : undefined
           }
         />

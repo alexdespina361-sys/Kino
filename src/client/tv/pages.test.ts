@@ -29,6 +29,9 @@ describe("a long season's episodes, 24 at a time", () => {
     // (a season that came back shorter: what is past its end is not listed)
     expect(listedWindow(40, -1, { from: 0, to: 48 })).toEqual({ from: 0, to: 40 });
     expect(listedWindow(10, -1, { from: 24, to: 48 })).toEqual({ from: 0, to: 10 });
+    // (the 24 that were listed from episode 40 - the page keeps them as its window - stay when Play moves on to 41: they do not slide by one, the judge, 17 Nov)
+    expect(listedWindow(100, 40, { from: 39, to: 63 })).toEqual({ from: 39, to: 63 });
+    expect(episodeWindow(100, 40)).toEqual({ from: 40, to: 64 });
   });
 
   it("is the remote's lines: Show earlier, the episodes so many across, Show more", () => {

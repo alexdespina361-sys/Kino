@@ -1254,7 +1254,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (!entry) return;
     if (action === "play") playEntry(entry, at);
     else if (action === "tv") playEntryOnTv(entry, at);
-    else if (action === "rate") setOverlay({ kind: "rate", entry, back: from, isShow: series.isShow, seasons: series.seasons, shown: series.season, episodes: series.episodes?.length });
+    else if (action === "rate") setOverlay({ kind: "rate", entry, back: from, isShow: series.isShow, seasons: series.seasons, shown: series.season, episodes: series.count ?? undefined });
     else if (action === "recommend") setOverlay({ kind: "recommend", entry, back: from });
     else if (action === "join") {
       if (entry.party) onJoinParty(entry.party);
