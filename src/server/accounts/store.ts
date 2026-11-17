@@ -32,6 +32,8 @@ import {
 import { ChatBook } from "./chat";
 import { FriendBook } from "./friends";
 import type { Persistence } from "./persistence";
+import { MemoryStickerFiles, type StickerFiles } from "./stickerFiles";
+import { StickerBook } from "./stickers";
 
 /* ------------------------------ what is kept ------------------------------ */
 
@@ -134,6 +136,11 @@ export interface StoreOptions {
   /** How long changes wait before they are written; they are also written when the server stops. */
   flushMs?: number;
   log?: { warn(message: string): void };
+  /**
+   * Personal stickers (shared/stickers.ts): where their pictures are kept (memory unless set), whether the host turned them on (off unless it did:
+   * env PERSONAL_STICKERS), and how many bytes of pictures the site keeps.
+   */
+  stickers?: { files?: StickerFiles; on?: boolean; maxBytes?: number };
 }
 
 /**
@@ -171,11 +178,23 @@ export class AccountStore {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private flushing: Promise<void> = Promise.resolve();
 
-  private constructor(private readonly options: Required<Omit<StoreOptions, "log">> & Pick<StoreOptions, "log">) {}
+  /** The personal stickers (see stickers.ts); kept and written like the rest, their pictures apart. */
+  private readonly stickerBook: StickerBook;
+
+  private constructor(private readonly options: Required<Omit<StoreOptions, "log" | "stickers">> & Pick<StoreOptions, "log" | "stickers">) {
+    const stickers = options.stickers ?? {};
+    this.stickerBook = new StickerBook(
+      { touch: (key) => this.touch(key), drop: (key) => this.drop(key), now: () => this.now(), on: (profileId) => this.profileOwner.has(profileId) && friendChoices(this.settingsOf(profileId)).friends },
+      stickers.files ?? new MemoryStickerFiles(),
+      { on: stickers.on ?? false, ...(stickers.maxBytes ? { maxBytes: stickers.maxBytes } : {}), ...(options.log ? { log: options.log } : {}) },
+    );
+  }
 
   static async open(options: StoreOptions): Promise<AccountStore> {
     const store = new AccountStore({ now: Date.now, flushMs: 1500, ...options });
     await store.load();
+    // (A picture whose record was never written, or a record whose picture is not there, is let go: the two are kept in different places.)
+    await store.stickerBook.reconcile();
     return store;
   }
 
@@ -211,6 +230,8 @@ export class AccountStore {
           this.book.load(key, value);
         } else if (ChatBook.owns(key)) {
           this.talk.load(key, value);
+        } else if (StickerBook.owns(key)) {
+          this.stickerBook.load(key, value);
         }
       } catch {
         this.options.log?.warn(`Skipped an unreadable record (${key}).`);
@@ -286,6 +307,7 @@ export class AccountStore {
     if (key.startsWith("session:")) return this.sessions.get(key.slice("session:".length));
     if (FriendBook.owns(key)) return this.book.docFor(key);
     if (ChatBook.owns(key)) return this.talk.docFor(key);
+    if (StickerBook.owns(key)) return this.stickerBook.docFor(key);
     if (key.startsWith("pdata:")) {
       const profileData = this.data.get(key.slice("pdata:".length));
       if (!profileData) return undefined;
@@ -455,6 +477,7 @@ export class AccountStore {
       this.drop(`pdata:${profile.id}`);
       this.book.forget(profile.id);
       this.talk.forget(profile.id);
+      this.stickerBook.forget(profile.id);
       this.seen.delete(profile.id);
     }
     this.emails.delete(account.email);
@@ -518,6 +541,7 @@ export class AccountStore {
     this.drop(`pdata:${profileId}`);
     this.book.forget(profileId);
     this.talk.forget(profileId);
+    this.stickerBook.forget(profileId);
     this.seen.delete(profileId);
     return ok(null);
   }
@@ -569,6 +593,11 @@ export class AccountStore {
   /** What friends have written to each other (see chat.ts). */
   get chats(): ChatBook {
     return this.talk;
+  }
+
+  /** The personal stickers (see stickers.ts). */
+  get stickers(): StickerBook {
+    return this.stickerBook;
   }
 
   /** The time as the store keeps it (what tests move). */

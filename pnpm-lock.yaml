@@ -41,6 +41,9 @@ importers:
       pg:
         specifier: ^8.23.1
         version: 8.23.1
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
       qrcode-generator:
         specifier: ^2.0.4
         version: 2.0.4
@@ -93,9 +96,6 @@ importers:
       pixelmatch:
         specifier: ^8.0.0
         version: 8.0.0
-      pngjs:
-        specifier: ^7.0.0
-        version: 7.0.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

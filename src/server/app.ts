@@ -13,6 +13,7 @@ import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
+import { stickerAdminRoutes } from "./accounts/stickerRoutes";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN, teamGuard } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
@@ -288,7 +289,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const klipyWritten = (options.klipyKey ?? process.env.KLIPY_KEY ?? "").trim();
   const klipyKey = /^[A-Za-z0-9_-]{8,200}$/.test(klipyWritten) ? klipyWritten : "";
   if (klipyWritten && !klipyKey) app.log.warn("KLIPY_KEY does not look like a KLIPY key: the chats have no GIFs.");
-  const features = { cat: catOn, ...(klipyKey ? { gifs: klipyKey } : {}) };
+  // Personal stickers: on only where the host turned them on (PERSONAL_STICKERS=on, read with the accounts: index.ts); taking it off is the kill switch.
+  const stickersOn = accounts?.stickers.on === true;
+  const features = { cat: catOn, ...(klipyKey ? { gifs: klipyKey } : {}), ...(stickersOn ? { stickers: true } : {}) };
+  // (The team's side of them: a picture taken down everywhere, or all of one maker's. There whether they are on or off.)
+  if (accounts) stickerAdminRoutes(app, { stickers: accounts.stickers, adminToken: options.feedbackAdminToken });
   app.get("/api/features", async (_request, reply) => reply.header("Cache-Control", "no-store").send(features));
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
   // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
@@ -319,7 +324,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
-    features: { cat: catOn, ...(klipyKey ? { gifs: true } : {}) },
+    features: { cat: catOn, ...(klipyKey ? { gifs: true } : {}), ...(stickersOn ? { stickers: true } : {}) },
+    // (`stickers`: how many personal stickers the site keeps, and how many bytes of pictures.)
+    ...(accounts ? { stickers: accounts.stickers.size } : {}),
   });
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());

@@ -18,6 +18,7 @@ import {
   type SessionState,
 } from "../../shared";
 import { chatRoutes, type ChatReporter } from "./chatRoutes";
+import { stickerRoutes } from "./stickerRoutes";
 import { describeDevice } from "./device";
 import { friendRoutes, type PartyLookup } from "./friendRoutes";
 import { googleRoutes, type GoogleConfig } from "./google";
@@ -441,5 +442,6 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   };
   friendRoutes(app, friendHelpers);
   // (A small chat between two friends: the same helpers, since who is asking and who is a friend are decided the same way.)
-  chatRoutes(app, friendHelpers, { chat: store.chats, ...(options.chatReport ? { report: options.chatReport } : {}) });
+  chatRoutes(app, friendHelpers, { chat: store.chats, stickers: store.stickers, ...(options.chatReport ? { report: options.chatReport } : {}) });
+  stickerRoutes(app, friendHelpers, store.stickers);
 };

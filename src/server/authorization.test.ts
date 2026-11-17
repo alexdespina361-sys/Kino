@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
+import { PNG as PngImage } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
 import { tagLabel } from "../shared";
 import { MemoryPersistence } from "./accounts/persistence";
@@ -31,6 +32,13 @@ const DAY = 24 * 3600 * 1000;
 const TOKEN = "the-teams-token-is-at-least-24-characters";
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("not really a picture")]);
 const sha = (data: Buffer | undefined) => createHash("sha256").update(data ?? "").digest("hex");
+/** A picture of one colour, its own for each name (as base64, the way a page sends it to be made a personal sticker). */
+function sticker(name: string): string {
+  const [r = 0, g = 0, b = 0] = createHash("sha256").update(name).digest();
+  const png = new PngImage({ width: 32, height: 32 });
+  for (let at = 0; at < png.data.length; at += 4) png.data.set([r, g, b, 255], at);
+  return PngImage.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, bitDepth: 8, deflateLevel: 9 }).toString("base64");
+}
 
 const apps: FastifyInstance[] = [];
 const folders: string[] = [];
@@ -207,6 +215,17 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
   };
   await write(friend, me, `secret-${login}-hello`);
   const answer = await write(me, friend, `secret-${login}-answer`);
+  // (and each sends the other a personal sticker of their own: the owner's is in their collection, the friend's only in the chat)
+  const made = async (who: Person) =>
+    (await must(who.client.post(`/api/profiles/${who.profile.id}/stickers`, { data: sticker(`${who.login}-sticker`) }), [201])).id as string;
+  const giveSticker = async (from: Person, to: Person, id: string) => {
+    w.clock.now += 1000;
+    await must(from.client.post(`/api/profiles/${from.profile.id}/friends/${to.profile.id}/chat/sticker`, { id }), [201]);
+  };
+  const theirSticker = await made(friend);
+  await giveSticker(friend, me, theirSticker);
+  const ownSticker = await made(me);
+  await giveSticker(me, friend, ownSticker);
   const again = await write(friend, me, `secret-${login}-again`);
 
   // a feedback report, with a picture, that the team has asked a question about; and a TV that waits to be signed in
@@ -237,10 +256,12 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
     file: "pic1",
     link: link.code,
     linkSecret: link.secret,
+    sticker: ownSticker,
+    theirSticker,
   };
   const people = [me.account, profile.id, spare, friend.account, friend.profile.id, asker.account, asker.profile.id];
   // (what only they have: not the numbers, which any answer may hold, and not the tag of somebody both of them know)
-  const secrets = [...people, code, offered, ids.plan!, ids.recommend!, ids.party!, partyCode, session, reportKey, link.code, link.secret, client.token, tv.token];
+  const secrets = [...people, code, offered, ids.plan!, ids.recommend!, ids.party!, partyCode, session, reportKey, link.code, link.secret, client.token, tv.token, ownSticker, theirSticker];
   return {
     ...me,
     tv,
@@ -256,7 +277,7 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
 async function world(): Promise<World> {
   const clock = { now: T0 };
   const persistence = new MemoryPersistence();
-  const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
+  const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now, stickers: { on: true } });
   const registry = new Registry({ now: () => clock.now });
   const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), now: () => clock.now });
   const app = await buildApp({ accounts: store, passwordCost: cheap, registry, feedback, signUpsPerHour: 1000, feedbackSendsPer10Min: 1000, feedbackAdminToken: TOKEN });
@@ -426,6 +447,14 @@ const ROWS: Row[] = [
   row(`PUT ${CHAT}/mute`, { id: asking, fid: other }, { body: () => ({ muted: true }) }),
   row(`GET ${CHAT}/report`, { id: asking, fid: other }),
   row(`POST ${CHAT}/report`, { id: asking, fid: other, rev: "chatRev" }, { open: ["rev"], body: (slot) => ({ rev: Number(slot.rev) }) }),
+  // personal stickers: a profile's own, and the ones sent in its chats (the other's names are tried as well as its own: a sticker of the friend's is the owner's to see)
+  row(`POST ${CHAT}/sticker`, { id: asking, fid: other, sid: ["sticker", "theirSticker"] }, { body: (slot) => ({ id: slot.sid }) }),
+  row(`GET ${CHAT}/stickers/:sid`, { id: asking, fid: other, sid: ["theirSticker", "sticker"] }),
+  row(`POST ${CHAT}/stickers/:sid/save`, { id: asking, fid: other, sid: ["theirSticker", "sticker"] }),
+  row("GET /api/profiles/:id/stickers", { id: asking }),
+  row("POST /api/profiles/:id/stickers", { id: asking }, { body: (_, as) => ({ data: sticker(`${as.login}-another`) }) }),
+  row("GET /api/profiles/:id/stickers/:sid", { id: asking, sid: ["sticker", "theirSticker"] }),
+  row("DELETE /api/profiles/:id/stickers/:sid", { id: asking, sid: ["sticker", "theirSticker"] }),
   // feedback reports that belong to an account (the ones that belong to a key are tried further down)
   row("POST /api/feedback/open", { report: "report" }, { body: (slot) => ({ id: slot.report }) }),
   row("POST /api/feedback/reply", { report: "report" }, { body: (slot) => ({ id: slot.report, text: "one more thing" }) }),
@@ -435,7 +464,7 @@ const ROWS: Row[] = [
 /** Routes anybody may call, and why that is all right. */
 const PUBLIC: Record<string, string> = {
   "GET /ws": "the socket of the watch parties and pairings: it reads no cookie, and a screen is known as a profile only by a proof that is good once (accounts/screens.ts)",
-  "GET /api/features": "the cat's flag and the site's KLIPY key (KLIPY puts it in every visitor's request), the same for everybody",
+  "GET /api/features": "the cat's flag, the site's KLIPY key (KLIPY puts it in every visitor's request) and whether personal stickers are on, the same for everybody",
   "GET /api/health": "to anybody, only that it is up (ok, uptime, where it keeps things); the counters only with the team's token",
   "GET /api/library": "the catalogue: the same for everybody",
   "GET /api/library/search": "the catalogue",
@@ -484,6 +513,10 @@ const TEAM: Array<{ route: string; body?: object; query?: string; ok: number }> 
   { route: "GET /api/admin/official/:id", ok: 404 },
   { route: "PUT /api/admin/official/:id", body: { lines: [[0, 100, "Hello"]] }, ok: 404 },
   { route: "DELETE /api/admin/official/:id", ok: 404 },
+  { route: "GET /api/admin/stickers", ok: 200 },
+  { route: "GET /api/admin/stickers/:sid", ok: 200 },
+  { route: "DELETE /api/admin/stickers/:sid", ok: 200 },
+  { route: "DELETE /api/admin/stickers", query: "?by=nobody", ok: 200 },
   { route: "DELETE /api/admin/feedback/:id", ok: 204 },
 ];
 
@@ -705,7 +738,7 @@ describe("the team's side", () => {
   const call = (w: World, client: Client, entry: (typeof TEAM)[number], more = "") => {
     const [method, route] = entry.route.split(" ") as [Method, string];
     const query = `${entry.query ?? ""}${more ? `${entry.query ? "&" : "?"}${more}` : ""}`;
-    return client.call(method, `${route.replace(":id", w.a.ids.report!).replace(":file", w.a.ids.file!)}${query}`, entry.body);
+    return client.call(method, `${route.replace(":sid", w.a.ids.sticker!).replace(":id", w.a.ids.report!).replace(":file", w.a.ids.file!)}${query}`, entry.body);
   };
 
   it("takes the team's token as a Bearer and nothing else: not a sign-in, not the token of one", { timeout: 60_000 }, async () => {

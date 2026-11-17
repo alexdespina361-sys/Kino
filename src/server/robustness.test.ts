@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { brotliDecompressSync, gunzipSync, inflateSync, zstdDecompressSync } from "node:zlib";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
+import { PNG as PngImage } from "pngjs";
 import type { WebSocket } from "ws";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ClientMessageSchema, CommandSchema, DEFAULT_CAPTION_STYLE, parseClientMessage, parseServerMessage, ServerMessageSchema, type ServerMessage } from "../shared";
@@ -64,6 +65,13 @@ const WORLDS = 24;
 const CANARY = "TEXT-OF-A-FILE-OUTSIDE-THE-SERVED-FOLDERS";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("not really a picture")]);
+/** A real picture of one colour (the `n`th), as base64: what a page sends to make a personal sticker of. */
+function stickerPicture(n: number): string {
+  const png = new PngImage({ width: 24, height: 24 });
+  for (let at = 0; at < png.data.length; at += 4) png.data.set([n & 255, (n >> 8) & 255, 200, 255], at);
+  return PngImage.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, bitDepth: 8, deflateLevel: 9 }).toString("base64");
+}
+let pictures = 0;
 
 /* ------------------------------ what a request is ------------------------------ */
 
@@ -110,6 +118,9 @@ interface World {
   link: { code: string; secret: string };
   report: { key: string; id: string; file: string };
   doomed: string;
+  /** A personal sticker of the profile's own, and one the friend sent it in their chat. */
+  sticker: string;
+  theirSticker: string;
 }
 
 /* ------------------------------ the rig ------------------------------ */
@@ -204,6 +215,9 @@ async function makeWorld(n: number): Promise<World> {
   await made("POST", mine(friend, "/send"), friend, { to: [user.profile], kind: "plan", when: Date.now() + 86_400_000 }, 200);
   const inbox = (await made("GET", mine(user), user, undefined, 200)).data.inbox as Array<{ id: string; kind: string }>;
   const chat = await made("POST", mine(user, `/${friend.profile}/chat`), user, { text: "hello" }, 201);
+  const sticker = (await made("POST", `/api/profiles/${user.profile}/stickers`, user, { data: stickerPicture(++pictures) }, 201)).data.id as string;
+  const theirSticker = (await made("POST", `/api/profiles/${friend.profile}/stickers`, friend, { data: stickerPicture(++pictures) }, 201)).data.id as string;
+  await made("POST", mine(friend, `/${user.profile}/chat/sticker`), friend, { id: theirSticker }, 201);
   const links = await Promise.all([1, 2, 3, 4].map(() => made("POST", "/api/link/start", {}, { device: "tv" }, 201)));
   accounts.createSession(user.account, "tv", "Sweep TV");
   const spare = (await made("POST", "/api/profiles", user, { name: "Spare", avatar: "owl" }, 201)).data.profiles.find((profile: { name: string }) => profile.name === "Spare");
@@ -241,6 +255,8 @@ async function makeWorld(n: number): Promise<World> {
     link: { code: links[3]!.data.code, secret: links[3]!.data.secret },
     report: { key, id: sent.data.id, file: "pic1" },
     doomed: doomed.data.id,
+    sticker,
+    theirSticker,
   };
 }
 
@@ -300,7 +316,7 @@ beforeAll(async () => {
   TITLE = `${origin}/page.html`;
 
   hash = await hashPassword(PASSWORD, cheap);
-  accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
+  accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, stickers: { on: true } });
   const visits = await VisitCounter.open({ persistence: new MemoryPersistence(), flushMs: 0 });
   // (Every route is told of as it is added: the hook is put on the app the moment Fastify makes it, before the first route.)
   const seen: Array<{ method: string | string[]; url: string }> = [];
@@ -477,6 +493,14 @@ const SPECS: Record<string, Spec> = {
   "PUT /api/profiles/:id/friends/:fid/chat/mute": { params: withFriend, body: () => ({ muted: false }) },
   "GET /api/profiles/:id/friends/:fid/chat/report": { params: withFriend },
   "POST /api/profiles/:id/friends/:fid/chat/report": { params: withFriend, body: () => ({ rev: 1 }), ok: [204, 400, 404, 409] },
+  // (Personal stickers: a sticker the sweep let go is gone, a collection that is full or an account that made its day's few is told so: all of them meant.)
+  "POST /api/profiles/:id/friends/:fid/chat/sticker": { params: withFriend, body: (w) => ({ id: w.sticker }), ok: [201, 404, 429] },
+  "GET /api/profiles/:id/friends/:fid/chat/stickers/:sid": { params: { ...withFriend, sid: (w) => w.theirSticker }, ok: [200, 404, 429] },
+  "POST /api/profiles/:id/friends/:fid/chat/stickers/:sid/save": { params: { ...withFriend, sid: (w) => w.theirSticker }, ok: [200, 404, 409, 429] },
+  "GET /api/profiles/:id/stickers": { params: profile, ok: [429] },
+  "POST /api/profiles/:id/stickers": { heavy: true, params: profile, body: () => ({ data: stickerPicture(++pictures) }), ok: [201, 409, 429, 503] },
+  "GET /api/profiles/:id/stickers/:sid": { params: { ...profile, sid: (w) => w.sticker }, ok: [404, 429] },
+  "DELETE /api/profiles/:id/stickers/:sid": { params: { ...profile, sid: (w) => w.sticker }, ok: [404, 429] },
   "POST /api/feedback": { heavy: true, body: feedbackBody },
   "POST /api/feedback/check": { body: (w) => ({ keys: [w.report.key] }) },
   "POST /api/feedback/open": { body: (w) => ({ key: w.report.key }) },
@@ -495,6 +519,10 @@ const SPECS: Record<string, Spec> = {
   "GET /api/admin/official/:id": { team: true, params: { id: () => "a".repeat(20) }, ok: [404] },
   "PUT /api/admin/official/:id": { team: true, params: { id: () => "a".repeat(20) }, body: () => ({ lines: [[0, 100, "Hello"]] }), ok: [404] },
   "DELETE /api/admin/official/:id": { team: true, params: { id: () => "a".repeat(20) }, ok: [404] },
+  "GET /api/admin/stickers": { team: true },
+  "GET /api/admin/stickers/:sid": { team: true, params: { sid: (w) => w.theirSticker }, ok: [404] },
+  "DELETE /api/admin/stickers/:sid": { team: true, params: { sid: () => "a".repeat(22) }, ok: [404] },
+  "DELETE /api/admin/stickers": { team: true, query: () => ({ by: "nobody" }) },
   "GET /api/subsync/:key": { params: { key: () => "a".repeat(32) }, ok: [204] },
   "PUT /api/subsync/:key": { heavy: true, params: { key: () => "b".repeat(32) }, body: () => ({ v: 1, lines: 10, placed: [[0, 5, 5, 1], [1, 10, 10, 0]] }), ok: [204] },
 };
