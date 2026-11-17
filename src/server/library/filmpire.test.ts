@@ -567,11 +567,13 @@ describe("filmpireSource search", () => {
     expect(toldOf).toBe(MAX_PRELOADED_SEASONS);
   });
 
-  it("filters out trash entries like podcasts and zero-vote posterless stubs", async () => {
+  it("filters out trash entries like podcasts, future unreleased titles, and zero-vote indie stubs", async () => {
     const mixedResults = [
-      { id: 1, media_type: "tv", name: "Valid Show", first_air_date: "2022-01-01", poster_path: "/valid.jpg", vote_count: 50 },
+      { id: 1, media_type: "tv", name: "Valid Show", first_air_date: "2022-01-01", poster_path: "/valid.jpg", vote_count: 50, overview: "A complete description of the valid show." },
       { id: 2, media_type: "tv", name: "Show Official Podcast", first_air_date: "2022-01-01", poster_path: "/pod.jpg" },
       { id: 3, media_type: "movie", title: "Zero Vote Stub", release_date: "2022-01-01", vote_count: 0, popularity: 0.2 },
+      { id: 4, media_type: "movie", title: "Unreleased Future Film", release_date: "2099-01-01", poster_path: "/fut.jpg", vote_count: 0 },
+      { id: 5, media_type: "movie", title: "Indie Stub Without Overview", release_date: "2023-01-01", poster_path: "/indie.jpg", vote_count: 0, overview: "short" },
     ];
 
     const getTmdb = vi.fn(async () => json({ results: mixedResults }));

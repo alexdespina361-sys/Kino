@@ -544,7 +544,15 @@ async function seasonPackSubtitles(ask: ExtrasAsk): Promise<SubtitleTrack[]> {
 export const lookForExtras: ExtrasLookup = (ask, get) => ({
   listed: (ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]))
     .catch((): SubtitleTrack[] => [])
-    .then(async (listed) => (listed.length > 0 ? listed : await seasonPackSubtitles(ask).catch((): SubtitleTrack[] => []))),
+    .then(async (listed) => {
+      const hasEn = listed.some((s) => s.lang === "en" || s.lang === "eng");
+      const hasRo = listed.some((s) => s.lang === "ro" || s.lang === "ron" || s.lang === "rum");
+      if (!hasEn || !hasRo || listed.length === 0) {
+        const fallback = await seasonPackSubtitles(ask).catch((): SubtitleTrack[] => []);
+        return [...listed, ...fallback];
+      }
+      return listed;
+    }),
   romanian: (async () => {
     const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
     return getRomanianSubtitleManager().getSubtitles({ imdbId: ask.imdbId, tmdbId: ask.tmdbId, title: ask.title, season: ask.season, episode: ask.episode });

@@ -428,7 +428,22 @@ export class RomanianSubtitleManager {
     const text = (await pageText(searchRes)) ?? "";
 
     const matches = [...text.matchAll(/href="https:\/\/subs\.ro\/subtitrare\/([^\/]+)\/(\d+)"/g)];
-    const chosenMatches = matches.slice(0, 3);
+    const targetYear = params.year ? Number(params.year) : undefined;
+    const targetNorm = params.title ? params.title.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+
+    const filteredMatches = matches.filter((m) => {
+      // If we searched with external_id (imdbId), Subs.ro already strictly matched the title
+      if (imdbId) return true;
+      if (!targetNorm) return true;
+      const slug = m[1]!;
+      const yMatch = slug.match(/-(\d{4})$/);
+      const slugYear = yMatch ? Number(yMatch[1]) : undefined;
+      if (targetYear && slugYear && Math.abs(slugYear - targetYear) > 1) return false;
+      const slugBase = yMatch ? slug.slice(0, yMatch.index) : slug;
+      const normSlug = slugBase.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return normSlug === targetNorm || normSlug.startsWith(`${targetNorm}-`) || normSlug.endsWith(`-${targetNorm}`);
+    });
+    const chosenMatches = (filteredMatches.length > 0 ? filteredMatches : (imdbId ? matches : [])).slice(0, 3);
 
     // (The archives are fetched at once, and their subtitles listed in the order the site gave them.)
     const archives = await Promise.all(
@@ -501,13 +516,32 @@ export class RomanianSubtitleManager {
     if (!res.ok) return list;
     const html = (await pageText(res)) ?? "";
 
-    const zipMatches = [...html.matchAll(/href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)];
-    const chosenZips = zipMatches.slice(0, 2);
+    // Match entries to strictly verify title and year
+    const entryMatches = [...html.matchAll(/<div id="content-main"><p[^>]*><a[^>]*href='[^']*id=(\d+)'[^>]*>([^<]+)<\/a>[\s\S]*?href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)];
+    const targetYear = params.year ? Number(params.year) : undefined;
+    const targetNorm = params.title ? params.title.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+
+    const validZips: string[] = [];
+    for (const em of entryMatches) {
+      const entryTitle = em[2]!.trim();
+      const zipUrl = em[3]!;
+      const yMatch = entryTitle.match(/\((\d{4})\)/);
+      const entryYear = yMatch ? Number(yMatch[1]) : undefined;
+      const cleanTitle = entryTitle.replace(/\(\d{4}\)/, "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      if (targetNorm && cleanTitle !== targetNorm) continue;
+      if (targetYear && entryYear && Math.abs(entryYear - targetYear) > 1) continue;
+      validZips.push(zipUrl);
+      if (validZips.length >= 2) break;
+    }
+
+    const chosenZips = validZips.length > 0
+      ? validZips
+      : (params.imdbId ? [...html.matchAll(/href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)].slice(0, 2).map((m) => m[1]!) : []);
 
     // (The archives are fetched at once, and their subtitles listed in the order the site gave them.)
     const archives = await Promise.all(
-      chosenZips.map(async (zm, n): Promise<RomanianSubtitle[]> => {
-        const zipUrl = zm[1]!;
+      chosenZips.map(async (zipUrl, n): Promise<RomanianSubtitle[]> => {
         try {
           const dlRes = await this.get(zipUrl, {
             headers: {
