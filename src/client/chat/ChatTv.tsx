@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormE
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type ChatReaction, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ChevronLeftIcon, FilmIcon, GifIcon, HeartIcon, MoreIcon, PlusIcon, ReplyIcon, SendIcon, ShieldIcon, StickerIcon, TrashIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { actionForKey } from "../tv/keys";
 import { BackButton, Screen } from "../tv/Idle";
@@ -15,6 +15,7 @@ import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
 import { GifPickTv } from "./GifPick";
 import { lastTheirs, ReactTv } from "./Reactions";
+import { backLetsAnswerGo, quoteWords, ReplyStrip } from "./Reply";
 import { StickerPickTv } from "./StickerPick";
 import { afterSent, cutTo, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
 import { useGifKey } from "./useGifs";
@@ -130,6 +131,8 @@ export function ChatTv({ name, avatar, online = false, presence, desk = false, s
       {...(gifs ? { onPickGif: () => setGifPicking(true) } : {})}
       onPickSticker={() => setStickerPicking(true)}
       onReactTo={setReacting}
+      // (A TV that is only a remote writes on a page of its own: the answer is written there, and the page says what it answers.)
+      onReplied={desk || narrow ? undefined : () => setWriting(true)}
       onClose={onClose}
       onOpenTitle={onOpenTitle}
       personal={personal}
@@ -155,6 +158,7 @@ export function ReadTv({
   onPickGif,
   onPickSticker,
   onReactTo,
+  onReplied,
   onClose,
   onOpenTitle,
   personal,
@@ -181,6 +185,8 @@ export function ReadTv({
   onPickSticker?: (() => void) | undefined;
   /** "React to Sam's last message" behind the ⋯ opens the page that does it, for that message (none: not there). */
   onReactTo?: ((id: number) => void) | undefined;
+  /** A message was picked to answer (Reply.tsx): where the answer is written next (none: the box here, which is given the keys). */
+  onReplied?: (() => void) | undefined;
   onClose: () => void;
   onOpenTitle?: ((item: LibraryItem) => void) | undefined;
   /** Personal stickers in the messages (see `usePersonalLines`): none while they are off. */
@@ -224,6 +230,10 @@ export function ReadTv({
   // What had the keys at the top (Take back, Save) goes with the selection, as it is let go (Escape, a press elsewhere, the message taken back from another
   // screen): the keys go back to the message, else to the ⋯, never to nothing (the judge, 17 Nov).
   const wasPicked = useRef<number | null>(null);
+  // (A message selected shuts the ⋯: a finger's hold moves no focus, so the menu would not shut by itself, and one Back would then shut both: the judge, 17 Nov.)
+  useEffect(() => {
+    if (picked !== null) setMenu(false);
+  }, [picked]);
   useEffect(() => {
     const was = wasPicked.current;
     wasPicked.current = picked;
@@ -239,6 +249,16 @@ export function ReadTv({
     event.stopPropagation(); // (the D-pad listens on the window)
     pickedBubble(picked)?.focus({ preventScroll: true });
   };
+
+  // Answering a message: Reply at the top (a message selected), the message drawn to the right, or "Reply to Sam's last message" behind the ⋯. The selection
+  // goes, and the keys go to where the answer is written.
+  const reply = (id: number) => {
+    setPicked(null);
+    session.setReplyTo(id);
+    if (onReplied) return onReplied();
+    (narrow ? area : box).current?.focus({ preventScroll: true });
+  };
+  const answering = session.replyTo === null ? undefined : state.lines.find((line) => line.id === session.replyTo);
 
   // (A hand-held screen, while something is typed: the buttons that send something else are one +, until it is pressed; typing on folds them again.)
   const [tools, setTools] = useState(false);
@@ -334,6 +354,7 @@ export function ReadTv({
               <PickedActions
                 line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
                 personal={personal?.lines}
+                {...(blocked ? {} : { onReply: reply })}
                 onTakeBack={(id) => {
                   setPicked(null);
                   more.current?.focus({ preventScroll: true });
@@ -369,6 +390,11 @@ export function ReadTv({
             </button>
             {/* (There all along, and hidden: what it holds is no stop for the remote, and no click, until the ⋯ opens it.) */}
             <div className="tv-chat-menu" hidden={!menu} data-testid="tv-chat-menu">
+              {theirs && !blocked && (
+                <button type="button" onClick={pick(() => reply(theirs.id))} data-nav data-testid="tv-chat-reply-last">
+                  <ReplyIcon /> {t("chat.replyLast", { name })}
+                </button>
+              )}
               {theirs && onReactTo && !blocked && (
                 <button type="button" onClick={pick(() => onReactTo(theirs.id))} data-nav data-testid="tv-chat-react-last">
                   <HeartIcon /> {t("chat.reactLast", { name })}
@@ -411,8 +437,8 @@ export function ReadTv({
               ? {
                   picked,
                   onPick: setPicked,
-                  // (Reactions while one can write: a friend who takes no messages takes no reactions either, see server/accounts/chat.ts `react`.)
-                  ...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction) }),
+                  // (Reactions and answers while one can write: a friend who takes no messages takes no reactions either, see server/accounts/chat.ts `react`.)
+                  ...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction), onReply: reply }),
                 }
               : {})}
             personal={personal?.lines}
@@ -431,13 +457,32 @@ export function ReadTv({
               {blocked === "ended" && session.ended ? problemText(t, session.ended, name) : t("chat.closed", { name })}
             </p>
           ) : (
+            <>
+            {answering && (
+              <ReplyStrip
+                line={answering}
+                name={name}
+                onCancel={() => {
+                  session.setReplyTo(null);
+                  // (The × goes with what it did: the keys go to where one writes, not to nothing.)
+                  document.querySelector<HTMLElement>("[data-testid='tv-chat'] .tv-chat-compose-row [data-autofocus], [data-testid='tv-chat'] .tv-chat-compose-row [data-testid='tv-chat-box']")?.focus({ preventScroll: true });
+                }}
+                nav
+                className="tv-chat-reply"
+              />
+            )}
             <div className="tv-chat-compose-row">
               {desk || narrow ? (
                 // A computer or a hand-held screen: one bar, the buttons that send something else in it before the box, Send beside it; Enter sends. On a
                 // hand-held screen the bar is the screen's width, so while something is typed the buttons fold into one + (a press of it brings them back),
                 // and the words have the bar to themselves (the owner, 17 Nov: three round buttons left the box a column a few words wide).
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
-                  <div className="tv-chat-pill" ref={unfold.bar} data-testid="tv-chat-pill">
+                  <div
+                    className="tv-chat-pill"
+                    ref={unfold.bar}
+                    onKeyDown={(event) => backLetsAnswerGo(event, session.replyTo !== null, () => session.setReplyTo(null), "tv-chat-box")}
+                    data-testid="tv-chat-pill"
+                  >
                     {folded ? (
                       <button
                         type="button"
@@ -513,6 +558,7 @@ export function ReadTv({
                 </>
               )}
             </div>
+            </>
           )}
         </div>
       </div>
@@ -540,8 +586,9 @@ export function WriteTv({
 }) {
   const t = useT();
   const checked = checkChatText(draft);
-  /** The last message in the chat, there to be answered. */
-  const last = session.state.lines[session.state.lines.length - 1];
+  /** The message being answered ("Reply to Sam's last message"), else the last message in the chat, there to be answered. */
+  const answering = session.replyTo === null ? undefined : session.state.lines.find((line) => line.id === session.replyTo);
+  const last = answering ?? session.state.lines[session.state.lines.length - 1];
   const change = (update: (before: string) => string) => {
     setDraft(update(draft).slice(0, CHAT_TEXT_MAX));
     session.settle();
@@ -557,8 +604,16 @@ export function WriteTv({
     <Screen key="write" testId="tv-chat-compose" compact focus onBack={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("chat.writeTitle", { name })}</h1>
       {last && (
-        <p className="tv-chat-quote" data-testid="tv-chat-quote">
-          <b>{last.mine ? t("chat.you") : name}</b> {quoteOf(t, last.text)}
+        <p className="tv-chat-quote" data-replying={answering ? "true" : undefined} data-testid="tv-chat-quote">
+          {answering ? (
+            <>
+              <span className="tv-chat-quote-lead">{t(answering.mine ? "chat.replyingToMine" : "chat.replyingTo", { name })}</span> {quoteWords(t, answering)}
+            </>
+          ) : (
+            <>
+              <b>{last.mine ? t("chat.you") : name}</b> {quoteOf(t, last.text)}
+            </>
+          )}
         </p>
       )}
       <form className="profile-editor profile-editor-tv list-editor-tv chat-editor-tv" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-form">

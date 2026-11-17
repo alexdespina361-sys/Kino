@@ -100,6 +100,12 @@ describe("the messages", () => {
     expect(dayOf(day(14), now, "ro")).toMatch(/14.*oct/i);
     expect(dayOf(day(18), now, "it")).toBe("oggi");
     expect(dayOf(day(14), now, "it")).toMatch(/14.*ott/i);
+    expect(dayOf(day(14), now, "en")).not.toMatch(/2026/);
+    // (a day of another year says which: on 5 Jan, 26 Dec is last year's)
+    const january = new Date(2027, 0, 5, 12).getTime();
+    expect(dayOf(new Date(2026, 11, 26, 12).getTime(), january, "en")).toMatch(/26.*Dec.*2026/);
+    expect(dayOf(new Date(2026, 11, 26, 12).getTime(), january, "ro")).toMatch(/2026/);
+    expect(dayOf(new Date(2027, 0, 2, 12).getTime(), january, "en")).not.toMatch(/2027/);
   });
 
   it("say nothing for a time that is not one", () => {

@@ -2,15 +2,16 @@ import { ChatMuteSchema, ChatReportPreviewSchema, ChatThreadSchema, type ChatRea
 import { ask, request } from "../account/api";
 
 const base = (profileId: string, friendId: string) => `/api/profiles/${encodeURIComponent(profileId)}/friends/${encodeURIComponent(friendId)}/chat`;
+const answering = (replyTo: number | undefined) => (replyTo === undefined ? {} : { replyTo });
 
 /** What the server says about the chat of a profile with one of its friends (routes: server/accounts/chatRoutes.ts). */
 export const chatApi = {
   /** The chat. With the revision the page has, the answer has no messages when nothing changed. Asking is having seen it. */
   read: (profileId: string, friendId: string, since?: number) => ask(ChatThreadSchema, "GET", `${base(profileId, friendId)}${since === undefined ? "" : `?since=${since}&reactions=1`}`),
-  /** Write to the friend: the answer is the chat, with the message in it. */
-  send: (profileId: string, friendId: string, text: string) => ask(ChatThreadSchema, "POST", base(profileId, friendId), { text }),
+  /** Write to the friend: the answer is the chat, with the message in it. `replyTo`: the message it answers. */
+  send: (profileId: string, friendId: string, text: string, replyTo?: number) => ask(ChatThreadSchema, "POST", base(profileId, friendId), { text, ...answering(replyTo) }),
   /** Send one of one's personal stickers (its name): the answer is the chat, with it in it. */
-  sendSticker: (profileId: string, friendId: string, id: string) => ask(ChatThreadSchema, "POST", `${base(profileId, friendId)}/sticker`, { id }),
+  sendSticker: (profileId: string, friendId: string, id: string, replyTo?: number) => ask(ChatThreadSchema, "POST", `${base(profileId, friendId)}/sticker`, { id, ...answering(replyTo) }),
   /** Take back one of one's own messages: gone for both. The answer is the chat. */
   takeBack: (profileId: string, friendId: string, id: number) => ask(ChatThreadSchema, "DELETE", `${base(profileId, friendId)}/${id}`),
   /** Put a reaction on a message (one's own or the friend's), change it, or take it away (null). The answer is the chat. */

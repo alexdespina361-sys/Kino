@@ -176,7 +176,19 @@ describe("writing and reading", () => {
     expect((await alex.call("POST", alex.chatWith(sam), {})).data).toEqual({ error: "invalid_request" });
     expect((await alex.call("POST", alex.chatWith(sam), { text: 5 })).statusCode).toBe(400);
     expect((await alex.call("POST", alex.chatWith(sam), { text: "x".repeat(CHAT_TEXT_MAX * 4 + 1) })).statusCode).toBe(400);
+    for (const replyTo of ["1", -1, 1.5, null]) expect((await alex.call("POST", alex.chatWith(sam), { text: "hi", replyTo })).statusCode, JSON.stringify(replyTo)).toBe(400);
     expect((await alex.call("GET", alex.chatWith(sam))).data.lines).toEqual([]);
+  });
+
+  it("may answer a message: the answer names it for both, and one that answers a message not there goes without the quote", async () => {
+    const { alex, sam } = await friends();
+    const asked = ((await write(sam, alex, "pizza?")).data as ChatThread).lines![0]!.id;
+    const answered = (await alex.call("POST", alex.chatWith(sam), { text: "yes", replyTo: asked })).data as ChatThread;
+    expect(answered.lines!.at(-1)).toMatchObject({ text: "yes", replyTo: asked });
+    expect(((await sam.call("GET", sam.chatWith(alex))).data as ChatThread).lines!.at(-1)).toMatchObject({ text: "yes", mine: false, replyTo: asked });
+    const stray = (await alex.call("POST", alex.chatWith(sam), { text: "what?", replyTo: asked + 999 })).data as ChatThread;
+    expect(stray.lines!.at(-1)!.text).toBe("what?");
+    expect(stray.lines!.at(-1)).not.toHaveProperty("replyTo");
   });
 
   it("is refused for a friend who does not take messages, with a plain answer, while the chat can still be read", async () => {
@@ -324,6 +336,8 @@ describe("reactions", () => {
     const id = ((await write(sam, alex, "hi")).data as ChatThread).lines![0]!.id;
     expect((await react(alex, sam, id, "\u{1F680}")).statusCode).toBe(400);
     expect((await react(alex, sam, id, "<b>x</b>")).statusCode).toBe(400);
+    // (one of the sixteen behind the +)
+    expect((await react(alex, sam, id, "\u{1F37F}")).data.lines[0]).toMatchObject({ myReaction: "\u{1F37F}" });
     expect((await alex.call("PUT", alex.chatWith(sam, `/${id}/reaction`), {})).statusCode).toBe(400);
     expect((await react(alex, sam, id + 999, HEART)).data).toEqual({ error: "gone" });
     expect((await alex.call("PUT", alex.chatWith(sam, "/abc/reaction"), { reaction: HEART })).statusCode).toBe(404);

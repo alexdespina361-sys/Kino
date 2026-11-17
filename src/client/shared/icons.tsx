@@ -522,6 +522,14 @@ export const MoreIcon = (props: Props) => (
   </Icon>
 );
 
+/** Answering a message: an arrow that turns back (the chat's Reply). */
+export const ReplyIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Icon>
+);
+
 export const SendIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M21 3 10.4 13.6M21 3l-6.6 18-4-7.4L3 9.6z" />

@@ -573,4 +573,66 @@ describe("reactions", () => {
     expect(value(chat.readSince("alex", "sam", 9, true)).reactions).toBeUndefined();
     expect(value(chat.readSince("alex", "sam", 4, true)).lines).toHaveLength(2); // (older than what was said)
   });
+
+  it("are the six of every day and sixteen more behind the +, and nothing else", () => {
+    const { chat, host } = trio();
+    const id = value(chat.send("sam", "alex", "hi")).lines[0]!.id;
+    expect(value(chat.react("alex", "sam", id, "\u{1F37F}")).lines[0]).toMatchObject({ myReaction: "\u{1F37F}" });
+    // (one of the sixteen, kept and read back)
+    const back = new ChatBook(host);
+    back.load("chat:alex:sam", JSON.parse(JSON.stringify(chat.docFor("chat:alex:sam"))));
+    expect(value(back.read("sam", "alex")).lines[0]).toMatchObject({ theirReaction: "\u{1F37F}" });
+  });
+});
+
+describe("answering a message", () => {
+  it("names the message it answers, for both, and a sticker can answer too", () => {
+    const { chat } = trio();
+    const asked = value(chat.send("sam", "alex", "pizza tonight?")).lines[0]!.id;
+    const answer = value(chat.send("alex", "sam", "yes!", asked)).lines.at(-1)!;
+    expect(answer).toMatchObject({ text: "yes!", mine: true, replyTo: asked });
+    expect(value(chat.read("sam", "alex")).lines.at(-1)).toMatchObject({ text: "yes!", mine: false, replyTo: asked });
+    // (a message that answers nothing names nothing)
+    expect(value(chat.send("sam", "alex", "ok")).lines.at(-1)).not.toHaveProperty("replyTo");
+  });
+
+  it("goes without the quote when the message it answers is not there: never written, or taken back while the answer was written", () => {
+    const { chat } = trio();
+    const asked = value(chat.send("sam", "alex", "pizza tonight?")).lines[0]!.id;
+    expect(value(chat.send("alex", "sam", "what?", asked + 50)).lines.at(-1)).not.toHaveProperty("replyTo");
+    value(chat.takeBack("sam", "alex", asked));
+    const late = value(chat.send("alex", "sam", "yes!", asked)).lines.at(-1)!;
+    expect(late.text).toBe("yes!");
+    expect(late).not.toHaveProperty("replyTo");
+  });
+
+  it("keeps no word of the quoted message: it names it by its number, and one taken back later is gone from the answer's screen too", () => {
+    const { chat } = trio();
+    const asked = value(chat.send("sam", "alex", "secret")).lines[0]!.id;
+    value(chat.send("alex", "sam", "got it", asked));
+    expect(JSON.stringify(chat.docFor("chat:alex:sam"))).not.toMatch(/secret[\s\S]*secret/);
+    value(chat.takeBack("sam", "alex", asked));
+    const lines = value(chat.read("alex", "sam")).lines;
+    expect(lines.map((line) => line.text)).toEqual(["got it"]);
+    expect(lines.some((line) => line.id === asked)).toBe(false); // (the screen finds no line to quote, so it quotes nothing)
+  });
+
+  it("is not part of a report: the team reads what was said, not what it answered", () => {
+    const { chat } = trio();
+    const asked = value(chat.send("sam", "alex", "one")).lines[0]!.id;
+    value(chat.send("alex", "sam", "two", asked));
+    expect(value(chat.lastLines("alex", "sam")).lines.every((line) => !("replyTo" in line))).toBe(true);
+  });
+
+  it("is read back as it was kept, and a kept quote that is not one (not a number, or not an earlier message) is let go and the message stays", () => {
+    const { chat, clock } = trio();
+    const at = clock.now - 1000;
+    const kept = (q: unknown) => ({ v: 1, a: "alex", b: "sam", rev: 6, lines: [{ n: 5, from: "sam", at, text: "hi" }, { n: 6, from: "alex", at, text: "yo", q }], seen: {}, muted: [] });
+    chat.load("chat:alex:sam", kept(5));
+    expect(value(chat.read("alex", "sam")).lines.at(-1)).toMatchObject({ id: 6, text: "yo", replyTo: 5 });
+    for (const nonsense of ["5", -1, 6, 7, 1.5, null, Number.MAX_SAFE_INTEGER + 2]) {
+      expect(() => chat.load("chat:alex:sam", kept(nonsense)), JSON.stringify(nonsense)).not.toThrow();
+      expect(value(chat.read("alex", "sam")).lines.at(-1), JSON.stringify(nonsense)).toEqual({ id: 6, at, mine: true, text: "yo" });
+    }
+  });
 });

@@ -62,6 +62,8 @@ interface Written {
   rr?: number;
   /** A personal sticker (shared/stickers.ts): its name; the text is then `PERSONAL_STICKER_TEXT`. The line keeps no hold on the picture (stickers.ts). */
   s?: string;
+  /** The `n` of the message this one answers (`ChatLine.replyTo`): nothing of what it said is kept here, so a message taken back lives on in no quote. */
+  q?: number;
 }
 
 /** What is kept of a pair. (`said` and the reactions came later, and are optional: a server from before them still reads the document, and ignores them.) */
@@ -125,6 +127,8 @@ export class ChatBook {
     }
     // (A sticker's name that is not one is let go: the line is then its words.)
     for (const line of doc.lines) if (line.s !== undefined && !isStickerId(line.s)) delete line.s;
+    // (A quote that is not one is let go: the line is a message that answers nothing.)
+    for (const line of doc.lines) if (line.q !== undefined && !(Number.isSafeInteger(line.q) && line.q >= 0 && line.q < line.n)) delete line.q;
     if (typeof doc.said !== "number") doc.said = doc.rev;
     // (A line whose reactions last changed nobody knows when, as of now: a screen that has an older revision is told its reactions, which is a few bytes and
     // never wrong. See `readSince`.)
@@ -215,6 +219,7 @@ export class ChatBook {
           ...(isChatReaction(mineOn) ? { myReaction: mineOn } : {}),
           ...(isChatReaction(theirsOn) ? { theirReaction: theirsOn } : {}),
           ...(line.s ? { sticker: line.s } : {}),
+          ...(line.q !== undefined ? { replyTo: line.q } : {}),
         };
       }),
     };
@@ -268,17 +273,17 @@ export class ChatBook {
    * `from` writes to `to`. Friends only, and only to one who takes messages; the text is made fit to show and measured; so many a minute from one
    * sender. A message counts as seen by its writer, who had the chat open to write it.
    */
-  send(from: string, to: string, raw: string): ChatOutcome<ChatView> {
+  send(from: string, to: string, raw: string, replyTo?: number): ChatOutcome<ChatView> {
     const checked = checkChatText(raw);
-    return this.write(from, to, checked.ok ? { text: checked.text } : checked.error);
+    return this.write(from, to, checked.ok ? { text: checked.text } : checked.error, replyTo);
   }
 
   /**
    * `from` sends `to` one of its personal stickers (the routes have checked that it has it: see stickers.ts). It is a message as any other (the same rules,
    * the same count a minute), whose words are `PERSONAL_STICKER_TEXT`.
    */
-  sendSticker(from: string, to: string, id: string): ChatOutcome<ChatView> {
-    return this.write(from, to, isStickerId(id) ? { text: PERSONAL_STICKER_TEXT, s: id } : "gone");
+  sendSticker(from: string, to: string, id: string, replyTo?: number): ChatOutcome<ChatView> {
+    return this.write(from, to, isStickerId(id) ? { text: PERSONAL_STICKER_TEXT, s: id } : "gone", replyTo);
   }
 
   /** Whether a personal sticker was sent in the chat of two friends (and is still in it): only then may either of them see it there, or save it. */
@@ -287,7 +292,11 @@ export class ChatBook {
     return this.find(me, friend)?.lines.some((line) => line.s === id) ?? false;
   }
 
-  private write(from: string, to: string, said: { text: string; s?: string } | ChatError): ChatOutcome<ChatView> {
+  /**
+   * (`replyTo`: the message it answers. One that is not in the chat now - taken back, or let go, while the answer was being written - is not quoted, and the
+   * message goes all the same: what was written is not lost for it.)
+   */
+  private write(from: string, to: string, said: { text: string; s?: string } | ChatError, replyTo?: number): ChatOutcome<ChatView> {
     if (!this.friendly(from, to)) return no("not_friends");
     if (!this.host.on(from)) return no("friends_off");
     if (!this.host.takes(to)) return no("chat_off");
@@ -297,8 +306,9 @@ export class ChatBook {
     this.sends.hit(from);
     const doc = this.make(from, to);
     const n = this.next(doc);
+    const quoted = replyTo !== undefined && doc.lines.some((line) => line.n === replyTo);
     doc.rev = n;
-    doc.lines = [...doc.lines, { n, from, at: this.host.now(), ...said, rr: n }].slice(-CHAT_KEEP_MAX);
+    doc.lines = [...doc.lines, { n, from, at: this.host.now(), ...said, ...(quoted ? { q: replyTo } : {}), rr: n }].slice(-CHAT_KEEP_MAX);
     doc.said = n;
     doc.seen[from] = n;
     this.host.touch(keyOf(from, to));

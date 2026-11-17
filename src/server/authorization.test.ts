@@ -496,6 +496,7 @@ const PUBLIC: Record<string, string> = {
     "Google's way back: it does something only for the browser that holds the flow's cookie, and connects or confirms only for the account that started the flow (google.test.ts)",
   "GET /api/auth/google/app-claim":
     "the Android app's way back from Google: it signs in only with a code that is good once, for two minutes, and the secret of the app that started the trip (google.test.ts)",
+  "GET /api/build": "which build of the page the server serves now (the name of its script, as the page itself says it): the same for everybody",
   "GET /api/app/android": "which version of the Android app is the newest: the same for everybody",
   "GET /app/android/:file": "the Android app itself: the same for everybody",
   "GET /app/kino.apk": "the newest Android app under one address: the same for everybody",
