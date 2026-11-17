@@ -255,13 +255,14 @@ export function extractSrtFromZip(zipBuf: Buffer): Array<{ name: string; content
 }
 
 /**
- * Checks if a filename matches the requested season and episode.
+ * A title's words as a site's address writes them: lower case, without accents or apostrophes, only letters and digits ("Amélie" is `amelie`,
+ * "Schindler's List" is `schindlers list`).
  */
-/** A title's words as a site's address writes them: lower case, without accents, only letters and digits ("Amélie" is `amelie`). */
 export const wordsOf = (text: string): string[] =>
   text
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
+    .replace(/['’`]/g, "")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
@@ -269,9 +270,11 @@ export const wordsOf = (text: string): string[] =>
 /** A file of an archive that its name says is English and not Romanian too ("Thrones" and "Bros" say neither: the judge, 17 Nov). */
 export const isEnglishFile = (name: string): boolean => {
   const words = wordsOf(name);
-  return words.some((word) => word === "english" || word === "eng" || word === "en") && !words.some((word) => ["ro", "rom", "romana", "romanian", "romaneste"].includes(word));
+  // ("en" alone is not taken for English: it is a word of Romanian and French names too.)
+  return words.some((word) => word === "english" || word === "eng") && !words.some((word) => ["ro", "rom", "romana", "romanian", "romaneste"].includes(word));
 };
 
+/** Checks if a filename matches the requested season and episode. */
 export function matchesEpisode(fileName: string, season: number, episode: number): boolean {
   const base = fileName.toLowerCase();
   const sep = "[\\s._-]*";
@@ -466,7 +469,9 @@ export class RomanianSubtitleManager {
       const words = wordsOf(slugBase);
       const from = (at: number) => at >= 0 && target.every((word, n) => words[at + n] === word);
       const after = words[target.length];
-      return (from(0) && (after === undefined || /^(sezon|sezonul|season|seria|s\d+)$/.test(after))) || from(words.length - target.length);
+      // (At the end only for a title of two words or more, or with the year agreeing: "her" would be the end of "kill-her" and of any film.)
+      const atEnd = (target.length >= 2 || (targetYear !== undefined && slugYear !== undefined)) && from(words.length - target.length);
+      return (from(0) && (after === undefined || /^(sezon|sezonul|season|seria|s\d+)$/.test(after))) || atEnd;
     });
     const chosenMatches = (filteredMatches.length > 0 ? filteredMatches : (imdbId ? matches : [])).slice(0, 3);
 

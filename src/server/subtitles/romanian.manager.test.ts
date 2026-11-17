@@ -83,10 +83,26 @@ describe("a title with no IMDb id, matched by its name (the judge, 17 Nov)", () 
     expect(asked.filter((url) => url.includes("/descarca/amelie-goes-home") || url.includes("/descarca/amelie-1980") || url.endsWith("z.zip"))).toEqual([]);
   });
 
+  it("takes a one-word title at an address's end only with the year agreeing, and reads a title's apostrophes as the addresses do", async () => {
+    const answer = (slugs: string[]) =>
+      (async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url === "https://subs.ro/cautare") return new Response('<input name="antispam" value="x">', { headers: { "set-cookie": "s=1" } });
+        if (url === "https://subs.ro/ajax/search") return new Response(slugs.map((slug) => `<a href="https://subs.ro/subtitrare/${slug}">x</a>`).join(""));
+        if (url.startsWith("https://subs.ro/subtitrare/descarca/")) return new Response(new Uint8Array(zipOf(`${url.split("/").at(-2)}.srt`, srt(`Text ${url.split("/").at(-1)}`))));
+        return new Response("not found", { status: 404 });
+      }) as typeof globalThis.fetch;
+    const her = await new RomanianSubtitleManager(undefined, answer(["her/31", "kill-her/32"])).getSubtitles({ title: "Her" });
+    expect(her.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · her"]);
+    const list = await new RomanianSubtitleManager(undefined, answer(["schindlers-list-1993/41"])).getSubtitles({ title: "Schindler's List", year: 1993 });
+    expect(list.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · schindlers-list-1993"]);
+  });
+
   it("tells an English file of an archive by its words, and keeps Thrones and Bros", () => {
     expect(isEnglishFile("Show.S01E01.English.srt")).toBe(true);
     expect(isEnglishFile("Show.S01E01.eng.srt")).toBe(true);
-    expect(isEnglishFile("Show.S01E01.en.srt")).toBe(true);
+    expect(isEnglishFile("Show.S01E01.en.srt")).toBe(false); // ("en" is a word of other names too: the judge, 17 Nov)
+    expect(isEnglishFile("Un.Homme.en.Colere.2021.srt")).toBe(false);
     expect(isEnglishFile("Show.S01E01.English.ro.srt")).toBe(false);
     expect(isEnglishFile("Game.of.Thrones.S01E01.English.srt")).toBe(true); // (it was let through as Romanian: "thRONes")
     expect(isEnglishFile("Game.of.Thrones.S01E01.srt")).toBe(false);

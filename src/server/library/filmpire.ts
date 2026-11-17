@@ -484,7 +484,6 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const get = options.fetch ?? providerFetch();
   const timeoutMs = options.timeoutMs ?? 10_000;
   const probeCache = new Map<string, ProbeRecord>();
-  const preloadedSeasons = new Map<number, number[]>();
   const now = options.now ?? Date.now;
   const shouldVerify = options.verifyPlayback ?? (process.env.FILTER_UNPLAYABLE !== "0" && (!options.fetch || options.probeFetch !== undefined));
   const shouldFilterTrash = options.filterTrash ?? (process.env.FILTER_TRASH !== "0" && (!options.fetch || options.probeFetch !== undefined));
@@ -520,12 +519,6 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     if (!res.ok) throw new Error(`episodes: HTTP ${res.status}`);
     return TmdbSeasonSchema.parse(await res.json()).episodes;
   };
-  /**
-   * The parts a show is played in when TMDB keeps it as one long season and the players number it in seasons (JJK: TMDB's one season of 59, the
-   * players' seasons of 24 and more): the seasons the video check told of when it told of more than one, beginning with 1; else, for a season of
-   * more than 30 episodes, parts of 24. Null for any other show, which is listed as TMDB lists it. `seasons` and `episodes` both go by this, so
-   * the list of seasons and the episodes of each agree.
-   */
   /**
    * Whether a film can be watched at home yet: TMDB has a digital, physical or TV release of it (types 4, 5, 6) dated by now, in any country.
    * Remembered for twelve hours, for so many films. A question that has no answer says yes, and nothing is remembered: a bad moment of TMDB's
@@ -574,29 +567,62 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     );
     return results.filter((_, at) => kept[at]);
   };
+  /** How many episodes of a show's season 1 are out by today (remembered as long as the show's seasons are). */
+  const aired = new Map<number, { at: number; count: number }>();
+  const airedOf = async (id: number): Promise<number> => {
+    const kept = aired.get(id);
+    if (kept && now() - kept.at < PROBE_TTL_MS) return kept.count;
+    const day = today();
+    const count = ((await seasonOf(id, 1)) ?? []).filter((episode) => !(episode.air_date && episode.air_date > day)).length;
+    remember(aired, id, { at: now(), count }, MAX_PRELOADED_SEASONS);
+    return count;
+  };
+  /**
+   * The parts a show is played in when TMDB keeps it as one long season and the players number it in seasons (JJK: TMDB's one season of 59, the
+   * players' seasons of 24 and more): the seasons the video check told of when they are 1, 2, 3... with none missing; else, for a season of
+   * more than 30 episodes, parts of 24. Cut over the episodes out by today, the last part taking what is left. Null for any other show, which is
+   * listed as TMDB lists it. `seasons` and `episodes` both go by this, so the list of seasons and the episodes of each agree; when the video
+   * check gives no answer it throws, rather than cut the show one way now and another next time.
+   */
   const partsOf = async (id: number, show: ShowPart[]): Promise<ShowPart[] | null> => {
     if (show.length !== 1 || show[0]!.season !== 1) return null;
-    let counts = preloadedSeasonCounts.get(id);
-    if (!counts && shouldVerify) {
-      try {
-        const probe = await probePlayback(id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
-        if (probe.seasonCounts) {
-          counts = probe.seasonCounts;
-          remember(preloadedSeasonCounts, id, counts, MAX_PRELOADED_SEASONS);
-        }
-        if (probe.seasons && probe.seasons.length > 0) remember(preloadedSeasons, id, probe.seasons, MAX_PRELOADED_SEASONS);
-      } catch {
-        // (no word from the check: the show is cut as if it had said nothing)
+    let counts: Record<number, number> | undefined;
+    if (shouldVerify) {
+      const probe = await probePlayback(id, "tv", probeFetcher, probeCache, now, 5000, probeSlots);
+      // (A check with no answer - no turn in time, a timeout, a bad answer - writes nothing down. Cutting the show then as if it had said nothing
+      // could cut it one way for its seasons and another for its episodes, and lose an episode or list one twice: the question fails instead, and
+      // is asked again. The judge, 17 Nov.)
+      // (A season of 30 or fewer is then listed whole, as most one-season shows are: a page of seasons does not fail for a busy moment.)
+      const record = probeCache.get(`tv:${id}`);
+      if (!record || now() - record.checkedAt >= PROBE_TTL_MS) {
+        if (show[0]!.episodes <= 30) return null;
+        throw new Error("parts: the video check gave no answer");
       }
+      counts = probe.seasonCounts;
+      if (probe.seasons && probe.seasons.length > 0) remember(preloadedSeasons, id, probe.seasons, MAX_PRELOADED_SEASONS);
+    } else {
+      counts = preloadedSeasonCounts.get(id);
     }
     const told = Object.entries(counts ?? {})
       .map(([season, episodes]) => ({ season: Number(season), episodes }))
       .filter((part) => Number.isInteger(part.season) && part.season >= 1 && Number.isInteger(part.episodes) && part.episodes > 0)
       .sort((a, b) => a.season - b.season);
-    if (told[0]?.season === 1) return told.length > 1 ? told : null; // (the players have it as one season too: TMDB's, whole)
-    const total = show[0]!.episodes;
-    if (total <= 30) return null;
-    return Array.from({ length: Math.ceil(total / 24) }, (_, at) => ({ season: at + 1, episodes: Math.min(24, total - at * 24) }));
+    if (told.length === 1 && told[0]!.season === 1) return null; // (the players have it as one season too: TMDB's, whole)
+    // (the players' seasons only when they are 1, 2, 3... with none missing: with a gap, a part would be called by a number they give another)
+    const theirs = told.length > 1 && told.every((part, at) => part.season === at + 1);
+    if (!theirs && show[0]!.episodes <= 30) return null; // (whether a show is cut goes by TMDB's whole season, so it does not change as episodes come out)
+    const out = await airedOf(id);
+    const planned = theirs ? told.map((part) => ({ ...part })) : Array.from({ length: Math.ceil(out / 24) }, (_, at) => ({ season: at + 1, episodes: 24 }));
+    // (The parts are cut over the episodes that are out: none is empty, and what TMDB has beyond the players' seasons goes into the last one.)
+    const parts: ShowPart[] = [];
+    let from = 0;
+    for (const [at, part] of planned.entries()) {
+      if (from >= out) break;
+      const episodes = at === planned.length - 1 ? out - from : Math.min(part.episodes, out - from);
+      parts.push({ season: part.season, episodes });
+      from += episodes;
+    }
+    return parts.length > 0 ? parts : null;
   };
 
   const shelfGroups = options.shelves ?? SHELF_GROUPS;

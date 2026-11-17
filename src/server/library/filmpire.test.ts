@@ -1042,6 +1042,43 @@ describe("filmpireSource episodes", () => {
       expect(seasons).toEqual([1, 2]);
       expect(lists.map((list) => list.length)).toEqual([10, 12]);
     });
+
+    const told = (eps: object) => vi.fn(async () => json({ status_code: "200", data: { title: "Show", eps } }));
+    const run = (count: number) => Array.from({ length: count }, String);
+
+    it("of 59 the check told of with a season missing (1, 2, 4): parts of 24, not the players' numbers", async () => {
+      const source = filmpireSource({ fetch: tmdb({ 1: 59 }) as never, probeFetch: told({ "1": run(24), "2": run(24), "4": run(11) }) as never, verifyPlayback: true, filterTrash: false });
+      const { seasons, lists } = await all(source, 95481);
+      expect(seasons).toEqual([1, 2, 3]);
+      expect(lists.map((list) => list.length)).toEqual([24, 24, 11]);
+    });
+
+    it("of 59 the check told of as 24 and 23: the last part takes the episodes beyond them, so none is lost", async () => {
+      const source = filmpireSource({ fetch: tmdb({ 1: 59 }) as never, probeFetch: told({ "1": run(24), "2": run(23) }) as never, verifyPlayback: true, filterTrash: false });
+      const { seasons, lists } = await all(source, 95482);
+      expect(seasons).toEqual([1, 2]);
+      expect(lists.map((list) => list.length)).toEqual([24, 35]);
+      expect(lists.flat().map((episode) => episode.title)).toEqual(episodesOf(59).map((episode) => episode.name));
+    });
+
+    it("of 59 with the last 5 not out yet: parts over the 54 that are out", async () => {
+      const get = vi.fn(async (url: string | URL) => {
+        if (/\/season\/1\?/.test(String(url))) return json({ episodes: episodesOf(59).map((episode, at) => ({ ...episode, air_date: at < 54 ? "2020-01-01" : "2999-01-01" })) });
+        return json({ seasons: [{ season_number: 1, episode_count: 59 }] });
+      });
+      const { seasons, lists } = await all(filmpireSource({ fetch: get as never }), 95483);
+      expect(seasons).toEqual([1, 2, 3]);
+      expect(lists.map((list) => list.length)).toEqual([24, 24, 6]);
+    });
+
+    it("when the check gives no answer: a long season fails (asked again later, never cut two ways); a short one is listed whole", async () => {
+      const silent = vi.fn(async () => Promise.reject(new Error("offline")));
+      const long = filmpireSource({ fetch: tmdb({ 1: 59 }) as never, probeFetch: silent as never, verifyPlayback: true, filterTrash: false });
+      await expect(long.seasons!("https://filmpire.sc/watch/95484?type=series")).rejects.toThrow();
+      await expect(long.episodes!("https://filmpire.sc/watch/95484?type=series", 2)).rejects.toThrow();
+      const short = filmpireSource({ fetch: tmdb({ 1: 12 }) as never, probeFetch: silent as never, verifyPlayback: true, filterTrash: false });
+      expect((await all(short, 95485)).lists.map((list) => list.length)).toEqual([12]);
+    });
   });
 
   it("knows nothing of films or of other places' links, and says so without asking anyone", async () => {

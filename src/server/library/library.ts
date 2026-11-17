@@ -378,7 +378,8 @@ export function createLibrary(options: LibraryOptions): LibraryService {
         return item ? [item] : [];
       });
       if (!found) return null;
-      learn([found]);
+      // (Not learnt into the pool that a search reads: a title looked up by its id is not sifted as the lists are, and a soap opened from a
+      // card would then be in everybody's search. The judge, 17 Nov.)
       return listed(found) ? found : null;
     },
     known: (id: string) => pool.get(id),
