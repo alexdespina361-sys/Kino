@@ -1,4 +1,5 @@
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { isAppStart } from "./accounts/google";
 import { RateLimiter } from "./accounts/rateLimit";
 
 const MINUTE = 60_000;
@@ -64,7 +65,8 @@ const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/lib
  * friends see it online, a chat being open is what has been seen in it, a tag or a code of an invitation that nobody has counts as a wrong guess, and each of them takes from the allowance of
  * reads), the lookup of the code of a link, and the visitor's own reports (which take from the address's allowance of reads). A link leads to none of them, so nothing but this site's own
  * pages may ask. (A route is told by the start of its path, so one that is added to these is covered at once.) The start of a sign-in with Google is one too: it is only ever this site's
- * own button, and each one keeps a flow and takes from the address's allowance of them.
+ * own button, and each one keeps a flow and takes from the address's allowance of them; but the Android app's own trip (`isAppStart`) is let in as a navigation, as the
+ * phone's browser the app opens it in says it comes from another site.
  */
 const COUNTED_PREFIXES = ["/api/profiles/", "/api/link/"];
 const COUNTED_ROUTES = new Set(["/api/feedback/mine", "/api/auth/google/start", "/api/auth/google/app-claim"]);
@@ -103,7 +105,10 @@ export function sameSiteGate(app: FastifyInstance): void {
     const elsewhere = site === "cross-site" || site === "same-site";
     let refused: boolean;
     if (request.method === "GET" || request.method === "HEAD") {
-      refused = elsewhere && (counts(route) || (FETCHES.has(route) && request.headers["sec-fetch-mode"] !== "navigate"));
+      const navigation = request.headers["sec-fetch-mode"] === "navigate";
+      // (The app's trip to Google, in the phone's browser: a page of its own, never a frame.)
+      const appTrip = route === "/api/auth/google/start" && navigation && (request.headers["sec-fetch-dest"] ?? "document") === "document" && isAppStart((request.query ?? {}) as Record<string, unknown>);
+      refused = elsewhere && !appTrip && (counts(route) || (FETCHES.has(route) && !navigation));
     } else {
       const { origin, host } = request.headers;
       refused = elsewhere || (site !== "same-origin" && origin !== undefined && !isOwnOrigin(origin, host));

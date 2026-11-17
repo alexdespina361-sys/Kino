@@ -19,6 +19,8 @@ const CLIENT_SECRET = "test-client-secret-that-is-not-real";
 const SITE = "kino.test";
 const OTHER = "kino-other.test";
 const FROM_GOOGLE = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
+/** What the phone's browser says of a page the Android app opens in it (a Custom Tab, with the app as its referrer). */
+const FROM_THE_APP = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
 /** Google's number for a person is about 21 digits: these cannot turn up in an answer by chance. */
 const ANA = "110248000000000000000001";
 const BEN = "110248000000000000000002";
@@ -826,10 +828,13 @@ describe("signing in with Google from the Android app", () => {
     return { verifier, challenge: s256(verifier) };
   };
 
-  /** The trip in the phone's browser (a Custom Tab: cookies of its own, no session), from the start with `app=` (or a ticket) to the way back to the app. */
-  async function viaAppBrowser(app: FastifyInstance, start: string, sub = ANA) {
+  /**
+   * The trip in the phone's browser (a Custom Tab: cookies of its own, no session), from the start with `app=` (or a ticket) to the way back to the app. Chrome says
+   * the start comes from another site: the app that opened the tab is its referrer (the owner's phone, 17 Nov: `{"error":"cross_site"}`).
+   */
+  async function viaAppBrowser(app: FastifyInstance, start: string, sub = ANA, from: Record<string, string> = FROM_THE_APP) {
     const tab = new Browser(app);
-    const first = await tab.get(start, { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" });
+    const first = await tab.get(start, from);
     expect(first.statusCode).toBe(302);
     const to = new URL(String(first.headers.location));
     const code = google.issue({
@@ -849,6 +854,36 @@ describe("signing in with Google from the Android app", () => {
     expect(url.searchParams.get("trip")).toMatch(/^[\w-]{16}$/);
     return url.searchParams.get("code") ?? "";
   };
+
+  it("is let in from the app's browser, which says it comes from another site, but only as a page of its own, and only the app's own trip", async () => {
+    const { app } = await site();
+    const { challenge } = appSecret();
+    const tab = new Browser(app);
+    for (const headers of [FROM_THE_APP, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" }, { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" }, {}] as Record<string, string>[]) {
+      const started = await tab.get(`/api/auth/google/start?device=remote&next=%2F&app=${challenge}`, headers);
+      expect([started.statusCode, String(started.headers.location)]).toEqual([302, expect.stringMatching(/^https:\/\/accounts\.google\.com\//)]);
+    }
+    // (A ticket that is not one is let in, and goes back saying so: nothing is started.)
+    const stale = await tab.get(`/api/auth/google/start?ticket=${"x".repeat(43)}`, FROM_THE_APP);
+    expect([stale.statusCode, stale.headers.location, stale.headers["set-cookie"]]).toEqual([302, "/?google=failed", undefined]);
+    for (const [start, headers] of [
+      // not the app's trip: another mode, no hash or not one, a hash given twice
+      ["/api/auth/google/start?device=remote&next=%2F", FROM_THE_APP],
+      [`/api/auth/google/start?mode=link&app=${challenge}`, FROM_THE_APP],
+      [`/api/auth/google/start?mode=reauth&app=${challenge}`, FROM_THE_APP],
+      [`/api/auth/google/start?app=${challenge.slice(1)}`, FROM_THE_APP],
+      [`/api/auth/google/start?app=${challenge}&app=${challenge}`, FROM_THE_APP],
+      ["/api/auth/google/start?ticket=", FROM_THE_APP],
+      // not a page of its own
+      [`/api/auth/google/start?app=${challenge}`, { ...FROM_THE_APP, "sec-fetch-dest": "iframe" }],
+      [`/api/auth/google/start?app=${challenge}`, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", "sec-fetch-dest": "image" }],
+      [`/api/auth/google/start?app=${challenge}`, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" }],
+      [`/api/auth/google/start?ticket=${"x".repeat(43)}`, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" }],
+    ] as const) {
+      const refused = await tab.get(start, headers);
+      expect([refused.statusCode, refused.data, refused.headers["set-cookie"]], start).toEqual([403, { error: "cross_site" }, undefined]);
+    }
+  });
 
   it("goes out to the phone's browser and back to the app, and the WebView is signed in with the code and the app's secret: the browser itself is not", async () => {
     const { app } = await site();
@@ -983,7 +1018,8 @@ describe("signing in with Google from the Android app", () => {
 
   it("is a browser's ordinary round trip without `app=`, and `app=` that is no hash is not the app's", async () => {
     const { app } = await site();
-    const { where } = await viaAppBrowser(app, "/api/auth/google/start?device=remote&next=%2F&app=short");
+    // (from this site's own button: from another site, it is not let in at all, see above)
+    const { where } = await viaAppBrowser(app, "/api/auth/google/start?device=remote&next=%2F&app=short", ANA, { "sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate" });
     expect(where).toBe("/");
   });
 });
