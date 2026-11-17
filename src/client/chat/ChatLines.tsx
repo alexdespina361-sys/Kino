@@ -13,7 +13,7 @@ import { QuoteBlock } from "./Reply";
 import { pictureOf, toggleKept, useSavedPictures, type KeptNote } from "./saved";
 import { marked } from "./search";
 import { stickerOf, stickerSrc, type Sticker } from "./stickers";
-import { dayOf, stampOf, startsDay } from "./state";
+import { dayOf, stampOf, startsDay, ticksOf, type ChatState } from "./state";
 import { cardsOf, useChatTitle } from "./titleCache";
 import { onlyNames, titleIn, titleLabel, type OpenTitle, type TitleInText } from "./titles";
 import { formatTime } from "../shared/format";
@@ -64,6 +64,8 @@ export interface ChatLinesProps {
   /** A message to bring into view and light for a moment, as a quote's does (the gallery's): again each time `seq` changes. */
   showing?: { id: number; seq: number } | null | undefined;
   testId?: string;
+  /** How far the friend has seen one's messages, and has them: the ticks beside the time of one's own (`ticksOf`). Without it no ticks (a report). */
+  receipts?: Pick<ChatState, "theirSeen" | "theirGot"> | undefined;
 }
 
 export interface SearchFound {
@@ -112,7 +114,7 @@ export const canPick = (line: ChatLine, options: { reacts: boolean; saves: boole
  * emoji alone (stickers.ts) is the sticker, big and with no bubble. What a report would
  * send (`showWriter`) is the text alone, as it is sent.
  */
-export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, found: search, showing, testId = "chat-lines" }: ChatLinesProps) {
+export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onReact, onReply, remote = false, keyboard = false, onOpenTitle, personal, found: search, showing, testId = "chat-lines", receipts }: ChatLinesProps) {
   const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
@@ -579,7 +581,10 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
                 {/* (A message the search found has the words searched for marked, as they were written.) */}
                 {hit && search && typeof text === "string" ? <Marked text={text} query={search.query} /> : text}
               </span>
-              <span className="chat-time">{stampOf(line.at, language)}</span>
+              <span className="chat-time">
+                {stampOf(line.at, language)}
+                {line.mine && receipts && !showWriter && <Ticks count={ticksOf(receipts, line.id)} />}
+              </span>
             </>
           );
           // (The message it answers, over it, while that message is in the chat. A report sends the words alone, and shows no quote.)
@@ -654,6 +659,21 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       </ol>
       {enlarged && enlargedThere && <PictureView src={enlarged.src} alt={enlarged.alt} small={enlarged.small} onClose={() => setEnlarged(null)} />}
     </div>
+  );
+}
+
+/** One tick: a screen of the friend's has the message; two: the friend has seen it (lit). None before either (the owner, 17 Nov). */
+function Ticks({ count }: { count: 0 | 1 | 2 }) {
+  const t = useT();
+  if (count === 0) return null;
+  const label = t(count === 2 ? "chat.seen" : "chat.received");
+  return (
+    <span className={`chat-ticks${count === 2 ? " chat-ticks-seen" : ""}`} role="img" aria-label={label} title={label} data-testid="chat-ticks" data-ticks={count}>
+      <svg viewBox={count === 2 ? "0 0 22 12" : "0 0 16 12"} aria-hidden="true" focusable="false">
+        <path d="M1.5 6.5l3.6 3.6L13.5 1.6" />
+        {count === 2 && <path d="M9.3 9.4l0.7 0.7L19.5 1.6" />}
+      </svg>
+    </span>
   );
 }
 

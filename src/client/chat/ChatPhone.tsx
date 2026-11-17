@@ -197,6 +197,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               lines={state.lines}
               name={name}
               now={now}
+              receipts={state}
               picked={picked}
               onPick={setPicked}
               {...(blocked ? {} : { onReact: (id: number, reaction: ChatReaction | null) => void session.react(id, reaction), onReply: reply })}

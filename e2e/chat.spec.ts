@@ -2338,6 +2338,71 @@ test.describe("answering a message", () => {
   });
 });
 
+test.describe("the ticks on one's own messages", () => {
+  const ticks = (line: ReturnType<Page["getByTestId"]>) => line.getByTestId("chat-ticks");
+
+  test("on the phone: none while the friend's screens have not asked, one once one of them has the message, two once the friend opened the chat; the friend's messages have none, and an open chat sees at once (the owner, 17 Nov)", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann, bob } = await twoFriends(browser);
+    await openChat(ann.page);
+    await write(ann.page, "Are you there?");
+    await expect(lines(ann.page)).toHaveCount(1);
+    // (Bob's screen has not asked since: no tick, even after a few of Ann's looks at the chat)
+    await ann.page.waitForTimeout(4_000);
+    await expect(ticks(lines(ann.page).first())).toHaveCount(0);
+
+    // Bob's phone, on its home screen, asks about the friends: the message is on it, as the bell's number; Ann's open chat shows one tick
+    await look(bob.page);
+    await expect(badge(bob.page)).toHaveText("1");
+    const one = ticks(lines(ann.page).first());
+    await expect(one).toHaveAttribute("data-ticks", "1", SOON);
+    await expect(one).toHaveAttribute("aria-label", en["chat.received"]);
+    await expect(one).not.toHaveClass(/chat-ticks-seen/);
+
+    // he opens the chat: two ticks, lit
+    await bell(bob.page).click();
+    await bob.page.getByTestId("bell-chat-open").click();
+    await expect(lines(bob.page)).toHaveCount(1);
+    await expect(ticks(lines(bob.page).first())).toHaveCount(0);
+    await expect(one).toHaveAttribute("data-ticks", "2", SOON);
+    await expect(one).toHaveAttribute("aria-label", en["chat.seen"]);
+    await expect(one).toHaveClass(/chat-ticks-seen/);
+
+    // he answers into her open chat: his message is seen as soon as her chat has it
+    await write(bob.page, "Yes!");
+    await expect(lines(ann.page)).toHaveCount(2, SOON);
+    await expect(ticks(lines(ann.page).nth(1))).toHaveCount(0);
+    await expect(ticks(lines(bob.page).nth(1))).toHaveAttribute("data-ticks", "2", SOON);
+    // (and her first message keeps its two)
+    await expect(one).toHaveAttribute("data-ticks", "2");
+  });
+
+  test("on the TV's pages: the same ticks beside the time of one's own messages", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { desk: true });
+    const bob = await screenWithFriends(browser, "Bob", { desk: true });
+    await meet(ann, bob);
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await ann.page.getByTestId("tv-chat-box").click();
+    await ann.page.keyboard.type("Sunday?");
+    await ann.page.keyboard.press("Enter");
+    await expect(tvLines(ann.page)).toHaveCount(1);
+    await expect(ticks(tvLines(ann.page).first())).toHaveCount(0);
+
+    await look(bob.page);
+    await expect(ticks(tvLines(ann.page).first())).toHaveAttribute("data-ticks", "1", SOON);
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-chat").click();
+    await expect(tvLines(bob.page)).toHaveCount(1);
+    await expect(ticks(tvLines(ann.page).first())).toHaveAttribute("data-ticks", "2", SOON);
+    // (beside the time, inside the message's own line)
+    const time = tvLines(ann.page).first().locator(".chat-time");
+    await expect(time.getByTestId("chat-ticks")).toHaveCount(1);
+  });
+});
+
 /** Where `from`'s chat with `to` is asked for, and what it holds as `from` sees it. */
 const chatAddress = async (from: Page, to: Page) => `/api/profiles/${await profileOf(from)}/friends/${await profileOf(to)}/chat`;
 async function openFriendsChatOf(from: Page, to: Page): Promise<{ lines: Array<{ id: number; theirReaction?: string; replyTo?: number }> }> {

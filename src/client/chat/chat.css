@@ -42,6 +42,10 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 .chat-writer { display: block; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; opacity: 0.75; }
 .chat-text { display: block; }
 .chat-time { display: block; margin-top: 2px; font-size: 0.7em; opacity: 0.7; text-align: right; }
+/* One's own message's ticks, after its time: one when a screen of the friend's has it, two (lit) when the friend has seen it. */
+.chat-ticks { display: inline-block; margin-left: 0.35em; vertical-align: -0.1em; line-height: 0; }
+.chat-ticks svg { height: 0.95em; width: auto; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.chat-ticks-seen { color: #8fe3ff; }
 /* (A message is held to select it: the phone's own selecting of its words, and its menu for a picture, stay away. Words in a button were never selected.) */
 button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer; }
 /* What can be done with the selected message (ChatLines `PickedActions`), at the top of the chat: the phone's sheet draws them as its Mute and Report, on the

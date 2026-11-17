@@ -437,6 +437,53 @@ describe("what a report would hold", () => {
   });
 });
 
+describe("the ticks: how far the friend has one's messages, and has seen them (the owner, 17 Nov)", () => {
+  it("says received once a screen of the friend's is told of them, and seen once the friend has the chat open; muted or not", () => {
+    const { chat, clock, host, written } = trio();
+    const one = value(chat.send("alex", "sam", "one")).rev;
+    clock.now += 1000;
+    const two = value(chat.send("alex", "sam", "two")).rev;
+    const ticks = () => {
+      const { theirSeen, theirGot } = value(chat.read("alex", "sam"));
+      return { theirSeen, theirGot };
+    };
+    expect(ticks()).toEqual({ theirSeen: undefined, theirGot: undefined });
+    // a screen of Sam's asks what waits (the bell, the app): received, up to the newest
+    written.clear();
+    expect(chat.unread("sam")).toHaveLength(1);
+    expect(ticks()).toEqual({ theirSeen: undefined, theirGot: two });
+    expect([...written]).toEqual(["chat:alex:sam"]); // (kept: it survives a start)
+    written.clear();
+    chat.unread("sam");
+    expect(written.size, "asked again: nothing to write").toBe(0);
+    // Sam opens the chat: seen
+    chat.markSeen("sam", "alex");
+    expect(ticks()).toEqual({ theirSeen: two, theirGot: two });
+    // Sam has muted Alex: a new message is not waiting for Sam, but is still received (Alex is not told of the mute by a tick that never comes)
+    value(chat.mute("sam", "alex", true));
+    clock.now += 1000;
+    const three = value(chat.send("alex", "sam", "three")).rev;
+    expect(chat.unread("sam")).toEqual([]);
+    expect(ticks()).toEqual({ theirSeen: two, theirGot: three });
+    // Sam's own message: the writer had the chat open, and has seen all before it
+    clock.now += 1000;
+    const four = value(chat.send("sam", "alex", "four")).rev;
+    expect(ticks()).toEqual({ theirSeen: four, theirGot: four });
+    // Sam's view has Alex's marks: Alex saw up to Alex's own last message, and has not been told of Sam's yet
+    expect(value(chat.read("sam", "alex"))).toMatchObject({ theirSeen: three, theirGot: three });
+    expect(one).toBeLessThan(two);
+    // kept between starts, and a `got` that is not right is let go
+    const back = new ChatBook(host);
+    back.load("chat:alex:sam", JSON.parse(JSON.stringify(chat.docFor("chat:alex:sam"))));
+    expect(value(back.read("alex", "sam"))).toMatchObject({ theirSeen: four, theirGot: four });
+    const doc = JSON.parse(JSON.stringify(chat.docFor("chat:alex:sam")));
+    for (const got of [null, "x", { robin: 5 }, { sam: -1 }, { sam: "5" }]) {
+      expect(() => back.load("chat:alex:sam", { ...doc, seen: {}, got }), JSON.stringify(got)).not.toThrow();
+      expect(value(back.read("alex", "sam")).theirGot, JSON.stringify(got)).toBeUndefined();
+    }
+  });
+});
+
 describe("keeping it between starts", () => {
   it("writes down each chat as a document of its own, and reads it back as it was", () => {
     const { chat, clock, written, host } = trio();
@@ -528,7 +575,7 @@ describe("reactions", () => {
     }
     const seen = value(chat.read("alex", "sam")).rev;
     // nothing changed: the state alone
-    expect(value(chat.readSince("alex", "sam", seen, true))).toEqual({ rev: seen, open: true, muted: false });
+    expect(value(chat.readSince("alex", "sam", seen, true))).toEqual({ rev: seen, open: true, muted: false, theirSeen: expect.any(Number), theirGot: expect.any(Number) });
     // Sam puts one on, takes it off, puts another on another message: only those two, as they are now
     clock.now += 1000;
     value(chat.react("sam", "alex", ids[0]!, "\u{1F525}"));
@@ -536,7 +583,7 @@ describe("reactions", () => {
     value(chat.react("sam", "alex", ids[2]!, "\u{1F602}"));
     const now = value(chat.read("alex", "sam")).rev;
     const answer = value(chat.readSince("alex", "sam", seen, true));
-    expect(answer).toEqual({ rev: now, open: true, muted: false, reactions: [{ id: ids[0] }, { id: ids[2], theirReaction: "\u{1F602}" }] });
+    expect(answer).toEqual({ rev: now, open: true, muted: false, theirSeen: ids[2], theirGot: ids[2], reactions: [{ id: ids[0] }, { id: ids[2], theirReaction: "\u{1F602}" }] });
     // from a revision between them: only the last
     const middle = value(chat.readSince("alex", "sam", now, true));
     expect(middle.reactions).toBeUndefined();
