@@ -32,6 +32,7 @@ import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
+import { AboutText } from "./AboutText";
 import { aboutRows, useAbout } from "../shared/about";
 import { takeStrayAddress } from "../shared/strayAddress";
 import { ownTitles, useChildGate } from "../shared/childGate";
@@ -2081,7 +2082,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   </p>
                 )}
                 {about && <AboutFacts about={about} hasRoDub={detail.entry.hasRoDub || about.hasRoDub} />}
-                {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
+                {detail.entry.description && <AboutText text={detail.entry.description} className="tv-detail-about" />}
                 {about && <AboutPeople about={about} />}
                 <div className="tv-hero-actions">
                   {overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).map((action, col) => (
@@ -2385,8 +2386,8 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
   if (layout === "categories") {
     const place = PLACE_ICON[entry.id];
     const tool = TOOL_ICON[entry.id];
-    // (The posters of what is in a category, beside its name: where there is room for them, which a phone held upright has not.)
-    const fan = !compact && entry.posters !== undefined && entry.posters.length > 0;
+    // (The posters of what is in a category, beside its name: on a phone too, smaller, as on the TV - the owner, 17 Nov.)
+    const fan = entry.posters !== undefined && entry.posters.length > 0;
     return (
       <button
         className={`tv-tile tv-tile-category${entry.avatar || tool ? " tv-tile-person" : ""}${tool ? " tv-tile-tool" : ""}${place ? " tv-tile-place" : ""}${fan ? " tv-tile-fan" : ""}`}

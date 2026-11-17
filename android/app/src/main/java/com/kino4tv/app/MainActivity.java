@@ -122,6 +122,10 @@ public class MainActivity extends ComponentActivity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setSupportMultipleWindows(false);
+        // (No two-finger zoom: the pages are made for the screen, and a pinch only left them zoomed in by mistake - the owner, 17 Nov.)
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
         settings.setUserAgentString(settings.getUserAgentString() + " KinoApp/" + BuildConfig.VERSION_NAME);
         CookieManager.getInstance().setAcceptCookie(true);
         bridge = Bridge.install(this, web);

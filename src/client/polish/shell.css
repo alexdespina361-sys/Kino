@@ -451,8 +451,9 @@
 /*
  * Under 480 px tall (a phone on its side) there is no room for a bar under the page, and from 600 px wide (a tablet, a folded-out phone) a row of four is
  * spread too thin. The same four places go down the left edge, one above the other; the page is the rest, in a column no wider than a person reads.
+ * (A screen under 480 px wide is a phone held upright, however low the keyboard makes it: it keeps its bar - the owner, 17 Nov.)
  */
-@media (min-width: 600px), (max-height: 479px) {
+@media (min-width: 600px), (max-height: 479px) and (min-width: 480px) {
   :root[data-ui="polish"] .phone.shell {
     --pad: max(20px, env(safe-area-inset-right));
     --p-pad: var(--pad);

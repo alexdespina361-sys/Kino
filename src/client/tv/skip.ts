@@ -7,8 +7,8 @@ import { believableSkipTimes, mergeSkipTimes, SKIP_PARTS, skipTimesOf, type Norm
  * are) or from AniSkip, asked once the episode plays and its length is known (server/anime/skipTimes.ts), and only what can be believed for a video of that
  * length is kept (shared/skip.ts).
  *
- * - In an opening, a "previously on" or credits the button comes up: bright at first, when the remote's OK presses it and Back turns it down for this time;
- *   after a few seconds it steps back (see-through, whole again under the pointer or with the controls up), and OK is the picture's again.
+ * - In an opening, a "previously on" or credits the button comes up: bright at first, when the remote's OK presses it and Back turns it down for this time,
+ *   with a bar under its words that runs out; after five seconds it goes (back with the controls up), and OK is the picture's again (the owner, 17 Nov).
  * - With the profile's "Skip intros and credits" on, it fills up over a few seconds while the picture plays, and skips when it is full. Back stops it.
  * - Credits that run to the end of an episode with another after it are the Next episode button's (Tv.tsx, its Up Next): it comes when they start.
  * - Skipped or turned down, a part stays so for this pass: winding back into it does not skip it again, only winding back to well before it.
@@ -17,8 +17,13 @@ import { believableSkipTimes, mergeSkipTimes, SKIP_PARTS, skipTimesOf, type Norm
 
 /** How long the fill takes, while the picture plays (seconds). */
 export const AUTO_SKIP_SECONDS = 5;
-/** How long a button that just came up is bright, and the remote's OK presses it. */
+/** How long the Next episode button that just came up is bright, and the remote's OK presses it. */
 export const FRESH_MS = 10_000;
+/**
+ * How long a Skip button that just came up stays (the owner, 17 Nov: it "disappears after 5 seconds"): bright, the remote's OK presses it, and a bar
+ * under its words runs out as the time does. Then it goes, and comes back with the controls.
+ */
+export const SKIP_SHOWN_MS = 5_000;
 /**
  * Credits that end this close to the end of the episode run to it (else there is something after them, a scene or the next one's preview: they get Skip
  * credits, which lands on it, and Next episode comes at the end). Seconds, not more: what comes after credits can be story, and a profile that skips credits
@@ -95,6 +100,9 @@ export interface SkipView {
   fresh: boolean;
   seconds: number | null;
   total: number;
+  /** Not filling: the seconds before the button goes (of `shownFor`), while it is fresh. */
+  goesIn?: number;
+  shownFor?: number;
 }
 
 export interface SkipControl {
@@ -163,7 +171,7 @@ export function useSkipSegment({
     // film resumed in the middle of it, jumped; and so did one whose times came while it was well into the part.)
     const byPlaying = ((time >= last && time - last < 3) || landed) && time - segment.start < 4;
     if (landed) landedRef.current = null;
-    setEntered({ key: segment.key, byPlaying, freshUntil: byPlaying ? Date.now() + FRESH_MS : 0 });
+    setEntered({ key: segment.key, byPlaying, freshUntil: byPlaying ? Date.now() + SKIP_SHOWN_MS : 0 });
     setCount(byPlaying && autoSkip ? AUTO_SKIP_SECONDS : null);
   }, [time, segment?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -221,7 +229,15 @@ export function useSkipSegment({
   }, [filling, count, playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fresh = key !== null && entered?.key === key && entered.byPlaying && (filling || Date.now() < entered.freshUntil);
-  const view: SkipView | null = key && segment ? { kind: segment.kind, fresh, seconds: filling ? count : null, total: AUTO_SKIP_SECONDS } : null;
+  // (Not filling, a fresh button shows the seconds it has left, as a bar that runs out: a render each second for it.)
+  const fading = fresh && !filling;
+  useEffect(() => {
+    if (!fading) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 250);
+    return () => clearInterval(timer);
+  }, [fading]);
+  const goesIn = fading && entered ? Math.max(0, Math.ceil((entered.freshUntil - Date.now()) / 1000)) : null;
+  const view: SkipView | null = key && segment ? { kind: segment.kind, fresh, seconds: filling ? count : null, total: AUTO_SKIP_SECONDS, ...(goesIn !== null ? { goesIn, shownFor: SKIP_SHOWN_MS / 1000 } : {}) } : null;
   return {
     view,
     press: () => {
