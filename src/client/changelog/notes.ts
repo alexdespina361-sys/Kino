@@ -12,11 +12,11 @@ export const CHANGELOG: readonly ChangeNote[] = [
     ],
     ro: [
       "Pe un telefon cu Android: descarcă aplicația Kino pentru Android din profilul tău.",
-      "În browserul unui telefon cu Android, un rând sus pe pagini spune că există aplicația, până îl închizi.",
+      "În browserul unui telefon cu Android, un rând în partea de sus a paginilor anunță că există o aplicație, până când îl închizi.",
     ],
     it: [
       "Su un telefono Android: scarica l'app Kino per Android dal tuo profilo.",
-      "Nel browser di un telefono Android, una riga in cima alle pagine dice che c'è l'app, finché non la chiudi.",
+      "Nel browser di un telefono Android, una riga in cima alle pagine avvisa che c'è un'app, finché non la chiudi.",
     ],
   },
   {

@@ -919,7 +919,7 @@ export const it: Dictionary = {
   "news.failed": "L'elenco delle novità non è arrivato. Controlla la connessione e riprova.",
   "app.get.title": "Kino per Android",
   "app.get.why": "Kino come app sul telefono: con la sua icona, a schermo intero e con gli sticker direttamente da WhatsApp. Si aggiorna da sola.",
-  "app.get.note": "Versione {version}, {size}. Se Chrome avvisa sul file, scegli di scaricarlo comunque. La prima volta Android chiede se il browser può installare app: consentilo, poi apri il file scaricato.",
+  "app.get.note": "Versione {version}, {size}. Se Chrome ti avvisa che il file potrebbe essere dannoso, scaricalo comunque. La prima volta Android chiede se il browser può installare app: consentilo, poi apri il file scaricato.",
   "app.get.download": "Scarica l'app",
   "app.get.stripSize": "L'app, {size}",
   "app.get.stripButton": "Scarica",

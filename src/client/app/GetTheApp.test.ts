@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { forgetRelease, loadRelease, mayComeIn, megabytes, STRIP_QUIET_MS, wantsTheApp } from "./GetTheApp";
+import { forgetRelease, HELD_MAX_MS, loadRelease, mayComeIn, megabytes, STRIP_QUIET_MS, wantsTheApp } from "./GetTheApp";
 
 const PIXEL = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
@@ -29,20 +29,30 @@ describe("whether the Android app is offered", () => {
 });
 
 describe("when the line comes in", () => {
-  const quiet = { now: 10_000, lastTouched: 0, held: false, busy: false };
+  const atFirst = { now: 10_000, firstDrawing: true, lastTouched: 0, drawnAt: 10_000, heldSince: 0, busy: false };
+  const later = { ...atFirst, firstDrawing: false, drawnAt: 1_000 };
 
-  it("comes with the page's first drawing, before anything was touched", () => {
-    expect(mayComeIn(quiet)).toBe(true);
+  it("comes with the page's first drawing when the release is known by then and nothing was touched", () => {
+    expect(mayComeIn(atFirst)).toBe(true);
+  });
+
+  it("does not come in late over a page already on the screen, but only once the page has been left alone for a moment (the judge, 17 Nov)", () => {
+    expect(mayComeIn({ ...atFirst, firstDrawing: false })).toBe(false);
+    expect(mayComeIn({ ...later, drawnAt: later.now - STRIP_QUIET_MS + 1 })).toBe(false);
+    expect(mayComeIn({ ...later, drawnAt: later.now - STRIP_QUIET_MS })).toBe(true);
   });
 
   it("waits while a finger is down, while the page was touched lately, and while something it must not come under is up", () => {
-    expect(mayComeIn({ ...quiet, held: true })).toBe(false);
-    expect(mayComeIn({ ...quiet, lastTouched: quiet.now - STRIP_QUIET_MS + 1 })).toBe(false);
-    expect(mayComeIn({ ...quiet, busy: true })).toBe(false);
+    expect(mayComeIn({ ...atFirst, heldSince: 9_000 })).toBe(false);
+    expect(mayComeIn({ ...later, heldSince: 9_000 })).toBe(false);
+    expect(mayComeIn({ ...atFirst, lastTouched: 9_500 })).toBe(false);
+    expect(mayComeIn({ ...later, lastTouched: later.now - STRIP_QUIET_MS + 1 })).toBe(false);
+    expect(mayComeIn({ ...atFirst, busy: true })).toBe(false);
+    expect(mayComeIn({ ...later, lastTouched: later.now - STRIP_QUIET_MS })).toBe(true);
   });
 
-  it("comes once the page has been left alone for a moment", () => {
-    expect(mayComeIn({ ...quiet, lastTouched: quiet.now - STRIP_QUIET_MS })).toBe(true);
+  it("does not wait for good on a finger whose lifting was never heard", () => {
+    expect(mayComeIn({ ...later, lastTouched: later.now - HELD_MAX_MS, heldSince: later.now - HELD_MAX_MS })).toBe(true);
   });
 });
 

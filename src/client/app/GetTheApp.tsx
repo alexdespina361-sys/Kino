@@ -35,6 +35,8 @@ export const wantsTheApp = (input: { userAgent: string; handHeld: boolean; inApp
 const thisWantsTheApp = (): boolean => wantsTheApp({ userAgent: navigator.userAgent, handHeld: thisIsHandHeld(), inApp: inKinoApp() });
 
 let asked: Promise<AppRelease | null> | null = null;
+/** The answer, once it came: a page drawn after that has it at its first drawing (no frame without the line, then a jump: the judge, 17 Nov). */
+let known: AppRelease | null = null;
 /** The newest release, asked for once a page (null: the site keeps no app, or it could not be asked: then it is asked again by the next that wants it). */
 export function loadRelease(fetcher: typeof fetch = fetch): Promise<AppRelease | null> {
   asked ??= fetcher("/api/app/android", { cache: "no-store", credentials: "omit" })
@@ -43,7 +45,8 @@ export function loadRelease(fetcher: typeof fetch = fetch): Promise<AppRelease |
       const body = (await answer.json()) as Partial<AppRelease> | null;
       const versionName = typeof body?.versionName === "string" ? body.versionName.trim().slice(0, 32) : "";
       const size = typeof body?.size === "number" && Number.isFinite(body.size) && body.size > 0 ? body.size : 0;
-      return versionName && size ? { versionName, size } : null;
+      known = versionName && size ? { versionName, size } : null;
+      return known;
     })
     .catch(() => {
       asked = null;
@@ -52,14 +55,20 @@ export function loadRelease(fetcher: typeof fetch = fetch): Promise<AppRelease |
   return asked;
 }
 
+/** Asked for as the site starts, on a screen the app is for (main.tsx): so that the page's first drawing has it, most times, and the line comes in with it. */
+export function askEarly(): void {
+  if (thisWantsTheApp()) void loadRelease();
+}
+
 /** (For the tests: the next `loadRelease` asks again.) */
 export const forgetRelease = () => {
   asked = null;
+  known = null;
 };
 
 /** The release, on a screen the app is for; null elsewhere, and while it is being asked for. */
 export function useAppRelease(): AppRelease | null {
-  const [release, setRelease] = useState<AppRelease | null>(null);
+  const [release, setRelease] = useState<AppRelease | null>(() => known);
   useEffect(() => {
     if (!thisWantsTheApp()) return;
     let live = true;
@@ -113,12 +122,22 @@ function putStripAway() {
   window.dispatchEvent(new Event(STRIP_AWAY));
 }
 
-/** Whether the line may come in now: nothing it must wait for is on the screen, no finger or button is down, and the page was not touched, or not lately. */
-export const mayComeIn = (input: { now: number; lastTouched: number; held: boolean; busy: boolean }): boolean =>
-  !input.busy && !input.held && (input.lastTouched === 0 || input.now - input.lastTouched >= STRIP_QUIET_MS);
+/** A finger or a button down this long is let go of all the same: one whose lifting was never heard (a lost pointerup) does not keep the line out for good. */
+export const HELD_MAX_MS = 10_000;
 
-/** When the person last touched, scrolled or typed on this page (0: not yet), and whether a finger or a button is down now. Watched from the first line's first draw. */
-const hands = { lastTouched: 0, held: false, watching: false };
+/**
+ * Whether the line may come in now. With the page's first drawing, when it is known then and nothing was touched yet; else only once nothing moved on the
+ * page for a moment - no touch, scroll or key, and not the page's own drawing (the release came late: the page is on the screen, and a finger may be on its
+ * way to it) - with no finger or button down, and nothing up it must not come under.
+ */
+export const mayComeIn = (input: { now: number; firstDrawing: boolean; lastTouched: number; drawnAt: number; heldSince: number; busy: boolean }): boolean => {
+  if (input.busy || (input.heldSince !== 0 && input.now - input.heldSince < HELD_MAX_MS)) return false;
+  if (input.firstDrawing && input.lastTouched === 0) return true;
+  return input.now - Math.max(input.lastTouched, input.drawnAt) >= STRIP_QUIET_MS;
+};
+
+/** When the person last touched, scrolled or typed on this page (0: not yet), and since when a finger or a button is down (0: none). */
+const hands = { lastTouched: 0, heldSince: 0, watching: false };
 function watchHands() {
   if (hands.watching) return;
   hands.watching = true;
@@ -126,11 +145,11 @@ function watchHands() {
     hands.lastTouched = performance.now();
   };
   const down = () => {
-    hands.held = true;
+    hands.heldSince = performance.now();
     touched();
   };
   const up = () => {
-    hands.held = false;
+    hands.heldSince = 0;
     touched();
   };
   const quietly = { capture: true, passive: true } as const;
@@ -148,12 +167,19 @@ const busy = (): boolean => filmOnScreen() || busyHere() || document.querySelect
 
 /** When the line came in on this page (null: not yet). A page that is left and come back to draws it at once, with the page, never as a second jump. */
 let cameIn: number | null = null;
+/** When the first line was drawn on this page: the page has been on the screen since. */
+let drawnAt = 0;
+
+/** A screen held sideways is not high enough for it: the line is not drawn there (getTheApp.css), and does not come in there either (its moment would pass unseen). */
+const SIDEWAYS = "(max-height: 499px) and (orientation: landscape)";
+const sideways = (): boolean => typeof matchMedia === "function" && matchMedia(SIDEWAYS).matches;
 
 /** (For the tests.) */
 export const forgetStrip = () => {
   cameIn = null;
+  drawnAt = 0;
   hands.lastTouched = 0;
-  hands.held = false;
+  hands.heldSince = 0;
 };
 
 /**
@@ -167,23 +193,29 @@ export function GetTheAppStrip({ className = "" }: { className?: string }) {
   const release = useAppRelease();
   const [away, setAway] = useState(() => readStorage(STRIP_KEY) === "away");
   const [inAt, setInAt] = useState<number | null>(cameIn);
+  /** Whether the release was known at this line's first drawing (then it may come in with the page, not after it). */
+  const [withPage] = useState(() => release !== null && drawnAt === 0);
   useEffect(() => {
     if (away || !thisWantsTheApp()) return;
     watchHands();
+    if (drawnAt === 0) drawnAt = performance.now();
     const gone = () => setAway(true);
     window.addEventListener(STRIP_AWAY, gone);
     return () => window.removeEventListener(STRIP_AWAY, gone);
   }, [away]);
   useEffect(() => {
     if (away || !release || inAt !== null) return;
+    let first = withPage;
     const look = () => {
-      if (cameIn === null && mayComeIn({ now: performance.now(), lastTouched: hands.lastTouched, held: hands.held, busy: busy() })) cameIn = performance.now();
+      const now = performance.now();
+      if (cameIn === null && !sideways() && mayComeIn({ now, firstDrawing: first, lastTouched: hands.lastTouched, drawnAt, heldSince: hands.heldSince, busy: busy() })) cameIn = now;
+      first = false;
       if (cameIn !== null) setInAt(cameIn);
     };
     look();
     const timer = window.setInterval(look, 250);
     return () => window.clearInterval(timer);
-  }, [away, release, inAt]);
+  }, [away, release, inAt, withPage]);
   if (away || !release || inAt === null) return null;
   const answer = (event: MouseEvent<HTMLElement>) => {
     if (performance.now() - inAt < STRIP_GRACE_MS) {

@@ -95,8 +95,9 @@
   .get-app-strip-icon { display: none; }
   .get-app-strip-get { padding: 0 14px; }
 }
-/* A screen held sideways has no height to give for it: the rows would be cut. */
-@media (max-height: 499px) {
+/* A screen held sideways has no height to give for it: the rows would be cut. (Sideways only: a keyboard that shrinks an upright page must not take it away and
+   bring it back, the page jumping both ways. GetTheApp.tsx `SIDEWAYS` is the same rule: it does not come in there either.) */
+@media (max-height: 499px) and (orientation: landscape) {
   .get-app-strip { display: none; }
 }
 @keyframes get-app-strip-in {
