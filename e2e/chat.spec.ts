@@ -3063,6 +3063,11 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     await expect(lines(ann.page)).toHaveCount(26);
 
     const page = ann.page;
+    // (the ⋮'s menu shuts at a press beside it that moves no focus, as a tap on an iPhone does not: the judge, 17 Nov)
+    await page.getByTestId("chat-more").click();
+    await expect(page.getByTestId("chat-menu")).toBeVisible();
+    await page.getByTestId("chat-presence").dispatchEvent("pointerdown");
+    await expect(page.getByTestId("chat-menu")).toBeHidden();
     await fromMenu(page, "chat-search-open");
     const bar = page.getByTestId("chat-search");
     const box = page.getByTestId("chat-search-box");
@@ -3087,19 +3092,32 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     await expect(current).toContainText("Mâine nu pot");
     await expect(current.getByTestId("chat-found-words")).toHaveText("Mâine");
     await expect.poll(() => seen(current)).toBe(true);
-    // Earlier: the first of the chat, and nothing earlier; the chat is read there, not at its end
-    await page.getByTestId("chat-search-older").click();
-    await expect(count).toHaveText(counted(3, 3));
+    // a message that comes in with the words too: the search stays on the message it shows, now the third newest of four (the judge, 17 Nov)
+    await writes(bob.page, ann.page, "Si maine?");
+    await expect(count).toHaveText(counted(3, 4), SOON);
+    await expect(current).toContainText("Mâine nu pot");
+    // Earlier, with the keys: the first of the chat, and nothing earlier; the arrow keeps the keys there; the chat is read there, not at its end
+    const older = page.getByTestId("chat-search-older");
+    await older.focus();
+    await page.keyboard.press("Enter");
+    await expect(count).toHaveText(counted(4, 4));
     await expect(current).toContainText("Ne vedem mâine la cinema");
     await expect.poll(() => seen(current)).toBe(true);
-    await expect(page.getByTestId("chat-search-older")).toBeDisabled();
+    await expect(older).toHaveAttribute("aria-disabled", "true");
+    await expect(older).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(count).toHaveText(counted(4, 4));
     await expect.poll(() => seen(saying(lines(page), "filler 22"))).toBe(false);
+    await expect.poll(() => seen(saying(lines(page), "Si maine?"))).toBe(false); // (what came in did not take the list away)
     // Later, and Shift+Enter: back the other way, to the newest
     await page.getByTestId("chat-search-newer").click();
-    await expect(count).toHaveText(counted(2, 3));
+    await expect(count).toHaveText(counted(3, 4));
     await box.press("Shift+Enter");
-    await expect(count).toHaveText(counted(1, 3));
-    await expect(page.getByTestId("chat-search-newer")).toBeDisabled();
+    await expect(count).toHaveText(counted(2, 4));
+    await box.press("Shift+Enter");
+    await expect(count).toHaveText(counted(1, 4));
+    await expect(current).toContainText("Si maine?");
+    await expect(page.getByTestId("chat-search-newer")).toHaveAttribute("aria-disabled", "true");
     // every word typed, in any order; what is nowhere says so
     await box.fill("cinema   MÂINE");
     await expect(count).toHaveText(counted(1, 2));
@@ -3107,7 +3125,8 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     await box.fill("teatru");
     await expect(count).toHaveText(en["chat.searchNone"]);
     await expect(found).toHaveCount(0);
-    await expect(page.getByTestId("chat-search-older")).toBeDisabled();
+    await expect(older).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByTestId("chat-search-newer")).toHaveAttribute("aria-disabled", "true");
 
     // a picture shown larger over it: Back puts that away, and only that
     await box.fill("cinema");
@@ -3123,6 +3142,14 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     await expect(page.getByTestId("chat-react-bar")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("chat-react-bar")).toHaveCount(0);
+    await expect(bar).toBeVisible();
+    // a message being answered, Escape in the box where the answer is written: the answer goes, and only it (as with no search: the judge, 17 Nov)
+    await saying(lines(page), "Mâine nu pot").getByTestId("chat-bubble").click();
+    await page.getByTestId("chat-reply").click();
+    await expect(page.getByTestId("chat-reply-strip")).toBeVisible();
+    await expect(page.getByTestId("chat-input")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-reply-strip")).toHaveCount(0);
     await expect(bar).toBeVisible();
     // then Back shuts the search: nothing lit, the ⋮ again, the chat open
     await page.keyboard.press("Escape");
@@ -3170,7 +3197,16 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     expect(await gridFaults(tiles)).toEqual([]);
     expect(await outsideTheSides(ann.page, ["chat-media-sheet", "chat-media"])).toEqual([]);
 
+    // the newest, already in view at the chat's end: the list does not move, and goes on following what comes (the judge, 17 Nov: it stopped)
+    await tiles.first().click();
+    await expect(sheet).toHaveCount(0);
+    await expect(lines(ann.page).last()).toHaveAttribute("data-shown", "true");
+    await writes(bob.page, ann.page, "After the gallery");
+    await expect(lines(ann.page)).toHaveCount(24, SOON);
+    await expect.poll(() => seen(lines(ann.page).last())).toBe(true);
+
     // the oldest, the GIF: the sheet goes, and the chat shows its message, lit for a moment, and selects nothing
+    await fromMenu(ann.page, "chat-media-open");
     await tiles.nth(2).click();
     await expect(sheet).toHaveCount(0);
     const gif = lines(ann.page).first();
@@ -3179,6 +3215,13 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     await expect.poll(() => seen(lines(ann.page).last())).toBe(false);
     await expect(ann.page.getByTestId("chat-react-bar")).toHaveCount(0);
     await expect(ann.page.getByTestId("chat")).toBeVisible();
+    // a friend's message coming in leaves the list where it is read; one's own, sent from up there, is shown at the end
+    await writes(bob.page, ann.page, "While you read");
+    await expect(lines(ann.page)).toHaveCount(25, SOON);
+    expect(await seen(gif)).toBe(true);
+    await write(ann.page, "Sent from up here");
+    await expect(lines(ann.page)).toHaveCount(26);
+    await expect.poll(() => seen(lines(ann.page).last())).toBe(true);
   });
 
   test("on the TV's pages: Search and the GIFs and stickers behind the ⋯ on a computer and on a hand-held screen; the search in place of the friend at the top, Back shutting it and giving the keys back to the ⋯; the gallery a page of its own whose press shows the message", async ({ browser }) => {
@@ -3224,6 +3267,22 @@ test.describe("searching a chat, and its GIFs and stickers", () => {
     await expect(page.getByTestId("tv-chat-name")).toHaveText(bob.name);
     await expect(found).toHaveCount(0);
     await expect(page.getByTestId("tv-chat-more")).toBeFocused();
+    // shut from the box where a message is written, the keys stay in the box, and what was typed (the judge, 17 Nov: they went to the ⋯)
+    await page.getByTestId("tv-chat-more").click();
+    await page.getByTestId("tv-chat-search-open").click();
+    await page.keyboard.type("cinema");
+    await page.getByTestId("tv-chat-box").click();
+    await page.keyboard.type("hi");
+    await page.keyboard.press("Escape");
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByTestId("tv-chat-box")).toBeFocused();
+    await expect(page.getByTestId("tv-chat-box")).toHaveValue("hi");
+    await page.getByTestId("tv-chat-box").fill("");
+    // (and the ⋯'s menu shuts at a press beside it that moves no focus)
+    await page.getByTestId("tv-chat-more").click();
+    await expect(menu).toBeVisible();
+    await page.getByTestId("tv-chat-name").dispatchEvent("pointerdown");
+    await expect(menu).toBeHidden();
 
     // the gallery: a page of its own, Back to the chat; a press goes back to the chat and shows the message there
     await page.getByTestId("tv-chat-more").click();

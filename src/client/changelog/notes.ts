@@ -12,14 +12,14 @@ export const CHANGELOG: readonly ChangeNote[] = [
       "On a phone: Mute and Report are behind the chat's ⋮, and the top of a muted chat says so.",
     ],
     ro: [
-      "Într-un chat pe telefon sau calculator: caută în mesaje din ⋮ de sus. Diacriticele și majusculele nu contează; săgețile trec de la unul la altul.",
-      "Într-un chat pe telefon sau calculator: toate GIF-urile și stickerele lui sunt tot în ⋮. Apasă pe unul ca să ajungi la mesajul lui.",
-      "Pe telefon: Dă pe mut și Raportează sunt în ⋮ al chatului, iar partea de sus a unui chat pus pe mut o spune.",
+      "Într-un chat pe telefon sau calculator: caută în mesaje din meniul ⋮ de sus. Diacriticele și majusculele nu contează; săgețile trec de la un rezultat la altul.",
+      "Într-un chat pe telefon sau calculator: toate GIF-urile și stickerele lui sunt și ele în meniul ⋮. Apasă pe unul ca să ajungi la mesajul lui.",
+      "Pe telefon: „Dă pe mut” și „Raportează” sunt acum în meniul ⋮ al chatului, iar un chat pus pe mut arată asta sus.",
     ],
     it: [
-      "In una chat su telefono o computer: cerca nei messaggi dal ⋮ in alto. Accenti e maiuscole non contano; le frecce passano dall'uno all'altro.",
+      "In una chat su telefono o computer: cerca nei messaggi dal ⋮ in alto. Accenti e maiuscole non contano; le frecce passano da un risultato all'altro.",
       "In una chat su telefono o computer: anche tutte le sue GIF e i suoi sticker sono nel ⋮. Toccane uno per andare al suo messaggio.",
-      "Su telefono: Silenzia e Segnala sono nel ⋮ della chat, e la parte alta di una chat silenziata lo dice.",
+      "Su telefono: Silenzia e Segnala sono nel ⋮ della chat, e in alto una chat silenziata lo indica.",
     ],
   },
   {

@@ -89,7 +89,7 @@ export const chatEn = {
   "chat.search": "Search",
   "chat.searchLabel": "Search this chat",
   "chat.searchCount": "{at} of {count}",
-  "chat.searchNone": "Not found",
+  "chat.searchNone": "No results",
   "chat.searchOlder": "Earlier",
   "chat.searchNewer": "Later",
   "chat.searchClose": "Close search",

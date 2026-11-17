@@ -116,6 +116,13 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLOListElement>(null);
   const atEnd = useRef(true);
+  /**
+   * The list on its way to a message brought into view (`bringIntoView`): where it will stop, and until when its own scrolling is not asked whether it is at
+   * the end (its first steps are still near it). The way there decides that, from where it will stop.
+   */
+  const travel = useRef<{ goal: number; until: number } | null>(null);
+  /** The newest message seen: one of one's own that comes after it is followed to the end, wherever the list was being read. */
+  const newest = useRef<number | null>(null);
   // (A report shows what it would send: the text as it is, a GIF's address among it.)
   const gifs = useMemo(() => lines.map((line) => (showWriter || line.sticker ? null : gifOf(line.text))), [lines, showWriter]);
   // (A report shows what it would send: a sticker's emoji, as it was sent.)
@@ -130,8 +137,15 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   // its size by itself (the page's fonts arriving, the box shrinking under a keyboard) so that the end does not slip away.
   useEffect(() => {
     const element = box.current;
+    // (One's own new message is shown, as in any messenger, even when the list was being read higher up: what was just sent is where the eye goes.)
+    const last = lines[lines.length - 1];
+    if (last && newest.current !== null && last.id > newest.current && last.mine && !showWriter) {
+      atEnd.current = true;
+      travel.current = null;
+    }
+    if (last) newest.current = Math.max(newest.current ?? last.id, last.id);
     if (element && atEnd.current) element.scrollTop = element.scrollHeight;
-  }, [lines]);
+  }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const element = box.current;
     const inside = content.current;
@@ -274,13 +288,23 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
   // The message a quote names, brought into view and lit for a moment (a quote pressed). One no longer in the chat has no quote to press.
   const shownTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(shownTimer.current), []);
-  /** A message brought into view: in the middle of the list, smoothly where motion is welcome. (The list is then read, and no longer kept at its end.) */
+  /**
+   * A message brought into view: in the middle of the list, smoothly where motion is welcome, the list alone moving (not the sheet or the page around it).
+   * Whether the list is then kept at its end is where it will stop that says: a message already in view near the end moves nothing, and the list goes on
+   * following what comes (the judge, 17 Nov: it stopped, and new messages, one's own too, came in below where it was looked at).
+   */
   const bringIntoView = (id: number): HTMLElement | null => {
-    const item = box.current?.querySelector<HTMLElement>(`li[data-line="${id}"]`) ?? null;
-    if (!item) return null;
-    // (Not kept at the end from here: a picture of the list that loads, or a size that changes, would else take it back there as it goes.)
-    atEnd.current = false;
-    item.scrollIntoView({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const element = box.current;
+    const item = element?.querySelector<HTMLElement>(`li[data-line="${id}"]`) ?? null;
+    if (!element || !item) return null;
+    const view = element.getBoundingClientRect();
+    const at = item.getBoundingClientRect();
+    const most = Math.max(0, element.scrollHeight - element.clientHeight);
+    const goal = Math.round(Math.min(most, Math.max(0, element.scrollTop + at.top - view.top - (view.height - at.height) / 2)));
+    atEnd.current = most - goal <= AT_END;
+    const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    travel.current = Math.abs(goal - element.scrollTop) > 1 ? { goal, until: performance.now() + (smooth ? 900 : 100) } : null;
+    element.scrollTo({ top: goal, behavior: smooth ? "smooth" : "auto" });
     return item;
   };
   const showQuoted = (id: number) => {
@@ -375,7 +399,12 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     if (!element) return;
     scrolled.current = performance.now();
     letGo(); // (a hold that has begun is no hold once the list moves under it)
-    atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+    // (On its way to a message brought into view, the list is where it is going, not where it passes: see `bringIntoView`.)
+    const trip = travel.current;
+    if (!trip || performance.now() >= trip.until || Math.abs(element.scrollTop - trip.goal) <= 1) {
+      travel.current = null;
+      atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+    }
     const on = document.activeElement;
     if (remote && on instanceof HTMLElement && on.matches(CARD) && element.contains(on)) {
       const at = on.getBoundingClientRect();

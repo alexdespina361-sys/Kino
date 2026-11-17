@@ -10,7 +10,8 @@ import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatMediaTv } from "./ChatMedia";
-import { ChatSearchBar, useChatSearch } from "./ChatSearch";
+import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
+import { useShutOnPressBeside } from "./pressBeside";
 import { SAVE_NOTE, usePersonalLines, type SaveNote } from "./personalStickers";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
@@ -251,6 +252,9 @@ export function ReadTv({
   useEffect(() => {
     if (menu) document.querySelector<HTMLElement>("[data-testid='tv-chat-menu'] [data-nav]")?.focus();
   }, [menu]);
+  // (A press beside it shuts it, and goes where it was pressed: see pressBeside.ts.)
+  const moreWrap = useRef<HTMLDivElement>(null);
+  useShutOnPressBeside(menu, moreWrap, () => setMenu(false));
   const leaving = (event: FocusEvent<HTMLDivElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenu(false);
   };
@@ -263,12 +267,14 @@ export function ReadTv({
   // selection, a picture shown larger: each Back shuts first); shut, the keys go back to the ⋯ it was opened from.
   const search = useChatSearch(state.lines);
   const searching = search.open && onMedia !== undefined;
-  useBackFirst(searching && picked === null && !menu ? search.closeUnlessOver : undefined);
+  useBackFirst(searching && picked === null && !menu ? () => searchBack(session, search, "tv-chat-box") : undefined);
   const wasSearching = useRef(false);
   useEffect(() => {
     const was = wasSearching.current;
     wasSearching.current = searching;
-    if (was && !searching) more.current?.focus({ preventScroll: true });
+    // (The keys go back to the ⋯ when the search took them with it, not from the box being typed in: the judge, 17 Nov.)
+    const on = document.activeElement;
+    if (was && !searching && (!on || on === document.body)) more.current?.focus({ preventScroll: true });
   }, [searching]);
   // (The gallery's message, shown as the chat comes back, and not again when the chat comes back from another page.)
   useEffect(() => {
@@ -426,7 +432,7 @@ export function ReadTv({
             </span>
           )}
           {!searching && (
-          <div className="tv-chat-more-wrap" onBlur={leaving}>
+          <div className="tv-chat-more-wrap" ref={moreWrap} onBlur={leaving}>
             <button
               type="button"
               className="tv-chat-more"

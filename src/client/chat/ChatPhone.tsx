@@ -6,7 +6,8 @@ import { BellIcon, BellOffIcon, FilmIcon, GifIcon, ImageIcon, MoreIcon, PlusIcon
 import { useBackFirst } from "../tv/dpad";
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatMediaSheet } from "./ChatMedia";
-import { ChatSearchBar, useChatSearch } from "./ChatSearch";
+import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
+import { useShutOnPressBeside } from "./pressBeside";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
 import { backLetsAnswerGo, ReplyStrip } from "./Reply";
@@ -75,11 +76,12 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   // The ⋮ at the top (the owner, 17 Nov: "the three dots vertical"): Search, the chat's GIFs and stickers, Mute, Report. It shuts with Back, a press beside
   // it, or a choice; a message selected shuts it (one Back would otherwise shut both).
   const [menu, setMenu] = useState(false);
-  const more = useRef<HTMLButtonElement>(null);
+  const moreWrap = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (picked !== null || over) setMenu(false);
   }, [picked, over]);
   useBackFirst(menu ? () => setMenu(false) : undefined);
+  useShutOnPressBeside(menu, moreWrap, () => setMenu(false));
   const choose = (action: () => void) => () => {
     setMenu(false);
     action();
@@ -88,7 +90,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const search = useChatSearch(state.lines);
   const [showing, setShowing] = useState<{ id: number; seq: number } | null>(null);
   // (Back shuts the search when nothing is open over it: a selection, the ⋮, a sheet, or a picture shown larger - each of which Back shuts first.)
-  useBackFirst(search.open && picked === null && !menu && !over ? search.closeUnlessOver : undefined);
+  useBackFirst(search.open && picked === null && !menu && !over ? () => searchBack(session, search, "chat-input") : undefined);
   const status = [presence, state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
 
   return (
@@ -123,6 +125,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
             {!search.open && (
             <div
               className="chat-more-wrap"
+              ref={moreWrap}
               onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenu(false);
               }}
@@ -130,7 +133,6 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               <button
                 type="button"
                 className="chat-tool chat-more"
-                ref={more}
                 aria-label={t("chat.menu")}
                 title={t("chat.menu")}
                 aria-expanded={menu}

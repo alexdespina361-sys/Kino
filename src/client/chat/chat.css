@@ -116,7 +116,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-search-box::-webkit-search-cancel-button { display: none; }
 .chat-search-count { flex: none; color: var(--muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .chat-search-step { display: grid; flex: none; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text); font-size: 1.1rem; cursor: pointer; }
-.chat-search-step:disabled { opacity: 0.35; cursor: default; }
+.chat-search-step[aria-disabled="true"] { opacity: 0.35; cursor: default; }
 .chat-search-step:focus-visible, .chat-search:focus-within { outline: 2px solid var(--text); outline-offset: 1px; }
 .chat-search-step:focus-visible { outline-offset: -2px; }
 /* What it found: each message lit at its edge, the one shown more, and the words looked for marked as a highlighter would. (In the highlighter's yellow, not
@@ -346,7 +346,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-head .chat-search-box { min-width: 4em; height: 2.4em; color: #fff; font-size: 1.4em; }
 .tv-chat-head .chat-search-count { color: rgba(255, 255, 255, 0.65); font-size: 1.2em; }
 .tv-chat-head .chat-search-step { width: 2.8em; height: 2.8em; color: #fff; font-size: 1.5em; }
-.tv-chat-head .chat-search-step:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+.tv-chat-head .chat-search-step:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.1); }
 .tv-chat-head .chat-search-step:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 /* The chat's GIFs and stickers on a page of their own (ChatMedia.tsx `ChatMediaTv`). */
 .tv-chat-media-list { width: min(100%, 62em); max-height: 62vh; padding: 0.4em; overflow-y: auto; }

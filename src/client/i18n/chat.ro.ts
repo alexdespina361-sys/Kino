@@ -86,7 +86,7 @@ export const chatRo: ChatDictionary = {
   "chat.search": "Caută",
   "chat.searchLabel": "Caută în conversație",
   "chat.searchCount": "{at} din {count}",
-  "chat.searchNone": "Nu s-a găsit",
+  "chat.searchNone": "Niciun rezultat",
   "chat.searchOlder": "Mai devreme",
   "chat.searchNewer": "Mai târziu",
   "chat.searchClose": "Închide căutarea",

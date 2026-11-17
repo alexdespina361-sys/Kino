@@ -3,8 +3,9 @@ import type { ChatLine } from "../../shared";
 import { useT } from "../i18n";
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon, SearchIcon } from "../shared/icons";
 import type { SearchFound } from "./ChatLines";
+import type { ChatSession } from "./useChat";
 import { findInChat } from "./search";
-import { knownTitle } from "./titleCache";
+import { knownTitle, useTitlesLearned } from "./titleCache";
 import { titleLabel } from "./titles";
 
 /** A title's name, once the chat knows it (titleCache.ts): a title sent as its address alone is found by it. */
@@ -34,26 +35,31 @@ export interface ChatSearch {
 export function useChatSearch(lines: readonly ChatLine[]): ChatSearch {
   const [open, setOpen] = useState(false);
   const [query, setQueryNow] = useState("");
-  const [at, setAt] = useState(0);
-  const ids = useMemo(() => (open ? findInChat(lines, query, titleName) : []), [open, lines, query]);
-  const shown = Math.min(at, Math.max(0, ids.length - 1));
+  // (Which message is shown, by itself and not by its place: a message that comes in and holds the words too would else move the search to another one,
+  // the judge, 17 Nov. None, or one no longer found: the newest.)
+  const [shownId, setShownId] = useState<number | null>(null);
+  // (A title sent as its address alone is found by its name once the server has said it: the search looks again then, not only at the next key.)
+  const learned = useTitlesLearned();
+  const ids = useMemo(() => (open ? findInChat(lines, query, titleName) : []), [open, lines, query, learned]); // eslint-disable-line react-hooks/exhaustive-deps
+  const kept = shownId === null ? -1 : ids.indexOf(shownId);
+  const shown = kept >= 0 ? kept : 0;
   const current = ids[shown] ?? null;
   const found = useMemo(() => (open && ids.length > 0 ? { query, ids: new Set(ids), current } : undefined), [open, ids, query, current]);
   const close = () => {
     setOpen(false);
     setQueryNow("");
-    setAt(0);
+    setShownId(null);
   };
   return {
     open,
     query,
     setQuery: (next) => {
       setQueryNow(next);
-      setAt(0); // (what is typed shows the newest of what it finds)
+      setShownId(null); // (what is typed shows the newest of what it finds)
     },
     ids,
     at: shown,
-    step: (by) => setAt(Math.max(0, Math.min(ids.length - 1, shown + by))),
+    step: (by) => setShownId(ids[Math.max(0, Math.min(ids.length - 1, shown + by))] ?? null),
     start: () => setOpen(true),
     close,
     closeUnlessOver: () => {
@@ -62,6 +68,15 @@ export function useChatSearch(lines: readonly ChatLine[]): ChatSearch {
     },
     found,
   };
+}
+
+/**
+ * Back while a chat's search is open: in the box where a message is written, while one is being answered, it lets the answer go first (as it does with no
+ * search: Reply.tsx `backLetsAnswerGo`, which the search, hearing Back first, would else stand in front of: the judge, 17 Nov); else it shuts the search.
+ */
+export function searchBack(session: Pick<ChatSession, "replyTo" | "setReplyTo">, search: Pick<ChatSearch, "closeUnlessOver">, box: string): void {
+  if (session.replyTo !== null && document.activeElement?.matches(`[data-testid='${box}']`)) return session.setReplyTo(null);
+  search.closeUnlessOver();
 }
 
 /**
@@ -98,6 +113,8 @@ export function ChatSearchBar({
   }, []);
   const navigable = nav ? { "data-nav": true } : {};
   const typed = query.trim() !== "";
+  const older = at < count - 1;
+  const newer = at > 0 && count > 0;
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     event.preventDefault();
@@ -130,10 +147,12 @@ export function ChatSearchBar({
           {count === 0 ? t("chat.searchNone") : t("chat.searchCount", { at: at + 1, count })}
         </span>
       )}
-      <button type="button" className="chat-search-step" onClick={() => onStep(1)} disabled={at >= count - 1} aria-label={t("chat.searchOlder")} title={t("chat.searchOlder")} {...navigable} data-testid="chat-search-older">
+      {/* (At either end the arrow says it goes no further and does nothing, and keeps the keys: a button that went disabled under them would leave them on
+          nothing, the judge, 17 Nov.) */}
+      <button type="button" className="chat-search-step" onClick={() => older && onStep(1)} aria-disabled={!older} aria-label={t("chat.searchOlder")} title={t("chat.searchOlder")} {...navigable} data-testid="chat-search-older">
         <ChevronUpIcon />
       </button>
-      <button type="button" className="chat-search-step" onClick={() => onStep(-1)} disabled={at <= 0} aria-label={t("chat.searchNewer")} title={t("chat.searchNewer")} {...navigable} data-testid="chat-search-newer">
+      <button type="button" className="chat-search-step" onClick={() => newer && onStep(-1)} aria-disabled={!newer} aria-label={t("chat.searchNewer")} title={t("chat.searchNewer")} {...navigable} data-testid="chat-search-newer">
         <ChevronDownIcon />
       </button>
       <button type="button" className="chat-search-step" onClick={onClose} aria-label={t("chat.searchClose")} title={t("chat.searchClose")} {...navigable} data-testid="chat-search-close">
