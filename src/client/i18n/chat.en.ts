@@ -46,7 +46,7 @@ export const chatEn = {
   "chat.stickerRemove": "Remove this sticker",
   "chat.stickersNone": "Add a picture of your own: its middle square becomes a sticker.",
   "chat.stickersFailed": "Your stickers could not be loaded.",
-  "chat.stickersPrivacy": "A sticker you send is seen by that friend, who can save it. Kino keeps it until everyone who has it removes it.",
+  "chat.stickersPrivacy": "A sticker you send is seen by that friend, who can save it. Kino keeps it until everyone who has it removes it, or Kino's team takes it down.",
   "chat.stickerNotPicture": "That file can't be made into a sticker. Try a photo or a PNG.",
   "chat.stickerTooBig": "That picture is too big to open here.",
   "chat.stickerFull": "You have 24 stickers. Remove one to add another.",

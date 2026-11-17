@@ -43,7 +43,7 @@ export const chatIt: ChatDictionary = {
   "chat.stickerRemove": "Elimina questo sticker",
   "chat.stickersNone": "Aggiungi una tua foto: il quadrato centrale diventa uno sticker.",
   "chat.stickersFailed": "Non è stato possibile caricare i tuoi sticker.",
-  "chat.stickersPrivacy": "Uno sticker che mandi lo vede quell'amico, che può salvarlo. Kino lo tiene finché tutti quelli che lo hanno non lo eliminano.",
+  "chat.stickersPrivacy": "Uno sticker che mandi lo vede quell'amico, che può salvarlo. Kino lo tiene finché tutti quelli che lo hanno non lo eliminano, o finché il team di Kino non lo toglie.",
   "chat.stickerNotPicture": "Questo file non può diventare uno sticker. Prova con una foto o un PNG.",
   "chat.stickerTooBig": "La foto è troppo grande per aprirla qui.",
   "chat.stickerFull": "Hai 24 sticker. Eliminane uno per aggiungerne un altro.",

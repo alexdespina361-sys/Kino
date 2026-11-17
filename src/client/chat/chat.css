@@ -401,6 +401,7 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }
+.chat-takeback.chat-sticker-save { background: var(--surface-2); color: var(--text); } /* (keeping is no undoing: not the red of Take back) */
 .chat-sticker-save:disabled { opacity: 0.6; }
 
 /*

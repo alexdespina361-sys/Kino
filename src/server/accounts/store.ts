@@ -193,8 +193,9 @@ export class AccountStore {
   static async open(options: StoreOptions): Promise<AccountStore> {
     const store = new AccountStore({ now: Date.now, flushMs: 1500, ...options });
     await store.load();
-    // (A picture whose record was never written, or a record whose picture is not there, is let go: the two are kept in different places.)
-    await store.stickerBook.reconcile();
+    // (A picture whose record was never written, or a record whose picture is not there, is let go: the two are kept in different places. Only where they are
+    // on: a host that has them off is not asked anything about them, its database not even given their table; nothing can be made there to tidy.)
+    if (store.stickerBook.on) await store.stickerBook.reconcile();
     return store;
   }
 

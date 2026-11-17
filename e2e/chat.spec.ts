@@ -1656,6 +1656,51 @@ const pictureAt = async (page: Page, address: string) => {
 const askAfresh = (page: Page) => page.route(/\/stickers\//, (route) => route.continue());
 
 test.describe("personal stickers in a chat", () => {
+  test("while the host has them off (every host, until its owner turns them on): the phone's sheet and a computer's page are Kino's alone, as they were, and nothing is asked about them", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const dee = await screenWithFriends(browser, "Dee", { desk: true });
+    const asked: string[] = [];
+    for (const page of [ann.page, dee.page]) {
+      // (the host's answer without them, as a host that has them off gives it: the e2e server has them on)
+      await page.route("**/api/features", async (route) => {
+        const answer = await route.fetch();
+        const { stickers: _on, ...features } = (await answer.json()) as Record<string, unknown>;
+        await route.fulfill({ response: answer, json: features });
+      });
+      page.on("request", (request) => {
+        if (/\/api\/profiles\/[^?#]*\/stickers/.test(request.url())) asked.push(request.url());
+      });
+    }
+    await meetPhone(dee, ann);
+
+    await openChat(ann.page);
+    await ann.page.getByTestId("chat-sticker-btn").click();
+    const sheet = ann.page.getByTestId("chat-sticker-sheet");
+    await expect(sheet.getByTestId("chat-sticker-pick")).toHaveCount(STICKER_COUNT);
+    expect(await gridFaults(sheet.getByTestId("chat-sticker-pick")), "the phone's stickers: squares, none over another").toEqual([]);
+    await expect(sheet.getByTestId("chat-stickers-yours")).toHaveCount(0);
+    await expect(sheet.locator(".chat-stickers-head")).toHaveCount(0);
+    await expect(sheet.getByTestId("chat-sticker-file")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+
+    await tile(dee.page, ann.name).click();
+    await dee.page.getByTestId("friend-chat").click();
+    await dee.page.getByTestId("tv-chat-sticker-btn").click();
+    const page = dee.page.getByTestId("tv-chat-stickers-page");
+    const picks = page.getByTestId("chat-sticker-pick");
+    await expect(picks).toHaveCount(STICKER_COUNT);
+    await expect(picks.first()).toBeFocused();
+    expect(await gridFaults(picks), "the computer's stickers: squares, none over another").toEqual([]);
+    expect(await outsideTheScreen(dee.page, "tv-chat-stickers-page")).toEqual([]);
+    await expect(page.getByTestId("chat-stickers-yours")).toHaveCount(0);
+    await expect(page.locator(".chat-stickers-head, .with-yours")).toHaveCount(0);
+    await picks.first().click();
+    await expect(tvLines(dee.page)).toHaveCount(1);
+    await expect(tvLines(dee.page).first().getByTestId("chat-sticker")).toHaveAttribute("src", "/stickers/popcorn.webp");
+    expect(asked, "nothing asked of personal stickers").toEqual([]);
+  });
+
   test("on the phone: a picture of one's own is made a sticker (its middle square, 192 by 192), sent, and seen by the friend, who keeps it and sends it on; a report has its picture; the maker letting it go leaves the friend's, and once nobody has it, it is gone for both", async ({ browser }) => {
     test.setTimeout(240_000);
     const { ann, bob } = await twoFriends(browser);

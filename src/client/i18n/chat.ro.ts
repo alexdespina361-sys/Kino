@@ -43,7 +43,7 @@ export const chatRo: ChatDictionary = {
   "chat.stickerRemove": "Șterge acest sticker",
   "chat.stickersNone": "Adaugă o poză de-a ta: pătratul din mijloc devine sticker.",
   "chat.stickersFailed": "Stickerele tale nu s-au putut încărca.",
-  "chat.stickersPrivacy": "Un sticker trimis e văzut de prietenul respectiv, care îl poate salva. Kino îl păstrează până când toți cei care îl au îl șterg.",
+  "chat.stickersPrivacy": "Un sticker trimis e văzut de prietenul respectiv, care îl poate salva. Kino îl păstrează până când toți cei care îl au îl șterg, sau până îl scoate echipa Kino.",
   "chat.stickerNotPicture": "Fișierul acesta nu poate deveni sticker. Încearcă o fotografie sau un PNG.",
   "chat.stickerTooBig": "Poza e prea mare ca să fie deschisă aici.",
   "chat.stickerFull": "Ai 24 de stickere. Șterge unul ca să adaugi altul.",

@@ -124,6 +124,19 @@ describe("personal stickers while the host has them off", () => {
       expect([reply.statusCode, reply.data]).toEqual([404, { error: "off" }]);
     }
   });
+
+  it("leave where their pictures are kept alone: a start asks it nothing (on Postgres, not even for their table), one with them on tidies it", async () => {
+    const asked: string[] = [];
+    const files = new MemoryStickerFiles();
+    for (const name of ["ids", "get", "put", "remove"] as const) {
+      const real = files[name].bind(files) as (...args: unknown[]) => unknown;
+      (files as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => (asked.push(name), real(...args));
+    }
+    await start({ on: false, files });
+    expect(asked).toEqual([]);
+    await start({ on: true, files });
+    expect(asked).toEqual(["ids"]);
+  });
 });
 
 describe("a personal sticker", () => {
