@@ -118,8 +118,8 @@ export const StickerMakeSchema = z
     delays: z.array(z.number().int().min(MOVING_STICKER.minDelay).max(MOVING_STICKER.maxDelay)).min(MOVING_STICKER.minFrames).max(MOVING_STICKER.maxFrames).optional(),
   })
   .refine((made) => made.delays !== undefined || made.data.length <= PERSONAL_STICKER_BASE64_MAX);
-/** Sending one of one's own in a chat, or saving one a friend sent. */
-export const StickerSendSchema = z.object({ id: StickerIdSchema });
+/** Sending one of one's own in a chat (as an answer to a message, `replyTo`, see chat.ts), or saving one a friend sent. */
+export const StickerSendSchema = z.object({ id: StickerIdSchema, replyTo: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() });
 
 /** Why a sticker could not be made or kept. */
 export type StickerProblem = "not_a_picture" | "too_big" | "full" | "too_many" | "site_full" | "off";

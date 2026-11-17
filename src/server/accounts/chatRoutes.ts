@@ -127,7 +127,7 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (!me) return reply;
     const parsed = ChatSendSchema.safeParse(request.body);
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
-    const sent = chat.send(me.profileId, me.friendId, parsed.data.text);
+    const sent = chat.send(me.profileId, me.friendId, parsed.data.text, parsed.data.replyTo);
     return sent.ok ? reply.code(201).send(sent.value) : fail(reply, sent);
   });
 
@@ -233,7 +233,7 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
     // (Only one of one's own: a name typed by hand, or one of somebody else's, is not a sticker one has.)
     if (!book.holds(me.profileId, parsed.data.id)) return refuse(reply, "gone");
-    const sent = chat.sendSticker(me.profileId, me.friendId, parsed.data.id);
+    const sent = chat.sendSticker(me.profileId, me.friendId, parsed.data.id, parsed.data.replyTo);
     return sent.ok ? reply.code(201).send(sent.value) : fail(reply, sent);
   });
 
