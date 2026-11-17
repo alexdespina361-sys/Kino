@@ -6,7 +6,7 @@ import { FilmIcon, GifIcon, SendIcon, ShieldIcon } from "../shared/icons";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
-import { keepTheBox, MessageBox } from "./MessageBox";
+import { afterSent, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { CHAT_FACTS } from "./state";
 import { TitlePickSheet } from "./TitlePick";
@@ -119,8 +119,8 @@ function Composer({ session, onPickTitle, onPickGif }: { session: ChatSession; o
     event?.preventDefault();
     if (!checked.ok || session.sending) return;
     const written = text;
-    // (Only what was sent leaves the box: what was typed while the message was on its way, wherever in the box, is the next one. A slow connection is seconds of typing.)
-    if (await session.send(checked.text)) setText((now) => now.replace(written, "").trim());
+    // (Only what was sent leaves the box: what was typed while the message was on its way is the next one. A slow connection is seconds of typing.)
+    if (await session.send(checked.text)) setText((now) => afterSent(now, written));
     input.current?.focus(); // (the keyboard stays up: the next message is what comes next)
   };
 

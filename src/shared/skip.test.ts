@@ -33,6 +33,18 @@ describe("skip times", () => {
     expect(believableSkipTimes({ intro: { start: 85, end: 175 } }, 100)).toBeUndefined(); // a short video has nothing to skip
   });
 
+  it("in a long film, are only near its start and its end, not anywhere in its halves", () => {
+    const film = 7200;
+    expect(believableSkipTimes({ intro: { start: 3000, end: 3090 } }, film)).toBeUndefined(); // (an hour in, in the first half: not an opening)
+    expect(believableSkipTimes({ recap: { start: 600, end: 660 } }, film)).toBeUndefined();
+    expect(believableSkipTimes({ outro: { start: 4000, end: 4290 } }, film)).toBeUndefined(); // (in the second half, but an hour before the end)
+    expect(believableSkipTimes({ intro: { start: 400, end: 490 }, recap: { start: 0, end: 60 }, outro: { start: 6950, end: 7200 } }, film)).toEqual({
+      recap: { start: 0, end: 60 },
+      intro: { start: 400, end: 490 },
+      outro: { start: 6950, end: 7200 },
+    });
+  });
+
   it("are another cut's when they end past the video, and are cut at its end when they end a second or two after it", () => {
     expect(believableSkipTimes({ outro: { start: 1330, end: 1421.5 } }, 1420)).toEqual({ outro: { start: 1330, end: 1420 } });
     expect(believableSkipTimes({ outro: { start: 1400, end: 1490 } }, 1420)).toBeUndefined();

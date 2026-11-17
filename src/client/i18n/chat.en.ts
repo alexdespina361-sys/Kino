@@ -32,6 +32,7 @@ export const chatEn = {
   "chat.gifMore": "More GIFs",
   "chat.gifAlt": "GIF",
   "chat.gifGone": "A GIF that is no longer available",
+  "chat.gifChild": "A GIF (GIFs are not shown on a child's profile)",
   "chat.takeBack": "Take back",
   "chat.takeBackLast": "Take back last message",
   "chat.mute": "Mute",

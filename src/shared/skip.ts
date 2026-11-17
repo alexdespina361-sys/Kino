@@ -11,14 +11,17 @@ import type { SkipInterval, SkipTimes } from "./media";
 export const SKIP_PARTS = ["recap", "intro", "outro"] as const;
 export type SkipPart = (typeof SKIP_PARTS)[number];
 
-/** The least and most a part lasts (seconds), and where in the video it may be (a share of its length). */
-const RULES: Record<SkipPart, { shortest: number; longest: number; startsBy?: number; startsFrom?: number }> = {
-  /** An opening: 10 s to a little over three minutes, in the first half. */
-  intro: { shortest: 10, longest: 200, startsBy: 0.5 },
-  /** A "previously on": a few seconds to five minutes, near the start. */
-  recap: { shortest: 5, longest: 300, startsBy: 0.35 },
-  /** Closing credits: 10 s to five minutes, in the second half. */
-  outro: { shortest: 10, longest: 300, startsFrom: 0.5 },
+/**
+ * The least and most a part lasts (seconds), and where in the video it may be: a share of its length, and seconds from its start or before its end (so that
+ * in a two-hour film an "opening" an hour in is not one, as a share alone would let it be).
+ */
+const RULES: Record<SkipPart, { shortest: number; longest: number; startsBy?: number; startsWithin?: number; startsFrom?: number; startsInLast?: number }> = {
+  /** An opening: 10 s to a little over three minutes, in the first half and the first quarter of an hour. */
+  intro: { shortest: 10, longest: 200, startsBy: 0.5, startsWithin: 900 },
+  /** A "previously on": a few seconds to five minutes, near the start (in the first five minutes). */
+  recap: { shortest: 5, longest: 300, startsBy: 0.35, startsWithin: 300 },
+  /** Closing credits: 10 s to five minutes, in the second half and the last quarter of an hour. */
+  outro: { shortest: 10, longest: 300, startsFrom: 0.5, startsInLast: 900 },
 };
 
 /** A video shorter than this has nothing to skip. */
@@ -72,7 +75,9 @@ export function believableSkipTimes(skip: SkipTimes | undefined, length: number)
     const lasts = end - its.start;
     if (lasts < rule.shortest || lasts > rule.longest) continue;
     if (rule.startsBy !== undefined && its.start > rule.startsBy * length) continue;
+    if (rule.startsWithin !== undefined && its.start > rule.startsWithin) continue;
     if (rule.startsFrom !== undefined && its.start < rule.startsFrom * length) continue;
+    if (rule.startsInLast !== undefined && its.start < length - rule.startsInLast) continue;
     kept[part] = { start: its.start, end };
   }
   if (kept.recap && kept.intro && kept.recap.start < kept.intro.end && kept.intro.start < kept.recap.end) delete kept.recap;

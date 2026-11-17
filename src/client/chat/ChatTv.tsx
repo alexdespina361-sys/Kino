@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FocusEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type SetStateAction } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type AvatarId, type LibraryItem } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
@@ -13,7 +13,7 @@ import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
 import { gifOf } from "./gifs";
 import { GifPickTv } from "./GifPick";
-import { keepTheBox, MessageBox } from "./MessageBox";
+import { afterSent, cutTo, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { useVisibleArea } from "./visibleArea";
 import type { ChatReport, ChatSession } from "./useChat";
@@ -135,7 +135,7 @@ export function ReadTv({
   /** A hand-held screen: it types in the box itself as a computer does, with its own keyboard, which does not come up by itself as the chat opens (it would cover the messages before they are read). */
   narrow?: boolean;
   draft?: string;
-  setDraft?: (text: string) => void;
+  setDraft?: Dispatch<SetStateAction<string>>;
   session: ChatSession;
   report: ChatReport;
   receiving: boolean;
@@ -178,14 +178,15 @@ export function ReadTv({
   };
 
   const type = (text: string) => {
-    setDraft(text.slice(0, CHAT_TEXT_MAX));
+    setDraft(cutTo(text, CHAT_TEXT_MAX));
     session.settle();
   };
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!checked.ok || session.sending) return;
+    const written = draft;
     if (await session.send(checked.text)) {
-      setDraft("");
+      setDraft((now) => afterSent(now, written)); // (what was typed while it was on its way is the next message: see `afterSent`)
       (narrow ? area : box).current?.focus(); // (the next message is typed at once, as in any chat)
     }
   };

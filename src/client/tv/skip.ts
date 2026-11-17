@@ -19,8 +19,12 @@ import { believableSkipTimes, mergeSkipTimes, SKIP_PARTS, skipTimesOf, type Norm
 export const AUTO_SKIP_SECONDS = 5;
 /** How long a button that just came up is bright, and the remote's OK presses it. */
 export const FRESH_MS = 10_000;
-/** Credits that end this close to the end of the episode run to it (else there is something after them: they get Skip credits, and Next episode comes at the end). */
-const CREDITS_TO_END = 20;
+/**
+ * Credits that end this close to the end of the episode run to it (else there is something after them, a scene or the next one's preview: they get Skip
+ * credits, which lands on it, and Next episode comes at the end). Seconds, not more: what comes after credits can be story, and a profile that skips credits
+ * by itself would skip it with them.
+ */
+const CREDITS_TO_END = 5;
 /** Winding back to this far before a part that was skipped or turned down makes it new again. */
 const AGAIN_BEFORE = 5;
 

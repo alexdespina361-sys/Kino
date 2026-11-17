@@ -29,6 +29,7 @@ export const chatRo: ChatDictionary = {
   "chat.gifMore": "Mai multe GIF-uri",
   "chat.gifAlt": "GIF",
   "chat.gifGone": "Un GIF care nu mai e disponibil",
+  "chat.gifChild": "Un GIF (pe profilul unui copil nu se arată GIF-uri)",
   "chat.takeBack": "Retrage",
   "chat.takeBackLast": "Retrage ultimul mesaj",
   "chat.mute": "Dă pe mut",
