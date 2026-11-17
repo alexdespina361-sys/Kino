@@ -27,6 +27,9 @@ type Animated = Extract<LibrarySection, "cartoon" | "anime">;
 /** TMDB's genre for animation: a title that has it is a cartoon or an anime, and no film or show of the live-action sections. */
 export const ANIMATION_GENRE = 16;
 
+/** TMDB TV genres for unscripted content without playback availability (News: 10763, Soap: 10766, Talk: 10767). */
+export const UNSCRIPTED_TV_GENRES = [10763, 10766, 10767] as const;
+
 const live = (type: Type): LibrarySection => (type === "movie" ? "movie" : "series");
 /** The section a category is in: the one it says, else the live-action one of its type. */
 export const sectionOfCategory = (cat: FilmpireCategory): LibrarySection => cat.section ?? live(cat.type);
@@ -37,14 +40,19 @@ const DISCOVER: Record<Type, string> = {
 };
 const DATE: Record<Type, string> = { movie: "primary_release_date", tv: "first_air_date" };
 
-/** A shelf of a section (the live-action one of its type, unless it says): the live-action ones ask for no animation, so that their pages are not part empty once the animated titles are taken out of them. */
-const shelf = (type: Type, id: string, title: string, query: string, section: LibrarySection = live(type)): FilmpireCategory => ({
-  id,
-  title,
-  type,
-  section,
-  path: `${DISCOVER[type]}&${query}${section === live(type) ? `&without_genres=${ANIMATION_GENRE}` : ""}`,
-});
+/** A shelf of a section (the live-action one of its type, unless it says): the live-action ones ask for no animation (and TV series leave out unscripted talk/news/soaps), so that their pages are not part empty once unusable titles are taken out. */
+const shelf = (type: Type, id: string, title: string, query: string, section: LibrarySection = live(type)): FilmpireCategory => {
+  const without = section === live(type)
+    ? (type === "tv" ? `&without_genres=${ANIMATION_GENRE},${UNSCRIPTED_TV_GENRES.join(",")}` : `&without_genres=${ANIMATION_GENRE}`)
+    : "";
+  return {
+    id,
+    title,
+    type,
+    section,
+    path: `${DISCOVER[type]}&${query}${without}`,
+  };
+};
 const decade = (type: Type, start: number) => `${DATE[type]}.gte=${start}-01-01&${DATE[type]}.lte=${start + 9}-12-31`;
 const before = (type: Type, year: number) => `${DATE[type]}.lte=${year}-12-31`;
 const byVotes = "sort_by=vote_count.desc";

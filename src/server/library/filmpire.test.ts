@@ -429,6 +429,25 @@ describe("filmpireSource sections", () => {
     expect(rows.find((one) => one.id === "filmpire-trending-movies")!.items.some((one) => one.section !== undefined)).toBe(false);
     expect(titlesOf(rows.find((one) => one.id === "filmpire-cartoon-movies")!)).toEqual(["Toon Film", "Korean Toon"]);
   });
+  it("filters out unscripted talk shows, news, and soap operas while preserving scripted series and movies", async () => {
+    const rawCategories: FilmpireCategory[] = [
+      { id: "popular-tv", title: "Popular Series", path: "/tv/popular", type: "tv" },
+    ];
+    const items = [
+      { id: 101, name: "Jimmy Fallon Live", media_type: "tv", first_air_date: "2014-02-17", genre_ids: [10767], poster_path: "/jf.jpg" }, // Talk
+      { id: 102, name: "Daily News Report", media_type: "tv", first_air_date: "2020-01-01", genre_ids: [10763], poster_path: "/news.jpg" }, // News
+      { id: 103, name: "Binnelanders Daily", media_type: "tv", first_air_date: "2005-10-13", genre_ids: [10766], poster_path: "/soap.jpg" }, // Soap
+      { id: 201, name: "Breaking Bad", media_type: "tv", first_air_date: "2008-01-20", genre_ids: [18, 80], poster_path: "/bb.jpg" }, // Scripted drama
+      { id: 202, title: "Inception", media_type: "movie", release_date: "2010-07-16", genre_ids: [28, 878], poster_path: "/inc.jpg" }, // Movie
+    ];
+    const get = vi.fn(async () => json({ results: items, total_pages: 1 }));
+    const rows = await filmpireSource({ categories: rawCategories, fetch: get as never }).load();
+    const loadedTitles = rows[0]?.items.map((i) => i.title);
+    expect(loadedTitles).toContain("Breaking Bad");
+    expect(loadedTitles).not.toContain("Jimmy Fallon Live");
+    expect(loadedTitles).not.toContain("Daily News Report");
+    expect(loadedTitles).not.toContain("Binnelanders Daily");
+  });
 });
 
 describe("filmpireSource search", () => {

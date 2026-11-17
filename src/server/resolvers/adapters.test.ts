@@ -558,17 +558,17 @@ describe("the anime site for a show TMDB keeps as one with many seasons", () => 
     expect(res.status).not.toBe("success");
   });
 
-  it("keeps the order of the sources for anime: Buzz, when it has the episode, before the anime site", async () => {
+  it("keeps the order of the sources for anime: VidLink, when it has the episode, before the anime site", async () => {
     const get = animeWorld({
       tmdbId: "60572",
       tmdb: { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons: POKEMON_SEASONS },
       titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
       episodes: { pokemonuj: [5, 6, 7] },
-      buzz: true,
+      vidlink: true,
     });
     const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
     expect(res.status).toBe("success");
-    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.vidlink.test");
   });
 
   it("does not take another show's title that has the season's name in it", async () => {
@@ -662,40 +662,25 @@ describe("the anime site: a season is never another season's title", () => {
     expect(JSON.stringify(res)).toContain("sousou.mp4");
   });
 
-  it("keeps the full order of sources: VidLink before Buzz before the anime site", async () => {
-    // When VidLink has the episode, it is preferred over both Buzz and AnimeHeaven
+  it("keeps the order of sources: VidLink before AnimeHeaven", async () => {
+    // When VidLink has the episode, it is preferred over AnimeHeaven
     const getWithVidlink = animeWorld({
       tmdbId: "60572",
       tmdb: pokemon,
       titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
       episodes: { pokemonuj: [5, 6, 7] },
-      buzz: true,
       vidlink: true,
     });
     const resVl = await createFilmpireAdapter({ fetch: getWithVidlink }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
     expect(resVl.status).toBe("success");
     if (resVl.status === "success") expect(resVl.media.stream.directUrl).toContain("cdn.vidlink.test");
 
-    // When VidLink is absent, Buzz is taken before AnimeHeaven
-    const getWithBuzz = animeWorld({
-      tmdbId: "60572",
-      tmdb: pokemon,
-      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
-      episodes: { pokemonuj: [5, 6, 7] },
-      buzz: true,
-      vidlink: false,
-    });
-    const resBuzz = await createFilmpireAdapter({ fetch: getWithBuzz }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
-    expect(resBuzz.status).toBe("success");
-    if (resBuzz.status === "success") expect(resBuzz.media.stream.directUrl).toContain("cdn.buzz.test");
-
-    // When neither VidLink nor Buzz has it, AnimeHeaven is taken
+    // When VidLink is absent, AnimeHeaven is taken
     const getWithAh = animeWorld({
       tmdbId: "60572",
       tmdb: pokemon,
       titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
       episodes: { pokemonuj: [5, 6, 7] },
-      buzz: false,
       vidlink: false,
     });
     const resAh = await createFilmpireAdapter({ fetch: getWithAh }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
@@ -719,13 +704,19 @@ describe("the anime site: a season is never another season's title", () => {
     expect(aborted).toBe(true);
   });
 
-  it("an anime episode VidLink does not answer for is played from Buzz after 2.5 s, not after VidLink's usual 6", { timeout: 20_000 }, async () => {
-    const get = animeWorld({ tmdbId: "60572", tmdb: pokemon, titles: () => [], episodes: {}, buzz: true, vidlink: "hang" });
+  it("an anime episode VidLink does not answer for is played from AnimeHeaven after 2.5 s, not after VidLink's usual 6", { timeout: 20_000 }, async () => {
+    const get = animeWorld({
+      tmdbId: "60572",
+      tmdb: pokemon,
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
+      episodes: { pokemonuj: [5, 6, 7] },
+      vidlink: "hang",
+    });
     const started = Date.now();
     const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
     const took = Date.now() - started;
     expect(res.status).toBe("success");
-    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("pokemonuj.mp4");
     expect(took).toBeGreaterThanOrEqual(2_400);
     expect(took).toBeLessThan(5_000);
   });
