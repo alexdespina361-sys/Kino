@@ -22,8 +22,14 @@ export const SHELF_BATCH = 5;
 /** Today as TMDB writes a date, to tell what has not come out yet. */
 export const today = () => new Date().toISOString().slice(0, 10);
 
-const MOVIE_DISCOVER_FILTER = `primary_release_date.lte=${today()}&vote_count.gte=10`;
-const TV_DISCOVER_FILTER = `first_air_date.lte=${today()}&vote_count.gte=5`;
+/**
+ * Stands for today in a category's path: `pageUrl` writes the day each question is asked. (Written once as the server started, the date stayed that day for as
+ * long as it ran - days - and what came out since was left out of the rows.)
+ */
+export const TODAY = "{today}";
+
+const MOVIE_DISCOVER_FILTER = `primary_release_date.lte=${TODAY}&vote_count.gte=10`;
+const TV_DISCOVER_FILTER = `first_air_date.lte=${TODAY}&vote_count.gte=5`;
 
 /** What the lists of Movies and Series that TMDB can sort by genre are asked not to have: animation is in the Cartoons and the Anime (the trending, popular and top lists cannot be asked that way, so `askPage` takes it out of them). */
 const NO_ANIMATION = `without_genres=${ANIMATION_GENRE}`;
@@ -283,8 +289,8 @@ const TmdbResponseSchema = z.object({
 const TmdbSearchSchema = TmdbResponseSchema.extend({ total_pages: z.number().int().optional() });
 
 /** A TMDB path with the page asked for (any `page` it had is replaced) and the key. */
-function pageUrl(path: string, page: number, apiKey: string): string {
-  const [route = "", query = ""] = path.split("?");
+export function pageUrl(path: string, page: number, apiKey: string): string {
+  const [route = "", query = ""] = path.replaceAll(TODAY, today()).split("?");
   const rest = query.split("&").filter((part) => part && !part.startsWith("page=") && !part.startsWith("api_key="));
   return `${BASE_URL}${route}?${[...rest, `page=${page}`, `api_key=${apiKey}`].join("&")}`;
 }

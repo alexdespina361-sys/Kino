@@ -358,8 +358,9 @@ export function Tv() {
   useEffect(() => {
     const media = currentMediaRef.current;
     if (!media) return;
+    // (Only an anime with that audio among its sources: anything else stays on the source it plays, a film's Romanian dub or the second source it fell back to.)
     const targetIdx = preferredSourceIndex(media, settings.animeAudio);
-    if (targetIdx !== sourceIndexRef.current) {
+    if (targetIdx !== undefined && targetIdx !== sourceIndexRef.current) {
       loadSource(targetIdx, true);
     }
   }, [settings.animeAudio]);
@@ -497,7 +498,7 @@ export function Tv() {
       putMedia(preloaded);
       profileStore.playbackStarted(preloaded);
       resetApplied();
-      const startIdx = preferredSourceIndex(preloaded, settings.animeAudio);
+      const startIdx = preferredSourceIndex(preloaded, settings.animeAudio) ?? 0;
       resetSources(startIdx);
       const startSource = sourcesOf(preloaded)[startIdx] ?? sourcesOf(preloaded)[0]!;
       engineRef.current?.load(startSource.stream.url, startSource.stream.type, startSource.subtitles, undefined, startSource.stream.directUrl);
@@ -979,7 +980,7 @@ export function Tv() {
               clearUpNext();
               setUpNextDismissed(false);
               resetApplied();
-              const startIdx = preferredSourceIndex(command.media, settings.animeAudio);
+              const startIdx = preferredSourceIndex(command.media, settings.animeAudio) ?? 0;
               resetSources(startIdx);
               const startSource = sourcesOf(command.media)[startIdx] ?? sourcesOf(command.media)[0]!;
               void engine.load(startSource.stream.url, startSource.stream.type, startSource.subtitles, command.startAt, startSource.stream.directUrl);
@@ -1469,7 +1470,7 @@ export function Tv() {
       playEpisode(page, { ...(at > 5 ? { startAt: at } : {}), hint: { poster, backdrop, year } });
       return;
     }
-    const startIdx = preferredSourceIndex(currentMedia, settings.animeAudio);
+    const startIdx = preferredSourceIndex(currentMedia, settings.animeAudio) ?? 0;
     const source = sourcesOf(currentMedia)[startIdx] ?? sourcesOf(currentMedia)[0];
     if (!source) return;
     resetApplied();
