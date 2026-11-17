@@ -8,7 +8,7 @@ import { episodeKey, useUnavailable } from "../shared/unavailable";
 import { statusWords } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 import { SideScroll } from "./SideScroll";
-import { showKeyOf, startOf, type Entry, type Start } from "./pages";
+import { heldStart, showKeyOf, startOf, type Entry, type Start } from "./pages";
 
 /** One episode of the season that is shown, as the page lists it. */
 export interface PageEpisode {
@@ -31,8 +31,15 @@ export interface SeriesPage {
   isShow: boolean;
   /** The seasons are being asked for. */
   loading: boolean;
-  /** Where Play leads: the episode this profile is at, else the first. */
+  /** Where Play leads: the episode a link or a friend's message asked for (`Entry.asked`), else the one this profile is at, else the first. */
   start: Start | undefined;
+  /**
+   * The episode that was asked for is being looked up (its season's episodes are being asked for): Play waits, for it would otherwise start another episode. When
+   * the show has no such episode, or nothing that plays it, Play leads where it always did.
+   */
+  holding: boolean;
+  /** What Play says it leads to (pages.ts `playLabel`): `start`, or the episode that was asked for while it is looked up. */
+  said: Start | undefined;
   /** The season that is shown: the one chosen, else the one Play leads to. */
   season: number | undefined;
   pick: (season: number) => void;
@@ -52,7 +59,22 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
   const found = useSeasons(asked ? entry.url : undefined);
   const seasons = found ?? [];
   const isShow = entry?.kind === "series" || seasons.length > 0;
-  const start = entry && isShow ? startOf(entry, true, progress) : undefined;
+  const own = entry && isShow ? startOf(entry, true, progress) : undefined;
+  // (The episode a link or a friend's message asked for: found by its number in its season's episodes, which say what plays it.)
+  const ask = asked && entry.asked?.season !== undefined && entry.asked.episode !== undefined ? { season: entry.asked.season, episode: entry.asked.episode, at: entry.asked.at } : undefined;
+  const askedSeason = ask && seasons.includes(ask.season) ? ask.season : undefined;
+  const askedDetails = useEpisodeDetails(askedSeason === undefined ? undefined : entry?.url, askedSeason);
+  const askedUrl = ask && askedDetails ? askedDetails.get(ask.episode)?.url : undefined;
+  const holding = ask !== undefined && (found === undefined || (askedSeason !== undefined && askedDetails === undefined));
+  const start: Start | undefined =
+    ask && askedUrl
+      ? // (No time asked for, and this profile left that very episode part way: it is picked up where it was left.)
+        ask.at === undefined && own?.season === ask.season && own.episode === ask.episode
+        ? own
+        : { season: ask.season, episode: ask.episode, url: askedUrl, ...(ask.at !== undefined ? { startAt: ask.at, asked: true as const } : {}) }
+      : holding
+        ? undefined
+        : own;
 
   const [picked, setPicked] = useState<{ id: string; season: number } | undefined>(() => (entry && browsing !== undefined ? { id: entry.id, season: browsing } : undefined));
   // A page that was closed forgets the season that was browsed on it: it opens next on the one this profile is at.
@@ -61,7 +83,7 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
     if (!open) setPicked(undefined);
   }, [open]);
   const chosen = picked?.id === entry?.id ? picked?.season : undefined;
-  const season = [chosen, start?.season].find((n) => n !== undefined && seasons.includes(n)) ?? seasons[0];
+  const season = [chosen, start?.season ?? askedSeason].find((n) => n !== undefined && seasons.includes(n)) ?? seasons[0];
   const details = useEpisodeDetails(season === undefined ? undefined : entry?.url, season);
   // (What nobody could play of it: asked for a film too, which is the one thing about a film this page asks.)
   const marks = useUnavailable(entry !== undefined && !entry.opens && entry.url !== "" ? entry.url : undefined);
@@ -101,6 +123,8 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
     isShow,
     loading: found === undefined && asked,
     start,
+    holding,
+    said: start ?? (holding && entry ? heldStart(entry) : undefined),
     season,
     pick: (next) => entry && setPicked({ id: entry.id, season: next }),
     episodes,

@@ -40,6 +40,13 @@ describe("readLaunchParams", () => {
     expect(readLaunchParams("?text=file%3A%2F%2F%2Fetc%2Fpasswd")).toEqual({});
   });
 
+  it("reads where to start a link (`&t=`, what Play on TV sends from a phone that is the screen), only with a link and only a whole second up to a day", () => {
+    expect(readLaunchParams("?url=https%3A%2F%2Fsite.example%2Fwatch%2F1&t=754")).toEqual({ url: "https://site.example/watch/1", startAt: 754 });
+    for (const odd of ["0", "-5", "1.5", "86401", "abc", ""]) expect(readLaunchParams(`?url=https%3A%2F%2Fsite.example%2Fwatch%2F1&t=${odd}`), odd).toEqual({ url: "https://site.example/watch/1" });
+    expect(readLaunchParams("?t=754")).toEqual({});
+    expect(readLaunchParams("?code=482731&t=754")).toEqual({ code: "482731" });
+  });
+
   it("returns nothing for a plain visit", () => {
     expect(readLaunchParams("")).toEqual({});
     expect(readLaunchParams("?debug=0")).toEqual({});

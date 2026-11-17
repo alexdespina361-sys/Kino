@@ -4,6 +4,25 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.10",
+    date: "2026-11-17",
+    en: [
+      "In a chat: the button beside a title in Titles lets you send one episode of a show, a time to start from, and your rating of it.",
+      "Your friend's card shows them, and opens the title at that episode; its Play says it, for example “Play S2:E5 from 12:34”.",
+      "Play on TV, on a phone that shows the TV's pages, now starts where you left off instead of from the beginning.",
+    ],
+    ro: [
+      "În chat: butonul de lângă un titlu din Titluri îți permite să trimiți un episod anume, momentul de la care începe și nota ta.",
+      "Cardul primit de prieten le arată și deschide titlul la acel episod; butonul de redare o spune, de exemplu „Redă S2:E5 de la 12:34”.",
+      "Redă pe TV, pe un telefon care arată paginile televizorului, pornește acum de unde ai rămas, nu de la început.",
+    ],
+    it: [
+      "In chat: il pulsante accanto a un titolo in Titoli ti fa inviare un episodio, il momento da cui partire e il tuo voto.",
+      "La scheda che riceve l'amico li mostra e apre il titolo a quell'episodio; il pulsante di riproduzione lo dice, per esempio “Riproduci S2:E5 da 12:34”.",
+      "Riproduci sulla TV, su un telefono che mostra le pagine della TV, ora parte da dove eri rimasto invece che dall'inizio.",
+    ],
+  },
+  {
     version: "0.4.9",
     date: "2026-11-17",
     en: [

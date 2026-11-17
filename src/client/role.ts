@@ -112,11 +112,13 @@ export const roleOfThisPage = (): Role =>
 /**
  * "Play on TV", on a phone or a tablet that is the screen: the remote plays `link` on the TV it is paired with, and asks for one first when it
  * has none. Where this device opens stays as it was: a phone that never chose opens on the library again (the trip to the remote leaves the
- * remote's id here, which would make it the remote next time: see `chooseRole`).
+ * remote's id here, which would make it the remote next time: see `chooseRole`). `startAt` (whole seconds) is where in it: where it was left, or the time a
+ * friend's message asked for (`&t=754`, which the remote reads: launch.ts `readLaunchParams`).
  */
-export function playOnTv(link: string): void {
+export function playOnTv(link: string, startAt?: number): void {
   if (readStorage(ROLE_KEY) === undefined) writeStorage(ROLE_KEY, "tv");
-  location.assign(`/?url=${encodeURIComponent(link)}`);
+  const at = startAt !== undefined && Number.isFinite(startAt) ? Math.floor(startAt) : 0;
+  location.assign(`/?url=${encodeURIComponent(link)}${at > 0 ? `&t=${at}` : ""}`);
 }
 
 /** Make this screen the other one, and remember it. A fresh load of "/" keeps the two screens' styles and connections apart. */

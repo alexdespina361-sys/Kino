@@ -1,15 +1,26 @@
-import { useEffect, useMemo } from "react";
-import { checkChatText } from "../../shared";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { checkChatText, episodeStatus, resumeAt } from "../../shared";
+import { ratingFor } from "../account/ratingText";
 import { useProfileData } from "../account/store";
 import { useT } from "../i18n";
+import { useEpisodeDetails, useSeasons } from "../shared/episodeDetails";
+import { formatTime } from "../shared/format";
+import { CheckIcon, ChevronIcon, ChevronLeftIcon, MoreIcon, SendIcon, StarIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
+import type { TitleExtras } from "../shared/titleAddress";
+import { useBackFirst } from "../tv/dpad";
+import { cardOf, showKeyOf, startOf, type Entry } from "../tv/pages";
 import type { ChatSession } from "./useChat";
-import { messageOf, sendableTitles, type Sendable } from "./titles";
+import { chosenExtras, isShowAddress, messageOf, movedTime, sendableTitles, TIME_MAX, typedTime, type Sendable } from "./titles";
 
 /**
  * Sending a title in the chat: a press on one of the titles this profile watched or saved sends it at once (its name and its address, see titles.ts),
  * through the chat's own send, so what limits a message limits it too, and the friend is told as of any message. What was being typed stays in the box.
  * A title sent by mistake is taken back as any message is.
+ *
+ * The small button beside each one opens the send step (the owner, 17 Nov: "a specific episode for series/animes, showing the rating given, including a timed
+ * send"): an episode of a show, where to start, and this profile's rating of it, each only when it is chosen there. Nothing more is ever sent than was chosen
+ * on that step, for that one message: a plain press sends what it always did.
  */
 
 /** The titles this profile can send (see `sendableTitles`). */
@@ -19,30 +30,63 @@ function useSendable(): Sendable[] {
 }
 
 /** (As any message: the text as the server will keep it, and nothing that it would refuse.) */
-const send = async (session: ChatSession, title: Sendable): Promise<boolean> => {
-  const checked = checkChatText(messageOf(title, location.origin));
+const send = async (session: ChatSession, title: Sendable, extras: TitleExtras = {}): Promise<boolean> => {
+  const checked = checkChatText(messageOf(title, location.origin, extras));
   return checked.ok ? session.send(checked.text) : false;
 };
 
+/** What the nav attribute is, where the remote walks the panel. */
+const navOf = (nav: boolean) => (nav ? { "data-nav": true } : {});
+
 /**
  * The titles of the chat's panel (ChatPanel.tsx): a poster a title, what this profile watched and saved. A press sends one at once, and the panel goes with it
- * (the chat shows it sent, or why not). `tv`: drawn for the TV's pages; `nav`: walked with the arrows (the remote lands on the first).
+ * (the chat shows it sent, or why not); the button beside it opens the send step in its place. `tv`: drawn for the TV's pages; `nav`: walked with the arrows
+ * (the remote lands on the first). `pointer`: a screen that is touched or clicked, where a time can be typed.
  */
-export function TitleList({ session, tv, nav, onSent }: { session: ChatSession; tv: boolean; nav: boolean; onSent: () => void }) {
+export function TitleList({ session, tv, nav, pointer = false, onSent }: { session: ChatSession; tv: boolean; nav: boolean; pointer?: boolean; onSent: () => void }) {
   const t = useT();
   const titles = useSendable();
   const prefix = tv ? "tv-chat" : "chat";
+  const [step, setStep] = useState<string | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  /** The title whose step was shut: the keys go back to its button (it was the one pressed). */
+  const back = useRef<string | null>(null);
   // (The titles are this profile's, and another screen can change them while the panel is open: the remote, left on nothing when the poster it was on goes, is
   // given the first title, or the panel's tab when there is none any more.)
   useEffect(() => {
-    if (!nav) return;
+    if (!nav || step !== null) return;
     const on = document.activeElement;
     if (on !== null && on !== document.body) return;
     (
       document.querySelector<HTMLElement>(`[data-testid='${prefix}-pick']:not(:disabled)`) ??
       document.querySelector<HTMLElement>(`[data-testid='${prefix}-panel-tab'][aria-selected='true']`)
     )?.focus();
-  }, [titles, nav, prefix]);
+  }, [titles, nav, prefix, step]);
+  useLayoutEffect(() => {
+    const address = back.current;
+    if (step !== null || address === null) return;
+    back.current = null;
+    list.current?.querySelector<HTMLElement>(`[data-testid='${prefix}-pick-more'][data-address='${address}']`)?.focus({ preventScroll: false });
+  }, [step, prefix]);
+
+  const open = titles.find((title) => title.address === step);
+  if (open) {
+    return (
+      <TitleSend
+        key={open.address}
+        title={open}
+        session={session}
+        tv={tv}
+        nav={nav}
+        pointer={pointer}
+        onBack={() => {
+          back.current = open.address;
+          setStep(null);
+        }}
+        onSent={onSent}
+      />
+    );
+  }
   if (titles.length === 0) {
     return (
       <p className={`${prefix}-pick-none`} data-testid={`${prefix}-pick-none`}>
@@ -51,28 +95,285 @@ export function TitleList({ session, tv, nav, onSent }: { session: ChatSession; 
     );
   }
   return (
-    <div className={`${prefix}-picks`} data-testid={`${prefix}-picks`}>
+    <div className={`${prefix}-picks`} ref={list} data-testid={`${prefix}-picks`}>
       {titles.map((title, at) => (
-        <button
-          type="button"
-          key={title.address}
-          className={`${prefix}-pick`}
-          disabled={session.sending}
-          onClick={() => {
-            if (session.sending) return;
-            onSent();
-            void send(session, title);
-          }}
-          {...(nav ? { "data-nav": true } : {})}
-          {...(nav && at === 0 ? { "data-autofocus": true } : {})}
-          data-address={title.address}
-          data-testid={`${prefix}-pick`}
-        >
-          <Poster className={`${prefix}-pick-art`} title={title.title} image={title.image} />
-          <span className={`${prefix}-pick-name`}>{title.title}</span>
-          {title.year && <span className={`${prefix}-pick-year`}>{title.year}</span>}
-        </button>
+        <div className={`${prefix}-pick-row`} key={title.address}>
+          <button
+            type="button"
+            className={`${prefix}-pick`}
+            disabled={session.sending}
+            onClick={() => {
+              if (session.sending) return;
+              onSent();
+              void send(session, title);
+            }}
+            {...navOf(nav)}
+            {...(nav && at === 0 ? { "data-autofocus": true } : {})}
+            data-address={title.address}
+            data-testid={`${prefix}-pick`}
+          >
+            <Poster className={`${prefix}-pick-art`} title={title.title} image={title.image} />
+            <span className={`${prefix}-pick-name`}>{title.title}</span>
+            {title.year && <span className={`${prefix}-pick-year`}>{title.year}</span>}
+          </button>
+          <button
+            type="button"
+            className={`${prefix}-pick-more`}
+            aria-label={t("chat.sendMore", { title: title.title })}
+            title={t("chat.sendMore", { title: title.title })}
+            aria-haspopup="true"
+            onClick={() => setStep(title.address)}
+            {...navOf(nav)}
+            data-address={title.address}
+            data-testid={`${prefix}-pick-more`}
+          >
+            <MoreIcon aria-hidden="true" />
+          </button>
+        </div>
       ))}
     </div>
+  );
+}
+
+/** One episode of a show, by its season and its number. */
+interface EpisodeChoice {
+  season: number;
+  episode: number;
+}
+
+/**
+ * The send step of one title (see the top of this file), in the panel's pane: an episode of a show (bounded by the seasons and the episodes the library lists,
+ * the one this profile is at first), where to start (from the beginning, a few minutes on or back, where this profile is, or a time typed on a screen that is
+ * touched or clicked), and this profile's rating of the title when it gave one. Everything is off as it opens: Send then sends what a plain press does.
+ * Back (the key, the system's, or the arrow at its top) goes back to the titles, before it would shut the panel.
+ */
+function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title: Sendable; session: ChatSession; tv: boolean; nav: boolean; pointer: boolean; onBack: () => void; onSent: () => void }) {
+  const t = useT();
+  const prefix = tv ? "tv-chat" : "chat";
+  const { progress, watched, ratings } = useProfileData();
+  const show = isShowAddress(title.address);
+  const url = title.url ?? "";
+  const entry: Entry = useMemo(() => ({ id: title.address, title: title.title, url, kind: show ? "series" : "movie" }), [title.address, title.title, url, show]);
+  useBackFirst(onBack);
+  const root = useRef<HTMLDivElement>(null);
+
+  // The episode: none (the whole show) until one is chosen; then the one this profile is at, else the first.
+  const seasons = useSeasons(show && url ? url : undefined);
+  const [episode, setEpisode] = useState<EpisodeChoice | null>(null);
+  const details = useEpisodeDetails(episode && url ? url : undefined, episode?.season);
+  const numbers = details ? [...details.values()].filter((detail) => detail.url).map((detail) => detail.episode).sort((a, b) => a - b) : details;
+  // (An episode the season does not list - the season changed, or the list came after - is the first it does list.)
+  const shown: EpisodeChoice | null = episode && numbers?.length ? { season: episode.season, episode: numbers.includes(episode.episode) ? episode.episode : numbers[0]! } : episode;
+  // (A show's choice is there while its seasons are asked for - "One episode" waits for them - and goes if it has none the library can list.)
+  const offerEpisode = show && url !== "" && (seasons === undefined || seasons.length > 0);
+  const canEpisode = offerEpisode && seasons !== undefined;
+
+  // The keys land on the first choice as it opens; and again if what they were on went (the choice of a show the library has no seasons of).
+  useEffect(() => {
+    const step = root.current;
+    if (!step || step.contains(document.activeElement)) return;
+    (step.querySelector<HTMLElement>("[data-autofocus]") ?? step.querySelector<HTMLElement>("button"))?.focus({ preventScroll: true });
+  }, [offerEpisode]);
+  const chooseEpisode = () => {
+    const own = startOf(entry, true, progress);
+    const season = own && seasons?.includes(own.season) ? own.season : (seasons?.[0] ?? 1);
+    setEpisode({ season, episode: own && own.season === season ? own.episode : 1 });
+  };
+  const stepSeason = (by: number) => {
+    if (!shown || !seasons) return;
+    const next = seasons[seasons.indexOf(shown.season) + by];
+    if (next !== undefined) setEpisode({ season: next, episode: 1 });
+  };
+  const stepEpisode = (by: number) => {
+    if (!shown || !numbers) return;
+    const next = numbers[numbers.indexOf(shown.episode) + by];
+    if (next !== undefined) setEpisode({ season: shown.season, episode: next });
+  };
+
+  // Where to start: in a film, or in the episode chosen (a whole show has no time to start at).
+  const timed = !show || shown !== null;
+  const [at, setAt] = useState(0);
+  const runtime = shown && details ? details.get(shown.episode)?.runtime : undefined;
+  const card = cardOf(entry, progress);
+  const max = runtime ? runtime * 60 : !show && card && card.duration > 0 ? Math.floor(card.duration) : TIME_MAX;
+  const startAt = Math.min(at, max);
+  const ownTime = !show
+    ? card
+      ? resumeAt(card)
+      : undefined
+    : shown
+      ? (() => {
+          const status = episodeStatus(watched, showKeyOf(entry, progress), shown.season, shown.episode);
+          return status.kind === "started" ? Math.floor(status.position) : undefined;
+        })()
+      : undefined;
+  const [typed, setTyped] = useState<string | null>(null);
+  const typedAt = typed === null ? undefined : typedTime(typed, max);
+
+  // This profile's rating of the title, if it gave one: off until it is chosen.
+  const rating = url ? ratingFor(ratings, url) : undefined;
+  const [withRating, setWithRating] = useState(false);
+
+  const extras = chosenExtras({ show, episode: shown && numbers?.length ? shown : null, at: timed ? startAt : 0, score: withRating ? rating?.score : undefined });
+  // (An episode chosen whose season's episodes are still being asked for, or could not be: nothing is sent that the library could not say is one.)
+  const waiting = show && episode !== null && !numbers?.length;
+
+  return (
+    <div className={`${prefix}-extras`} ref={root} data-testid={`${prefix}-extras`}>
+      <div className={`${prefix}-extras-head`}>
+        <button type="button" className={`${prefix}-extras-back`} aria-label={t("chat.sendBack")} title={t("chat.sendBack")} onClick={onBack} {...navOf(nav)} data-testid={`${prefix}-extras-back`}>
+          <ChevronLeftIcon aria-hidden="true" />
+        </button>
+        <Poster className={`${prefix}-extras-art`} title={title.title} image={title.image} />
+        <b className={`${prefix}-extras-name`}>{title.year ? `${title.title} (${title.year})` : title.title}</b>
+      </div>
+
+      {offerEpisode && (
+        <div className={`${prefix}-extras-line`} role="radiogroup" aria-label={t("player.episodes")}>
+          <button type="button" role="radio" aria-checked={episode === null} className={`${prefix}-extras-chip`} onClick={() => setEpisode(null)} {...navOf(nav)} data-autofocus data-testid={`${prefix}-extras-whole`}>
+            {t("chat.sendWhole")}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={episode !== null}
+            aria-disabled={!canEpisode || undefined}
+            className={`${prefix}-extras-chip`}
+            onClick={() => canEpisode && episode === null && chooseEpisode()}
+            {...navOf(nav)}
+            data-testid={`${prefix}-extras-one`}
+          >
+            {t("chat.sendOne")}
+          </button>
+        </div>
+      )}
+      {canEpisode && shown && (
+        <div className={`${prefix}-extras-line`}>
+          <Stepper
+            prefix={prefix}
+            nav={nav}
+            value={t("player.season", { n: shown.season })}
+            back={{ label: t("chat.seasonPrev"), can: seasons!.indexOf(shown.season) > 0, run: () => stepSeason(-1) }}
+            on={{ label: t("chat.seasonNext"), can: seasons!.indexOf(shown.season) < seasons!.length - 1, run: () => stepSeason(1) }}
+            testId={`${prefix}-extras-season`}
+          />
+          <Stepper
+            prefix={prefix}
+            nav={nav}
+            value={numbers === undefined ? "…" : numbers === null || numbers.length === 0 ? "-" : t("player.episodeN", { n: shown.episode })}
+            back={{ label: t("chat.episodePrev"), can: Boolean(numbers?.length) && numbers!.indexOf(shown.episode) > 0, run: () => stepEpisode(-1) }}
+            on={{ label: t("chat.episodeNext"), can: Boolean(numbers?.length) && numbers!.indexOf(shown.episode) < numbers!.length - 1, run: () => stepEpisode(1) }}
+            testId={`${prefix}-extras-episode`}
+          />
+        </div>
+      )}
+      {canEpisode && shown && numbers === null && <p className={`${prefix}-extras-note`}>{t("series.failed")}</p>}
+
+      {timed && (
+        <>
+          <p className={`${prefix}-extras-label`} data-testid={`${prefix}-extras-from`}>
+            <span>{t("chat.sendStart")}:</span> <b>{startAt > 0 ? t("starting.from", { time: formatTime(startAt) }) : t("chat.fromStart")}</b>
+          </p>
+          <div className={`${prefix}-extras-line`}>
+            {[-10, -1, 1, 10].map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                className={`${prefix}-extras-step`}
+                aria-label={t(minutes < 0 ? "chat.minutesBack" : "chat.minutesOn", { n: Math.abs(minutes) })}
+                // (Not `disabled`: the remote on it would be left on nothing when it went off. A press that cannot move it does nothing.)
+                aria-disabled={(minutes < 0 ? startAt === 0 : startAt >= max) || undefined}
+                onClick={() => {
+                  setTyped(null);
+                  setAt(movedTime(startAt, minutes, max));
+                }}
+                {...navOf(nav)}
+                {...(!offerEpisode && minutes === 1 ? { "data-autofocus": true } : {})}
+                data-testid={`${prefix}-extras-time`}
+                data-minutes={minutes}
+              >
+                {minutes < 0 ? `−${-minutes}` : `+${minutes}`}
+              </button>
+            ))}
+            {ownTime !== undefined && (
+              <button
+                type="button"
+                className={`${prefix}-extras-chip`}
+                aria-pressed={startAt === ownTime}
+                onClick={() => {
+                  setTyped(null);
+                  setAt(ownTime);
+                }}
+                {...navOf(nav)}
+                data-testid={`${prefix}-extras-own`}
+              >
+                {t("chat.whereYouAre", { time: formatTime(ownTime) })}
+              </button>
+            )}
+          </div>
+          {pointer && !nav && (
+            <label className={`${prefix}-extras-typed`}>
+              <span>{t("chat.timeTyped")}</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={9}
+                value={typed ?? (startAt > 0 ? formatTime(startAt) : "")}
+                placeholder="0:00"
+                aria-invalid={typed !== null && typed.trim() !== "" && typedAt === undefined}
+                onChange={(event) => {
+                  setTyped(event.target.value);
+                  const seconds = typedTime(event.target.value, max);
+                  if (seconds !== undefined) setAt(seconds);
+                  else if (event.target.value.trim() === "") setAt(0);
+                }}
+                onBlur={() => setTyped(null)}
+                data-testid={`${prefix}-extras-typed`}
+              />
+            </label>
+          )}
+        </>
+      )}
+
+      {rating && (
+        <button type="button" className={`${prefix}-extras-chip ${prefix}-extras-rating`} aria-pressed={withRating} onClick={() => setWithRating((on) => !on)} {...navOf(nav)} data-testid={`${prefix}-extras-rating`}>
+          {withRating ? <CheckIcon aria-hidden="true" /> : <StarIcon aria-hidden="true" />} {t("chat.sendRating", { score: rating.score })}
+        </button>
+      )}
+
+      <button
+        type="button"
+        className={`${prefix}-extras-go`}
+        aria-disabled={session.sending || waiting || undefined}
+        onClick={() => {
+          if (session.sending || waiting) return;
+          onSent();
+          void send(session, title, extras);
+        }}
+        {...navOf(nav)}
+        data-testid={`${prefix}-extras-go`}
+      >
+        <SendIcon aria-hidden="true" /> {t("chat.sendIt")}
+      </button>
+    </div>
+  );
+}
+
+/** A value between a button that takes it back one and one that takes it on one (a season, an episode). */
+function Stepper({ prefix, nav, value, back, on, testId }: { prefix: string; nav: boolean; value: string; back: { label: string; can: boolean; run: () => void }; on: { label: string; can: boolean; run: () => void }; testId: string }) {
+  return (
+    <span className={`${prefix}-extras-stepper`} data-testid={testId}>
+      {/* (`aria-disabled`, not `disabled`: see the time's steps.) */}
+      <button type="button" className={`${prefix}-extras-step`} aria-label={back.label} title={back.label} aria-disabled={!back.can || undefined} onClick={() => back.can && back.run()} {...navOf(nav)} data-testid={`${testId}-back`}>
+        <ChevronLeftIcon aria-hidden="true" />
+      </button>
+      <span className={`${prefix}-extras-value`} aria-live="polite">
+        {value}
+      </span>
+      <button type="button" className={`${prefix}-extras-step`} aria-label={on.label} title={on.label} aria-disabled={!on.can || undefined} onClick={() => on.can && on.run()} {...navOf(nav)} data-testid={`${testId}-on`}>
+        <ChevronIcon aria-hidden="true" />
+      </button>
+    </span>
   );
 }

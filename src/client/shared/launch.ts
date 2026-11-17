@@ -11,7 +11,12 @@ export interface LaunchParams {
   friend?: string;
   /** A link to play, from the phone's share sheet (`/?url=...` or `/?text=...`). */
   url?: string;
+  /** Where in it to start, in whole seconds (`&t=754`): what "Play on TV" on a phone that is the screen sends with the link (role.ts `playOnTv`). Only with a link. */
+  startAt?: number;
 }
+
+/** How far a start may be (protocol.ts `StartAtSchema`: a day). */
+const START_MAX = 86_400;
 
 /** The characters a sign-in code is made of: no 0/O or 1/I, which are mixed up when read aloud (the server's alphabet). */
 const LINK_CODE = /^[A-HJ-NP-Z2-9]{8}$/;
@@ -86,11 +91,14 @@ export function readLaunchParams(search: string): LaunchParams {
   const url = isHttpUrl(shared) ? shared : firstLink(params.get("text") ?? "") ?? firstLink(shared);
   const link = linkCodeOf(params.get("link"));
   const friend = linkCodeOf(params.get("friend"));
+  const t = params.get("t") ?? "";
+  const startAt = url && /^\d{1,6}$/.test(t) && Number(t) >= 1 && Number(t) <= START_MAX ? Number(t) : undefined;
   return {
     ...(code && /^\d{6}$/.test(code) ? { code } : {}),
     ...(control && /^\d{6}$/.test(control) ? { control } : {}),
     ...(link ? { link } : {}),
     ...(friend ? { friend } : {}),
     ...(url ? { url } : {}),
+    ...(startAt !== undefined ? { startAt } : {}),
   };
 }

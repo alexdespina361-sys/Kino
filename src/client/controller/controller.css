@@ -41,6 +41,7 @@
 .btn svg { font-size: 1.2em; flex: none; }
 .btn small { font-size: 0.8em; font-weight: 500; opacity: 0.8; }
 .btn-red { background: var(--accent); color: var(--accent-ink); }
+.btn-red[aria-disabled="true"] { opacity: 0.6; cursor: progress; } /* (a title's Play while the episode a friend sent is looked up) */
 .btn-red:active:not(:disabled) { background: var(--accent-hover); }
 .btn-danger { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .btn-block { width: 100%; }
