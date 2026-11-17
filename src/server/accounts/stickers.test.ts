@@ -103,9 +103,10 @@ describe("a personal sticker's picture", () => {
       // (a few bytes that say they are a picture of a hundred thousand pixels a side: never unpacked)
       ["a header that would unpack to gigabytes", handMade({ width: 100_000, height: 100_000 }, deflateSync(Buffer.alloc(1024))), "not_a_picture"],
       ["interlaced", handMade({ width: 32, height: 32, interlace: 1 }, rows(32, 32)), "not_a_picture"],
-      ["16 bits a colour", handMade({ width: 32, height: 32, depth: 16 }, rows(64, 32)), "not_a_picture"],
-      ["a palette", handMade({ width: 32, height: 32, colour: 3 }, rows(8, 32)), "not_a_picture"],
-      ["grey", handMade({ width: 32, height: 32, colour: 0 }, rows(8, 32)), "not_a_picture"],
+      ["a depth its kind has not", handMade({ width: 32, height: 32, colour: 2, depth: 4 }, rows(12, 32)), "not_a_picture"],
+      ["a palette of 16 bits", handMade({ width: 32, height: 32, colour: 3, depth: 16 }, rows(16, 32)), "not_a_picture"],
+      ["a kind there is not", handMade({ width: 32, height: 32, colour: 5 }, rows(32, 32)), "not_a_picture"],
+      ["a palette picture with no palette", handMade({ width: 32, height: 32, colour: 3 }, deflateSync(Buffer.alloc(33 * 32))), "not_a_picture"],
       ["less data than its header says", handMade({ width: 32, height: 32 }, rows(32, 4)), "not_a_picture"],
       ["more data than its header says", handMade({ width: 32, height: 32 }, rows(32, 400)), "not_a_picture"],
       ["no end", handMade({ width: 32, height: 32 }, rows(32, 32)).subarray(0, -12), "not_a_picture"],
@@ -114,6 +115,22 @@ describe("a personal sticker's picture", () => {
       ["more bytes than a sticker is sent in", Buffer.concat([picture(32), Buffer.alloc(PERSONAL_STICKER.sentBytes)]), "too_big"],
     ];
     for (const [name, sent, error] of cases) expect(makeSticker(sent), name).toEqual({ ok: false, error });
+  });
+
+  it("takes the other kinds of PNG a browser's canvas may write (grey, 16 bits, grey and alpha), and keeps each as this server writes one", () => {
+    for (const [colour, depth, bytesPerPixel] of [
+      [0, 8, 1],
+      [0, 16, 2],
+      [2, 16, 6],
+      [4, 8, 2],
+      [6, 16, 8],
+    ] as const) {
+      const data = Buffer.alloc((32 * bytesPerPixel + 1) * 32, 0xc0);
+      for (let row = 0; row < 32; row++) data[row * (32 * bytesPerPixel + 1)] = 0;
+      const made = makeSticker(handMade({ width: 32, height: 32, colour, depth }, deflateSync(data)));
+      expect(made.ok, `colour ${colour} depth ${depth}`).toBe(true);
+      if (made.ok) expect([pngHeader(made.png)?.depth, pngHeader(made.png)?.colour], `colour ${colour} depth ${depth}`).toEqual([8, colour === 4 || colour === 6 ? 6 : 2]); // (its alpha, 0xc0, is kept)
+    }
   });
 
   it("turns away a file whose checksum is wrong", () => {

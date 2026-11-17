@@ -7,8 +7,7 @@ import { PERSONAL_STICKER } from "../../shared";
  * A personal sticker's picture, as the server keeps it (shared/stickers.ts). What comes is a PNG the page made; what is kept is a PNG made here from its
  * pixels, so nothing the sender put into the file (text, other chunks, a second picture, anything a viewer might read) is kept or sent on.
  *
- * The file's header is read before anything is unpacked: a square, no bigger than the page makes it, 8 bits of red, green and blue (and alpha), and not
- * interlaced. Then its data is unpacked here, never to more than the header says, and has to be exactly that; only then does `pngjs` read it. So a small
+ * The file's header is read before anything is unpacked: a square, no bigger than the page makes it, a kind of PNG there is, and not interlaced. Then its data is unpacked here, never to more than the header says, and has to be exactly that; only then does `pngjs` read it. So a small
  * file that would unpack to a huge picture is turned away before it is unpacked, and one cut short (or with more inside) is not taken either.
  */
 
@@ -59,19 +58,28 @@ function dataOf(png: Buffer): Buffer | undefined {
 
 export type MadeSticker ={ ok: true; png: Buffer; hash: string } | { ok: false; error: "not_a_picture" | "too_big" };
 
+/**
+ * The kinds of PNG there are (grey, colour, a palette, grey and alpha, colour and alpha), with how many values a pixel has and the depths each may have: what a
+ * browser's canvas writes is one of them, and which one is the browser's to choose (all are made 8-bit colour with alpha when they are read).
+ */
+const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+const DEPTHS: Record<number, readonly number[]> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+
 /** Whether a header is one of a sticker the page made: checked before the picture is unpacked. */
 export function stickerShaped(head: PngHeader): boolean {
   return (
     head.width === head.height &&
     head.width >= STICKER_MIN_SIDE &&
     head.width <= PERSONAL_STICKER.side &&
-    head.depth === 8 &&
-    (head.colour === 2 || head.colour === 6) &&
+    (DEPTHS[head.colour]?.includes(head.depth) ?? false) &&
     head.compression === 0 &&
     head.filter === 0 &&
     head.interlace === 0
   );
 }
+
+/** What the data of a picture with this header unpacks to: each row, with the byte in front of it that says how it was packed. */
+const unpackedSize = (head: PngHeader) => (Math.ceil((head.width * CHANNELS[head.colour]! * head.depth) / 8) + 1) * head.height;
 
 /**
  * The sticker made of what a page sent: a PNG of its pixels, made here (an opaque picture without the alpha it does not use), and the hash of it (the same
@@ -84,7 +92,7 @@ export function makeSticker(sent: Buffer): MadeSticker {
   // (What the picture's data unpacks to is exactly what its header says, and never more is unpacked: a file cut short, or one with more inside, is not one a page made.)
   const packed = dataOf(sent);
   if (!packed) return { ok: false, error: "not_a_picture" };
-  const rows = (head.width * (head.colour === 6 ? 4 : 3) + 1) * head.height;
+  const rows = unpackedSize(head);
   try {
     if (inflateSync(packed, { maxOutputLength: rows }).length !== rows) return { ok: false, error: "not_a_picture" };
   } catch {
