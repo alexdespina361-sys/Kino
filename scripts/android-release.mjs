@@ -93,7 +93,8 @@ if (versionCode <= now) stop(`The server offers version ${now} already: the new 
 /* ------------------------------ the APK ------------------------------ */
 
 if (!noBuild) {
-  const gradlew = process.platform === "win32" ? "gradlew.bat" : "./gradlew";
+  // (By its path: a Windows shell with NoDefaultCurrentDirectoryInExePath set finds no program in the folder it is in.)
+  const gradlew = process.platform === "win32" ? ".\\gradlew.bat" : "./gradlew";
   console.log(`Building version ${versionName} (${versionCode})...`);
   run(gradlew, ["assembleRelease", `-PkinoVersionCode=${versionCode}`, `-PkinoVersionName=${versionName}`, "--console=plain", "-q"], { cwd: android, env, shell: process.platform === "win32" });
 }
