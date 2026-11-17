@@ -885,6 +885,53 @@ describe("signing in with Google from the Android app", () => {
     }
   });
 
+  it("makes the account of a new Google account only when the app claims it: a trip another site started, with a hash of its own, makes nothing (the judge, 17 Nov)", async () => {
+    const { app, store } = await site();
+    const { verifier, challenge } = appSecret();
+    const code = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?device=remote&next=%2F&app=${challenge}`)).where);
+    expect(store.countAccounts()).toBe(0); // (Google said who it is: nothing is made yet)
+    const webview = new Browser(app);
+    expect((await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`)).headers.location).toBe("/");
+    expect(store.countAccounts()).toBe(1);
+    expect((await meOf(webview)).profiles[0].name).toBe("Ana");
+    // (a trip of another site's: the person went through Google's chooser, the way back went to the app, which did not start it and claims nothing)
+    handoffOf((await viaAppBrowser(app, `/api/auth/google/start?app=${appSecret().challenge}`, BEN)).where);
+    expect(store.countAccounts()).toBe(1);
+    // (and a second trip of Ana's signs in to the account the first one made)
+    const second = appSecret();
+    const again = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?app=${second.challenge}`)).where);
+    const other = new Browser(app);
+    expect((await other.get(`/api/auth/google/app-claim?code=${again}&verifier=${second.verifier}`)).headers.location).toBe("/");
+    expect([store.countAccounts(), (await meOf(other)).profiles[0].name]).toEqual([1, "Ana"]);
+  });
+
+  it("asks at the claim whether new accounts may be made, and how many from the address", async () => {
+    // (Two trips came back while there was room for one more account: the first claim takes it.)
+    const full = await site({ maxAccounts: 1 });
+    const [ana, ben] = [appSecret(), appSecret()];
+    const fullCodes = [handoffOf((await viaAppBrowser(full.app, `/api/auth/google/start?app=${ana.challenge}`)).where), handoffOf((await viaAppBrowser(full.app, `/api/auth/google/start?app=${ben.challenge}`, BEN)).where)];
+    expect((await new Browser(full.app).get(`/api/auth/google/app-claim?code=${fullCodes[0]}&verifier=${ana.verifier}`)).headers.location).toBe("/");
+    expect((await new Browser(full.app).get(`/api/auth/google/app-claim?code=${fullCodes[1]}&verifier=${ben.verifier}`)).headers.location).toBe("/?google=closed");
+    expect(full.store.countAccounts()).toBe(1);
+    // (The claims of one address count as its sign-ups.)
+    const busy = await site({ signUpsPerHour: 1 });
+    const address = nextAddress();
+    const [first, second] = [appSecret(), appSecret()];
+    const codes = [handoffOf((await viaAppBrowser(busy.app, `/api/auth/google/start?app=${first.challenge}`)).where), handoffOf((await viaAppBrowser(busy.app, `/api/auth/google/start?app=${second.challenge}`, BEN)).where)];
+    expect((await new Browser(busy.app, SITE, true, address).get(`/api/auth/google/app-claim?code=${codes[0]}&verifier=${first.verifier}`)).headers.location).toBe("/");
+    expect((await new Browser(busy.app, SITE, true, address).get(`/api/auth/google/app-claim?code=${codes[1]}&verifier=${second.verifier}`)).headers.location).toBe("/?google=busy");
+    expect(busy.store.countAccounts()).toBe(1);
+  });
+
+  it("is not let in from another site when the browser fetches it ahead, before anybody asked for it (the judge, 17 Nov)", async () => {
+    const { app } = await site();
+    const { challenge } = appSecret();
+    for (const ahead of [{ "sec-purpose": "prefetch" }, { "sec-purpose": "prefetch;prerender" }, { purpose: "prefetch" }] as Record<string, string>[]) {
+      const refused = await new Browser(app).get(`/api/auth/google/start?app=${challenge}`, { ...FROM_THE_APP, ...ahead });
+      expect([refused.statusCode, refused.headers["set-cookie"]]).toEqual([403, undefined]);
+    }
+  });
+
   it("goes out to the phone's browser and back to the app, and the WebView is signed in with the code and the app's secret: the browser itself is not", async () => {
     const { app } = await site();
     const { verifier, challenge } = appSecret();

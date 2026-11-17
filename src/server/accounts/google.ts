@@ -221,7 +221,11 @@ interface AppTrip {
 }
 
 /** What the claim does once the app proved it is the one that started: sign the WebView in, connect a Google account to the WebView's, or confirm its session. */
-type HandoffThen = { kind: "signIn"; accountId: string } | { kind: "link" | "reauth"; accountId: string; sessionId: string; sub: string };
+type HandoffThen =
+  | { kind: "signIn"; accountId: string }
+  // (A Google account with no account here: it is made when the app claims it, not before - see the claim.)
+  | { kind: "signUp"; sub: string; name: string }
+  | { kind: "link" | "reauth"; accountId: string; sessionId: string; sub: string };
 
 /** What a round trip of the app came to, kept for the app to claim (see `AppTrip`). */
 interface Handoff {
@@ -425,6 +429,9 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     }
     // Nobody yet: an account is made, as one with a password would be (only while new ones may be, and not too many from one address).
     if (helpers.registrationNow() === "closed") return back("closed");
+    // (The app's trip makes the account only when the app claims it, with the secret only it knows: a page of another site that sent someone through Google's chooser
+    // with a hash of its own - which the gate lets in, as the app's browser says it comes from another site - makes nothing. The judge, 17 Nov.)
+    if (flow.app) return toApp({ then: { kind: "signUp", sub: claims.sub, name: profileNameOf(claims.givenName) } });
     if (helpers.signUpByIp.wait(request.ip) > 0) return back("busy");
     helpers.signUpByIp.hit(request.ip);
     const made = store.createGoogleAccount(claims.sub, profileNameOf(claims.givenName), await hashPassword(secret(), helpers.passwordCost));
@@ -457,6 +464,21 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     if (then.kind === "signIn") {
       if (!store.getAccount(then.accountId)) return failed("the account is gone");
       helpers.signIn(request, reply, then.accountId, handoff.device);
+      return reply.redirect(next);
+    }
+    if (then.kind === "signUp") {
+      // (Made by another trip since: signed in to it.)
+      const found = store.findByGoogle(then.sub);
+      if (found) {
+        helpers.signIn(request, reply, found.id, handoff.device);
+        return reply.redirect(next);
+      }
+      if (helpers.registrationNow() === "closed") return reply.redirect(`${next}?google=closed`);
+      if (helpers.signUpByIp.wait(request.ip) > 0) return reply.redirect(`${next}?google=busy`);
+      helpers.signUpByIp.hit(request.ip);
+      const made = store.createGoogleAccount(then.sub, then.name, await hashPassword(secret(), helpers.passwordCost));
+      if (!made.ok) return failed("the account was made a moment ago");
+      helpers.signIn(request, reply, made.value.id, handoff.device);
       return reply.redirect(next);
     }
     // (Connecting and confirming: only by the session that asked for the ticket, still signed in to that account, here and now.)

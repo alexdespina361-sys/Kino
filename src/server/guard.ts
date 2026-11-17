@@ -106,8 +106,11 @@ export function sameSiteGate(app: FastifyInstance): void {
     let refused: boolean;
     if (request.method === "GET" || request.method === "HEAD") {
       const navigation = request.headers["sec-fetch-mode"] === "navigate";
-      // (The app's trip to Google, in the phone's browser: a page of its own, never a frame.)
-      const appTrip = route === "/api/auth/google/start" && navigation && (request.headers["sec-fetch-dest"] ?? "document") === "document" && isAppStart((request.query ?? {}) as Record<string, unknown>);
+      // (The app's trip to Google, in the phone's browser: a page of its own, never a frame, nor one fetched ahead before anybody asked for it - each start keeps a flow and
+      // takes from the address's allowance. The judge, 17 Nov.)
+      const ahead = /prefetch|prerender/i.test(`${request.headers["sec-purpose"] ?? ""} ${request.headers.purpose ?? ""}`);
+      const appTrip =
+        route === "/api/auth/google/start" && navigation && !ahead && (request.headers["sec-fetch-dest"] ?? "document") === "document" && isAppStart((request.query ?? {}) as Record<string, unknown>);
       refused = elsewhere && !appTrip && (counts(route) || (FETCHES.has(route) && !navigation));
     } else {
       const { origin, host } = request.headers;
