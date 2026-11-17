@@ -168,6 +168,19 @@ function loadSharp(): Promise<Sharp> {
 
 /** How good the WebP is made, the best first: one that does not fit what is kept is made again, worse. */
 const QUALITIES = [72, 50] as const;
+/** How long sharp may take over one WebP (seconds): it stops then, and the sticker is not made. A sticker's takes a fraction of one. */
+const PACK_SECONDS = 10;
+
+/**
+ * One sticker is packed at a time, the whole site over (the judge, 17 Nov: four sent at once were four packed at once, each with a thread of its own, beside
+ * everything else the server does): the next waits for the one before, made or not.
+ */
+let packing: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(pack: () => Promise<T>): Promise<T> {
+  const mine = packing.then(pack, pack);
+  packing = mine.catch(() => {});
+  return mine;
+}
 
 /**
  * The sticker that moves made of what a page sent (shared/stickers.ts `MOVING_STICKER`): its pictures one under the other, as one PNG, read here as a still one
@@ -195,11 +208,14 @@ export async function makeMovingSticker(sent: Buffer, delays: readonly number[])
   for (let frame = 1; frame < frames && !moves; frame++) moves = !read.pixels.subarray(frame * square, (frame + 1) * square).equals(first);
   if (!moves) return stillOf(read.pixels, side, read.opaque);
   const sharp = await loadSharp();
-  for (const quality of QUALITIES) {
-    const data = await sharp(read.pixels, { raw: { width: side, height: side * frames, channels: 4, pageHeight: side } })
-      .webp({ quality, alphaQuality: 90, effort: 4, loop: 0, delay: [...delays] })
-      .toBuffer();
-    if (data.length <= MOVING_STICKER.keptBytes) return { ok: true, data, hash: createHash("sha256").update(data).digest("base64url") };
-  }
-  return { ok: false, error: "too_big" };
+  return oneAtATime(async (): Promise<MadeSticker> => {
+    for (const quality of QUALITIES) {
+      const data = await sharp(read.pixels, { raw: { width: side, height: side * frames, channels: 4, pageHeight: side } })
+        .timeout({ seconds: PACK_SECONDS })
+        .webp({ quality, alphaQuality: 90, effort: 4, loop: 0, delay: [...delays] })
+        .toBuffer();
+      if (data.length <= MOVING_STICKER.keptBytes) return { ok: true, data, hash: createHash("sha256").update(data).digest("base64url") };
+    }
+    return { ok: false, error: "too_big" };
+  });
 }

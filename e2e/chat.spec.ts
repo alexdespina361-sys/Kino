@@ -2080,14 +2080,13 @@ test.describe("personal stickers in a chat", () => {
       return movingAt(ann.page, (await sheet.locator(`[data-personal="${id}"] img`).getAttribute("src"))!);
     };
 
-    // red, green and blue, 200 ms each: taken 15 times a second, the same picture in a row put together, three pictures of 198 ms (none of the steps falls on
-    // the moment one picture gives way to the next)
+    // red, green and blue, 200 ms each: three pictures, each shown as long as it was
     await file.setInputFiles({ name: "moving.webp", mimeType: "image/webp", buffer: await movingFile("webp", [[220, 30, 30], [30, 200, 30], [30, 30, 220]], [200, 200, 200]) });
     await expect(mine).toHaveCount(1);
     await expect(sheet.getByTestId("chat-sticker-problem")).toHaveCount(0);
     const made = await madeAfter([]);
     expect(made.type).toBe("image/webp");
-    expect([made.pages, made.loop, made.delays]).toEqual([3, 0, [198, 198, 198]]);
+    expect([made.pages, made.loop, made.delays]).toEqual([3, 0, [200, 200, 200]]);
     expect(made.pictures.map((picture) => [picture.width, picture.height, colourAt(picture, 96, 96)])).toEqual([
       [192, 192, "red"],
       [192, 192, "green"],
@@ -2122,7 +2121,7 @@ test.describe("personal stickers in a chat", () => {
     await file.setInputFiles({ name: "moving.gif", mimeType: "image/gif", buffer: await movingFile("gif", [[220, 30, 30], [30, 30, 220]], [400, 200]) });
     await expect(mine).toHaveCount(2);
     const gif = await madeAfter(had);
-    expect([gif.type, gif.pages, gif.delays]).toEqual(["image/webp", 2, [396, 198]]);
+    expect([gif.type, gif.pages, gif.delays]).toEqual(["image/webp", 2, [400, 200]]);
     expect(gif.pictures.map((picture) => colourAt(picture, 96, 96))).toEqual(["red", "blue"]);
 
     // a GIF whose pictures are all the same does not move: a still, as any picture

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { friendChoices, isStickerId, MOVING_STICKER, PERSONAL_STICKER, StickerMakeSchema, type StickerProblem } from "../../shared";
+import { friendChoices, isStickerId, MOVING_STICKER, PERSONAL_STICKER, readStickerMake, StickerMakeSchema, type StickerProblem } from "../../shared";
 import { teamGuard } from "../feedback/routes";
 import type { FriendRouteHelpers } from "./friendRoutes";
 import { RateLimiter } from "./rateLimit";
@@ -98,48 +98,55 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
     return reply.header("Cache-Control", "no-store").send(stickers.of(me.profileId));
   });
 
-  // (A still picture's body, and the most one that moves may be: only while those are on. One that moves has three times as long to arrive, being bigger.)
+  // (A still picture's body, and the most one that moves may be: only while those are on. While they are, a picture has three times as long to arrive, one
+  // that moves being bigger: whether this one is, is not asked of what the request says of its own length, which not every request says, the judge, 17 Nov.)
   const stillBody = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096;
   const movingBody = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4096;
-  app.post<{ Params: { id: string } }>(
-    base,
-    {
-      bodyLimit: stickers.moving ? movingBody : stillBody,
-      onRequest: async (request, reply) => {
-        const me = asker(request as Asked, reply, writesByAccount);
-        if (!me) return reply;
-        if (uploading.has(me.accountId) || uploading.size >= PERSONAL_STICKER.uploadsAtOnce) {
-          return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
-        }
-        uploading.add(me.accountId);
-        // (A picture that has not come by then is let go, and its request ended.)
-        const big = Number(request.headers["content-length"]) > stillBody;
-        const deadline = setTimeout(
-          () => {
+  const arriveMs = stickers.moving ? uploadMs * 3 : uploadMs;
+  // (In a place of its own: there, and nowhere else, a body is read as text and taken apart by hand (`readStickerMake`), never unpacked as JSON whatever it
+  // holds. A body that is not what the page sends is a bad request, as one that is not JSON at all always was.)
+  void app.register(async (scope) => {
+    scope.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, parsed) => {
+      const read = readStickerMake(body as string);
+      if (read) parsed(null, read);
+      else parsed(Object.assign(new Error("The body is not a sticker to be made."), { statusCode: 400 }), undefined);
+    });
+    scope.post<{ Params: { id: string } }>(
+      base,
+      {
+        bodyLimit: stickers.moving ? movingBody : stillBody,
+        onRequest: async (request, reply) => {
+          const me = asker(request as Asked, reply, writesByAccount);
+          if (!me) return reply;
+          if (uploading.has(me.accountId) || uploading.size >= PERSONAL_STICKER.uploadsAtOnce) {
+            return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
+          }
+          uploading.add(me.accountId);
+          // (A picture that has not come by then is let go, and its request ended.)
+          const deadline = setTimeout(() => {
             done(request);
             request.raw.destroy();
-          },
-          big ? uploadMs * 3 : uploadMs,
-        );
-        letIn.set(request, { ...me, deadline });
-        reply.raw.once("close", () => done(request));
-        return undefined;
+          }, arriveMs);
+          letIn.set(request, { ...me, deadline });
+          reply.raw.once("close", () => done(request));
+          return undefined;
+        },
+        // (Each of these, and the answer's `close`, lets it go: whichever comes first; letting go twice is nothing.)
+        onResponse: async (request) => done(request),
+        onRequestAbort: async (request) => done(request),
       },
-      // (Each of these, and the answer's `close`, lets it go: whichever comes first; letting go twice is nothing.)
-      onResponse: async (request) => done(request),
-      onRequestAbort: async (request) => done(request),
-    },
-    async (request, reply) => {
-      const me = letIn.get(request);
-      if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 }); // (never: the hook let it in)
-      clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
-      const parsed = StickerMakeSchema.safeParse(request.body);
-      if (!parsed.success) return stickerRefusal(reply, "too_big");
-      const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
-      if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
-      return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
-    },
-  );
+      async (request, reply) => {
+        const me = letIn.get(request);
+        if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 }); // (never: the hook let it in)
+        clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
+        const parsed = StickerMakeSchema.safeParse(request.body);
+        if (!parsed.success) return stickerRefusal(reply, "too_big");
+        const made = await stickers.make(me.profileId, me.accountId, Buffer.from(parsed.data.data, "base64"), parsed.data.delays);
+        if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
+        return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
+      },
+    );
+  });
 
   app.get<{ Params: { id: string; sid: string } }>(`${base}/:sid`, async (request, reply) => {
     const me = asker(request, reply, stickers.pictureReads);

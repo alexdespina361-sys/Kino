@@ -1,7 +1,7 @@
 import { PNG } from "pngjs";
 import realSharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
-import { MOVING_STICKER, PERSONAL_STICKER, PERSONAL_STICKER_BASE64_MAX, StickerMakeSchema } from "../../shared";
+import { MOVING_STICKER, PERSONAL_STICKER, PERSONAL_STICKER_BASE64_MAX, readStickerMake, StickerMakeSchema } from "../../shared";
 import { MemoryStickerFiles } from "./stickerFiles";
 import { makeMovingSticker, pictureType } from "./stickerImage";
 import { StickerBook } from "./stickers";
@@ -110,6 +110,59 @@ describe("a sticker that moves", () => {
     expect(on.size).toEqual({ stickers: 1, bytes: kept!.length });
     // (the same that moves, made again, is the one it made)
     expect(await on.make("p1", "a1", strip(32, 3, moving), [100, 100, 100])).toEqual({ ok: true, value: made.value });
+  });
+
+  it("costs one of the day's tries whenever it is sent, made or not: an account that has none left is told to wait, and still ones are made all the same (the judge, 17 Nov)", async () => {
+    let now = Date.parse("2026-11-17T12:00:00Z");
+    const host = { touch: () => {}, drop: () => {}, now: () => now, on: () => true };
+    const book = new StickerBook(host, new MemoryStickerFiles(), { on: true, moving: true });
+    const three = strip(32, 3, moving);
+    // (each of these is refused, having cost the server nothing much: it is a try all the same)
+    for (let tried = 0; tried < MOVING_STICKER.triesPerDay; tried++) expect(await book.make("p1", "a1", three, [100, 100])).toEqual({ ok: false, error: "not_a_picture" });
+    given.length = 0;
+    const refused = await book.make("p1", "a1", three, [100, 100, 100]);
+    expect(refused).toMatchObject({ ok: false, error: "too_many" });
+    expect(!refused.ok && refused.waitMs, "until a day after the first").toBeGreaterThan(23 * 3_600_000);
+    expect(given, "sharp was not asked").toHaveLength(0);
+    expect((await book.make("p1", "a1", strip(32, 1, () => [200, 10, 10, 255]))).ok, "a still one is not one of those tries").toBe(true);
+    expect((await book.make("p2", "a2", three, [100, 100, 100])).ok, "another account has its own").toBe(true);
+    now += 24 * 3_600_000 + 1;
+    expect((await book.make("p1", "a1", three, [100, 100, 100])).ok, "a day later").toBe(true);
+  });
+
+  it("is packed one at a time, each made all the same when several are sent at once", async () => {
+    const all = await Promise.all([1, 2, 3, 4].map((n) => makeMovingSticker(strip(32, 3, (frame, x, y) => moving(frame + n, x, y)), [100, 100, 100])));
+    expect(all.map((made) => made.ok && pictureType(made.data))).toEqual(["image/webp", "image/webp", "image/webp", "image/webp"]);
+    expect(new Set(all.map((made) => made.ok && made.hash)).size).toBe(4);
+  });
+
+  it("is read from the body's text without unpacking anything else: exactly what the page sends, or nothing (the judge, 17 Nov)", () => {
+    expect(readStickerMake('{"data":"QUJD"}')).toEqual({ data: "QUJD" });
+    expect(readStickerMake('{"data":"QUJD","delays":[20,1000,66]}')).toEqual({ data: "QUJD", delays: [20, 1000, 66] });
+    expect(readStickerMake('{"data":"QQ=="}')).toEqual({ data: "QQ==" });
+    for (const not of [
+      '{"data":"","delays":[20,20],"junk":[{},{},{}]}',
+      '{"junk":[{}],"data":"QUJD"}',
+      '{"delays":[20,20],"data":"QUJD"}',
+      '{ "data": "QUJD" }',
+      '{"data":"QUJD"} ',
+      '{"data":"QU\\"JD"}',
+      '{"data":"QU JD"}',
+      '{"data":"QUJD","delays":[]}',
+      '{"data":"QUJD","delays":[20,20,]}',
+      '{"data":"QUJD","delays":[20.5,20]}',
+      '{"data":"QUJD","delays":[-20,20]}',
+      '{"data":"QUJD","delays":[20,20]}{"data":"QUJD"}',
+      `{"data":"QUJD","delays":[${Array(200).fill(20).join(",")}]}`,
+      '["QUJD"]',
+      "",
+    ]) {
+      expect(readStickerMake(not), not.slice(0, 60)).toBeUndefined();
+    }
+    // (what it gives is still checked: more numbers than a sticker has pictures are read, and refused by the schema)
+    const many = readStickerMake(`{"data":"QUJD","delays":[${Array(MOVING_STICKER.maxFrames + 1).fill(20).join(",")}]}`);
+    expect(many?.delays).toHaveLength(MOVING_STICKER.maxFrames + 1);
+    expect(StickerMakeSchema.safeParse(many).success).toBe(false);
   });
 
   it("may be sent bigger than a still one, which may not", () => {

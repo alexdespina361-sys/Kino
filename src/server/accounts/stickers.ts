@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { isStickerId, PERSONAL_STICKER, type MyStickers, type StickerProblem } from "../../shared";
+import { isStickerId, MOVING_STICKER, PERSONAL_STICKER, type MyStickers, type StickerProblem } from "../../shared";
 import { RateLimiter } from "./rateLimit";
 import { makeMovingSticker, makeSticker, type MadeSticker } from "./stickerImage";
 import type { StickerFiles } from "./stickerFiles";
@@ -63,6 +63,8 @@ export class StickerBook {
   /** profile -> the stickers it has. */
   private readonly held = new Map<string, Set<string>>();
   private readonly made: RateLimiter;
+  /** The ones that move an account sent to be made today, made or not (`MOVING_STICKER.triesPerDay`). */
+  private readonly tried: RateLimiter;
   private bytesInAll = 0;
   /** Pictures on their way to `files` (counted already, so two at once cannot both take the last room). */
   private writing = 0;
@@ -84,6 +86,7 @@ export class StickerBook {
     readonly options: { on: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number; log?: { warn(message: string): void } },
   ) {
     this.made = new RateLimiter(PERSONAL_STICKER.madePerDay, DAY, () => host.now());
+    this.tried = new RateLimiter(MOVING_STICKER.triesPerDay, DAY, () => host.now());
     this.pictureReads = new RateLimiter(PERSONAL_STICKER.picturesPerMinute, 60_000, () => host.now());
   }
 
@@ -223,6 +226,12 @@ export class StickerBook {
     if (wait > 0) return no("too_many", wait);
     // (One that moves only while those are on as well: the page that sent one while they are off is told it is not a picture, and makes a still one.)
     if (delays && !this.moving) return no("not_a_picture");
+    // (One that moves takes the server's time to pack, kept or not: each sent is one of the day's tries, whatever comes of it.)
+    if (delays) {
+      const tries = this.tried.wait(accountId);
+      if (tries > 0) return no("too_many", tries);
+      this.tried.hit(accountId);
+    }
     let made: MadeSticker;
     try {
       made = delays ? await makeMovingSticker(sent, delays) : makeSticker(sent);

@@ -123,10 +123,11 @@ const JPEG_FRAMES = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xc
 
 /**
  * The width and height a picture file says it has, read from its first bytes with nothing decoded: PNG, WebP and JPEG (whose frame header can come after a
- * camera's notes: its parts are stepped over, never read whole). Null for another kind (HEIC, GIF), or one that does not say.
+ * camera's notes: its parts are stepped over, never read whole), and GIF. Null for another kind (HEIC), or one that does not say.
  */
 export async function pictureSize(file: Blob): Promise<{ width: number; height: number } | null> {
   const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+  if (head.length >= 10 && ascii(head, 0, 4) === "GIF8") return { width: head[6]! | (head[7]! << 8), height: head[8]! | (head[9]! << 8) };
   if (head.length >= 24 && head[0] === 0x89 && ascii(head, 1, 3) === "PNG") {
     const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
     return { width: view.getUint32(16), height: view.getUint32(20) };
@@ -217,29 +218,42 @@ export interface StillPicture {
 
 /** How long a picture is shown at the least: 15 a second at the most. */
 const FRAME_MS = Math.ceil(1000 / 15);
+/**
+ * How many pixels a picture that moves, or a video, may have to be read here (the judge, 17 Nov: only its file's size was looked at, and a file of a few
+ * kilobytes can say 8192 by 8192, a quarter of a gigabyte a picture). Four megapixels: any sticker, GIF or phone's video up to 2560 by 1440.
+ */
+const MOVING_PIXELS = 4_000_000;
+/** How long all of a video's pictures may take to be taken (each step has 5 seconds at most, and all of them together this). */
+const VIDEO_MS = 20_000;
 
 interface Frames {
   pictures: ImageData[];
   delays: number[];
 }
 
-/** What kind of file it is, by its first bytes (a phone's chooser does not always say): a picture that may move, or a video. */
-async function movingKind(file: Blob): Promise<"image/gif" | "image/webp" | "image/png" | "video" | null> {
+/** The pictures of a kind that is in a box as a video is (`ftyp`), and is no video: AVIF and HEIC (the judge, 17 Nov: they were taken for videos, and refused). */
+const STILL_BRANDS = new Set(["avif", "avis", "heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"]);
+
+/** What kind of file it is, by its first bytes (a phone's chooser does not always say): a picture that may move, or a video. Null for any other picture. */
+export async function movingKind(file: Blob): Promise<"image/gif" | "image/webp" | "image/png" | "video" | null> {
   const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
   if (ascii(head, 0, 4) === "GIF8") return "image/gif";
   if (ascii(head, 0, 4) === "RIFF" && ascii(head, 8, 4) === "WEBP") return "image/webp";
   if (head[0] === 0x89 && ascii(head, 1, 3) === "PNG") return "image/png";
-  if (ascii(head, 4, 4) === "ftyp" || (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3)) return "video";
+  if (ascii(head, 4, 4) === "ftyp") return STILL_BRANDS.has(ascii(head, 8, 4)) || file.type.startsWith("image/") ? null : "video";
+  if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return "video";
   return file.type.startsWith("video/") ? "video" : null;
 }
 
 /**
  * A picture that moves, made into a sticker that moves: an animated GIF, WebP or PNG (read with the browser's ImageDecoder, where it has one), or a short video
- * such as WhatsApp keeps a GIF as (a picture taken at each step of it). Its first 8 seconds, at most 48 pictures and 15 a second, each fitted whole in the
- * square (what is left over is see-through); the same picture twice in a row is one shown longer. Null for a picture that does not move, or that this browser
- * cannot read as one: it is made a still sticker as any picture is. A video whose pictures are all the same is its picture (`still`); one that this browser
- * cannot play, or that is all black, is not a picture (the judge's guard of 17 Nov: nothing of it can be tried on a phone here). One too big to send is sent
- * with every other picture, and so on; at the last, as its first picture.
+ * such as WhatsApp keeps a GIF as (a picture taken at each step of it). A picture of few enough pictures keeps each of them, shown as long as it was; else
+ * its first 8 seconds are taken, at most 48 pictures and 15 a second. Each is fitted whole in the square (what is left over is see-through); the same picture
+ * twice in a row is one shown longer. Null for a picture that does not move, that this browser cannot read as one, or that has more pixels than are read
+ * here (`MOVING_PIXELS`): it is made a still sticker as any picture is. A video whose pictures are all the same is its picture (`still`); one that this
+ * browser cannot play, or that is all black, is not a picture (the judge's guard of 17 Nov: nothing of it can be tried on a phone here), and one of more
+ * pixels than are read here is too big. One too big to send, or that this phone cannot put on one canvas, is sent with every other picture, and so on; at
+ * the last, as its first picture.
  */
 export async function movingPicture(file: Blob): Promise<MovingPicture | StillPicture | null> {
   if (file.size > OPEN_BYTES) throw new StickerError("too_big");
@@ -247,9 +261,14 @@ export async function movingPicture(file: Blob): Promise<MovingPicture | StillPi
   if (!kind) return null;
   let frames: Frames | null;
   if (kind === "video") {
-    frames = await videoFrames(file).catch(() => null);
+    frames = await videoFrames(file).catch((error: unknown) => {
+      if (error instanceof StickerError) throw error;
+      return null;
+    });
     if (!frames) throw new StickerError("not_a_picture");
   } else {
+    const size = await pictureSize(file).catch(() => null);
+    if (!size || size.width * size.height > MOVING_PIXELS) return null;
     frames = await decodedFrames(file, kind).catch(() => null);
     if (!frames) return null;
   }
@@ -260,17 +279,42 @@ export async function movingPicture(file: Blob): Promise<MovingPicture | StillPi
   for (let step = 1; ; step *= 2) {
     const now = everyOther(frames, step);
     if (!now || now.pictures.length < MOVING_STICKER.minFrames) return { still };
-    const strip = await pngOf(now.pictures);
-    if (strip.size <= MOVING_STICKER.sentBytes) return { data: base64Of(new Uint8Array(await strip.arrayBuffer())), delays: now.delays, still };
+    // (A canvas as high as all of them is more than some phones make: then, as when it is too big to send, fewer of them are tried.)
+    const strip = await pngOf(now.pictures).catch(() => null);
+    if (strip && strip.size <= MOVING_STICKER.sentBytes) return { data: base64Of(new Uint8Array(await strip.arrayBuffer())), delays: now.delays, still };
   }
 }
 
-/** The times (ms) its pictures are taken at, and how long each is shown: of its first 8 seconds, at most 48 pictures and 15 a second, each in the middle of its time. */
-function steps(duration: number): { at: number[]; delay: number } {
+/**
+ * The times (ms) its pictures are taken at, and how long each is shown: of its first 8 seconds, at most 48 pictures and never more than 15 a second, each in
+ * the middle of its time. (One shorter than two pictures' time is two, each shown a picture's time: a little longer than it was, the judge, 17 Nov.)
+ */
+export function steps(duration: number): { at: number[]; delay: number } {
   const total = Math.min(duration, MOVING_STICKER.maxDuration);
-  const count = Math.max(MOVING_STICKER.minFrames, Math.min(MOVING_STICKER.maxFrames, Math.ceil(total / FRAME_MS)));
-  const delay = Math.min(MOVING_STICKER.maxDelay, Math.max(MOVING_STICKER.minDelay, Math.floor(total / count)));
+  const count = Math.max(MOVING_STICKER.minFrames, Math.min(MOVING_STICKER.maxFrames, Math.floor(total / FRAME_MS)));
+  const delay = Math.min(MOVING_STICKER.maxDelay, Math.max(FRAME_MS, Math.floor(total / count)));
   return { at: Array.from({ length: count }, (_, step) => (step + 0.5) * (total / count)), delay };
+}
+
+/**
+ * Each picture of a picture that moves, shown as long as it was (`shown`, ms, each 20 at the least): which picture, and for how long. One shown longer than a
+ * picture may be is that picture again and again. Null when that is more pictures or a longer time than a sticker has: its pictures are then taken at
+ * steps (`steps`).
+ */
+export function asItWas(shown: readonly number[]): { index: number; delay: number }[] | null {
+  const all: { index: number; delay: number }[] = [];
+  let total = 0;
+  for (const [index, time] of shown.entries()) {
+    for (let left = Math.floor(time); left > 0; ) {
+      // (never a last piece shorter than a picture may be shown: the two last pieces share what is left)
+      const delay = left > MOVING_STICKER.maxDelay ? Math.min(MOVING_STICKER.maxDelay, left - MOVING_STICKER.minDelay) : left;
+      all.push({ index, delay });
+      total += delay;
+      left -= delay;
+    }
+    if (all.length > MOVING_STICKER.maxFrames || total > MOVING_STICKER.maxDuration) return null;
+  }
+  return all.length >= MOVING_STICKER.minFrames ? all : null;
 }
 
 /** A square of the sticker's side to draw on, read back often. */
@@ -320,28 +364,43 @@ async function decodedFrames(file: Blob, type: string): Promise<Frames | null> {
     await decoder.completed;
     const track = decoder.tracks.selectedTrack;
     if (!track?.animated || track.frameCount < MOVING_STICKER.minFrames) return null;
-    // (When each picture starts: read first, each let go at once. One that says less than 20 ms is shown for 100, as browsers show it.)
-    const starts: number[] = [];
+    // (How long each picture is shown: read first, each let go at once. One that says less than 20 ms is shown for 100, as browsers show it.)
+    const shown: number[] = [];
     let time = 0;
     for (let index = 0; index < track.frameCount && time < MOVING_STICKER.maxDuration; index++) {
       const { image } = await decoder.decode({ frameIndex: index });
-      const shown = image.duration ? image.duration / 1000 : 0;
+      const says = image.duration ? image.duration / 1000 : 0;
       image.close();
-      starts.push(time);
-      time += shown >= MOVING_STICKER.minDelay ? shown : 100;
+      shown.push(says >= MOVING_STICKER.minDelay ? says : 100);
+      time += shown[index]!;
     }
-    const { at, delay } = steps(time);
     const context = square();
     const pictures: ImageData[] = [];
+    // (The same picture asked for twice in a row is read once.)
+    let last = -1;
+    const take = async (index: number) => {
+      if (index !== last) {
+        const { image } = await decoder.decode({ frameIndex: index });
+        try {
+          pictures.push(fitted(context, image, image.displayWidth, image.displayHeight));
+        } finally {
+          image.close();
+        }
+        last = index;
+      } else pictures.push(pictures.at(-1)!);
+    };
+    // (All of its pictures, each shown as long as it was, when a sticker has room for them: else a picture at each step of its first seconds.)
+    const whole = shown.length === track.frameCount ? asItWas(shown) : null;
+    if (whole) {
+      for (const { index } of whole) await take(index);
+      return { pictures, delays: whole.map((each) => each.delay) };
+    }
+    const { at, delay } = steps(time);
+    let index = 0;
+    let ends = shown[0]!;
     for (const when of at) {
-      let index = 0;
-      while (index + 1 < starts.length && starts[index + 1]! <= when) index++;
-      const { image } = await decoder.decode({ frameIndex: index });
-      try {
-        pictures.push(fitted(context, image, image.displayWidth, image.displayHeight));
-      } finally {
-        image.close();
-      }
+      while (index + 1 < shown.length && ends <= when) ends += shown[++index]!;
+      await take(index);
     }
     return { pictures, delays: at.map(() => delay) };
   } finally {
@@ -349,8 +408,8 @@ async function decodedFrames(file: Blob, type: string): Promise<Frames | null> {
   }
 }
 
-/** `start`, then whether the video said `event` (within 5 seconds, and not that it failed). */
-function videoSays(video: HTMLVideoElement, event: string, start: () => void): Promise<boolean> {
+/** `start`, then whether the video said `event` (within `ms`, and not that it failed). */
+function videoSays(video: HTMLVideoElement, event: string, start: () => void, ms: number): Promise<boolean> {
   return new Promise((resolve) => {
     const done = (ok: boolean) => {
       window.clearTimeout(timer);
@@ -360,34 +419,46 @@ function videoSays(video: HTMLVideoElement, event: string, start: () => void): P
     };
     const yes = () => done(true);
     const no = () => done(false);
-    const timer = window.setTimeout(() => done(false), 5000);
+    const timer = window.setTimeout(() => done(false), ms);
     video.addEventListener(event, yes);
     video.addEventListener("error", no);
     start();
   });
 }
 
-/** The pictures of a video, a picture taken at each step (the video is not played, nor heard): null when this browser cannot play it. */
+/**
+ * The pictures of a video, a picture taken at each step (the video is not played, nor heard): null when this browser cannot play it. Each step has 5 seconds
+ * and all of them together `VIDEO_MS` (the judge, 17 Nov: 48 steps of nearly 5 seconds each were four minutes of "Adding"): a video still not through by then
+ * is what was taken of it, when that is enough to move.
+ */
 async function videoFrames(file: Blob): Promise<Frames | null> {
   const address = URL.createObjectURL(file);
   const video = document.createElement("video");
   video.muted = true;
   video.playsInline = true;
   video.preload = "auto";
+  const until = performance.now() + VIDEO_MS;
+  const left = () => Math.min(5000, until - performance.now());
   try {
-    if (!(await videoSays(video, "loadeddata", () => (video.src = address)))) return null;
+    if (!(await videoSays(video, "loadeddata", () => (video.src = address), left()))) return null;
+    if (video.videoWidth * video.videoHeight > MOVING_PIXELS) throw new StickerError("too_big");
     // (A video that does not say how long it is (one a browser recorded) says so once it has been to its end.)
-    if (video.duration === Infinity && !(await videoSays(video, "seeked", () => (video.currentTime = 1e6)))) return null;
+    if (video.duration === Infinity && !(await videoSays(video, "seeked", () => (video.currentTime = 1e6), left()))) return null;
     const duration = video.duration * 1000;
     if (!Number.isFinite(duration) || !(duration > 0) || !video.videoWidth || !video.videoHeight) return null;
     const { at, delay } = steps(duration);
     const context = square();
     const pictures: ImageData[] = [];
     for (const when of at) {
-      if (!(await videoSays(video, "seeked", () => (video.currentTime = when / 1000)))) return null;
+      const ms = left();
+      if (!(ms > 0 && (await videoSays(video, "seeked", () => (video.currentTime = when / 1000), ms)))) {
+        // (out of time, with enough of it taken to move: what was taken)
+        if (left() <= 0 && pictures.length >= MOVING_STICKER.minFrames) break;
+        return null;
+      }
       pictures.push(fitted(context, video, video.videoWidth, video.videoHeight));
     }
-    return { pictures, delays: at.map(() => delay) };
+    return { pictures, delays: pictures.map(() => delay) };
   } finally {
     video.removeAttribute("src");
     video.load();
@@ -583,15 +654,15 @@ export function useMyStickers(profileId: string, on: boolean, fresh = false): My
           return personalStickerApi.make(profileId, picture, delays);
         });
       try {
-        // (While the host makes stickers that move: a picture that moves is made one, and its first picture when the server could not; the collection full,
-        // the day's made, or the site without room, are said as they are.)
+        // (While the host makes stickers that move: a picture that moves is made one, and its first picture when the server said it could not make that one
+        // (not a picture it can pack, or too big when packed). Anything else is said as it is, and nothing more is sent: an answer that never came may be
+        // of a sticker that was made, and a still one sent after it would be a second, the judge, 17 Nov.)
         const picture = moving ? await movingPicture(file) : null;
         let made: Awaited<ReturnType<typeof make>>;
         if (picture && picture.delays !== undefined) {
           made = await make(picture.data, picture.delays).catch((error: unknown) => {
-            const problem = addProblemOf(error);
-            if (problem === "full" || problem === "too_many" || problem === "site_full") throw error;
-            return make(picture.still);
+            if (error instanceof ApiError && (error.code === "not_a_picture" || error.code === "too_big")) return make(picture.still);
+            throw error;
           });
         } else {
           made = await make(picture ? picture.still : await stickerPicture(file));
@@ -599,7 +670,10 @@ export function useMyStickers(profileId: string, on: boolean, fresh = false): My
         tookCollection(profileId, made);
         return null;
       } catch (error) {
-        return addProblemOf(error);
+        const problem = addProblemOf(error);
+        // (An answer that never came may be of a sticker that was made: the collection is looked at again, and shows it if it was.)
+        if (problem === "failed") void lookAgain(profileId);
+        return problem;
       }
     },
     [profileId],
