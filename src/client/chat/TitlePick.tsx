@@ -1,10 +1,8 @@
 import { useEffect, useMemo } from "react";
 import { checkChatText } from "../../shared";
 import { useProfileData } from "../account/store";
-import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
 import { Poster } from "../shared/Poster";
-import { BackButton, Screen } from "../tv/Idle";
 import type { ChatSession } from "./useChat";
 import { messageOf, sendableTitles, type Sendable } from "./titles";
 
@@ -26,88 +24,55 @@ const send = async (session: ChatSession, title: Sendable): Promise<boolean> => 
   return checked.ok ? session.send(checked.text) : false;
 };
 
-/** The phone's: a sheet over the chat, a row a title. It goes as soon as one is pressed (and the sheet with it: the chat shows it sent, or why not). */
-export function TitlePickSheet({ name, session, onClose }: { name: string; session: ChatSession; onClose: () => void }) {
+/**
+ * The titles of the chat's panel (ChatPanel.tsx): a poster a title, what this profile watched and saved. A press sends one at once, and the panel goes with it
+ * (the chat shows it sent, or why not). `tv`: drawn for the TV's pages; `nav`: walked with the arrows (the remote lands on the first).
+ */
+export function TitleList({ session, tv, nav, onSent }: { session: ChatSession; tv: boolean; nav: boolean; onSent: () => void }) {
   const t = useT();
   const titles = useSendable();
-  return (
-    <Sheet title={t("chat.sendTitleTo", { name })} onClose={onClose} testId="chat-pick-sheet">
-      {titles.length === 0 ? (
-        <p className="chat-note" data-testid="chat-pick-none">
-          {t("chat.noTitles")}
-        </p>
-      ) : (
-        <div className="chat-picks">
-          {titles.map((title) => (
-            <button
-              type="button"
-              key={title.address}
-              className="chat-pick"
-              disabled={session.sending}
-              onClick={() => {
-                onClose();
-                void send(session, title);
-              }}
-              data-address={title.address}
-              data-testid="chat-pick"
-            >
-              <Poster className="chat-pick-art" title={title.title} image={title.image} />
-              <span className="chat-pick-name">{title.title}</span>
-              {title.year && <span className="chat-pick-year">{title.year}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </Sheet>
-  );
-}
-
-/** The TV's: a page of posters the remote walks, OK sends one and goes back to the chat. Back goes back to the chat without sending anything. */
-export function TitlePickTv({ name, session, onBack }: { name: string; session: ChatSession; onBack: () => void }) {
-  const t = useT();
-  const titles = useSendable();
-  // (The titles are this profile's, and another screen can change them while the page is open: the remote, left on nothing when the poster it was on
-  // goes, is given the first title, or Back when there is none any more.)
+  const prefix = tv ? "tv-chat" : "chat";
+  // (The titles are this profile's, and another screen can change them while the panel is open: the remote, left on nothing when the poster it was on goes, is
+  // given the first title, or the panel's tab when there is none any more.)
   useEffect(() => {
+    if (!nav) return;
     const on = document.activeElement;
     if (on !== null && on !== document.body) return;
-    (document.querySelector<HTMLElement>("[data-testid='tv-chat-pick']:not(:disabled)") ?? document.querySelector<HTMLElement>("[data-testid='tv-chat-pick-back']"))?.focus();
-  }, [titles]);
+    (
+      document.querySelector<HTMLElement>(`[data-testid='${prefix}-pick']:not(:disabled)`) ??
+      document.querySelector<HTMLElement>(`[data-testid='${prefix}-panel-tab'][aria-selected='true']`)
+    )?.focus();
+  }, [titles, nav, prefix]);
+  if (titles.length === 0) {
+    return (
+      <p className={`${prefix}-pick-none`} data-testid={`${prefix}-pick-none`}>
+        {t("chat.noTitles")}
+      </p>
+    );
+  }
   return (
-    <Screen key="pick" testId="tv-chat-picking" compact focus onBack={onBack}>
-      <h1 className="tv-headline tv-headline-small">{t("chat.sendTitleTo", { name })}</h1>
-      {titles.length === 0 ? (
-        <p className="tv-lead" data-testid="tv-chat-pick-none">
-          {t("chat.noTitles")}
-        </p>
-      ) : (
-        <>
-          <p className="tv-hint tv-chat-lead">{t("chat.sendTitleHelp")}</p>
-          <div className="tv-chat-picks">
-            {titles.map((title, at) => (
-              <button
-                type="button"
-                key={title.address}
-                className="tv-chat-pick"
-                disabled={session.sending}
-                onClick={() => {
-                  onBack();
-                  void send(session, title);
-                }}
-                data-nav
-                {...(at === 0 ? { "data-autofocus": true } : {})}
-                data-address={title.address}
-                data-testid="tv-chat-pick"
-              >
-                <Poster className="tv-chat-pick-art" title={title.title} image={title.image} />
-                <span className="tv-chat-pick-name">{title.title}</span>
-                {title.year && <span className="tv-chat-pick-year">{title.year}</span>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      <BackButton onClick={onBack} testId="tv-chat-pick-back" autoFocus={titles.length === 0} />
-    </Screen>
+    <div className={`${prefix}-picks`} data-testid={`${prefix}-picks`}>
+      {titles.map((title, at) => (
+        <button
+          type="button"
+          key={title.address}
+          className={`${prefix}-pick`}
+          disabled={session.sending}
+          onClick={() => {
+            if (session.sending) return;
+            onSent();
+            void send(session, title);
+          }}
+          {...(nav ? { "data-nav": true } : {})}
+          {...(nav && at === 0 ? { "data-autofocus": true } : {})}
+          data-address={title.address}
+          data-testid={`${prefix}-pick`}
+        >
+          <Poster className={`${prefix}-pick-art`} title={title.title} image={title.image} />
+          <span className={`${prefix}-pick-name`}>{title.title}</span>
+          {title.year && <span className={`${prefix}-pick-year`}>{title.year}</span>}
+        </button>
+      ))}
+    </div>
   );
 }

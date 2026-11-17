@@ -79,6 +79,8 @@ export interface MessageBoxProps {
   testId: string;
   /** Any further attributes the box should carry (`data-nav`, `data-autofocus`). */
   extra?: Record<string, string | boolean>;
+  /** The box was given the keyboard (a finger pressed it, or the page did): the chat's panel of stickers goes then, as a messenger's does (ChatPanel.tsx). */
+  onFocused?: () => void;
 }
 
 /**
@@ -88,7 +90,7 @@ export interface MessageBoxProps {
  * Send key sends, a paste is plain text on one line, what is typed stops at `maxLength`, and the words in it are the `value` the page holds. It grows
  * a few lines with a long message, then scrolls. A computer keeps the plain box (ChatTv.tsx): it has no strip.
  */
-export const MessageBox = forwardRef<HTMLDivElement | null, MessageBoxProps>(function MessageBox({ value, onChange, onSend, maxLength, placeholder, label, className, testId, extra = {} }, ref) {
+export const MessageBox = forwardRef<HTMLDivElement | null, MessageBoxProps>(function MessageBox({ value, onChange, onSend, maxLength, placeholder, label, className, testId, extra = {}, onFocused }, ref) {
   const box = useRef<HTMLDivElement>(null);
   useImperativeHandle<HTMLDivElement | null, HTMLDivElement | null>(ref, () => box.current, []);
   // (Sending is the parent's; this only keeps one press of Enter from sending twice, by the key and by what the browser would type for it.)
@@ -200,6 +202,7 @@ export const MessageBox = forwardRef<HTMLDivElement | null, MessageBoxProps>(fun
 
   // A box given the keyboard by the page (as after a send) puts the caret at the end, not before the first word, as a form field would.
   const focus = (event: FocusEvent<HTMLDivElement>) => {
+    onFocused?.();
     const element = event.currentTarget;
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0 && element.contains(selection.anchorNode) && selection.anchorNode !== element) return;
@@ -237,24 +240,4 @@ export const MessageBox = forwardRef<HTMLDivElement | null, MessageBoxProps>(fun
 /** Keeps the keyboard up while the Send button beside the box is pressed: the press does not take the box's place (a phone would put its keyboard away, then bring it back). */
 export function keepTheBox(event: { preventDefault: () => void; button?: number }) {
   if ((event.button ?? 0) === 0) event.preventDefault();
-}
-
-/**
- * The + that brings back the buttons folded away while something is typed (`shown`: whether they are back; `show` brings them). Pressed with the keys it
- * had the focus (a finger's or a mouse's press never gives it, see `keepTheBox`), and it is gone the moment it is pressed: the focus then goes to the first
- * of the buttons that took its place in the bar (`bar`), not to nothing. Pressed with a finger, the box keeps it, and the keyboard stays up.
- */
-export function useUnfold(shown: boolean, show: () => void) {
-  const bar = useRef<HTMLDivElement>(null);
-  const withKeys = useRef(false);
-  useEffect(() => {
-    if (!shown || !withKeys.current) return;
-    withKeys.current = false;
-    bar.current?.querySelector<HTMLElement>("button")?.focus();
-  }, [shown]);
-  const press = (event: { currentTarget: Element }) => {
-    withKeys.current = document.activeElement === event.currentTarget;
-    show();
-  };
-  return { bar, press };
 }

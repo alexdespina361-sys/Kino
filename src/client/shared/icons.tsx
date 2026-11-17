@@ -344,6 +344,14 @@ export const StickerIcon = (props: Props) => (
   </Icon>
 );
 
+/** A keyboard: back to typing, the chat's panel of titles, GIFs and stickers put away (chat/ChatPanel.tsx). */
+export const KeyboardIcon = (props: Props) => (
+  <Icon {...props}>
+    <rect x="2" y="6" width="20" height="12" rx="2" />
+    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+  </Icon>
+);
+
 /** A face with a wide grin: cartoons. */
 export const CartoonIcon = (props: Props) => (
   <Icon {...props}>

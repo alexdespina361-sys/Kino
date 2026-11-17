@@ -2,21 +2,19 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
-import { BellIcon, BellOffIcon, FilmIcon, GifIcon, ImageIcon, MoreIcon, PlusIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
+import { BellIcon, BellOffIcon, ImageIcon, KeyboardIcon, MoreIcon, SearchIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
 import { useBackFirst } from "../tv/dpad";
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatMediaSheet } from "./ChatMedia";
+import { ChatPanel } from "./ChatPanel";
 import { ChatSearchBar, searchBack, useChatSearch } from "./ChatSearch";
 import { useShutOnPressBeside } from "./pressBeside";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
-import { GifPickSheet } from "./GifPick";
 import { backLetsAnswerGo, ReplyStrip } from "./Reply";
 import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
-import { StickerPickSheet } from "./StickerPick";
-import { afterSent, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
+import { afterSent, keepTheBox, MessageBox } from "./MessageBox";
 import { useGifKey } from "./useGifs";
 import { CHAT_FACTS } from "./state";
-import { TitlePickSheet } from "./TitlePick";
 import type { ChatReport, ChatSession } from "./useChat";
 import { problemText } from "./words";
 import "./chat.css";
@@ -47,23 +45,31 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const t = useT();
   const { state } = session;
   const [picked, setPicked] = useState<number | null>(null);
-  /** The sheet of titles to send is open. */
-  const [picking, setPicking] = useState(false);
-  /** The sheet of GIFs is open (GifPick.tsx): there only when the site has a KLIPY key. */
-  const [gifPicking, setGifPicking] = useState(false);
+  /** The panel of titles, GIFs and stickers is open under the box (ChatPanel.tsx); its GIFs only when the site has a KLIPY key. */
+  const [panel, setPanel] = useState(false);
   const gifKey = useGifKey();
-  /** The sheet of stickers is open (StickerPick.tsx). */
-  const [stickerPicking, setStickerPicking] = useState(false);
   const blocked = whyNotWrite(session);
   const personal = usePersonalLines(session, true);
-  // (A sheet over the chat - the titles, the GIFs, the stickers, a report - lets the selection go: else Escape would let it go behind the sheet before
-  // shutting the sheet, the judge, 17 Nov.)
+  // (A sheet over the chat - the gallery, a report - lets the selection go: else Escape would let it go behind the sheet before shutting the sheet, the
+  // judge, 17 Nov.)
   /** The sheet of the chat's GIFs and stickers is open (ChatMedia.tsx). */
   const [media, setMedia] = useState(false);
-  const over = picking || gifPicking || stickerPicking || media || report.stage !== "closed";
+  const over = media || report.stage !== "closed";
   useEffect(() => {
     if (over) setPicked(null);
   }, [over]);
+  // (A chat one can no longer write in has no panel to send from, and it does not come back by itself when one can again.)
+  useEffect(() => {
+    if (blocked) setPanel(false);
+  }, [blocked]);
+  /** The panel opens with nothing selected and the ⋮ shut (Back then shuts the panel, not those), and the keyboard goes down: the panel is in its place. */
+  const openPanel = (open: boolean) => {
+    if (open) {
+      setPicked(null);
+      setMenu(false);
+    }
+    setPanel(open);
+  };
   // (Answering a message: Reply at the top, or the message drawn to the right. The selection goes, and the box is where the answer is written.)
   const reply = (id: number) => {
     setPicked(null);
@@ -96,7 +102,7 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   return (
     <>
       <Sheet title={t("chat.title", { name })} onClose={onClose} testId="chat-sheet">
-        <div className="chat" data-testid="chat">
+        <div className="chat" data-panel={panel && !blocked ? "true" : undefined} data-testid="chat">
           {/* (One row at the top: when they were last online, or the search while it is open; what can be done with the message selected; the ⋮.) */}
           <div className="chat-tools" data-searching={search.open ? "true" : undefined}>
             {search.open ? (
@@ -204,14 +210,14 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
           ) : (
             <>
               {answering && <ReplyStrip line={answering} name={name} onCancel={() => session.setReplyTo(null)} />}
-              <Composer session={session} onPickTitle={() => setPicking(true)} {...(gifKey ? { onPickGif: () => setGifPicking(true) } : {})} onPickSticker={() => setStickerPicking(true)} />
+              <Composer session={session} panel={panel} onPanel={openPanel} />
+              {panel && (
+                <ChatPanel session={session} tv={false} nav={false} land={false} pointer gifKey={gifKey} onClose={() => setPanel(false)} onSent={() => setPanel(false)} />
+              )}
             </>
           )}
         </div>
       </Sheet>
-      {picking && !blocked && <TitlePickSheet name={name} session={session} onClose={() => setPicking(false)} />}
-      {gifPicking && gifKey && !blocked && <GifPickSheet name={name} gifKey={gifKey} session={session} onClose={() => setGifPicking(false)} />}
-      {stickerPicking && !blocked && <StickerPickSheet name={name} session={session} onClose={() => setStickerPicking(false)} />}
       {report.stage !== "closed" && <ChatReportSheet name={name} report={report} now={now} personal={personal.lines} />}
       {media && (
         <ChatMediaSheet
@@ -227,16 +233,14 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   );
 }
 
-/** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. Beside the box, the button that sends a title instead (see TitlePick.tsx). */
-function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session: ChatSession; onPickTitle: () => void; onPickGif?: () => void; onPickSticker: () => void }) {
+/**
+ * The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. Before the box in its
+ * bar, the one button of what is sent besides words (ChatPanel.tsx): pressed, the keyboard goes down and the panel comes in its place, and the button is a
+ * keyboard; pressed again (or the box pressed), the keyboard is back and the panel goes.
+ */
+function Composer({ session, panel, onPanel }: { session: ChatSession; panel: boolean; onPanel: (open: boolean) => void }) {
   const t = useT();
   const [text, setText] = useState("");
-  /** Whether the buttons that send something else are shown while something is typed (the + was pressed). */
-  const [tools, setTools] = useState(false);
-  useEffect(() => {
-    if (text === "") setTools(false);
-  }, [text]);
-  const unfold = useUnfold(tools, () => setTools(true));
   const input = useRef<HTMLDivElement>(null);
   const checked = checkChatText(text);
   // (A message to answer was picked: the answer is written in the box, which has the keyboard at once, as in any messenger.)
@@ -250,12 +254,27 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
     const written = text;
     // (Only what was sent leaves the box: what was typed while the message was on its way is the next one. A slow connection is seconds of typing.)
     if (await session.send(checked.text)) setText((now) => afterSent(now, written));
-    input.current?.focus(); // (the keyboard stays up: the next message is what comes next)
+    // (The keyboard stays up: the next message is what comes next. But a panel opened while it was on its way stays: the box given the keyboard would
+    // shut it.)
+    if (!panelNow.current) input.current?.focus();
   };
+  /** Whether the panel is open now: what a send that was on its way finds when it is done. */
+  const panelNow = useRef(panel);
+  useEffect(() => {
+    panelNow.current = panel;
+  }, [panel]);
 
-  // (One bar: the buttons that send something else are in it, before the box. While something is typed they fold into one +, and the words have the bar
-  // to themselves; a press of the + brings them back, and typing on folds them again. The owner, 17 Nov: three round buttons left the box a few words wide.)
-  const folded = text !== "" && !tools;
+  // (One bar, the one button in it before the box: the words have the rest of the bar. The owner, 17 Nov: three round buttons left the box a few words wide,
+  // and then "instead of three distinct buttons in the chat, it should only be 1 icon".)
+  const toggle = () => {
+    if (panel) {
+      onPanel(false);
+      input.current?.focus(); // (the keyboard comes back in the panel's place)
+      return;
+    }
+    if (document.activeElement === input.current) input.current?.blur(); // (the keyboard goes down: the panel is in its place)
+    onPanel(true);
+  };
   return (
     <form
       className="chat-compose"
@@ -264,35 +283,18 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
       noValidate
       data-testid="chat-compose"
     >
-      <div className="chat-pill" ref={unfold.bar} data-testid="chat-pill">
-        {folded ? (
-          <button
-            type="button"
-            className="chat-title-btn"
-            onClick={unfold.press}
-            onMouseDown={keepTheBox}
-            aria-label={t("chat.moreToSend")}
-            aria-expanded={false}
-            title={t("chat.moreToSend")}
-            data-testid="chat-tools"
-          >
-            <PlusIcon />
-          </button>
-        ) : (
-          <>
-            <button type="button" className="chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-testid="chat-title-btn">
-              <FilmIcon />
-            </button>
-            {onPickGif && (
-              <button type="button" className="chat-title-btn chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-testid="chat-gif-btn">
-                <GifIcon />
-              </button>
-            )}
-            <button type="button" className="chat-title-btn chat-sticker-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-testid="chat-sticker-btn">
-              <StickerIcon />
-            </button>
-          </>
-        )}
+      <div className="chat-pill" data-testid="chat-pill">
+        <button
+          type="button"
+          className="chat-title-btn chat-panel-btn"
+          onClick={toggle}
+          aria-label={t(panel ? "chat.panelKeyboard" : "chat.panel")}
+          aria-expanded={panel}
+          title={t(panel ? "chat.panelKeyboard" : "chat.panel")}
+          data-testid="chat-panel-btn"
+        >
+          {panel ? <KeyboardIcon /> : <StickerIcon />}
+        </button>
         {/* (An editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, see MessageBox.tsx.) */}
         <MessageBox
           ref={input}
@@ -300,7 +302,6 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
           value={text}
           onChange={(now) => {
             setText(now);
-            setTools(false);
             session.settle();
           }}
           onSend={() => void submit()}
@@ -308,6 +309,7 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
           placeholder={t("chat.placeholder")}
           label={t("chat.messageLabel")}
           testId="chat-input"
+          onFocused={() => onPanel(false)}
         />
       </div>
       <button type="submit" className="chat-send" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} onMouseDown={keepTheBox} data-testid="chat-send">

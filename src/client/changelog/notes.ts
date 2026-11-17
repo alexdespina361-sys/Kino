@@ -4,6 +4,22 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.8",
+    date: "2026-11-17",
+    en: [
+      "In a chat: one button beside the box opens a panel like a keyboard, with tabs for titles, GIFs and stickers; it opens on the tab you used last.",
+      "In a chat: Back closes what you opened last first: a picture shown larger, then the panel, then the search.",
+    ],
+    ro: [
+      "În chat: un buton lângă casetă deschide un panou ca o tastatură, cu file pentru titluri, GIF-uri și stickere; se deschide pe ultima filă folosită.",
+      "În chat: Înapoi închide mai întâi ce ai deschis ultimul: o imagine mărită, apoi panoul, apoi căutarea.",
+    ],
+    it: [
+      "In chat: un pulsante accanto alla casella apre un pannello come una tastiera, con schede per titoli, GIF e sticker; si apre sull'ultima scheda usata.",
+      "In chat: Indietro chiude prima ciò che hai aperto per ultimo: un'immagine ingrandita, poi il pannello, poi la ricerca.",
+    ],
+  },
+  {
     version: "0.4.7",
     date: "2026-11-17",
     en: [

@@ -81,44 +81,33 @@ describe("the chat on the TV", () => {
     expect(report).toContain("\u{1F37F}");
   });
 
-  it("has the sticker button nearest the box on every screen, a TV that is only a remote too", () => {
+  it("has one button of what is sent besides words, the remote's stop before the box, on every screen, a TV that is only a remote too; the panel shut until it is pressed", () => {
     for (const screen of [{}, { desk: true }, { narrow: true }]) {
-      const html = read({ ...screen, onPickTitle: () => {}, onPickSticker: () => {} });
-      expect(tagOf(html, "tv-chat-sticker-btn"), JSON.stringify(screen)).toContain("data-nav");
-      expect(html.indexOf('data-testid="tv-chat-title-btn"')).toBeLessThan(html.indexOf('data-testid="tv-chat-sticker-btn"'));
+      for (const draft of ["", "See you at eight"]) {
+        const html = read({ ...screen, draft, withPanel: true, gifKey: "key" });
+        const what = `${JSON.stringify(screen)} ${JSON.stringify(draft)}`;
+        expect(count(html, "tv-chat-panel-btn"), what).toBe(1);
+        expect(tagOf(html, "tv-chat-panel-btn"), what).toContain("data-nav");
+        expect(tagOf(html, "tv-chat-panel-btn"), what).toContain('aria-expanded="false"');
+        // (Typed words change nothing: there is no + to fold into, and none of the three buttons it was.)
+        for (const id of ["tv-chat-title-btn", "tv-chat-gif-btn", "tv-chat-sticker-btn", "tv-chat-tools", "tv-chat-panel"]) expect(has(html, id), `${what} ${id}`).toBe(false);
+      }
     }
-    expect(has(read(), "tv-chat-sticker-btn")).toBe(false);
+    expect(has(read(), "tv-chat-panel-btn")).toBe(false);
+    // (a friend who takes no messages: nothing to send, no button)
+    expect(has(read({ withPanel: true, session: fakeSession({ state: { lines, open: false } }) }), "tv-chat-panel-btn")).toBe(false);
   });
 
-  it("is one bar on a computer and a hand-held screen: the buttons that send something else in it, before the box, and Send beside it; a TV has them beside what opens the page that writes", () => {
-    const tools = { onPickTitle: () => {}, onPickGif: () => {}, onPickSticker: () => {} };
+  it("is one bar on a computer and a hand-held screen: the button in it before the box, and Send beside it; a TV has it beside what opens the page that writes", () => {
     for (const screen of [{ desk: true }, { narrow: true }]) {
-      const html = read({ ...screen, ...tools });
+      const html = read({ ...screen, withPanel: true });
       const bar = html.slice(html.indexOf('data-testid="tv-chat-pill"'), html.indexOf('data-testid="tv-chat-box-send"'));
-      for (const id of ["tv-chat-title-btn", "tv-chat-gif-btn", "tv-chat-sticker-btn", "tv-chat-box"]) expect(has(bar, id), `${JSON.stringify(screen)} ${id}`).toBe(true);
-      expect(bar.indexOf('data-testid="tv-chat-sticker-btn"'), "the buttons come before the box").toBeLessThan(bar.indexOf('data-testid="tv-chat-box"'));
-      expect(has(html, "tv-chat-tools"), "nothing typed: no +").toBe(false);
+      for (const id of ["tv-chat-panel-btn", "tv-chat-box"]) expect(has(bar, id), `${JSON.stringify(screen)} ${id}`).toBe(true);
+      expect(bar.indexOf('data-testid="tv-chat-panel-btn"'), "the button comes before the box").toBeLessThan(bar.indexOf('data-testid="tv-chat-box"'));
     }
-    const tv = read(tools);
+    const tv = read({ withPanel: true });
     expect(has(tv, "tv-chat-pill")).toBe(false);
-    expect(tv.indexOf('data-testid="tv-chat-sticker-btn"')).toBeLessThan(tv.indexOf('data-testid="tv-chat-write"'));
-  });
-
-  it("folds the buttons into one + on a hand-held screen while something is typed (the words have the bar), and nowhere else", () => {
-    const tools = { onPickTitle: () => {}, onPickGif: () => {}, onPickSticker: () => {} };
-    const typing = read({ narrow: true, draft: "See you at eight", ...tools });
-    expect(tagOf(typing, "tv-chat-tools")).toContain('aria-expanded="false"');
-    expect(tagOf(typing, "tv-chat-tools")).toContain("data-nav");
-    for (const id of ["tv-chat-title-btn", "tv-chat-gif-btn", "tv-chat-sticker-btn"]) expect(has(typing, id), id).toBe(false);
-    expect(has(typing, "tv-chat-box")).toBe(true);
-    // (a computer has the room, and a TV writes on a page of its own: the buttons stay)
-    for (const screen of [{ desk: true }, {}]) {
-      const html = read({ ...screen, draft: "See you at eight", ...tools });
-      expect(has(html, "tv-chat-tools"), JSON.stringify(screen)).toBe(false);
-      expect(has(html, "tv-chat-sticker-btn"), JSON.stringify(screen)).toBe(true);
-    }
-    // (nothing to fold: no +)
-    expect(has(read({ narrow: true, draft: "See you at eight" }), "tv-chat-tools")).toBe(false);
+    expect(tv.indexOf('data-testid="tv-chat-panel-btn"')).toBeLessThan(tv.indexOf('data-testid="tv-chat-write"'));
   });
 
   it("on a TV, the box at the bottom opens the page that writes, and shows what was typed and not sent", () => {

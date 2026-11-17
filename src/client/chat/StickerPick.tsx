@@ -1,10 +1,8 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { checkChatText, PERSONAL_STICKER } from "../../shared";
-import { Sheet } from "../controller/Sheet";
 import { useT, type Key } from "../i18n";
 import { opensFolder, pickFrom, useKinoApp } from "../app/kinoApp";
-import { ChevronLeftIcon, MessageIcon } from "../shared/icons";
-import { BackButton, Screen } from "../tv/Idle";
+import { MessageIcon } from "../shared/icons";
 import { ownStickerSrc, useMovingStickersOn, useMyStickers, usePersonalStickersOn, type StickerAddProblem } from "./personalStickers";
 import { STICKERS, stickerSrc, type Sticker } from "./stickers";
 import type { ChatSession } from "./useChat";
@@ -242,76 +240,35 @@ function YourStickers({ session, grid, className, nav, pointer, onSent }: { sess
   );
 }
 
-/** The phone's: a sheet over the chat. */
-export function StickerPickSheet({ name, session, onClose }: { name: string; session: ChatSession; onClose: () => void }) {
-  const t = useT();
+/**
+ * The stickers of the chat's panel (ChatPanel.tsx): the profile's own first while personal stickers are on, then Kino's; a press sends one, and the panel goes
+ * with it. `tv`: drawn for the TV's pages; `nav`: walked with the arrows (the remote lands on the first); `pointer`: a screen that is touched or clicked, which
+ * can add a sticker of its own.
+ */
+export function StickerPane({ session, tv, nav, pointer, onSent }: { session: ChatSession; tv: boolean; nav: boolean; pointer: boolean; onSent: () => void }) {
   const personal = usePersonalStickersOn();
+  const grid = tv ? "tv-chat-stickers" : "chat-stickers";
+  const button = tv ? "tv-chat-sticker-btn" : "chat-sticker-btn";
   return (
-    <Sheet title={t("chat.stickerTo", { name })} onClose={onClose} testId="chat-sticker-sheet">
-      {personal && <YourStickers session={session} grid="chat-stickers" className="chat-sticker-btn" nav={false} pointer onSent={onClose} />}
-      <div className="chat-stickers" data-testid="chat-stickers">
+    <div className={`${tv ? "tv-chat-sticker-list" : "chat-sticker-list"}${personal ? " with-yours" : ""}`} data-testid={tv ? "tv-chat-sticker-list" : "chat-sticker-list"}>
+      {personal && <YourStickers session={session} grid={grid} className={button} nav={nav} pointer={pointer} onSent={onSent} />}
+      <div className={grid} data-testid={grid}>
         {STICKERS.map((sticker, at) => (
           <StickerButton
             key={sticker.id}
             sticker={sticker}
-            className="chat-sticker-btn"
-            nav={false}
+            className={button}
+            nav={nav}
             first={at === 0}
             waiting={session.sending}
             onSend={() => {
               if (session.sending) return;
-              onClose();
+              onSent();
               void send(session, sticker);
             }}
           />
         ))}
       </div>
-    </Sheet>
-  );
-}
-
-/**
- * The page of a TV, a computer, or a hand-held screen showing the TV's pages: the grid the arrows walk (the remote lands on the first sticker), OK sends one and
- * goes back to the chat; Back goes back without sending anything. A hand-held screen has it as the whole screen, as the chat and the GIFs are, and lands on
- * nothing (a touch screen has no use for a ring on the first one). `pointer`: a computer or a hand-held screen (they can add a sticker of their own).
- */
-export function StickerPickTv({ name, session, narrow, pointer = narrow, onBack }: { name: string; session: ChatSession; narrow: boolean; pointer?: boolean; onBack: () => void }) {
-  const t = useT();
-  const title = t("chat.stickerTo", { name });
-  const personal = usePersonalStickersOn();
-  return (
-    <Screen key="stickers" testId="tv-chat-stickers-page" compact focus={!narrow} onBack={onBack} {...(narrow ? { className: "tv-chat-screen tv-gif-screen tv-sticker-screen" } : {})}>
-      {narrow ? (
-        <div className="tv-gif-head">
-          <button type="button" className="tv-chat-headback" onClick={onBack} aria-label={t("common.back")} title={t("common.back")} data-nav data-testid="tv-chat-sticker-back">
-            <ChevronLeftIcon />
-          </button>
-          <h1 className="tv-sticker-title">{title}</h1>
-        </div>
-      ) : (
-        <h1 className="tv-headline tv-headline-small">{title}</h1>
-      )}
-      <div className={`tv-chat-sticker-list${personal ? " with-yours" : ""}`} data-testid="tv-chat-sticker-list">
-        {personal && <YourStickers session={session} grid="tv-chat-stickers" className="tv-chat-sticker-btn" nav pointer={pointer} onSent={onBack} />}
-        <div className="tv-chat-stickers" data-testid="tv-chat-stickers">
-          {STICKERS.map((sticker, at) => (
-            <StickerButton
-              key={sticker.id}
-              sticker={sticker}
-              className="tv-chat-sticker-btn"
-              nav
-              first={at === 0}
-              waiting={session.sending}
-              onSend={() => {
-                if (session.sending) return;
-                onBack();
-                void send(session, sticker);
-              }}
-            />
-          ))}
-        </div>
-      </div>
-      {!narrow && <BackButton onClick={onBack} testId="tv-chat-sticker-back" />}
-    </Screen>
+    </div>
   );
 }

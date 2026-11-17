@@ -132,9 +132,14 @@ export function useBack(onBack: (() => void) | undefined, leaving: (() => void) 
   useHandHeldBack(active ? leaving : undefined);
 }
 
+/** The questions open, the one opened last at the end: a key's Back answers that one only. */
+const openFirst: Array<{ current: (() => void) | undefined }> = [];
+
 /**
  * Back on a question that is asked inside a page which has a Back of its own ("Delete this list?"): it answers the question, and the page's
  * Back, which would leave the page altogether, never hears of it. Pass nothing while there is no question.
+ * With several open at once (a chat's search, then its panel of stickers over it, then a picture shown larger), one Back shuts the one opened last, and the
+ * next Back the one before it, as the system's Back of a phone does with its layers.
  */
 export function useBackFirst(onBack: (() => void) | undefined): void {
   const latest = useRef(onBack);
@@ -142,14 +147,20 @@ export function useBackFirst(onBack: (() => void) | undefined): void {
   const active = onBack !== undefined;
   useEffect(() => {
     if (!active) return;
+    openFirst.push(latest);
     const onKey = (event: KeyboardEvent) => {
       if (event.altKey || event.ctrlKey || event.metaKey || actionForKey(event) !== "back") return;
       event.preventDefault();
       event.stopPropagation(); // (in the capture phase: it is over before the page's own listener, which is on the way back up)
-      latest.current?.();
+      // (Each one open hears the key, in the order they opened: the last is the one that answers it.)
+      if (openFirst[openFirst.length - 1] === latest) latest.current?.();
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      const at = openFirst.lastIndexOf(latest);
+      if (at >= 0) openFirst.splice(at, 1);
+    };
   }, [active]);
   useHandHeldBack(onBack); // (its layer opens after the page's own, so the system's Back answers the question first, too)
 }

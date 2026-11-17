@@ -173,6 +173,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
   background: var(--surface-2);
 }
 .chat-pill:focus-within { border-color: var(--accent); }
+/* (Lit for the box, not for the panel's button beside it: pressed, that one has put the keyboard away.) */
+.chat-pill:has(.chat-panel-btn:focus) { border-color: transparent; }
 .chat-input {
   flex: 1;
   min-width: 0;
@@ -211,10 +213,33 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 /* (Nothing to send yet: plainly a button, and plainly not ready. Not the accent dimmed, which read as a muddy red.) */
 .chat-send:disabled { background: var(--surface-2); color: var(--muted); }
 .chat-send:active:not(:disabled) { background: var(--accent-hover); }
-/* The buttons that send something else (a title: TitlePick.tsx, a GIF, a sticker), and the + they fold into while something is typed. */
+/* The one button of what is sent besides words (ChatPanel.tsx): a sticker's face, a keyboard's while the panel is open. */
 .chat-title-btn { display: grid; flex: none; place-items: center; width: 42px; height: 44px; margin: 0.5px 0; border-radius: 22px; background: transparent; color: var(--muted); font-size: 1.3rem; }
 .chat-title-btn:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); color: var(--text); }
-.chat-picks { display: flex; flex-direction: column; gap: 6px; max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; }
+.chat-panel-btn[aria-expanded="true"] { color: var(--text); }
+.chat-title-btn:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+
+/*
+ * The panel (ChatPanel.tsx): under the box, where the keyboard was, as a messenger's keyboard of stickers - the pane of the tab chosen, which scrolls, and the
+ * tabs at its foot. The chat is taller while it is open (the sheet's room, less its head), so that the messages keep theirs.
+ */
+.chat[data-panel] { height: min(calc(86vh - 96px), 760px); }
+.chat[data-panel] .chat-lines { min-height: 80px; }
+/* (The phone's sheets are at most 70% of the screen, for a short choice with the page above it; the chat's grows to the sheets' old 86% while the panel is
+   open, the panel being where the keyboard was. Where even that is short, the panel gives up room before the bar: it never pushes its tabs out of sight.) */
+:root[data-ui="polish"] .phone-ui .sheet[data-testid="chat-sheet"]:has(.chat[data-panel]) { max-height: 86%; }
+.chat-panel { display: flex; flex: 0 1 auto; flex-direction: column; height: min(38vh, 320px); min-height: 190px; margin: 0 -4px; padding-top: 8px; border-top: 1px solid var(--line, rgba(255, 255, 255, 0.1)); }
+.chat-panel-pane { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+.chat-panel-tabs { display: flex; flex: none; justify-content: center; gap: 6px; padding-top: 6px; }
+.chat-panel-tab { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 8px 14px; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 0.85rem; font-weight: 600; }
+.chat-panel-tab svg { flex: none; font-size: 1.15rem; }
+.chat-panel-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-panel-tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); }
+.chat-panel-tab:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+/* (What scrolls is the pane's list: the titles, the stickers, the GIFs under their search.) */
+.chat-picks, .chat-sticker-list, .chat-gif-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.chat-picks { display: flex; flex-direction: column; gap: 6px; }
+.chat-pick-none { margin: 16px 8px 0; color: var(--muted); font-size: 0.85rem; line-height: 1.4; text-align: center; }
 .chat-pick {
   display: grid;
   flex: none;
@@ -386,29 +411,60 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-pill .tv-chat-title-btn { width: 2.9em; height: 3.2em; border-radius: 1.6em; background: transparent; box-shadow: none; color: rgba(255, 255, 255, 0.72); }
 .tv-chat-pill .tv-chat-title-btn:hover { background: rgba(255, 255, 255, 0.08); box-shadow: none; color: #fff; }
 .tv-chat-pill .tv-chat-title-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff; color: #fff; }
-/* Send a title (TitlePick.tsx): a round button before the box, and a page of posters the remote walks. */
+/* The one button before the box (ChatPanel.tsx), round as Send is; lit while its panel is open. */
 .tv-chat-compose-row { display: flex; align-items: center; gap: 0.8em; width: 100%; }
+.tv-chat-panel-btn[aria-expanded="true"]:not(:focus-visible) { background: rgba(255, 255, 255, 0.12); color: #fff; }
 .tv-chat-compose-row > .tv-chat-composer { flex: 1 1 auto; min-width: 0; }
 .tv-chat-title-btn { display: grid; flex: none; place-items: center; width: 3.2em; height: 3.2em; border-radius: 50%; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font-size: 1em; }
 .tv-chat-title-btn svg { width: 1.45em; height: 1.45em; }
 .tv-chat-title-btn:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .tv-chat-title-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff, 0 0 0 0.25em rgb(var(--accent-rgb) / 0.35); }
+/*
+ * The panel on the TV's pages: under the box in the chat's window, which is taller while it is open; the pane that scrolls (the remote's next one is brought
+ * into view), the tabs at its foot. The posters of the titles are smaller here than on a page of their own: a row and the start of the next are in view.
+ */
+.tv-chat-window[data-panel] { height: min(100%, 54em); }
+.tv-chat-panel { display: flex; flex: none; flex-direction: column; height: min(36vh, 20em); margin: 0.1em -0.4em 0; padding-top: 0.7em; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.tv-chat-panel-pane { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; min-height: 0; }
+.tv-chat-panel-tabs { display: flex; flex: none; justify-content: center; gap: 0.6em; padding-top: 0.6em; }
+.tv-chat-panel-tab { display: inline-flex; align-items: center; gap: 0.45em; padding: 0.45em 1.1em; border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.65); font: inherit; font-size: 1.2em; font-weight: 600; }
+.tv-chat-panel-tab svg { flex: none; width: 1.3em; height: 1.3em; }
+.tv-chat-panel-tab[aria-selected="true"] { background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; }
+.tv-chat-panel-tab:hover { color: #fff; }
+.tv-chat-panel-tab:focus-visible { outline: none; background: #fff; box-shadow: none; color: #0b0b0c; }
+.tv-chat-picks, .tv-chat-sticker-list, .tv-chat-gif-list { flex: 1 1 auto; width: 100%; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.tv-chat-picks::-webkit-scrollbar, .tv-chat-sticker-list::-webkit-scrollbar, .tv-chat-gif-list::-webkit-scrollbar { display: none; }
+.tv-chat-pick-none { margin: 1em 0 0; color: rgba(255, 255, 255, 0.7); font-size: 1.3em; text-align: center; }
+/* (A title is a row in the panel - a small poster, its name and year - as on the phone, a few to a line: a whole poster is taller than the panel, and a
+ * row of them was never seen whole, nor reached with the remote's Up from the tabs.) */
 .tv-chat-picks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr));
-  gap: 1em;
-  width: min(100%, 74em);
-  max-height: 62vh;
-  padding: 0.5em;
-  overflow-y: auto;
-  scrollbar-width: none;
+  grid-template-columns: repeat(auto-fill, minmax(17em, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 0.6em;
+  padding: 0.3em 0.5em 0.5em;
 }
-.tv-chat-pick { display: flex; flex-direction: column; gap: 0.35em; padding: 0.45em; border-radius: 0.8em; background: transparent; color: #fff; font: inherit; text-align: left; }
-.tv-chat-pick-art { width: 100%; aspect-ratio: 2 / 3; border-radius: 0.5em; }
-.tv-chat-pick-art .poster-initial { font-size: 2.4em; }
-.tv-chat-pick-name { display: -webkit-box; overflow: hidden; font-size: 1.15em; font-weight: 600; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.tv-chat-pick-year { color: rgba(255, 255, 255, 0.6); font-size: 1em; }
-.tv-chat-pick:hover { background: rgba(255, 255, 255, 0.06); }
+.tv-chat-pick {
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.8em;
+  row-gap: 0.15em;
+  align-content: center;
+  padding: 0.45em;
+  border-radius: 0.8em;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+}
+.tv-chat-pick-art { grid-row: 1 / 3; align-self: center; width: 100%; aspect-ratio: 2 / 3; border-radius: 0.4em; }
+.tv-chat-pick-art .poster-initial { font-size: 1.4em; }
+.tv-chat-pick-name { display: -webkit-box; overflow: hidden; align-self: end; font-size: 1.1em; font-weight: 600; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tv-chat-pick-name:last-child { grid-row: 1 / 3; align-self: center; } /* (a title with no year: its name in the middle) */
+.tv-chat-pick-year { align-self: start; color: rgba(255, 255, 255, 0.6); font-size: 1em; }
+.tv-chat-pick:hover { background: rgba(255, 255, 255, 0.09); }
 .tv-chat-pick:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; }
 .tv-chat-pick:disabled { opacity: 0.5; }
 /* (The way back, which the stylesheet puts in the top corner on every page that fills the screen, as before.) */
@@ -423,12 +479,14 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-gif-gone { display: block; padding: 8px 12px; border-radius: 16px; background: var(--surface-2); color: var(--muted); font-style: italic; }
 .tv .chat-gif-picture { max-width: 100%; height: 9em; border-radius: 0.6em; background: #2a2a31; }
 .tv .chat-gif-gone { padding: 0.4em 0.8em; border-radius: 0.8em; background: #2a2a31; }
-.chat-gif-pane { display: flex; flex-direction: column; gap: 10px; }
-.chat-gif-search { width: 100%; padding: 11px 14px; border: 1.5px solid transparent; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; }
+/* (The search stays at the top of the pane, KLIPY's line at its foot; the GIFs scroll between them.) */
+.chat-gif-pane { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; }
+.chat-gif-list { display: flex; flex-direction: column; gap: 8px; }
+.chat-gif-search { flex: none; width: 100%; padding: 11px 14px; border: 1.5px solid transparent; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; }
 .chat-gif-search:focus { border-color: var(--accent); outline: none; }
-/* (Rows as tall as their squares, always: the grid scrolls, it is never squeezed. A tile hides what spills out of its corners, which makes its own least
-   height nothing, so rows left to share a squeezed grid's height came out a few pixels tall and the GIFs lay over each other.) */
-.chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 6px; max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
+/* (Rows as tall as their squares, always: the list scrolls, the grid is never squeezed. A tile hides what spills out of its corners, which makes its own
+   least height nothing, so rows left to share a squeezed grid's height came out a few pixels tall and the GIFs lay over each other.) */
+.chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 6px; }
 .chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
 .chat-gif img, .tv-chat-gif img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .chat-gif:active { opacity: 0.8; }
@@ -436,11 +494,12 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-gif-note p { margin: 0; }
 .chat-gif-retry { padding: 8px 16px; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; }
 .chat-gif-more { align-self: center; }
-.chat-gif-powered { margin: 0; color: var(--muted); font-size: 0.75rem; text-align: center; }
-.tv-chat-gif-search { width: min(100%, 40em); padding: 0.7em 1.1em; border: none; border-radius: 999px; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 1.3em; }
+.chat-gif-powered { flex: none; margin: 0; color: var(--muted); font-size: 0.75rem; text-align: center; }
+.tv-chat-gif-pane { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: 0.6em; width: 100%; min-height: 0; }
+.tv-chat-gif-search { flex: none; width: min(100%, 40em); padding: 0.6em 1.1em; border: none; border-radius: 999px; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: #fff; font: inherit; font-size: 1.3em; }
 .tv-chat-gif-search:focus { outline: none; box-shadow: inset 0 0 0 0.1em var(--accent); }
-.tv-chat-gif-list { display: contents; } /* (a hand-held screen's list that scrolls: below) */
-.tv-chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(10em, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 0.8em; width: min(100%, 74em); max-height: 52vh; padding: 0.5em; overflow-y: auto; scrollbar-width: none; }
+.tv-chat-gif-list { display: flex; flex-direction: column; align-items: center; gap: 0.6em; }
+.tv-chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(8em, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 0.7em; width: min(100%, 74em); padding: 0.3em 0.5em; }
 .tv-chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 0.7em; overflow: hidden; background: #222227; }
 .tv-chat-gif:hover { box-shadow: 0 0 0 0.12em rgba(255, 255, 255, 0.35); }
 .tv-chat-gif:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
@@ -448,7 +507,7 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-gif-more:focus-visible, .tv-chat-gif-retry:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff; }
 .tv-chat-gif-note { display: flex; flex-direction: column; align-items: center; gap: 0.6em; margin: 0; color: rgba(255, 255, 255, 0.7); font-size: 1.2em; text-align: center; }
 .tv-chat-gif-note p { margin: 0; }
-.tv-chat-gif-powered { margin: 0; }
+.tv-chat-gif-powered { flex: none; margin: 0; color: rgba(255, 255, 255, 0.55); font-size: 1em; }
 
 /*
  * Stickers (stickers.ts, StickerPick.tsx). In the chat a sticker is its picture, big and without the bubble (as a messenger draws an emoji sent alone), at
@@ -457,7 +516,8 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-bubble.chat-bubble-sticker, .chat-line .chat-bubble.chat-bubble-sticker, .tv-chat-window .chat-line .chat-bubble.chat-bubble-sticker { padding: 0; background: transparent; color: var(--muted); }
 .chat-sticker { display: block; width: 120px; height: 120px; object-fit: contain; }
 .tv .chat-sticker { width: 7em; height: 7em; }
-.chat-stickers { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 6px; max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
+.chat-sticker-list { display: flex; flex-direction: column; gap: 6px; }
+.chat-stickers { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 6px; }
 .chat-sticker-btn { display: block; aspect-ratio: 1; padding: 6px; border-radius: 14px; background: transparent; }
 .chat-sticker-btn img, .tv-chat-sticker-btn img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .chat-sticker-btn:active { background: var(--surface-2); }
@@ -468,8 +528,8 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-sticker-btn .chat-sticker-emoji { font-size: 3.6em; }
 .chat-sticker.chat-sticker-emoji { font-size: 84px; } /* (in the chat: the 120px of a picture) */
 .tv .chat-sticker.chat-sticker-emoji { width: 1.46em; height: 1.46em; font-size: 4.8em; } /* (7em of the list's letters, as a picture) */
-.tv-chat-sticker-list { display: contents; } /* (a hand-held screen's list that scrolls: below) */
-.tv-chat-stickers { display: grid; flex: none; grid-template-columns: repeat(7, 6.5em); grid-auto-rows: max-content; align-content: start; justify-content: center; gap: 0.7em; width: min(100%, 74em); max-height: 62vh; padding: 0.5em; overflow-y: auto; scrollbar-width: none; }
+.tv-chat-sticker-list { display: flex; flex-direction: column; align-items: center; }
+.tv-chat-stickers { display: grid; flex: none; grid-template-columns: repeat(7, 6.5em); grid-auto-rows: max-content; align-content: start; justify-content: center; gap: 0.7em; width: min(100%, 74em); padding: 0.3em 0.5em 0.5em; }
 .tv-chat-sticker-btn { display: block; aspect-ratio: 1; padding: 0.55em; border-radius: 0.8em; background: #222227; }
 .tv-chat-sticker-btn:hover { box-shadow: 0 0 0 0.12em rgba(255, 255, 255, 0.35); }
 .tv-chat-sticker-btn:focus-visible { outline: none; background: #34343c; box-shadow: 0 0 0 0.2em #fff; }
@@ -485,17 +545,16 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv .chat-sticker-personal { border-radius: 1.2em; }
 .chat-stickers-yours { display: flex; flex: none; flex-direction: column; gap: 6px; width: 100%; }
 .chat-stickers-headrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.chat-stickers-yours > .chat-note, .chat-stickers-yours > .chat-privacy { margin-inline: 2px; text-align: left; }
+.chat-stickers-yours > .chat-note, .chat-stickers-yours > .chat-privacy { margin-inline: 6px; text-align: left; }
 .tv .chat-stickers-yours > .chat-note, .tv .chat-stickers-yours > .chat-privacy { margin-inline: 0.5em; }
 .chat-stickers-head { margin: 6px 2px 2px; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
 .tv .chat-stickers-head { width: min(100%, 74em); margin: 0.3em auto 0.1em; font-size: 1.15em; text-align: left; }
-.chat-stickers-yours .chat-stickers { max-height: none; overflow: visible; }
 /*
  * (On a TV with the profile's own, the two grids are one list that scrolls: the remote's next sticker is brought into view, wherever it is. The list is as wide
  * as the grid of seven, 7 x 6.5em with its gaps and edges, so that the headings and both grids start at the same place.)
  */
-.tv-chat-sticker-list.with-yours { display: flex; flex: none; flex-direction: column; align-items: stretch; width: min(100%, 50.7em); margin-inline: auto; max-height: 62vh; overflow-y: auto; scrollbar-width: none; }
-.tv-chat-sticker-list.with-yours .tv-chat-stickers { width: auto; justify-content: start; max-height: none; overflow: visible; }
+.tv-chat-sticker-list.with-yours { align-items: stretch; width: min(100%, 50.7em); margin-inline: auto; }
+.tv-chat-sticker-list.with-yours .tv-chat-stickers { width: auto; justify-content: start; }
 .tv-chat-sticker-list.with-yours .chat-stickers-head { width: auto; margin: 0.3em 0.45em 0.1em; }
 .chat-sticker-mine { position: relative; display: block; }
 .chat-sticker-mine > button:first-child { width: 100%; }
@@ -641,27 +700,29 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
   .tv-chat-lead, .tv .chat-privacy { font-size: 1.2em; }
   .tv-chat-gif-search { font-size: 16px; } /* (16px: as the box of the chat) */
-  .tv-chat-gifs { grid-template-columns: repeat(auto-fill, minmax(7em, 1fr)); max-height: 56vh; }
   .tv-chat-gif-note { font-size: 1.3em; }
-  /* The GIF page (GifPick.tsx): the whole screen, as the chat - the arrow and the search at the top, the GIFs one list that scrolls and fills the rest. */
+  /* The panel (ChatPanel.tsx) on a hand-held screen: under the bar, in the sizes of a thumb, as the phone's own; its grids the screen's width. */
+  .tv-chat-screen .tv-chat-panel { height: min(40vh, 320px); margin: 4px -8px 0; padding-top: 8px; }
+  .tv-chat-screen .tv-chat-panel-tabs { gap: 6px; padding-top: 6px; }
+  .tv-chat-screen .tv-chat-panel-tab { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+  .tv-chat-screen .tv-chat-panel-tab svg { width: 18px; height: 18px; }
+  .tv-chat-screen .tv-chat-picks { grid-template-columns: 1fr; gap: 6px; padding: 2px 8px 8px; }
+  .tv-chat-screen .tv-chat-pick { grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; min-height: 72px; padding: 6px 12px 6px 6px; border-radius: 12px; }
+  .tv-chat-screen .tv-chat-pick-name { font-size: 15px; }
+  .tv-chat-screen .tv-chat-pick-year { font-size: 13px; }
+  .tv-chat-screen .tv-chat-gif-pane { gap: 8px; }
+  .tv-chat-screen .tv-chat-gif-search { width: calc(100% - 16px); }
+  .tv-chat-gifs { grid-template-columns: repeat(auto-fill, minmax(7em, 1fr)); }
+  .tv-chat-screen .tv-chat-gifs { width: 100%; padding: 0 8px; gap: 0.45em; }
+  .tv-chat-screen .tv-chat-gif-powered { font-size: 12px; }
+  .tv-chat-stickers { grid-template-columns: repeat(auto-fill, minmax(5.5em, 1fr)); justify-content: stretch; }
+  .tv-chat-screen .tv-chat-stickers, .tv-chat-screen .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: 100%; padding: 0 8px 8px; gap: 0.45em; }
+  .tv-chat-screen .tv-chat-sticker-list.with-yours { align-items: center; width: 100%; margin: 0; }
+  .tv-chat-screen .tv-chat-sticker-list .chat-stickers-head { width: 100%; margin: 0.3em auto 0.1em; padding-inline: 8px; font-size: 1em; }
+  /* The gallery's page (ChatMedia.tsx): the whole screen, as the chat - the arrow and the name at the top, the squares one list that scrolls and fills the rest. */
   .tv-screen.tv-gif-screen { background: #0f0f12; }
   .tv-gif-head { display: flex; flex: none; align-items: center; gap: 0.5em; width: 100%; padding: max(0.6em, env(safe-area-inset-top)) 0.8em 0.6em 0.4em; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
-  .tv-gif-title { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* (said to a screen reader; the search box says the rest) */
-  .tv-gif-head .tv-chat-gif-search { flex: 1 1 auto; width: auto; min-width: 0; }
-  .tv-gif-screen .tv-chat-gif-list { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: 0.8em; width: 100%; min-height: 0; padding: 0.6em 0.6em 1.2em; overflow-y: auto; overscroll-behavior: contain; }
-  .tv-gif-screen .tv-chat-gifs { width: 100%; max-height: none; padding: 0; overflow: visible; gap: 0.45em; }
-  .tv-gif-screen .tv-chat-gif-note { margin-top: 2em; }
-  .tv-gif-screen .tv-chat-gif-powered { flex: none; margin: 0; padding: 0.5em 0 max(0.7em, env(safe-area-inset-bottom)); font-size: 1.1em; }
-  /* The sticker page (StickerPick.tsx): the same whole screen, the arrow and the name at the top, the stickers one list that scrolls under them. */
   .tv-sticker-title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; color: #fff; font-size: 1.6em; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-  .tv-chat-stickers { grid-template-columns: repeat(auto-fill, minmax(5.5em, 1fr)); justify-content: stretch; max-height: 62vh; }
-  .tv-sticker-screen .tv-chat-sticker-list { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; width: 100%; min-height: 0; padding: 0.6em 0.6em max(1.2em, env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
-  .tv-sticker-screen .tv-chat-stickers { width: 100%; max-height: none; padding: 0; overflow: visible; gap: 0.45em; }
-  .tv-sticker-screen .tv-chat-sticker-list.with-yours { flex: 1 1 auto; align-items: center; width: 100%; max-height: none; margin: 0; }
-  .tv-sticker-screen .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: 100%; }
-  .tv-sticker-screen .tv-chat-sticker-list.with-yours .chat-stickers-head { width: 100%; margin: 0.3em auto 0.1em; }
-  .tv-sticker-screen .chat-stickers-head { width: 100%; font-size: 1em; }
-  /* The gallery (ChatMedia.tsx): the same whole screen, the squares one list that scrolls under the arrow and the name. */
   .tv-media-screen .tv-chat-media-list { flex: 1 1 auto; width: 100%; max-height: none; min-height: 0; padding: 0.6em 0.6em max(1.2em, env(safe-area-inset-bottom)); overscroll-behavior: contain; }
   .tv-media-screen .chat-media { grid-template-columns: repeat(4, minmax(0, 1fr)); justify-content: stretch; gap: 0.45em; }
   .tv-chat-screen .tv-chat-head[data-searching] { padding-left: 0.8em; } /* (the search clear of the screen's edge, as the arrow was) */
