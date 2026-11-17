@@ -107,6 +107,9 @@ describe("a personal sticker's picture", () => {
       ["a palette", handMade({ width: 32, height: 32, colour: 3 }, rows(8, 32)), "not_a_picture"],
       ["grey", handMade({ width: 32, height: 32, colour: 0 }, rows(8, 32)), "not_a_picture"],
       ["less data than its header says", handMade({ width: 32, height: 32 }, rows(32, 4)), "not_a_picture"],
+      ["more data than its header says", handMade({ width: 32, height: 32 }, rows(32, 400)), "not_a_picture"],
+      ["no end", handMade({ width: 32, height: 32 }, rows(32, 32)).subarray(0, -12), "not_a_picture"],
+      ["a chunk longer than the file", Buffer.concat([handMade({ width: 32, height: 32 }, rows(32, 32)).subarray(0, 33), Buffer.from([0x7f, 0xff, 0xff, 0xff]), Buffer.from("IDAT")]), "not_a_picture"],
       ["a header that is not the first chunk", Buffer.concat([picture(32).subarray(0, 8), chunk("tEXt", Buffer.from("a\0b")), picture(32).subarray(8)]), "not_a_picture"],
       ["more bytes than a sticker is sent in", Buffer.concat([picture(32), Buffer.alloc(PERSONAL_STICKER.sentBytes)]), "too_big"],
     ];
