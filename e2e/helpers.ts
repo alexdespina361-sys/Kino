@@ -284,7 +284,7 @@ export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
  * What is on a TV's profile page: three places that are cards (what the profile rated, its friends, History), and two buttons in its top, which
  * are not places (Settings, and for a guest the way to sign in).
  */
-export type ProfilePlace = "ratings" | "friends" | "history" | "signin" | "settings";
+export type ProfilePlace = "ratings" | "friends" | "history" | "news" | "signin" | "settings";
 
 /** The button of the profile page's top that a place is, if it is one (the others are cards). */
 export const profileButton = (tv: Page, place: ProfilePlace): Locator | null =>
@@ -334,10 +334,19 @@ export async function pressProfilePlace(tv: Page, place: ProfilePlace): Promise<
   const target = button ?? tv.locator(`[data-entry="profile:${place}"]`);
   await expect(target).toBeVisible();
   const there = () => target.evaluate((element) => element === document.activeElement);
-  for (let step = 0; step < 6 && !(await there()); step++) {
+  for (let step = 0; step < 8 && !(await there()); step++) {
     const onCard = await tv.evaluate(() => document.activeElement?.getAttribute("data-zone") === "rows");
-    // (to a button of the top: Up from the cards, then Right to Settings or Left to Sign in; to a card: Down from the top, then Right along the cards)
-    await tv.keyboard.press(button ? (onCard ? "ArrowUp" : place === "settings" ? "ArrowRight" : "ArrowLeft") : onCard ? "ArrowRight" : "ArrowDown");
+    // (to a button of the top: Up from the cards, then Right to Settings or Left to Sign in; to a card: Down from the top, then towards it along the cards,
+    // whichever side of it Down landed on: four across, Down from Settings lands on a card at the right, and under 800 px the cards are two rows of two)
+    const towards = () =>
+      target.evaluate((element) => {
+        const from = document.activeElement!.getBoundingClientRect();
+        const to = element.getBoundingClientRect();
+        if (to.top >= from.bottom - 1) return "ArrowDown";
+        if (to.bottom <= from.top + 1) return "ArrowUp";
+        return to.left < from.left ? "ArrowLeft" : "ArrowRight";
+      });
+    await tv.keyboard.press(button ? (onCard ? "ArrowUp" : place === "settings" ? "ArrowRight" : "ArrowLeft") : onCard ? await towards() : "ArrowDown");
   }
   await expect(target).toBeFocused();
   await tv.keyboard.press("Enter");

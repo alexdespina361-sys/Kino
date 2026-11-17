@@ -10,7 +10,9 @@ import { useProfileData } from "../account/store";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
-import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, MessageIcon, PencilIcon, PhoneIcon, StarIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, MessageIcon, PencilIcon, PhoneIcon, SparkleIcon, StarIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { LATEST, useNews } from "../changelog/news";
+import { NewsList } from "../changelog/NewsList";
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
@@ -88,7 +90,13 @@ export function Page({ title, onBack, children, testId, backTestId, bare = false
   );
 }
 
-type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "approve" | "friends" | "friend";
+type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "approve" | "friends" | "friend" | "news";
+
+/** What's new in Kino, its own page: opening it is seeing the newest version (the menu's row stops saying "New"). */
+function NewsPage({ onSeen }: { onSeen: () => void }) {
+  useEffect(onSeen, [onSeen]);
+  return <NewsList className="page-news" />;
+}
 
 function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; label: string; onClick: () => void; testId: string; detail?: string }) {
   return (
@@ -133,6 +141,7 @@ export function AccountScreen({
   const account = useAccount();
   const friends = useFriends();
   const feedback = useFeedbackEntry();
+  const news = useNews();
   /** An account that has no Google account yet is offered to connect one, here on its profile and not only on the Security page. */
   const canConnectGoogle = useCanConnectGoogle();
   const { settings } = useProfileData();
@@ -255,6 +264,13 @@ export function AccountScreen({
       </Page>
     );
   }
+  if (view === "news") {
+    return (
+      <Page title={t("news.title")} onBack={back} testId="news-page">
+        <NewsPage onSeen={news.seen} />
+      </Page>
+    );
+  }
   if (view === "security") {
     return (
       <Page title={t("account.security")} onBack={back}>
@@ -331,6 +347,8 @@ export function AccountScreen({
   const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
   /** Next to Settings, for a guest too: anybody may say what is wrong (the number is how many answers from the team wait). */
   const feedbackRow = <MenuRow icon={<MessageIcon />} label={t("feedback.entry")} detail={feedback.unread > 0 ? String(feedback.unread) : undefined} onClick={feedback.open} testId="menu-feedback" />;
+  /** What's new in Kino, for a guest too: the newest version beside it, "New" until this phone opened it. */
+  const newsRow = <MenuRow icon={<SparkleIcon />} label={t("news.title")} detail={news.fresh ? t("news.tileFresh", { version: LATEST.version }) : t("news.version", { version: LATEST.version })} onClick={() => setView("news")} testId="menu-news" />;
   const front = (
     <>
       {me && profile ? (
@@ -358,6 +376,7 @@ export function AccountScreen({
             <nav className="menu">
               <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => openSettings("main")} testId="menu-settings" />
               {feedbackRow}
+              {newsRow}
               <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={guarded("devices")} testId="menu-devices" />
               {canConnectGoogle && <MenuRow icon={<GoogleMark />} label={t("account.googleConnect")} onClick={() => grownUp(() => account.withGoogle("link"))} testId="menu-google" />}
               <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={guarded("security")} testId="menu-security" />
@@ -390,6 +409,7 @@ export function AccountScreen({
             {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => openSettings("main")} testId="menu-settings" />
             {feedbackRow}
+            {newsRow}
           </nav>
           <p className="muted small center">{t("account.guestNote")}</p>
         </div>

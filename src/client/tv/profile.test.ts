@@ -21,6 +21,14 @@ describe("the profile's page", () => {
     expect(ids()).toEqual(["profile:ratings", "profile:friends", "profile:history"]);
   });
 
+  it("ends with What's new when given: the newest version and its day, or New while it is news to this screen (last, so the others keep their places)", () => {
+    const news = { version: "0.4.2", day: "17 Nov", fresh: false };
+    expect(ids({ news })).toEqual(["profile:ratings", "profile:friends", "profile:history", "profile:news"]);
+    expect(ids({ news, signedIn: false })).toEqual(["profile:ratings", "profile:history", "profile:news"]);
+    expect(tiles({ news }).at(-1)).toEqual({ id: "profile:news", title: t("news.title"), url: "", note: t("news.tile", { version: "0.4.2", day: "17 Nov" }), action: "news" });
+    expect(tiles({ news: { ...news, fresh: true } }).at(-1)?.note).toBe(t("news.tileFresh", { version: "0.4.2" }));
+  });
+
   it("has under the places what was watched last and what was liked best, a look at a dozen of each, where there is any", () => {
     const card = (n: number) => ({ key: `url:https://x.example/${n}`, at: 100 - n, title: `Seen ${n}`, url: `https://x.example/${n}`, position: 600, duration: 6000 });
     const progress = Array.from({ length: 14 }, (_, n) => card(n));
