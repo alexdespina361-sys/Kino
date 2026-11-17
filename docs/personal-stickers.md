@@ -23,8 +23,9 @@ when they are on again.
 - The whole site, whoever sends (the judge, 17 Nov: every limit was an account's, and the box has one core): at most 120 pictures let in a minute, before
   their body is read, and at most 3 minutes an hour spent reading and packing them (`PERSONAL_STICKER.sitePerMinute`, `siteWorkMsPerHour`; measured on
   the box, a still one takes a few ms and a full 48-picture one that moves a quarter to half a second). Over either, a picture is told to wait (503 `busy`).
-  The time counts the body as well, refused or not: taking it apart and unpacking it are timed, its arriving is 2 ms a megabyte (the box: 28 ms in all for
-  the longest body, 5.3 MB).
+  The time counts the body as well, refused or not: taking it apart and unpacking it are timed, and its arriving is counted as it is let in, at 2 ms a
+  megabyte of the most a body may be, whatever then comes of it (a body that is not JSON, too long, or never all sent too). The box: 28 ms in all for the
+  longest body, 5.3 MB.
 - A picture has 30 seconds to be written where it is kept: after that its maker is told it failed, and its place is let go. It stays counted until the
   write answers (what it wrote then is removed), and with 8 such on their way nothing new is made (`site_full`) until they answer.
 - A picture is shown to the profiles that have it, and in a chat to the two whose chat it was sent in, while they are friends: nobody else.

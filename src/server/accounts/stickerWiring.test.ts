@@ -346,13 +346,21 @@ describe("a personal sticker", () => {
     // (and each is let go when its answer has gone)
     expect((await alex.make(picture(22))).statusCode).toBe(201);
     expect((await sam.make(picture(23))).statusCode).toBe(201);
-    // (what reading a body took is the site's time too: one refused as it is read is counted, and one made is counted as it is read and as it is unpacked)
+    // (what reading a body took is the site's time too: its arriving is counted as it is let in, at the most a body may be; then one refused as it is read is
+    // counted, and one made is counted as it is read and as it is unpacked)
     const worked = vi.spyOn(store.stickers, "worked");
+    const arrived = (Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096) / 1_000_000 * 2;
     expect((await junk(`{"data":"${"A".repeat(4000)}","junk":1}`)).statusCode).toBe(400);
-    expect(worked.mock.calls.map(([ms]) => ms > 0), "refused, and counted").toEqual([true]);
+    expect(worked.mock.calls[0]?.[0], "its arriving, at the most a body may be").toBeCloseTo(arrived, 6);
+    expect(worked.mock.calls.map(([ms]) => ms > 0), "let in, refused, and counted").toEqual([true, true]);
     worked.mockClear();
     expect((await junk(`{"data":"${picture(25)}"}`)).statusCode).toBe(201);
-    expect(worked.mock.calls.map(([ms]) => ms > 0), "read, then unpacked").toEqual([true, true]);
+    expect(worked.mock.calls.map(([ms]) => ms > 0), "let in, read, then unpacked").toEqual([true, true, true]);
+    worked.mockClear();
+    // (a body that reaches no reader of the site's own, not JSON at all, is counted as it is let in all the same)
+    const plain = await app.inject({ method: "POST", url: `/api/profiles/${alex.id}/stickers`, headers: { "content-type": "text/plain", cookie: alex.client.cookie! }, payload: "A".repeat(4000) });
+    expect(plain.statusCode).toBeGreaterThanOrEqual(400);
+    expect(worked.mock.calls[0]?.[0], "a body no reader of the site's takes is counted too").toBeCloseTo(arrived, 6);
     worked.mockRestore();
     // (and the whole site's allowance, whoever sends: when the book says to wait, the picture is not let in, and is told for how long)
     const arriving = store.stickers.arriving.bind(store.stickers);

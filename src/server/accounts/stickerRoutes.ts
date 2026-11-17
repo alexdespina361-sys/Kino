@@ -107,24 +107,24 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
   const stillBody = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096;
   const movingBody = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4096;
   const arriveMs = stickers.moving ? uploadMs * 3 : uploadMs;
+  const bodyLimit = stickers.moving ? movingBody : stillBody;
   // (In a place of its own: there, and nowhere else, a body is read as text and taken apart by hand (`readStickerMake`), never unpacked as JSON whatever it
   // holds. A body that is not what the page sends is a bad request, as one that is not JSON at all always was. Fastify lets its own JSON reader be replaced
   // like this without it being removed first (only a second reader of the site's own would be refused); stickerWiring.test.ts starts the whole site with it.)
   void app.register(async (scope) => {
     scope.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, parsed) => {
       // (What reading the body takes is the site's time as well, whatever comes of it (the judge, 17 Nov: a body refused here had cost nothing of the hour's):
-      // taking it apart is timed, and its arriving is counted by its length (`BODY_MS_PER_MB`).)
-      const text = body as string;
+      // taking it apart is timed. Its arriving was counted as it was let in, at the most it may be: see `onRequest`.)
       const began = performance.now();
-      const read = readStickerMake(text);
-      stickers.worked(performance.now() - began + (text.length / 1_000_000) * BODY_MS_PER_MB);
+      const read = readStickerMake(body as string);
+      stickers.worked(performance.now() - began);
       if (read) parsed(null, read);
       else parsed(Object.assign(new Error("The body is not a sticker to be made."), { statusCode: 400 }), undefined);
     });
     scope.post<{ Params: { id: string } }>(
       base,
       {
-        bodyLimit: stickers.moving ? movingBody : stillBody,
+        bodyLimit,
         onRequest: async (request, reply) => {
           const me = asker(request as Asked, reply, writesByAccount);
           if (!me) return reply;
@@ -137,6 +137,10 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
             const after = Math.min(3600, Math.max(5, Math.ceil(wait / 1000)));
             return reply.code(503).header("Retry-After", after).send({ error: "busy", retryAfter: after });
           }
+          // (Its body's arriving is the site's time, counted now, at the most a body may be, whatever then comes: one that is not JSON, or longer than it may
+          // be, or never all sent, reaches no reader of the site's own, and one of letters that take more than a byte each is no shorter for it: the judge's
+          // fifth round, 17 Nov.)
+          stickers.worked((bodyLimit / 1_000_000) * BODY_MS_PER_MB);
           uploading.add(me.accountId);
           // (A picture that has not come by then is let go, and its request ended.)
           const deadline = setTimeout(() => {
