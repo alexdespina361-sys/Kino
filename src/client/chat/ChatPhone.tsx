@@ -1,8 +1,8 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX, type ChatReaction, type LibraryItem } from "../../shared";
 import { Sheet } from "../controller/Sheet";
 import { useT } from "../i18n";
-import { FilmIcon, GifIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
+import { FilmIcon, GifIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon } from "../shared/icons";
 import { ChatLines, type PersonalLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
@@ -126,6 +126,11 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
 function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session: ChatSession; onPickTitle: () => void; onPickGif?: () => void; onPickSticker: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
+  /** Whether the buttons that send something else are shown while something is typed (the + was pressed). */
+  const [tools, setTools] = useState(false);
+  useEffect(() => {
+    if (text === "") setTools(false);
+  }, [text]);
   const input = useRef<HTMLDivElement>(null);
   const checked = checkChatText(text);
 
@@ -138,34 +143,57 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
     input.current?.focus(); // (the keyboard stays up: the next message is what comes next)
   };
 
+  // (One bar: the buttons that send something else are in it, before the box. While something is typed they fold into one +, and the words have the bar
+  // to themselves; a press of the + brings them back, and typing on folds them again. The owner, 17 Nov: three round buttons left the box a few words wide.)
+  const folded = text !== "" && !tools;
   return (
     <form className="chat-compose" onSubmit={(event) => void submit(event)} noValidate data-testid="chat-compose">
-      <button type="button" className="chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-testid="chat-title-btn">
-        <FilmIcon />
-      </button>
-      {onPickGif && (
-        <button type="button" className="chat-title-btn chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-testid="chat-gif-btn">
-          <GifIcon />
-        </button>
-      )}
-      <button type="button" className="chat-title-btn chat-sticker-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-testid="chat-sticker-btn">
-        <StickerIcon />
-      </button>
-      {/* (An editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, see MessageBox.tsx.) */}
-      <MessageBox
-        ref={input}
-        className="chat-input"
-        value={text}
-        onChange={(now) => {
-          setText(now);
-          session.settle();
-        }}
-        onSend={() => void submit()}
-        maxLength={CHAT_TEXT_MAX}
-        placeholder={t("chat.placeholder")}
-        label={t("chat.messageLabel")}
-        testId="chat-input"
-      />
+      <div className="chat-pill" data-testid="chat-pill">
+        {folded ? (
+          <button
+            type="button"
+            className="chat-title-btn"
+            onClick={() => setTools(true)}
+            onMouseDown={keepTheBox}
+            aria-label={t("chat.moreToSend")}
+            aria-expanded={false}
+            title={t("chat.moreToSend")}
+            data-testid="chat-tools"
+          >
+            <PlusIcon />
+          </button>
+        ) : (
+          <>
+            <button type="button" className="chat-title-btn" onClick={onPickTitle} aria-label={t("chat.sendTitle")} title={t("chat.sendTitle")} data-testid="chat-title-btn">
+              <FilmIcon />
+            </button>
+            {onPickGif && (
+              <button type="button" className="chat-title-btn chat-gif-btn" onClick={onPickGif} aria-label={t("chat.gif")} title={t("chat.gif")} data-testid="chat-gif-btn">
+                <GifIcon />
+              </button>
+            )}
+            <button type="button" className="chat-title-btn chat-sticker-open" onClick={onPickSticker} aria-label={t("chat.sticker")} title={t("chat.sticker")} data-testid="chat-sticker-btn">
+              <StickerIcon />
+            </button>
+          </>
+        )}
+        {/* (An editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, see MessageBox.tsx.) */}
+        <MessageBox
+          ref={input}
+          className="chat-input"
+          value={text}
+          onChange={(now) => {
+            setText(now);
+            setTools(false);
+            session.settle();
+          }}
+          onSend={() => void submit()}
+          maxLength={CHAT_TEXT_MAX}
+          placeholder={t("chat.placeholder")}
+          label={t("chat.messageLabel")}
+          testId="chat-input"
+        />
+      </div>
       <button type="submit" className="chat-send" disabled={!checked.ok || session.sending} aria-label={t("chat.send")} onMouseDown={keepTheBox} data-testid="chat-send">
         <SendIcon />
       </button>

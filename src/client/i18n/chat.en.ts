@@ -18,6 +18,7 @@ export const chatEn = {
   "chat.writeTitle": "Message to {name}",
   "chat.send": "Send",
   "chat.sendTitle": "Send a title",
+  "chat.moreToSend": "More to send",
   "chat.sendTitleTo": "Send a title to {name}",
   "chat.sendTitleHelp": "What you watched and saved. Press one to send it.",
   "chat.noTitles": "Nothing to send yet: the titles you watch or save show up here.",

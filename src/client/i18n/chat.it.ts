@@ -16,6 +16,7 @@ export const chatIt: ChatDictionary = {
   "chat.writeTitle": "Messaggio per {name}",
   "chat.send": "Invia",
   "chat.sendTitle": "Manda un titolo",
+  "chat.moreToSend": "Altro da inviare",
   "chat.sendTitleTo": "Manda un titolo a {name}",
   "chat.sendTitleHelp": "Quello che hai visto e salvato. Premine uno per mandarlo.",
   "chat.noTitles": "Ancora niente da mandare: qui compaiono i titoli che guardi o salvi.",

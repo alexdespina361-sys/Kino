@@ -1128,6 +1128,10 @@ test.describe("a title sent in a chat", () => {
     await expect.poll(() => atHome(ann.page)).toBe(true);
     await openChat(ann.page);
     await ann.page.getByTestId("chat-input").fill("half typed");
+    // (with something typed the buttons are folded into one +, so the words have the bar; a press of it brings them back)
+    await expect(ann.page.getByTestId("chat-title-btn")).toHaveCount(0);
+    await ann.page.getByTestId("chat-tools").click();
+    await expect(ann.page.getByTestId("chat-tools")).toHaveCount(0);
     await ann.page.getByTestId("chat-title-btn").click();
     const picks = ann.page.getByTestId("chat-pick");
     await expect(picks).toHaveCount(2);
@@ -1390,6 +1394,7 @@ test.describe("stickers in a chat", () => {
     await ann.page.getByTestId("chat-input").fill("Popcorn ready?");
     await ann.page.getByTestId("chat-send").click();
     await expect.poll(() => hold !== undefined).toBe(true);
+    await ann.page.getByTestId("chat-tools").click(); // (the message is still in the box while it goes: the buttons are behind the +)
     await ann.page.getByTestId("chat-sticker-btn").click();
     const picks = ann.page.getByTestId("chat-sticker-pick");
     await expect(picks.first()).toBeDisabled();
