@@ -77,6 +77,8 @@ const SCROLL_REST_MS = 150;
 const SWIPE_START = 12;
 const SWIPE_REPLY = 56;
 const SWIPE_MAX = 84;
+/** How long a message let go takes to glide back to its place (chat.css). */
+const SWIPE_BACK_MS = 200;
 /** How long the message a quote names is lit, once the quote was pressed and it was brought into view. */
 const SHOWN_MS = 1400;
 /** How long a picture shown larger hears no press: the second of the double tap that opened it. */
@@ -159,8 +161,16 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
     const was = swipe.current;
     swipe.current = null;
     if (!was?.item) return was;
-    was.item.style.removeProperty("transform");
-    delete was.item.dataset.swipe;
+    const item = was.item;
+    if (!item.dataset.swipe) return was;
+    // (It glides back, and is a plain line again once it is there: chat.css.)
+    item.style.setProperty("--swipe", "0px");
+    item.dataset.swipe = "back";
+    window.setTimeout(() => {
+      if (item.dataset.swipe !== "back") return; // (drawn again meanwhile)
+      delete item.dataset.swipe;
+      item.style.removeProperty("--swipe");
+    }, SWIPE_BACK_MS);
     return was;
   };
   useEffect(
@@ -217,7 +227,8 @@ export function ChatLines({ lines, name, now, showWriter = false, picked = null,
       }
       drawn.shift = shift;
       if (drawn.item) {
-        drawn.item.style.transform = `translateX(${shift}px)`;
+        // (What the line holds moves, not the line: the day over its first message stays where it is, chat.css.)
+        drawn.item.style.setProperty("--swipe", `${shift}px`);
         drawn.item.dataset.swipe = shift >= SWIPE_REPLY ? "ready" : "on";
       }
     },

@@ -76,7 +76,7 @@ export const chatRo: ChatDictionary = {
   "chat.replyingToMine": "Răspunzi la mesajul tău",
   "chat.replyCancel": "Anulează răspunsul",
   "chat.replyLast": "Răspunde la ultimul mesaj al lui {name}",
-  "chat.inReplyTo": "Răspuns pentru {name}: {text}",
+  "chat.inReplyTo": "Răspuns la mesajul lui {name}: {text}",
   "chat.inReplyToMine": "Răspuns la mesajul tău: {text}",
   "chat.quoteSticker": "Sticker",
   "chat.reactMore": "Mai multe reacții",

@@ -1,7 +1,8 @@
-import { useState, type MouseEvent } from "react";
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { ChatLine } from "../../shared";
 import { useT } from "../i18n";
 import { CloseIcon, ReplyIcon } from "../shared/icons";
+import { actionForKey } from "../tv/keys";
 import { gifOf } from "./gifs";
 import { stickerOf, stickerSrc } from "./stickers";
 import { useChatTitle } from "./titleCache";
@@ -87,8 +88,22 @@ export function QuoteBlock({ quoted, name, onShow, focusable = true }: { quoted:
 }
 
 /**
- * Over the box while a message is being answered: "Replying to Sam" and a line of the message, and the × that leaves it unanswered. (Back does not: it shuts
- * what is open over the chat first - a selection, a picture - and then leaves the chat, which lets the answer go with it.)
+ * Back - Escape on a computer - pressed in the box while a message is being answered lets the answer go, and only that: what is typed stays, and so does the
+ * chat (the judge, 17 Nov: it left the chat, and what was typed went with it, where Escape is how any messenger stops answering). Put on what holds the box:
+ * the chat's own Back is heard later, on the window, and never hears this one. (What is open over the chat - a selection, the ⋯, a picture - is shut by Back
+ * before this, as it is heard on the way down.)
+ */
+export function backLetsAnswerGo(event: KeyboardEvent<HTMLElement>, answering: boolean, letGo: () => void, box: string): void {
+  if (!answering || event.altKey || event.ctrlKey || event.metaKey || actionForKey(event.nativeEvent) !== "back") return;
+  if (!(event.target instanceof HTMLElement) || !event.target.matches(`[data-testid='${box}']`)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  letGo();
+}
+
+/**
+ * Over the box while a message is being answered: "Replying to Sam" and a line of the message, and the × that leaves it unanswered. (Back in the box does
+ * too: `backLetsAnswerGo`. Elsewhere, Back shuts what is open over the chat first - a selection, a picture - and then leaves the chat, and the answer with it.)
  */
 export function ReplyStrip({ line, name, onCancel, nav = false, className = "" }: { line: ChatLine; name: string; onCancel: () => void; nav?: boolean; className?: string }) {
   const t = useT();

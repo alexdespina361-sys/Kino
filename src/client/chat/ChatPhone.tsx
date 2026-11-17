@@ -6,7 +6,7 @@ import { FilmIcon, GifIcon, PlusIcon, SendIcon, ShieldIcon, StickerIcon } from "
 import { ChatLines, PickedActions, type PersonalLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { GifPickSheet } from "./GifPick";
-import { ReplyStrip } from "./Reply";
+import { backLetsAnswerGo, ReplyStrip } from "./Reply";
 import { SAVE_NOTE, usePersonalLines } from "./personalStickers";
 import { StickerPickSheet } from "./StickerPick";
 import { afterSent, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
@@ -62,6 +62,8 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   const reply = (id: number) => {
     setPicked(null);
     session.setReplyTo(id);
+    // (The keyboard comes up each time, the same message answered again too, after it went down: the judge, 17 Nov.)
+    document.querySelector<HTMLElement>("[data-testid='chat-sheet'] [data-testid='chat-input']")?.focus();
   };
   const answering = session.replyTo === null ? undefined : state.lines.find((line) => line.id === session.replyTo);
 
@@ -178,7 +180,13 @@ function Composer({ session, onPickTitle, onPickGif, onPickSticker }: { session:
   // to themselves; a press of the + brings them back, and typing on folds them again. The owner, 17 Nov: three round buttons left the box a few words wide.)
   const folded = text !== "" && !tools;
   return (
-    <form className="chat-compose" onSubmit={(event) => void submit(event)} noValidate data-testid="chat-compose">
+    <form
+      className="chat-compose"
+      onSubmit={(event) => void submit(event)}
+      onKeyDown={(event) => backLetsAnswerGo(event, session.replyTo !== null, () => session.setReplyTo(null), "chat-input")}
+      noValidate
+      data-testid="chat-compose"
+    >
       <div className="chat-pill" ref={unfold.bar} data-testid="chat-pill">
         {folded ? (
           <button

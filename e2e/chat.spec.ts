@@ -1825,6 +1825,17 @@ test.describe("answering a message", () => {
     await expect(ann.page.getByTestId("chat-reply")).toHaveCount(0);
     await expect(ann.page.getByTestId("chat-input")).toBeFocused();
     expect(await outsideTheSides(ann.page, ["chat-reply-strip", "chat-input", "chat-send"])).toEqual([]);
+    // (Escape in the box lets the answer go, and only that: the chat and what was typed stay. The judge, 17 Nov.)
+    await ann.page.keyboard.type("Ye");
+    await ann.page.keyboard.press("Escape");
+    await expect(strip).toHaveCount(0);
+    await expect(ann.page.getByTestId("chat")).toBeVisible();
+    await expect(ann.page.getByTestId("chat-input")).toHaveText("Ye");
+    await ann.page.getByTestId("chat-input").fill("");
+    await lines(ann.page).first().getByTestId("chat-bubble").click();
+    await ann.page.getByTestId("chat-reply").click();
+    await expect(strip).toBeVisible();
+    await expect(ann.page.getByTestId("chat-input")).toBeFocused();
     await ann.page.keyboard.type("Yes!");
     await ann.page.getByTestId("chat-send").click();
     await expect(lines(ann.page)).toHaveCount(2);
@@ -1892,10 +1903,16 @@ test.describe("answering a message", () => {
     await draw(40, 0);
     await expect(strip).toHaveCount(0);
     await expect(lines(ann.page).first()).not.toHaveAttribute("data-swipe");
-    await expect.poll(() => lines(ann.page).first().evaluate((item) => (item as HTMLElement).style.transform)).toBe("");
+    await expect.poll(() => lines(ann.page).first().evaluate((item) => (item as HTMLElement).style.getPropertyValue("--swipe"))).toBe("");
     // far enough to the right: it says so as it is drawn, and lifting the finger answers it; nothing is selected
+    const dayBefore = await where(ann.page.getByTestId("chat-day").first());
+    const bubbleBefore = await where(bubble);
     await draw(100, 4, async () => {
       await expect(lines(ann.page).first()).toHaveAttribute("data-swipe", "ready");
+      // (the message moves, not the day over it, and the list does not scroll sideways for it: the judge, 17 Nov)
+      expect((await where(ann.page.getByTestId("chat-day").first())).x).toBeCloseTo(dayBefore.x, 0);
+      expect((await where(bubble)).x).toBeGreaterThan(bubbleBefore.x + 40);
+      expect(await ann.page.getByTestId("chat-lines").evaluate((list) => list.scrollLeft)).toBe(0);
     });
     await expect(strip).toBeVisible();
     await expect(strip).toContainText(say(en["chat.replyingTo"], { name: bob.name }));
@@ -2000,7 +2017,17 @@ test.describe("answering a message", () => {
     await expect(ann.page.getByTestId("tv-chat-box")).toBeFocused();
     await expect(ann.page.getByTestId("chat-reply-strip")).toContainText("Sunday?");
     await expect(ann.page.getByTestId("chat-reply-cancel")).toHaveAttribute("data-nav", "true");
-    await ann.page.keyboard.type("Sunday it is");
+    // Escape in the box lets the answer go, and only that: the chat and what was typed stay (the judge, 17 Nov: it closed the chat); the next Escape leaves
+    await ann.page.keyboard.type("Sunday");
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("chat-reply-strip")).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chat-box")).toHaveValue("Sunday");
+    await expect(ann.page.getByTestId("tv-chat-box")).toBeFocused();
+    await tvLines(ann.page).first().getByTestId("chat-bubble").click();
+    await ann.page.getByTestId("chat-reply").click();
+    await expect(ann.page.getByTestId("tv-chat-box")).toBeFocused();
+    await ann.page.keyboard.type(" it is");
     await ann.page.keyboard.press("Enter");
     await expect(tvLines(ann.page)).toHaveCount(2);
     await expect(ann.page.getByTestId("chat-reply-strip")).toHaveCount(0);

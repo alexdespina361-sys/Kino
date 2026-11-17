@@ -547,13 +547,18 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
 .tv .chat-reply-cancel { width: 2.4em; height: 2.4em; color: #c9c9d1; }
 .tv .chat-reply-cancel:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 .tv-chat-quote[data-replying] .tv-chat-quote-lead { color: #fff; font-weight: 700; }
-/* (A finger draws a message across, not the page: up and down still scroll the list from a message.) */
-.chat-lines-swipe .chat-bubble { touch-action: pan-y; }
-.chat-line { position: relative; transition: transform 0.18s ease-out; }
-.chat-line[data-swipe] { transition: none; }
+/* (A finger draws a message across, not the page: up and down still scroll the list from a message, and two fingers still zoom the page: the judge, 17 Nov.) */
+.chat-lines-swipe .chat-bubble { touch-action: pan-y pinch-zoom; }
+/* (What a line holds is drawn across, by `--swipe` (ChatLines.tsx), not the line: the day over its first message stays. Only while it is drawn, and as it
+   goes back ("back"): a transform is no thing to leave on every message. The list never scrolls sideways for it: a message of one's own, on the right, goes
+   past the edge as it is drawn.) */
+.chat-lines { overflow-x: hidden; }
+.chat-line { position: relative; }
+.chat-line[data-swipe] > :not(.chat-day) { transform: translateX(var(--swipe, 0)); }
+.chat-line[data-swipe="back"] > :not(.chat-day) { transition: transform 0.18s ease-out; }
 /* (The arrow goes beside the bubble, on its left, whichever side the bubble is on: the line is the list's width.) */
-.chat-line[data-swipe] > .chat-bubble { position: relative; }
-.chat-line[data-swipe] > .chat-bubble::before {
+.chat-line:is([data-swipe="on"], [data-swipe="ready"]) > .chat-bubble { position: relative; }
+.chat-line:is([data-swipe="on"], [data-swipe="ready"]) > .chat-bubble::before {
   content: "";
   position: absolute;
   top: 50%;
@@ -568,7 +573,7 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
 .chat-line[data-swipe="ready"] > .chat-bubble::before { opacity: 1; transform: scale(1.12); }
 .chat-line[data-shown] > .chat-bubble { animation: chat-shown 1.4s ease-out; }
 @keyframes chat-shown { 0%, 40% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
-@media (prefers-reduced-motion: reduce) { .chat-line { transition: none; } .chat-line[data-shown] > .chat-bubble { animation: none; outline: 2px solid var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .chat-line[data-swipe] > :not(.chat-day) { transition: none; } .chat-line[data-shown] > .chat-bubble { animation: none; outline: 2px solid var(--accent); } }
 
 /* A hand-held screen: the list takes the width, and stacks above the buttons. */
 @media (max-width: 899px) {

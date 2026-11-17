@@ -15,7 +15,7 @@ import { CHAT_FACTS, lastOwn } from "./state";
 import { TitlePickTv } from "./TitlePick";
 import { GifPickTv } from "./GifPick";
 import { lastTheirs, ReactTv } from "./Reactions";
-import { quoteWords, ReplyStrip } from "./Reply";
+import { backLetsAnswerGo, quoteWords, ReplyStrip } from "./Reply";
 import { StickerPickTv } from "./StickerPick";
 import { afterSent, cutTo, keepTheBox, MessageBox, useUnfold } from "./MessageBox";
 import { useGifKey } from "./useGifs";
@@ -477,7 +477,12 @@ export function ReadTv({
                 // hand-held screen the bar is the screen's width, so while something is typed the buttons fold into one + (a press of it brings them back),
                 // and the words have the bar to themselves (the owner, 17 Nov: three round buttons left the box a column a few words wide).
                 <form className="tv-chat-composer" onSubmit={(event) => void submit(event)} noValidate data-testid="tv-chat-box-form">
-                  <div className="tv-chat-pill" ref={unfold.bar} data-testid="tv-chat-pill">
+                  <div
+                    className="tv-chat-pill"
+                    ref={unfold.bar}
+                    onKeyDown={(event) => backLetsAnswerGo(event, session.replyTo !== null, () => session.setReplyTo(null), "tv-chat-box")}
+                    data-testid="tv-chat-pill"
+                  >
                     {folded ? (
                       <button
                         type="button"

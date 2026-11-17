@@ -9,17 +9,17 @@ export const CHANGELOG: readonly ChangeNote[] = [
     en: [
       "In a chat: answer a message. Pick it and press Reply, or slide it to the right with a finger; your answer shows what it answers.",
       "In a chat: the + after the six reactions brings sixteen more.",
-      "On a TV: \"Reply to Sam's last message\" is the first thing behind the ⋯.",
+      "On a TV: answering your friend's last message is the first thing behind the ⋯.",
     ],
     ro: [
       "În chat: răspunde la un mesaj. Alege-l și apasă Răspunde, sau trage-l spre dreapta cu degetul; răspunsul tău arată la ce răspunde.",
-      "În chat: + de după cele șase reacții mai aduce șaisprezece.",
-      "Pe TV: „Răspunde la ultimul mesaj al lui Sam” e primul lucru din spatele ⋯.",
+      "În chat: butonul + de după cele șase reacții aduce încă șaisprezece.",
+      "Pe TV: răspunsul la ultimul mesaj al prietenului e prima opțiune din meniul ⋯.",
     ],
     it: [
       "In chat: rispondi a un messaggio. Sceglilo e premi Rispondi, o trascinalo verso destra con il dito; la tua risposta mostra a cosa risponde.",
-      "In chat: il + dopo le sei reazioni ne porta altre sedici.",
-      "Sulla TV: \"Rispondi all'ultimo messaggio di Sam\" è la prima voce dietro il ⋯.",
+      "In chat: il + dopo le sei reazioni ne mostra altre sedici.",
+      "Sulla TV: rispondere all'ultimo messaggio dell'amico è la prima voce del menu ⋯.",
     ],
   },
   {
