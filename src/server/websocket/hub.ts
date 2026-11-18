@@ -208,7 +208,7 @@ export class Hub {
     this.resolvesByAddress = new RateLimiter(options.maxResolvesByAddress ?? 60, resolveWindowMs);
     this.maxSocketsPerAddress = options.maxSocketsPerAddress ?? MAX_SOCKETS_PER_ADDRESS;
     this.maxSockets = options.maxSockets ?? MAX_SOCKETS;
-    this.newPairs = new RateLimiter(options.maxNewPairs ?? MAX_NEW_PAIRS, 3_600_000);
+    this.newPairs = new RateLimiter(options.maxNewPairs ?? MAX_NEW_PAIRS, 3_600_000, undefined, "pairing.newPairs");
     this.hostGoneMs = options.hostGoneMs ?? HOST_GONE_MS;
     const helloWithinMs = options.helloWithinMs ?? 30_000;
     this.sweeper = setInterval(() => {

@@ -84,9 +84,9 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
   // Looking is cheap and the page that is open asks every few seconds; writing is slowed per account on top of the book's twenty a minute per sender.
   const readsByAccount = new RateLimiter(120, MINUTE);
   const writesByAccount = new RateLimiter(120, MINUTE);
-  const reportsByAccount = new RateLimiter(5, 60 * MINUTE);
+  const reportsByAccount = new RateLimiter(5, 60 * MINUTE, undefined, "chat.reportsByAccount");
   // (And the whole site's: a number of accounts cannot send reports faster than the team can read them. A form's own allowance is separate: see feedback/routes.ts.)
-  const reportsEveryone = new RateLimiter(60, 60 * MINUTE);
+  const reportsEveryone = new RateLimiter(60, 60 * MINUTE, undefined, "chat.reportsEveryone");
   // (The pictures of a chat's personal stickers come many at once when it opens: they have their own allowance, and take nothing of the reads'.)
   const picturesByAccount = new RateLimiter(600, MINUTE);
 

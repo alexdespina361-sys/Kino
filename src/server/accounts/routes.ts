@@ -100,15 +100,15 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   // Guessing is slowed per address that is being tried, which is what protects an account whichever machine the guesses come
   // from; the per-visitor limits are loose, as behind some hosts every visitor can look like the same address.
-  const failedByEmail = new RateLimiter(10, 15 * MINUTE);
-  const failedByIp = new RateLimiter(100, 15 * MINUTE);
-  const signUpByIp = new RateLimiter(options.signUpsPerHour ?? 10, 60 * MINUTE);
-  const linkStartByIp = new RateLimiter(60, 5 * MINUTE);
+  const failedByEmail = new RateLimiter(10, 15 * MINUTE, undefined, "login.failedByName");
+  const failedByIp = new RateLimiter(100, 15 * MINUTE, undefined, "login.failedByIp");
+  const signUpByIp = new RateLimiter(options.signUpsPerHour ?? 10, 60 * MINUTE, undefined, "signUp.byIp");
+  const linkStartByIp = new RateLimiter(60, 5 * MINUTE, undefined, "link.startByIp");
   const linkPollByIp = new RateLimiter(900, MINUTE);
-  const linkLookupByAccount = new RateLimiter(30, 5 * MINUTE);
+  const linkLookupByAccount = new RateLimiter(30, 5 * MINUTE, undefined, "link.lookupByAccount");
   const syncByAccount = new RateLimiter(600, MINUTE);
   // Four digits are 10,000 tries: a few wrong ones per account, then a wait (the visitor's wrong ones count where its wrong passwords do).
-  const wrongPinByAccount = new RateLimiter(5, 15 * MINUTE);
+  const wrongPinByAccount = new RateLimiter(5, 15 * MINUTE, undefined, "childPin.wrongByAccount");
 
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

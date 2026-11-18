@@ -89,7 +89,7 @@ created, movies/content watched (minutes), feedback received", and "the base for
 **What it shows**
 
 - **Here now**: browsers that asked the site something in the last five minutes, how many of them brought a session (signed in) and how many did not
-  (guests), and how many screens and phones are connected. Kept in memory only (`stats/live.ts`): a restart begins again. A browser is told from another
+  (guests), and how many screens and phones are connected. Kept in memory only (`stats/live.ts`): a restart begins again (the hours further down are written down over a restart, with the limits: `accounts/rateLimit.ts`, the file `limits.json` next to the rest of what is kept). A browser is told from another
   by a hash of its address and its name with a secret made at the start of the server; nothing but the hash is held, for a quarter of an hour.
   Programs that say what they are, and browsers that send "Do Not Track" or "Global Privacy Control", are not among the people.
 - **Accounts** and **Visitors**: the numbers of the command above.

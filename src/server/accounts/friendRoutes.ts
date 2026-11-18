@@ -125,12 +125,12 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
 
   // Looking is cheap and happens every half minute on each screen; making things and guessing codes is slowed down.
   const readsByAccount = new RateLimiter(240, MINUTE);
-  const sendsByAccount = new RateLimiter(60, 10 * MINUTE);
-  const acceptsByAccount = new RateLimiter(60, 10 * MINUTE);
-  const invitesByAccount = new RateLimiter(20, 60 * MINUTE);
-  const requestsByAccount = new RateLimiter(30, 60 * MINUTE);
-  const wrongByAccount = new RateLimiter(10, 15 * MINUTE);
-  const wrongByIp = new RateLimiter(100, 15 * MINUTE);
+  const sendsByAccount = new RateLimiter(60, 10 * MINUTE, undefined, "friends.sendsByAccount");
+  const acceptsByAccount = new RateLimiter(60, 10 * MINUTE, undefined, "friends.acceptsByAccount");
+  const invitesByAccount = new RateLimiter(20, 60 * MINUTE, undefined, "friends.invitesByAccount");
+  const requestsByAccount = new RateLimiter(30, 60 * MINUTE, undefined, "friends.requestsByAccount");
+  const wrongByAccount = new RateLimiter(10, 15 * MINUTE, undefined, "friends.wrongByAccount");
+  const wrongByIp = new RateLimiter(100, 15 * MINUTE, undefined, "friends.wrongByIp");
 
   const refuse = (reply: FastifyReply, error: keyof typeof STATUS) => reply.code(STATUS[error]).send({ error });
 

@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { Keepable } from "../accounts/rateLimit";
 
 /**
  * What is going on right now, for the owner's page (docs/stats.md, "The owner's page"): how many people are using the site this minute, how many of
- * them signed in, and how the server answered in each of the last hours. Counts only, kept in memory and nowhere else: a restart forgets them.
+ * them signed in, and how the server answered in each of the last hours. Counts only. Who is here is in memory and nowhere else (a restart forgets it); the hours are written down over a restart, as numbers that name nobody.
  *
  * A person is a browser at an address, told from another by a hash of the two, salted with a secret made when the server starts and never written
  * down: the address and the browser's name are only ever hashed, and a hash is let go a quarter of an hour after it was last seen. (The count of
@@ -42,7 +43,7 @@ export interface HourAnswers {
   failed: number;
 }
 
-export class LiveCount {
+export class LiveCount implements Keepable {
   private readonly salt = randomBytes(18).toString("base64url");
   private readonly here = new Map<string, { at: number; signedIn: boolean }>();
   private readonly hours = new Map<number, HourAnswers>();
@@ -91,6 +92,25 @@ export class LiveCount {
       if (each.signedIn) signedIn++;
     }
     return { people, signedIn, guests: people - signedIn };
+  }
+
+  /** How the server answered in the hours that are kept: numbers that name nobody, written down over a restart (accounts/rateLimit.ts). Who is here is not. */
+  kept(): unknown {
+    const from = this.clock() - HOURS_KEPT * HOUR;
+    return [...this.hours.values()].filter((each) => each.hour > from).map((each) => [each.hour, each.requests, each.refused, each.limited, each.failed]);
+  }
+
+  restore(data: unknown): void {
+    if (!Array.isArray(data)) return;
+    const now = this.clock();
+    const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0);
+    for (const each of data.slice(-HOURS_KEPT)) {
+      if (!Array.isArray(each)) continue;
+      const hour = each[0] as unknown;
+      if (typeof hour !== "number" || !Number.isSafeInteger(hour) || hour % HOUR !== 0 || hour > now || hour <= now - HOURS_KEPT * HOUR) continue;
+      const had = this.hours.get(hour) ?? { hour, requests: 0, refused: 0, limited: 0, failed: 0 };
+      this.hours.set(hour, { hour, requests: had.requests + count(each[1]), refused: had.refused + count(each[2]), limited: had.limited + count(each[3]), failed: had.failed + count(each[4]) });
+    }
   }
 
   /** The last hours, the oldest first, every hour among them (an hour in which nothing was asked is all zeroes). */
