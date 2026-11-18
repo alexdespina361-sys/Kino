@@ -2187,41 +2187,35 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
 
   const under = entry.note ?? entry.year;
   return (
-    <button className={`tv-tile tv-tile-${layout}${poster ? " tv-tile-poster" : ""}${wideCard ? " tv-tile-landscape" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? name : undefined} {...common}>
+    <button className={`tv-tile tv-tile-${layout}${layout === "ranked" ? "" : " tv-tile-stack"}${poster ? " tv-tile-poster" : ""}${wideCard ? " tv-tile-landscape" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? name : undefined} {...common}>
       {layout === "ranked" && (
         <span className={`tv-rank${rank > 9 ? " tv-rank-wide" : ""}`} aria-hidden="true">
           <b>{rank}</b>
         </span>
       )}
-      <span className="tv-tile-body">
-        <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
-          {showPicture ? (
-            <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
-          ) : (
-            <span className="tv-tile-initial" aria-hidden="true">
-              {name.trim().charAt(0).toUpperCase()}
-            </span>
-          )}
-          {layout === "continue" && (
-            <span className="tv-tile-play" aria-hidden="true">
-              <PlayIcon />
-            </span>
-          )}
-          {(entry.progress ?? 0) > 0 && (
-            <span className="tv-tile-progress" aria-hidden="true">
-              <i style={{ width: `${Math.round((entry.progress ?? 0) * 100)}%` }} />
-            </span>
-          )}
-          {score !== undefined && <ScoreBadge score={score} />}
-          {corner && (
-            <span className="tv-tile-corner" data-corner={corner.kind} data-testid="tv-tile-corner" title={corner.label} aria-hidden="true">
-              {corner.kind === "add" ? <PlusIcon /> : <CloseIcon />}
-            </span>
-          )}
-        </span>
-        {layout !== "ranked" && <span className="tv-tile-name">{name}</span>}
-        {layout !== "ranked" && under && <span className={entry.note ? "tv-tile-year" : "tv-tile-year is-year"}>{under}</span>}
+      <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
+        {showPicture ? (
+          <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
+        ) : (
+          <span className="tv-tile-initial" aria-hidden="true">
+            {name.trim().charAt(0).toUpperCase()}
+          </span>
+        )}
+        {layout === "continue" && (
+          <span className="tv-tile-play" aria-hidden="true">
+            <PlayIcon />
+          </span>
+        )}
+        {(entry.progress ?? 0) > 0 && (
+          <span className="tv-tile-progress" aria-hidden="true">
+            <i style={{ width: `${Math.round((entry.progress ?? 0) * 100)}%` }} />
+          </span>
+        )}
+        {score !== undefined && <ScoreBadge score={score} />}
+        {corner && <span className="tv-tile-corner" data-corner={corner.kind} data-testid="tv-tile-corner" title={corner.label} aria-hidden="true" />}
       </span>
+      {layout !== "ranked" && <span className="tv-tile-name">{name}</span>}
+      {layout !== "ranked" && under && <span className={entry.note ? "tv-tile-year" : "tv-tile-year is-year"}>{under}</span>}
     </button>
   );
 }

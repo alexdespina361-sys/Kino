@@ -219,7 +219,7 @@
   color: var(--text-2);
   transition: transform var(--t-base) var(--ease), color var(--t-base) var(--ease);
 }
-:root[data-ui="polish"] .tv-tile-body { gap: calc(var(--em) * 0.35); }
+:root[data-ui="polish"] .tv-tile-stack { gap: calc(var(--em) * 0.35); }
 :root[data-ui="polish"] .tv-tile-art { border-radius: var(--r-2); background: var(--fill-1); transition: box-shadow var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-tile-name { font-size: var(--fs-1); font-weight: 600; line-height: 1.3; }
 :root[data-ui="polish"] .tv-tile-year { font-size: var(--fs-1); color: var(--text-3); }
