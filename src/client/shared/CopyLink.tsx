@@ -3,16 +3,10 @@ import { useT } from "../i18n";
 import { copyText } from "./clipboard";
 import { CheckIcon, CopyIcon } from "./icons";
 
-/** How a screen's buttons join its remote or its arrow keys (spread onto the button). */
 type Nav = Record<string, string | number | boolean>;
 
 type Copying = "idle" | "copied" | "failed";
 
-/**
- * Copying `text`, for the button that does it: what it says afterwards (copied, or that the browser would not) goes by itself, and a
- * text that was renewed starts over, since what was said was about the one before. Where the browser would not copy, `where` is the
- * text as the page shows it: it is selected instead, ready for the keys or the long press of the device.
- */
 export function useCopy(text: string, where: RefObject<HTMLElement | null>): [Copying, () => Promise<void>] {
   const [state, setState] = useState<Copying>("idle");
   useEffect(() => setState("idle"), [text]);
@@ -30,11 +24,6 @@ export function useCopy(text: string, where: RefObject<HTMLElement | null>): [Co
   return [state, copy];
 }
 
-/**
- * A link to paste into somebody's chat: the whole link, and a button beside it that copies it and says so. Where the browser would not
- * copy, the link is selected instead (a click on it selects it whole too), ready for the keys or the long press of the device.
- * The screen it is on says how its buttons look (`buttonClass`) and how its remote reaches them (`nav`).
- */
 export function CopyLink({ link, testId, buttonClass, nav }: { link: string; testId: string; buttonClass: string; nav?: Nav }) {
   const t = useT();
   const url = useRef<HTMLSpanElement>(null);
@@ -67,11 +56,6 @@ export function CopyLink({ link, testId, buttonClass, nav }: { link: string; tes
   );
 }
 
-/**
- * The same for a code a person gives to somebody: the code itself is on the page already, big, wherever the screen shows it (`shown`
- * is that element, which is selected when the browser would not copy), and this is the small button beside it that copies it and says so.
- * `testId` is the button's. What is copied may be called something other than a code (`words`: a tag).
- */
 export function CopyCode({ code, shown, testId, buttonClass, nav, words = "code" }: { code: string; shown: RefObject<HTMLElement | null>; testId: string; buttonClass: string; nav?: Nav; words?: "code" | "tag" }) {
   const t = useT();
   const [state, copy] = useCopy(code, shown);

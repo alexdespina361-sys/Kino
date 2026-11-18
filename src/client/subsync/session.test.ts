@@ -15,7 +15,6 @@ import type { Recogniser } from "./whistle";
 const PIECE = 10;
 const SECONDS = 300;
 const film = makeFilm(11, SECONDS);
-/** Another film's captions: the words of a wrong release. */
 const other = makeFilm(97, SECONDS);
 
 class FakeCue implements CueLike {
@@ -26,7 +25,6 @@ class FakeCue implements CueLike {
   ) {}
 }
 
-/** A subtitle track the way the browser has it: the lines are there once it is on (hidden or showing), not while it is disabled. */
 class FakeTrack implements TrackLike {
   readonly kind = "subtitles";
   mode: "disabled" | "hidden" | "showing" = "disabled";
@@ -62,7 +60,6 @@ class FakeHls implements HlsLike {
 const APPENDING = "hlsBufferAppending";
 const SWITCHING = "hlsAudioTrackSwitching";
 
-/** What the player hands over: an init segment once, then a piece for every ten seconds; the bytes only say which sound they stand for. */
 const initSegment = (): Uint8Array => Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 function piece(start: number): Uint8Array {
   const bytes = new Uint8Array(16);
@@ -78,10 +75,8 @@ const soundAt = (start: number): Float32Array => {
   if (!pcm) sound.set(start, (pcm = makeAudio(film, start, start + PIECE)));
   return pcm;
 };
-/** "Decoding" the bytes above gives the film's sound for that piece. */
 const decode = async (bytes: Uint8Array): Promise<Float32Array> => soundAt(new DataView(bytes.buffer, bytes.byteOffset).getUint32(bytes.length - 8, true) / 1000);
 
-/** A recogniser that writes down what the film's sound says, found out from the sound it is handed. */
 function listener(options: { heard?: number[] } = {}): Recogniser {
   return {
     async hear(pcm: Float32Array): Promise<Word[]> {
@@ -108,23 +103,17 @@ interface Rigging {
   decode?: (bytes: Uint8Array) => Promise<Float32Array>;
   backend?: () => Promise<Backend>;
   shared?: Shared;
-  /** Takes what the session offers for a Kino Official subtitle. */
   offer?: (id: number, offer: { duration: number; lines: OfficialOfferLine[] }, last: boolean) => void;
   show?: (id: number) => void;
-  /** The sound comes as the film plays, never ahead of the picture (a film the browser plays by itself). */
   live?: boolean;
-  /** The viewer chose the light way of timing. */
   light?: boolean;
 }
 
-/** A film with its tracks, a player to feed the aligner, and the aligner. */
 class Rig {
   readonly hls = new FakeHls();
-  /** What the player listens to the sound with: it is there from the start of the film, whatever the aligner is doing. */
   readonly tap = new AudioTap(this.hls, APPENDING);
   readonly video: { currentTime: number; playbackRate: number; duration: number; textTracks: FakeTrack[] };
   readonly statuses: SyncStatus[] = [];
-  /** How far the session said it moved the lines, with each status. */
   readonly moves: Array<number | undefined> = [];
   readonly shows: number[] = [];
   readonly logs: string[] = [];
@@ -179,18 +168,15 @@ class Rig {
     });
   }
 
-  /** The viewer turns the aligner off (the lines go back) and on again in the middle of the film: a new aligner on the same player. */
   restart(): void {
     this.session.close(true);
     this.session = this.newSession();
   }
 
-  /** Time goes by (the clock the aligner keeps its own time by) without the film moving. */
   pass(ms: number): void {
     this.clock += ms;
   }
 
-  /** What the engine does for a track chosen in the menu: that one hidden, the others off, nothing held any more. */
   pick(id: number): void {
     this.rigging.tracks.forEach((track, i) => {
       release(track);
@@ -202,7 +188,6 @@ class Rig {
     return this.rigging.tracks.findIndex((track) => track.mode !== "disabled");
   }
 
-  /** Lets the aligner look at the tracks and do what there is to do, until it has nothing more (a few times: it starts things that finish a moment later). */
   async settle(): Promise<void> {
     for (let round = 0; round < 6; round++) {
       await this.session.settle();
@@ -213,7 +198,6 @@ class Rig {
     }
   }
 
-  /** The film plays on to `seconds`: the player downloads it a piece at a time, forty seconds ahead of the picture (or, `live`, the sound comes as it is played). */
   async play(seconds: number): Promise<void> {
     if (this.fed === 0) this.hls.emit(APPENDING, event(initSegment(), 0));
     while (this.fed < seconds) {
@@ -225,7 +209,6 @@ class Rig {
     }
   }
 
-  /** Where the lines of track `index` are now, against when they were really said: the share of those from `from` to `to` that are within `tolerance`. */
   within(index: number, tolerance: number, from: number, to: number): number {
     const track = this.rigging.tracks[index] as FakeTrack;
     const pairs = film.truth.map((cue, i) => ({ cue, line: track.lines[i] as FakeCue })).filter(({ cue }) => cue.start >= from && cue.start < to);
@@ -262,12 +245,10 @@ describe("timing the subtitles of a film while it plays", () => {
     await rig.play(SECONDS);
     expect(rig.within(0, 0.5, 20, 250)).toBeGreaterThan(0.9);
     expect(rig.session.status()).toBe("synced");
-    // (Every window at first, until a solve with words makes the timing sure; then the ones on every third place of the grid.)
     const after = heard.filter((from) => from >= 60);
     expect(after.length).toBeGreaterThan(0);
     expect(after.every((from) => Math.round(from / 15) % 3 === 0)).toBe(true);
     expect(heard.length).toBeLessThan(SECONDS / 15 / 2);
-    // (The lines between keep the shift the words found, rather than be placed by the voice detector alone, which does worse: at most one or two such solves before the words came.)
     expect(alignerStats.methods["silero"] ?? 0).toBeLessThanOrEqual(2);
     rig.session.close();
   });
@@ -287,7 +268,6 @@ describe("timing the subtitles of a film while it plays", () => {
     expect(rig.shows).toEqual([]);
     expect(rig.shown).toBe(0);
     expect(rig.within(0, 0.5, 20, 250)).toBeGreaterThan(0.9);
-    // (The other tracks were not even switched on.)
     expect(rig.video.textTracks[1]!.mode).toBe("disabled");
     rig.session.close();
   });
@@ -305,7 +285,7 @@ describe("timing the subtitles of a film while it plays", () => {
   it("does not change the track once the viewer has chosen one themselves", { timeout: 180_000 }, async () => {
     const rig = new Rig({ tracks: [track("English", misTimed(other, () => -1)), track("English 2", late(2.5)), track("English 3", misTimed(other, () => 2))], shown: 0 });
     await rig.play(60);
-    rig.pick(2); // (the viewer, from the menu)
+    rig.pick(2);
     await rig.play(SECONDS);
     expect(rig.shows).toEqual([]);
     expect(rig.shown).toBe(2);
@@ -313,7 +293,6 @@ describe("timing the subtitles of a film while it plays", () => {
   });
 
   it("times a track in another language from the English one, which it pairs with", { timeout: 180_000 }, async () => {
-    // (Same film, other words, and its own offset: the lines start where the English ones do, less a second or so.)
     const romanian = misTimed(film, () => -1.1).map((cue, i) => ({ ...cue, text: `romana ${i}` }));
     const rig = new Rig({ tracks: [track("Romanian", romanian, "ro"), track("English", late(3))], shown: 0 });
     await rig.play(SECONDS);
@@ -367,7 +346,6 @@ describe("when it cannot, or has nothing to do", () => {
   });
 
   it("is not unavailable just because the viewer turned it off while the voice detector was at work", { timeout: 60_000 }, async () => {
-    // (The one in the worker fails the work it still has when it is closed: that is the viewer's doing, not a failure of the aligner.)
     class Busy extends DirectBackend {
       private fail: ((error: Error) => void) | undefined;
       override addAudio(): Promise<number> {
@@ -388,7 +366,6 @@ describe("when it cannot, or has nothing to do", () => {
   });
 
   it("leaves nothing unhandled when the film is stopped while a track is still being handed to the aligner", { timeout: 60_000 }, async () => {
-    // (Stopping a film closes the aligner, and the one in the worker fails the hand-over it still has: nobody waits for that one. A tester's report showed it as an unhandled rejection.)
     let handedOver = false;
     class Holding extends DirectBackend {
       private fail: ((error: Error) => void) | undefined;
@@ -405,7 +382,7 @@ describe("when it cannot, or has nothing to do", () => {
     process.on("unhandledRejection", note);
     try {
       const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, backend: async () => new Holding(new SyncCore(new LoudnessVad())) });
-      for (let look = 0; look < 6; look++) rig.session.tick(); // (a track is taken once its lines have stopped coming)
+      for (let look = 0; look < 6; look++) rig.session.tick();
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
       expect(handedOver, "the track was on its way to the aligner").toBe(true);
       rig.session.close(true);
@@ -429,7 +406,7 @@ describe("when it cannot, or has nothing to do", () => {
     process.on("unhandledRejection", note);
     try {
       const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, backend: async () => new Failing(new SyncCore(new LoudnessVad())) });
-      for (let look = 0; look < 6; look++) rig.session.tick(); // (a track is taken once its lines have stopped coming)
+      for (let look = 0; look < 6; look++) rig.session.tick();
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
       expect(rig.session.status()).toBe("unavailable");
       expect(rig.logs.join("\n")).toContain("The weights are gone");
@@ -464,7 +441,7 @@ describe("starting only when there is something to time", () => {
     expect(rig.decodeCalls).toBe(0);
     expect(rig.recogniserCalls).toBe(0);
     expect(rig.session.status()).toBe("ready");
-    rig.pick(0); // (the viewer turns the subtitles on)
+    rig.pick(0);
     await rig.settle();
     expect(rig.backendCalls).toBe(1);
     expect(rig.decodeCalls).toBeGreaterThan(5);
@@ -501,7 +478,7 @@ describe("starting only when there is something to time", () => {
     const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, audioLang: "en" });
     await rig.play(100);
     expect(rig.session.status()).toBe("synced");
-    rig.hls.emit(SWITCHING, { lang: "en" }); // (a variant of the film that has its audio in another group)
+    rig.hls.emit(SWITCHING, { lang: "en" });
     await rig.settle();
     expect(rig.session.status()).toBe("synced");
     rig.hls.emit(SWITCHING, { lang: "fr", name: "Français" });
@@ -513,7 +490,6 @@ describe("starting only when there is something to time", () => {
 
 describe("tracks of another language, and tracks that say none", () => {
   it("moves the lines of a track in another language by that track's own shift, not by the English track's", { timeout: 240_000 }, async () => {
-    // (The English file is three seconds late and the Romanian one only a second: lines the aligner has not reached must not be moved by three.)
     const romanian = misTimed(film, () => -1.1).map((cue, i) => ({ ...cue, text: `romana ${i}` }));
     const rig = new Rig({ tracks: [track("Romanian", romanian, "ro"), track("English", late(3))], shown: 0 });
     await rig.play(210);
@@ -522,7 +498,6 @@ describe("tracks of another language, and tracks that say none", () => {
   });
 
   it("does not take a track that the provider gave no language for as English, and so does not replace it with an English one", { timeout: 240_000 }, async () => {
-    // (Its text is another film's, as a Romanian file's would be next to English speech: the page labels it "en" only because it has to label it.)
     const tracks = [track("Română", misTimed(other, () => -1)), track("English 2", late(2.5))];
     markNoLanguage(tracks[0]!);
     const rig = new Rig({ tracks, shown: 0 });
@@ -533,7 +508,6 @@ describe("tracks of another language, and tracks that say none", () => {
   });
 
   it("puts in place the lines it timed while the track was not on screen, when the track comes up", { timeout: 240_000 }, async () => {
-    // (The English track times the Romanian one without being on screen; then the viewer picks the English one.)
     const romanian = misTimed(film, () => -1.1).map((cue, i) => ({ ...cue, text: `romana ${i}` }));
     const rig = new Rig({ tracks: [track("Romanian", romanian, "ro"), track("English", late(3))], shown: 0 });
     await rig.play(SECONDS);
@@ -559,7 +533,6 @@ describe("testing a track against the words", () => {
   });
 });
 
-// A dub: English is said at a steady rate, and the film's English tracks are translations of the original - none of them has the words that are said.
 describe("subtitles that are not the words of the English that is said (a dub)", () => {
   it("keeps the track and times it as a dub; it does not look for another English track, and goes on listening", { timeout: 240_000 }, async () => {
     const heard: number[] = [];
@@ -578,7 +551,6 @@ describe("subtitles that are not the words of the English that is said (a dub)",
     expect(alignerStats.recogniser).not.toBe("stopped");
     expect(Math.max(...heard)).toBeGreaterThanOrEqual(270);
     expect(rig.within(0, 0.6, 60, 250)).toBeGreaterThan(0.8);
-    // (A dub is held like the voice detector alone: it is the file's timing put on the phrases heard, not the film's, so other screens are not left it.)
     rig.pass(10 * 60_000);
     rig.session.tick();
     rig.session.flush();
@@ -618,8 +590,6 @@ describe("subtitles that are not the words of the English that is said (a dub)",
 
 describe("a device whose recogniser is slow (a phone)", () => {
   it("goes on timing with the voice detector where the recogniser's words fall behind the picture, and keeps the lines the words placed", { timeout: 240_000 }, async () => {
-    // (Each window of fifteen seconds takes the recogniser a minute: once it has measured that, no window ahead of the picture can be finished
-    // in time, and it hears no more. The film must not be left with "Syncing…" from there on.)
     const heard: number[] = [];
     const inner = listener({ heard });
     let rig: Rig | undefined;
@@ -630,7 +600,6 @@ describe("a device whose recogniser is slow (a phone)", () => {
       },
       close() {},
     };
-    // (Three seconds late, and six after a cut at 150 s: the shift learned at the start is not enough for what comes after the cut.)
     rig = new Rig({ tracks: [track("English", misTimed(film, (t) => (t < 150 ? -3 : -6)))], shown: 0, recogniser: async () => slow });
     await rig.play(100);
     expect(heard.length).toBeGreaterThan(0);
@@ -648,7 +617,6 @@ describe("a device whose recogniser is slow (a phone)", () => {
 });
 
 describe("what the status says while it works", () => {
-  /** The status every ten seconds of playback, from the first timing on. */
   async function statuses(rig: Rig, from: number): Promise<SyncStatus[]> {
     const seen: SyncStatus[] = [];
     for (let t = 10; t <= SECONDS; t += 10) {
@@ -661,7 +629,6 @@ describe("what the status says while it works", () => {
   const quiet = (cues: Cue[]) => cues.filter((cue) => cue.start < 120 || cue.start > 175);
 
   it("says it is in time all along an MP4 film once it is, though the sound comes only after it is played", { timeout: 240_000 }, async () => {
-    // (It used to say "Syncing…" a third of the time: what is timed always ends just behind the picture there.)
     expect(new Set(await statuses(new Rig({ tracks: [track("English", late(3))], shown: 0, live: true }), 30))).toEqual(new Set(["synced"]));
   });
 
@@ -686,7 +653,7 @@ describe("what the status says while it works", () => {
     expect(rig.session.status()).toBe("syncing");
     await rig.play(100);
     expect(rig.session.status()).toBe("synced");
-    rig.video.currentTime = 250; // (a jump far ahead of the sound there is)
+    rig.video.currentTime = 250;
     expect(rig.session.status()).toBe("syncing");
     rig.session.close();
   });
@@ -694,7 +661,6 @@ describe("what the status says while it works", () => {
 
 describe("giving up", () => {
   it("gives the lines back when the viewer turns it off after it gave up", { timeout: 240_000 }, async () => {
-    // (A device that cannot keep up with the voice detector: what it had timed stays, and the viewer's switch still puts the file's times back.)
     class Slow extends DirectBackend {
       override async addAudio(time: number, pcm: Float32Array): Promise<number> {
         await super.addAudio(time, pcm);
@@ -712,13 +678,11 @@ describe("giving up", () => {
   });
 });
 
-/** The server's shared timings, in memory: what a screen leaves is joined to what is kept, as the server does. */
 class FakeShared implements Shared {
   readonly kept = new Map<string, SharedTiming>();
   readonly puts: Array<{ key: string; timing: SharedTiming; keepalive: boolean }> = [];
   readonly asked: string[] = [];
   failPuts = 0;
-  /** What the server says to everything it is sent, when it is to say the same to all (nothing is kept then). */
   answer: Sent | undefined;
   async get(key: string): Promise<SharedTiming | undefined> {
     this.asked.push(key);
@@ -737,7 +701,6 @@ class FakeShared implements Shared {
   }
 }
 
-/** The timing a screen that had timed `cues` perfectly would have left: every line the film says between `from` and `to`, where it was really said (plus `off` seconds). */
 function entryFor(cues: Cue[], options: { from?: number; to?: number; off?: number; words?: boolean } = {}): SharedTiming {
   const { from = 0, to = Infinity, off = 0, words = true } = options;
   const placed: SharedPlacement[] = [];
@@ -749,7 +712,6 @@ function entryFor(cues: Cue[], options: { from?: number; to?: number; off?: numb
   return { v: 1, lines: cues.length, placed };
 }
 
-/** The name a screen of this film (SECONDS long, sound in no language we know) gives the timing of a file. */
 const keyOf = (cues: Cue[]): string => timingKeys({ duration: SECONDS, audio: undefined, cues })![0] as string;
 const quiet = () => new Promise<void>((resolve) => setTimeout(resolve, 20));
 
@@ -759,12 +721,11 @@ describe("timings that screens leave each other", () => {
     const original = late(3);
     const rig = new Rig({ tracks: [track("English", original)], shown: 0, shared });
     await rig.play(200);
-    rig.session.flush(); // (the page is closing)
+    rig.session.flush();
     await quiet();
     const kept = shared.kept.get(keyOf(original));
     expect(kept?.lines).toBe(original.length);
     expect(kept?.placed.length).toBeGreaterThan(20);
-    // (Moved about three seconds earlier, which is what was wrong with the file.)
     expect((kept?.placed ?? []).filter((each) => Math.abs(each[1] + 300) <= 60).length / (kept?.placed.length ?? 1)).toBeGreaterThan(0.85);
     expect(shared.puts.every((put) => put.key === keyOf(original))).toBe(true);
     expect(shared.puts.at(-1)?.keepalive).toBe(true);
@@ -816,7 +777,7 @@ describe("timings that screens leave each other", () => {
     await quiet();
     expect(shared.puts).toHaveLength(2);
     expect(shared.puts[1]!.timing).toEqual(shared.puts[0]!.timing);
-    rig.session.flush(); // (now the server has it)
+    rig.session.flush();
     await quiet();
     expect(shared.puts).toHaveLength(2);
     rig.session.close();
@@ -828,7 +789,6 @@ describe("timings that screens leave each other", () => {
     shared.kept.set(keyOf(original), entryFor(original));
     const rig = new Rig({ tracks: [track("English", original)], shown: 0, shared });
     await rig.play(90);
-    // (Lines far past what has been downloaded are where they are said already.)
     expect(rig.within(0, 0.5, 150, 290)).toBeGreaterThan(0.9);
     expect(rig.recogniserCalls).toBe(0);
     expect(rig.session.status()).toBe("synced");
@@ -857,7 +817,6 @@ describe("timings that screens leave each other", () => {
       expect(offers).toHaveLength(1);
       expect(offers[0]!.id).toBe(0);
       expect(offers[0]!.lines).toHaveLength(original.length);
-      // (Each line where the file has it, and where it was really said.)
       const placed = offers[0]!.lines.filter((line) => line !== null);
       expect(placed.length / original.length).toBeGreaterThanOrEqual(0.9);
       const right = placed.filter((line) => {
@@ -878,7 +837,6 @@ describe("timings that screens leave each other", () => {
     await rig.play(10);
     await rig.settle();
     expect(alignerStats.shared).toBe("checking");
-    // (The lines far ahead are as the file had them.)
     expect(rig.within(0, 0.5, 150, 290)).toBeLessThan(0.1);
     rig.session.close();
   });
@@ -927,7 +885,6 @@ describe("timings that screens leave each other", () => {
   });
 
   it("does not make a timing's lines worse where the voice detector alone is at work on them", { timeout: 120_000 }, async () => {
-    // (The timing is exact, with words; what the voice detector alone finds is a little off. The lines stay as the timing has them.)
     const shared = new FakeShared();
     const original = late(3);
     shared.kept.set(keyOf(original), entryFor(original));
@@ -938,11 +895,10 @@ describe("timings that screens leave each other", () => {
   });
 
   it("keeps the lines of a believed timing when the voice detector alone finds some far from them, with or without words in the timing: a stretch decides, not a line", { timeout: 120_000 }, async () => {
-    // (On real sound the voice detector is a second or three off all through a stretch, and now and then four or five on a line; the timing was made with more to go by.)
     const shared = new FakeShared();
     const original = late(3);
     const entry = entryFor(original, { off: 1, words: false });
-    const far = (line: number) => line % 9 === 4; // (these are six seconds further than the rest: past the bar for a line, in a stretch that mostly is where the voice detector finds it)
+    const far = (line: number) => line % 9 === 4;
     const skewed = { ...entry, placed: entry.placed.map((each) => (far(each[0]) ? ([each[0], each[1] + 600, each[2] + 600, each[3]] as SharedPlacement) : each)) };
     shared.kept.set(keyOf(original), skewed);
     const english = track("English", original);
@@ -981,7 +937,7 @@ describe("timings that screens leave each other", () => {
     const rig = new Rig({ tracks: [track("English", original)], shown: 0, shared });
     await rig.play(60);
     expect(alignerStats.shared).toBe("none found");
-    expect(rig.recogniserCalls).toBe(1); // (not held up)
+    expect(rig.recogniserCalls).toBe(1);
     rig.session.close();
 
     const broken: Shared = { get: () => Promise.reject(new Error("offline")), put: () => Promise.reject(new Error("offline")) };
@@ -1034,8 +990,8 @@ describe("timings that screens leave each other", () => {
     await rig.settle();
     rig.session.flush();
     await quiet();
-    expect(new Set(shared.asked).size).toBe(4); // (two names for a film's length, and the sound is part of them)
-    expect(shared.puts).toEqual([]); // (the lines of the sound before the switch are not the new sound's)
+    expect(new Set(shared.asked).size).toBe(4);
+    expect(shared.puts).toEqual([]);
     rig.session.close();
   });
 
@@ -1048,7 +1004,6 @@ describe("timings that screens leave each other", () => {
     const rig = new Rig({ tracks: [track("English", original)], shown: 0, shared });
     await rig.play(SECONDS);
     expect(alignerStats.shared).toMatch(/^believed/);
-    // (What is right stays as the timing has it, to the hundredth of a second; the rest is no more than what the voice detector alone makes of it.)
     expect(rig.within(0, 0.05, 20, 110)).toBeGreaterThan(0.9);
     expect(rig.within(0, 2.5, 140, 260)).toBeGreaterThan(0.8);
     rig.session.close();

@@ -4,9 +4,6 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
-import { emitCat } from "../cat/bus";
-import { CatIcon } from "../cat/Chip";
-import { CAT_LOOKS, CAT_SIZES, useCatAsleep, useCatSettings, useCatShown } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { signedInLine } from "../account/google";
 import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
@@ -26,19 +23,12 @@ import { BackButton, Screen } from "./Idle";
 import { TvPinAsk, TvPinSetup } from "./Pin";
 import { TvCode } from "./TvCode";
 
-/**
- * The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles,
- * and the pages of the settings that open from a row of it (the subtitle languages, the cat, the PIN of a child's profile).
- */
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat" | "pin" | "sections" | "setup";
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "pin" | "sections" | "setup";
 
-/** A page of the settings that Back comes from to the panel: the remote lands on its row again. */
-type SettingsPage = "subtitles" | "cat" | "pin" | "sections";
+type SettingsPage = "subtitles" | "pin" | "sections";
 
-/** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
 
-/** How long a TV that nobody answers goes on asking (a code lasts 5 minutes, so it is given a second one) before it rests until someone says to go on. */
 const LISTEN_MS = 10 * 60_000;
 
 interface Request {
@@ -47,34 +37,26 @@ interface Request {
   expiresAt: number;
 }
 
-/**
- * Sign this TV in without typing: it shows a code and a QR code, a phone that is already signed in opens the code and approves it,
- * and the answer to the TV's next question carries the session. A name and password typed here is the way for a TV with a keyboard, and the first
- * one for a phone or a tablet that is the screen: it has a keyboard of its own, and the code would ask for another phone (it is a press away).
- */
-export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /** Where Back goes, when that is not where signing in ends up (the panel it was opened from). */ onBack?: () => void }) {
+export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; onBack?: () => void }) {
   const t = useT();
   const account = useAccount();
   const [typed] = useState(handHeld);
   const [mode, setMode] = useState<"phone" | "email">(typed ? "email" : "phone");
-  /** Back from the typed form: to the code where that is the first page, out where the form is. */
   const formBack = typed ? onBack : () => setMode("phone");
-  const [creating, setCreating] = useState(false); // the typed form is making an account, not signing in
-  const [asking, setAsking] = useState(false); // ...and is asking whether to, with the password it was given
+  const [creating, setCreating] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [request, setRequest] = useState<Request | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [resting, setResting] = useState(false); // nobody answered for LISTEN_MS: no more asking until the button says to
-  const until = useRef(Date.now() + LISTEN_MS); // when it rests
+  const [resting, setResting] = useState(false);
+  const until = useRef(Date.now() + LISTEN_MS);
   const again = useRef<HTMLButtonElement>(null);
   const done = useRef({ account, onClose });
   done.current = { account, onClose };
 
-  // One request at a time, asked for again whenever it ends: it ran out, or the phone said no. A TV that nobody is at would go on for ever:
-  // once LISTEN_MS are over, a code that has run out (or could not be had) is not asked for again until the button is pressed.
   useEffect(() => {
     if (mode !== "phone") return;
-    setResting(false); // (a page that comes back from the typed form is asking again)
+    setResting(false);
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const later = (message: string | null, delay: number) => {
@@ -100,7 +82,6 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
       if (!live) return;
       setRequest(started);
       setProblem(null);
-      // (The code lasts this long from now by this screen's own clock. The server's `expiresAt` is by the server's: a TV whose clock runs minutes ahead would find every code already out of time and ask for a new one every other second.)
       const endsAt = Date.now() + LINK_TTL_MS;
       const poll = async () => {
         if (!live) return;
@@ -118,7 +99,6 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
         } catch (error) {
           if (!live) return;
           if (error instanceof ApiError && error.status === 404) return retry(describeError(error), 6000);
-          // not reachable just now (or told to slow down): look again in a moment
         }
         timer = setTimeout(() => void poll(), POLL_MS);
       };
@@ -130,7 +110,6 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
     };
   }, [mode, attempt]);
 
-  // The button is what is under the remote's OK when the page has been left alone.
   useEffect(() => {
     if (resting) again.current?.focus();
   }, [resting]);
@@ -142,7 +121,6 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
 
   if (mode === "email") {
     return (
-      // (While the form asks whether to make an account with a poor password, Back is the form's: it goes back to the password.)
       <Screen key="email" testId="tv-signin" compact focus onBack={asking ? undefined : formBack}>
         <h1 className="tv-headline tv-headline-small">{t(creating ? "auth.signUp" : "auth.signIn")}</h1>
         <AuthForm tv initialMode={creating ? "signUp" : "signIn"} onDone={onClose} onMode={(next) => setCreating(next === "signUp")} onWarning={setAsking} />
@@ -210,7 +188,6 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
         >
           {t("link.emailInstead")}
         </button>
-        {/* (A new visitor has no account to sign in with on another device: making one was two presses deep, behind the typed form. The judge, 16 Nov.) */}
         {account.registration === "open" && (
           <button
             className="tv-action"
@@ -230,10 +207,6 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
   );
 }
 
-/**
- * Sign another screen in from this one, for a computer with no phone at hand: type the code that screen shows, see who is asking,
- * and say yes. The code is typed on a keyboard (or the TV's own on-screen one), the way the name and password form is.
- */
 function TvApprove({ onClose }: { onClose: () => void }) {
   const t = useT();
   const [typed, setTyped] = useState("");
@@ -255,7 +228,7 @@ function TvApprove({ onClose }: { onClose: () => void }) {
   const change = (value: string) => {
     const shown = typedLinkCode(value);
     setTyped(shown);
-    setCode(linkCodeOf(shown) ?? null); // all eight characters: on to the request
+    setCode(linkCodeOf(shown) ?? null);
   };
 
   return (
@@ -285,7 +258,6 @@ function TvApprove({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** The request behind a typed code: who is asking, and yes or no. Nothing has the focus to begin with, so a stray OK press never signs a screen in. */
 function TvApproveAsk({ code, onBack, onClose }: { code: string; onBack: () => void; onClose: () => void }) {
   const t = useT();
   const { view, body, problem, outcome, busy, decide } = useLinkApproval(code);
@@ -342,19 +314,12 @@ function TvApproveAsk({ code, onBack, onClose }: { code: string; onBack: () => v
 }
 
 interface ProfilesProps {
-  /** Nobody has been picked on this screen yet: the page can't be left without choosing (or signing out). */
   forced: boolean;
-  /** Opened by "Manage profiles": it starts on the pictures that lead to the editors, and Back goes to the account page. */
   manage: boolean;
   onDone: () => void;
   onBack: () => void;
 }
 
-/**
- * "Who's watching?": the profiles of the signed-in account as big pictures, shown by itself when nobody has been picked on this TV
- * yet. It is also where profiles are made, changed and removed, so none of that needs a phone: Manage profiles turns each picture
- * into the way to its editor, with a tile to add one while there is room.
- */
 export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
   const t = useT();
   const account = useAccount();
@@ -379,7 +344,7 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
             } else {
               const added = await account.addProfile(name, avatar);
               if (added && forced) {
-                account.choose(added.id); // nobody was picked yet, and this one was made by whoever is here
+                account.choose(added.id);
                 return onDone();
               }
             }
@@ -399,7 +364,6 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
     );
   }
 
-  // (A child's profile is left with the PIN only: see `ChildLock`. These pages were opened with it; it is asked again if that was long ago.)
   const grownUp = account.childLock.grownUp;
   const pick = (picked: Profile) => {
     const go = () => {
@@ -443,7 +407,6 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
   );
 }
 
-/** A titled group of the settings page: its words above, and its things on one surface (rows with a hairline between them, or fields). */
 function SettingsGroup({ title, children, testId }: { title?: string; children: ReactNode; testId?: string }) {
   return (
     <section className="tv-group" {...(title ? { "aria-label": title } : {})} data-testid={testId}>
@@ -457,7 +420,6 @@ function SettingsGroup({ title, children, testId }: { title?: string; children: 
   );
 }
 
-/** A row of the settings page that leads on to another page, or does something to the account: an icon, what it does, how it stands (on a page that leads on), and for a page, an arrow. */
 function SettingsLine({ icon, label, value, onPress, testId, autoFocus = false, tone = "plain" }: { icon: ReactNode; label: string; value?: string; onPress: () => void; testId: string; autoFocus?: boolean; tone?: "plain" | "danger" }) {
   return (
     <button className={`tv-line${tone === "danger" ? " tv-line-danger" : ""}`} onClick={onPress} data-nav {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
@@ -471,7 +433,6 @@ function SettingsLine({ icon, label, value, onPress, testId, autoFocus = false, 
   );
 }
 
-/** An on/off row of the settings page. */
 function SettingsSwitch({ label, on, onToggle, testId }: { label: string; on: boolean; onToggle: () => void; testId: string }) {
   return (
     <button className="tv-switch-row" role="switch" aria-checked={on} onClick={onToggle} data-nav data-testid={testId}>
@@ -481,12 +442,6 @@ function SettingsSwitch({ label, on, onToggle, testId }: { label: string; on: bo
   );
 }
 
-/**
- * The settings, from the corner of the profile's page: who is watching and what can be done with the account (a column of its own), what the
- * site looks like (language, colour), what playback and sharing do. Three columns, each of groups with a name above and one surface under it,
- * so that a language is chosen from a few words in a row, a colour from dots, and the rest are switches, and none of them looks like the next.
- * For a guest the first column is where signing in starts.
- */
 export function TvAccountPanel({
   onClose,
   onSignIn,
@@ -494,7 +449,6 @@ export function TvAccountPanel({
   onSwitch,
   onManage,
   onSubtitles,
-  onCat,
   onPin,
   onSections,
   cameFrom,
@@ -505,10 +459,8 @@ export function TvAccountPanel({
   onSwitch: () => void;
   onManage: () => void;
   onSubtitles: () => void;
-  onCat: () => void;
   onPin: () => void;
   onSections: () => void;
-  /** The page of the settings Back came from: the remote lands on its row again, not at the top. */
   cameFrom?: SettingsPage | undefined;
 }) {
   const t = useT();
@@ -522,14 +474,12 @@ export function TvAccountPanel({
   const adaptiveQuality = settings.adaptiveQuality ?? true;
   const child = settings.child === true;
   const several = Boolean(me && me.profiles.length > 1);
-  const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
-  const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
+  const canConnectGoogle = useCanConnectGoogle();
   const subtitleName = useMemo(() => languageNamer(language), [language]);
   const chosenSubtitles = settings.subtitleLanguages ?? [];
-  // (how the row stands, short: the first language chosen and how many more; nothing while the defaults apply)
   const subtitlesValue = chosenSubtitles.length === 0 ? undefined : chosenSubtitles.length === 1 ? subtitleName(chosenSubtitles[0]!) : `${subtitleName(chosenSubtitles[0]!)} +${chosenSubtitles.length - 1}`;
-  const top = cameFrom === undefined; // (the first row of the profile lands the remote, unless it came back from a page of the settings)
-  const grownUp = account.childLock.grownUp; // (what leaves a child's profile asks for the PIN first: see `ChildLock`)
+  const top = cameFrom === undefined;
+  const grownUp = account.childLock.grownUp;
   return (
     <Screen testId="tv-account" focus onBack={onClose} className="tv-screen-settings">
       <div className="tv-set tv-set-main">
@@ -563,8 +513,6 @@ export function TvAccountPanel({
                   <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={top && !several} />
                   <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
                   {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => grownUp(() => account.withGoogle("link"))} testId="tv-connect-google" />}
-                  {/* Whether what it watches is counted, with no name, in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off. The server
-                      reads it, and counts accounts only, so it is here with what a signed-in profile has (in the third column it made a 720p screen's columns too tall). */}
                   {!child && (
                     <SettingsSwitch
                       label={t("settings.publicWatching")}
@@ -589,7 +537,6 @@ export function TvAccountPanel({
             </SettingsGroup>
             {me && profile && (
               <SettingsGroup testId="tv-group-account">
-                {/* (The PIN is the account's, asked on a child's profile: set from a grown-up's profile, and changed or taken off with the one there is, from any.) */}
                 {(!child || me.account.childPin) && (
                   <SettingsLine icon={<LockIcon />} label={t("pin.setting")} value={me.account.childPin ? t("common.on") : t("common.off")} onPress={onPin} testId="tv-pin-setting" autoFocus={cameFrom === "pin"} />
                 )}
@@ -612,7 +559,6 @@ export function TvAccountPanel({
                   ))}
                 </div>
               </div>
-              {/* (The colours say what they are: no word over them, which the column has no room for on a 720p screen since the anime's audio is in it.) */}
               <div className="tv-field">
                 <div className="tv-swatches" role="radiogroup" aria-label={t("settings.accent")}>
                   {ACCENTS.map((accent) => (
@@ -634,8 +580,6 @@ export function TvAccountPanel({
               </div>
             </SettingsGroup>
 
-            {/* How a film plays (17 Nov 2026: the second switch, Skip intros and credits; then the anime's audio). The subtitle languages' line was here too: with the
-                anime's audio under the two switches this column was taller than a 720p screen (18 Nov), so that line is with what else the profile chose, in the third. */}
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
               <SettingsSwitch label={t("settings.autoSkip")} on={autoSkip} onToggle={() => set("autoSkip", !autoSkip)} testId="tv-autoskip" />
@@ -668,14 +612,10 @@ export function TvAccountPanel({
               </div>
             </SettingsGroup>
 
-            {/* (Ratings and friends had a group of two switches here: they are on for everybody since 15 Nov 2026, and what a friend may see is chosen on the friends' page.) */}
           </div>
 
           <div className="tv-set-col" data-nav-column>
-            {/* What the profile chose for itself, one group (18 Nov 2026: they were three, with a heading each, and the page was taller than a 720p screen): what it
-                watches and the languages of its subtitles, each a line that opens its page; whether it is told of new episodes; whether it is a child's. */}
             <SettingsGroup testId="tv-group-sections">
-              {/* What the profile watches (the owner, 18 Nov). Not on a child's profile, which has the Cartoons. */}
               {!child && (
                 <SettingsLine
                   icon={<FilmIcon />}
@@ -687,7 +627,6 @@ export function TvAccountPanel({
                 />
               )}
               <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
-              {/* Told when a new episode, season or film of what it watches comes out (shared/titleNotices.ts): on unless turned off. Sent at once: the server reads it. */}
               {!child && (
                 <SettingsSwitch
                   label={t("settings.titleNotices")}
@@ -699,17 +638,15 @@ export function TvAccountPanel({
                   testId="tv-title-notices"
                 />
               )}
-              {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to
-                  every screen; a short line under it says what it does. */}
               <SettingsSwitch
                 label={t("settings.child")}
                 on={child}
                 onToggle={() => {
                   const change = () => {
                     set("child", child ? undefined : true);
-                    account.syncNow(); // (the server turns the friends off at once)
+                    account.syncNow();
                   };
-                  if (child) grownUp(change); // (made an ordinary profile again: with the PIN, if there is one)
+                  if (child) grownUp(change);
                   else change();
                 }}
                 testId="tv-child"
@@ -718,12 +655,9 @@ export function TvAccountPanel({
                 {t("settings.childNote")}
               </p>
             </SettingsGroup>
-            {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). The cat is one row, and its switches are on a page
-                of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen. */}
             <SettingsGroup title={t("settings.labs")} testId="tv-group-labs">
               <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
               <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
-              {cat.offered && <SettingsLine icon={<CatIcon />} label={t("cat.settings.title")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" autoFocus={cameFrom === "cat"} />}
             </SettingsGroup>
           </div>
         </div>
@@ -732,12 +666,6 @@ export function TvAccountPanel({
   );
 }
 
-/**
- * The subtitle languages' page of the settings (the phone has them on its settings page): the languages a profile wants listed first in the subtitle menus, in its
- * order, and whether the others are left out. Every language is a button that stays where it is: one press adds it at the end of the order (its number shows on
- * it), one more takes it out, so the remote never loses its place (nothing it can be on goes away or is switched off under it). A guest's are kept on this screen.
- * (The owner, 15 Nov 2026: "allow subtitle picking on tv/pc too not just phone as it says in the image".)
- */
 export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -772,7 +700,7 @@ export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
             <div className="tv-lang-grid" role="group" aria-label={t("settings.subtitleLanguages")}>
               {pickableLanguages(chosen).map((code, index) => {
                 const rank = chosen.indexOf(code);
-                const blocked = rank < 0 && full; // (twelve are chosen: one more is not taken until one is taken out; the button stays, so the remote is never left on nothing)
+                const blocked = rank < 0 && full;
                 return (
                   <button
                     key={code}
@@ -800,110 +728,6 @@ export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
   );
 }
 
-/**
- * The cat's page of the settings: whether there is a cat on this screen, whether it keeps still, whether it keeps the viewer company in films, whether it is the
- * detailed one, what coat it wears and how big it is. A page of its own, two columns (what it does, and what it looks like), so that the settings page is no taller
- * on a host that offers a cat than on one that does not.
- */
-export function TvCatSettings({ onBack }: { onBack: () => void }) {
-  const t = useT();
-  const cat = useCatSettings();
-  const shown = useCatShown();
-  const asleep = useCatAsleep(); // (the viewer sent the cat to sleep from its menu or its panel: this is where it is woken, as well)
-  // (what is really drawn, when the white and grey cat was chosen: said, so that a screen that gives the simple version is not left to look like a choice that did nothing)
-  const said = cat.settings.look === "ragdoll" && shown.art === "solid" ? t("cat.shown.solid") : cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why ? t(`cat.shown.${shown.why}`) : "";
-  return (
-    <Screen testId="tv-cat-settings" focus onBack={onBack}>
-      <div className="tv-set tv-set-cat">
-        <header className="tv-set-head" data-nav-column>
-          <h1 className="tv-set-title" data-testid="tv-cat-title">
-            {t("cat.settings.title")}
-          </h1>
-          <BackButton onClick={onBack} testId="tv-cat-back" />
-        </header>
-        <div className="tv-set-grid tv-set-grid-2">
-          <div className="tv-set-col" data-nav-column>
-            {/* (why the cat is off: the owner turned it off on every screen, see cat/settings.ts CAT_SWITCH) */}
-            <p className="tv-hint tv-set-hint" data-testid="tv-cat-notice" role="note">
-              <InfoIcon /> <span>{t("cat.settings.notice")}</span>
-            </p>
-            <SettingsGroup title={t("cat.settings.behaviour")} testId="tv-group-cat-behaviour">
-              <SettingsSwitch label={t("cat.settings.on")} on={cat.settings.on} onToggle={() => cat.set({ on: !cat.settings.on })} testId="tv-cat-switch" />
-              {cat.settings.on && (
-                <>
-                  <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
-                  <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
-                  {asleep && (
-                    <SettingsLine
-                      icon={<CatIcon />}
-                      label={t("cat.wake")}
-                      onPress={() => {
-                        emitCat({ type: "wake" });
-                        // (the row goes with the sleep: the remote is put on the switch above it, not left on a button that is gone)
-                        document.querySelector<HTMLElement>('[data-testid="tv-cat-films"]')?.focus({ preventScroll: true });
-                      }}
-                      testId="tv-cat-wake"
-                    />
-                  )}
-                </>
-              )}
-            </SettingsGroup>
-            <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
-              <InfoIcon /> <span>{t("cat.settings.help")}</span>
-            </p>
-          </div>
-          <div className="tv-set-col" data-nav-column>
-            {cat.settings.on && (
-              <SettingsGroup title={t("cat.settings.look")} testId="tv-group-cat-look">
-                <div className="tv-field">
-                  <span className="tv-field-label" aria-hidden="true">
-                    {t("cat.settings.cat")}
-                  </span>
-                  <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.cat")}>
-                    {CAT_LOOKS.map((look) => (
-                      <button key={look} className="tv-choice" role="radio" aria-checked={cat.settings.look === look} onClick={() => cat.set({ look })} data-nav data-testid={`tv-cat-look-${look}`}>
-                        {t(`cat.look.${look}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="tv-hint tv-set-hint" data-testid="tv-cat-look-help">
-                  <span>{t(`cat.look.${cat.settings.look}.help`)}</span>
-                </p>
-                {said && (
-                  <p className="tv-hint tv-set-hint" role="status" data-testid="tv-cat-shown" data-art={shown.art} data-why={shown.why}>
-                    <InfoIcon /> <span>{said}</span>
-                  </p>
-                )}
-                {cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why && (
-                  <SettingsLine icon={<CatIcon />} label={t("cat.shown.retry")} onPress={() => emitCat({ type: "retry" })} testId="tv-cat-retry" />
-                )}
-                <div className="tv-field">
-                  <span className="tv-field-label" aria-hidden="true">
-                    {t("cat.settings.size")}
-                  </span>
-                  <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.size")}>
-                    {CAT_SIZES.map((size) => (
-                      <button key={size} className="tv-choice" role="radio" aria-checked={cat.settings.size === size} onClick={() => cat.set({ size })} data-nav data-testid={`tv-cat-size-${size}`}>
-                        {t(`cat.size.${size}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </SettingsGroup>
-            )}
-            {/* (the detailed cat is drawn from models licensed CC BY 4.0, which ask for the makers to be named and the changes to be said: said under the look it is the credit of, in the column with the room, where it made the left one taller than a TV's screen in Italian) */}
-            <p className="tv-hint tv-set-hint tv-set-credit" data-testid="tv-cat-credit">
-              <span>{t("cat.settings.credit")}</span>
-            </p>
-          </div>
-        </div>
-      </div>
-    </Screen>
-  );
-}
-
-/** What a profile watches: its page of the settings (the same four buttons as when the profile was set up). */
 const SECTION_NAME = { movie: "tv.movies", series: "tv.series", cartoon: "tv.cartoons", anime: "tv.anime" } as const;
 function TvSections({ onBack }: { onBack: () => void }) {
   const t = useT();
@@ -926,10 +750,6 @@ function TvSections({ onBack }: { onBack: () => void }) {
   );
 }
 
-/**
- * A profile that is still to be set up (see account/ProfileSetup.tsx): its pages, which the remote's Back does not leave. Shown by itself once the
- * profile is chosen on this screen, as `Who's watching?` is before it.
- */
 function TvSetup({ onDone }: { onDone: () => void }) {
   const { profile } = useAccount();
   if (!profile?.setup) return null;
@@ -947,13 +767,11 @@ function TvSetup({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** Whichever page of the account is open. `forced`: signed in with nobody chosen yet, which can't be skipped. */
 export function TvAccount({ view, onView, forced }: { view: AccountView; onView: (view: AccountView | null) => void; forced: boolean }) {
   const account = useAccount();
   const { asking, grownUp, cancel, relock } = account.childLock;
-  const [fromPanel, setFromPanel] = useState(false); // (signing in was opened from the panel: Back goes there, not out to the library)
-  const [cameFrom, setCameFrom] = useState<SettingsPage | undefined>(undefined); // (the page of the settings Back came from, for the remote to land on its row)
-  // The account's pages closed (back to the library, or a film): a PIN given here counts no more, and nothing waits for one.
+  const [fromPanel, setFromPanel] = useState(false);
+  const [cameFrom, setCameFrom] = useState<SettingsPage | undefined>(undefined);
   useEffect(
     () => () => {
       cancel();
@@ -969,13 +787,11 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
     setCameFrom(undefined);
     onView(page);
   };
-  /** A page that a child's profile could be left from (another profile chosen, the profiles changed, another screen signed in): the PIN first. */
   const guarded = (page: AccountView) => () => grownUp(open(page));
   if (asking) return <TvPinAsk />;
   if (view === "signin") return <TvSignIn onClose={() => onView(null)} onBack={() => onView(fromPanel ? "panel" : null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
   if (view === "subtitles") return <TvSubtitleLanguages onBack={backFrom("subtitles")} />;
-  if (view === "cat") return <TvCatSettings onBack={backFrom("cat")} />;
   if (view === "pin") return <TvPinSetup onBack={backFrom("pin")} />;
   if (view === "sections") return <TvSections onBack={backFrom("sections")} />;
   if (view === "setup") return <TvSetup onDone={() => onView(null)} />;
@@ -991,7 +807,6 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
       onSwitch={guarded("profiles")}
       onManage={guarded("manage")}
       onSubtitles={open("subtitles")}
-      onCat={open("cat")}
       onPin={open("pin")}
       onSections={open("sections")}
       cameFrom={cameFrom}

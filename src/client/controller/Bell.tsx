@@ -17,10 +17,6 @@ import { ShownTitle } from "../shared/Shown";
 import { useSwipeAway } from "../shared/swipe";
 import { BELL_TITLES, entryOfNotice, noticeLine, useTitleNotices } from "../titleNotices/notices";
 
-/**
- * The bell beside the profile's picture: how many things wait for an answer or a look, or a quiet dot when friends only watched something. Not there
- * while friends are off, unless there is something new of what the profile watches.
- */
 export function BellButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const bell = useBell();
@@ -39,7 +35,6 @@ export function BellButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** Something a friend watched, as a row that opens the title. The cross, or a swipe to the side, takes it off the list on this device. */
 function LatelyRow({ item, friend, onOpen, onClear }: { item: ActivityItem; friend: Friend; onOpen: (entry: Entry) => void; onClear: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -61,7 +56,6 @@ function LatelyRow({ item, friend, onOpen, onClear }: { item: ActivityItem; frie
   );
 }
 
-/** A friend made since the bell was last opened (a code of this profile's was used, a request was answered): the row opens the Friends page, where they are. */
 function JoinedRow({ friend, onOpen }: { friend: Friend; onOpen: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -78,10 +72,6 @@ function JoinedRow({ friend, onOpen }: { friend: Friend; onOpen: () => void }) {
   );
 }
 
-/**
- * A friend who wrote, as a row that opens the chat with them (their messages are not read here: the bell only says how many wait). The cross, or a
- * swipe to the side, marks the chat read without opening it: the messages stay in the chat.
- */
 function ChatRow({ notice, friend, onOpen, onClear }: { notice: ChatNotice; friend: Friend; onOpen: () => void; onClear: () => void }) {
   const t = useT();
   const swipe = useSwipeAway(onClear);
@@ -100,7 +90,6 @@ function ChatRow({ notice, friend, onOpen, onClear }: { notice: ChatNotice; frie
   );
 }
 
-/** Something new of a title the profile watches (titleNotices/notices.ts), as a row that opens the title. The cross, or a swipe to the side, clears it. */
 function TitleNoticeRow({ notice, onOpen, onClear }: { notice: TitleNotice; onOpen: (entry: Entry) => void; onClear: () => void }) {
   const t = useT();
   const swipe = useSwipeAway(onClear);
@@ -123,11 +112,6 @@ function TitleNoticeRow({ notice, onOpen, onClear }: { notice: TitleNotice; onOp
   );
 }
 
-/**
- * What the bell opens: what is new of the titles the profile watches (a profile with friends off has only that); what waits for an answer from this profile (requests to be friends, invitations, requests to watch together, titles
- * friends sent, each with its buttons), the friends who wrote (a row each, that opens the chat) and what friends watch lately, with a way on to
- * the Friends page for the rest. Opening it is looking.
- */
 export function NotificationsSheet({
   onClose,
   onOpenTitle,
@@ -137,21 +121,18 @@ export function NotificationsSheet({
 }: {
   onClose: () => void;
   onOpenTitle: (entry: Entry) => void;
-  /** Not given on a phone that has no TV to host a party on. */
   onStartParty?: (friendId: string) => void;
   onOpenFriends: () => void;
-  /** A row of a friend who wrote was pressed: the chat with them is opened, over whatever the bell was over. */
   onOpenChat: (friendId: string) => void;
 }) {
   const t = useT();
   const friends = useFriends();
   const { markSeen, seen } = useBell();
-  const [seenBefore] = useState(seen); // (as it opens: opening it moves `seen` to now)
+  const [seenBefore] = useState(seen);
   const { cleared, clear } = useCleared();
   const clearChat = useClearChat();
   const { state } = friends;
 
-  // Opening it is seeing what is in the inbox, and how things stand now.
   useEffect(() => {
     void friends.refresh();
     markSeen();
@@ -165,7 +146,6 @@ export function NotificationsSheet({
     if (titles.unread > 0) titles.seen();
   }, [titles.unread]);
 
-  // (With friends off there is nothing of theirs to wait for: the list is what is new of the profile's titles.)
   const view = state ? bellView(state, Date.now(), cleared, seenBefore) : friends.on ? null : { requests: [], inbox: [], chat: [], lately: [], joined: [], more: 0 };
   const people = state?.friends ?? [];
   const waiting = view !== null && view.requests.length + view.inbox.length + view.chat.length > 0;
@@ -184,7 +164,6 @@ export function NotificationsSheet({
       ) : (
         <>
           {!waiting && fresh.length === 0 && view.joined.length === 0 && view.lately.length === 0 && (
-            // (A quiet picture of the bell and two lines, with room round them, as on the TV.)
             <div className="bell-empty" data-testid="bell-empty">
               <span className="bell-empty-icon" aria-hidden="true">
                 <BellIcon />

@@ -10,7 +10,7 @@ const ratings = [
   rated("dark", 9, { kind: "series" }),
   rated("shrek", 7, { kind: "movie", section: "cartoon" }),
   rated("akira", 9, { kind: "movie", section: "anime" }),
-  rated("old", 4), // (rated before kinds were kept: taken for a film)
+  rated("old", 4),
 ];
 const titles = (list: readonly LiveRating[]) => list.map((rating) => rating.title);
 
@@ -34,7 +34,6 @@ describe("the ratings filter", () => {
         { score: 4, count: 1 },
       ],
     });
-    // (the scores are those of the section that is chosen)
     expect(ratingChoices(ratings, { section: "movie" }).scores).toEqual([
       { score: 9, count: 1 },
       { score: 8, count: 1 },
@@ -50,7 +49,7 @@ describe("the ratings filter", () => {
   });
 
   it("lets go of a choice none of the ratings has any more, rather than show nothing", () => {
-    expect(usableFilter(ratings, { section: "movie", score: 7 })).toEqual({ section: "movie" }); // (the 7 is a cartoon's)
+    expect(usableFilter(ratings, { section: "movie", score: 7 })).toEqual({ section: "movie" });
     expect(titles(filterRatings(ratings, { section: "movie", score: 7 }))).toEqual(["heat", "alien", "old"]);
     expect(usableFilter(ratings.slice(0, 2), { section: "anime", score: 8 })).toEqual({ score: 8 });
     expect(filterRatings([], { section: "anime", score: 8 })).toEqual([]);

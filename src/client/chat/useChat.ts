@@ -4,43 +4,25 @@ import { chatApi } from "./api";
 import { applyThread, endsChat, FRESH_CHAT, problemOf, type ChatProblem, type ChatState } from "./state";
 
 export interface ChatSession {
-  /** Whose chat it is, and with whom (the addresses of the personal stickers in it are named by them). */
   profileId: string;
   friendId: string;
   state: ChatState;
-  /** Whether the first answer has come. */
   loaded: boolean;
-  /** Why the chat can't go on at all (the friend is no friend any more, friends are off), or null. */
   ended: ChatProblem | null;
-  /** The last thing that went wrong, to be said quietly (the server can't be reached, a message was refused), or null. */
   problem: ChatProblem | null;
-  /** A message is on its way. */
   sending: boolean;
-  /** Write to the friend. True when it went (so that the box can be emptied); when it did not, `problem` says why. */
   send: (text: string) => Promise<boolean>;
-  /** Send one of one's personal stickers (personalStickers.ts), as `send` sends words. */
   sendSticker: (id: string) => Promise<boolean>;
-  /**
-   * The message the next one answers (Reply was pressed, or the message was drawn aside), or null. Whatever is sent next - words, a title, a GIF, a
-   * sticker - answers it, and then it is let go; it is let go too when the message is gone (taken back, or let go with time).
-   */
   replyTo: number | null;
   setReplyTo: (id: number | null) => void;
   takeBack: (id: number) => Promise<void>;
-  /** Put a reaction on a message, change it, or take it away (null). */
   react: (id: number, reaction: ChatReaction | null) => Promise<void>;
   setMuted: (muted: boolean) => Promise<void>;
-  /** The person is writing again: what was said about the last failure is old news. */
   settle: () => void;
 }
 
 type Reading = "ok" | "failed" | "ended";
 
-/**
- * One chat, as a page shows it: the messages, kept up to date while the page is up and in sight (a reading every few seconds, with the
- * revision the page has, so that a chat that has not changed costs a few bytes), and what the person does to it. One session is one chat:
- * the page that shows another friend's makes another (give it a `key`).
- */
 export function useChat(profileId: string, friendId: string, options: { active?: boolean; interval?: number } = {}): ChatSession {
   const { active = true, interval = CHAT_POLL_MS } = options;
   const [state, setState] = useState<ChatState>(FRESH_CHAT);
@@ -50,7 +32,6 @@ export function useChat(profileId: string, friendId: string, options: { active?:
   const [failure, setFailure] = useState<ChatProblem | null>(null);
   const [sending, setSending] = useState(false);
   const [replyTo, setReplyState] = useState<number | null>(null);
-  /** (What `replyTo` is now, for a message on its way: the state the call was made with would be old by the time it is answered.) */
   const replying = useRef<number | null>(null);
   const setReplyTo = useCallback((id: number | null) => {
     replying.current = id;
@@ -59,10 +40,6 @@ export function useChat(profileId: string, friendId: string, options: { active?:
 
   const seen = useRef(state);
   seen.current = state;
-  /**
-   * `tick` numbers every call; `muted` is the number of the last mute that was answered: a reading that started before it knows nothing of it; `taken` is the
-   * number of the call whose answer the page took last: an answer at the same revision to a call that started before it is older news (see `applyThread`).
-   */
   const clock = useRef({ tick: 0, muted: 0, taken: 0 });
   const writing = useRef(false);
 
@@ -110,7 +87,6 @@ export function useChat(profileId: string, friendId: string, options: { active?:
       busy = true;
       let reading: Reading = "ok";
       try {
-        // (A page that is out of sight asks for nothing; it asks at once when it comes back.)
         if (document.visibilityState !== "hidden") reading = await read();
       } finally {
         busy = false;
@@ -130,7 +106,6 @@ export function useChat(profileId: string, friendId: string, options: { active?:
     };
   }, [active, ended, interval, read]);
 
-  /** A message on its way (words, or a personal sticker): one at a time. It answers the message that `replyTo` names, and lets it go once it went. */
   const write = useCallback(
     async (call: (replyTo: number | undefined) => Promise<ChatThread>): Promise<boolean> => {
       if (writing.current) return false;
@@ -142,13 +117,10 @@ export function useChat(profileId: string, friendId: string, options: { active?:
       try {
         take(await call(answers ?? undefined), started);
         setOffline(false);
-        // (Another message picked to answer while this one was on its way stays picked: that is the next one's.)
         if (answers !== null && replying.current === answers) setReplyTo(null);
         return true;
       } catch (error) {
-        // (A friend who stopped taking messages while the page was open: the box gives way to the line that says so, and that line is the only one: the same words twice were a mistake.)
         if (fail(error) === "chat_off") {
-          // (Taken as an answer: a reading at the same revision that began before it must not put `open` back.)
           clock.current.taken = Math.max(clock.current.taken, started);
           setState((before) => ({ ...before, open: false }));
           setFailure(null);
@@ -164,7 +136,6 @@ export function useChat(profileId: string, friendId: string, options: { active?:
   const send = useCallback((text: string) => write((answers) => chatApi.send(profileId, friendId, text, answers)), [write, profileId, friendId]);
   const sendSticker = useCallback((id: string) => write((answers) => chatApi.sendSticker(profileId, friendId, id, answers)), [write, profileId, friendId]);
 
-  // (The message being answered is gone - taken back by the friend, or let go with time: there is nothing to answer, and the strip goes.)
   const answerable = replyTo === null || state.lines.some((line) => line.id === replyTo);
   useEffect(() => {
     if (!answerable && loaded) setReplyTo(null);
@@ -178,15 +149,12 @@ export function useChat(profileId: string, friendId: string, options: { active?:
         take(await chatApi.takeBack(profileId, friendId, id), started);
         setOffline(false);
       } catch (error) {
-        // (Gone already, say from the other phone: what the page shows is made right.)
         if (fail(error) === "gone") void read();
       }
     },
     [profileId, friendId, take, fail, read],
   );
 
-  // (A reading that started before the answer and comes after it is older, and is not taken: see `applyThread`. A message taken back meanwhile is quiet:
-  // the page is only made right.)
   const react = useCallback(
     async (id: number, reaction: ChatReaction | null): Promise<void> => {
       setFailure(null);
@@ -238,31 +206,24 @@ export function useChat(profileId: string, friendId: string, options: { active?:
   };
 }
 
-/** Where a report of the chat is: closed, being fetched, shown (and waiting for a yes), on its way, or sent. */
 export interface ChatReportState {
   stage: "closed" | "loading" | "preview" | "sending" | "sent";
-  /** What would be sent (null while it is fetched, or when it could not be). */
   preview: ChatReportPreview | null;
   problem: ChatProblem | null;
 }
 
 export interface ChatReport extends ChatReportState {
-  /** Show what would be sent. */
   start: () => void;
-  /** Send it: only what was shown, only after this. */
   confirm: () => void;
-  /** Leave it (also what closes it once it was sent). */
   cancel: () => void;
 }
 
 const CLOSED: ChatReportState = { stage: "closed", preview: null, problem: null };
 
-/** Telling the team about a chat: it shows the last messages first, and sends exactly those when the person says yes. */
 export function useChatReport(profileId: string, friendId: string): ChatReport {
   const [state, setState] = useState<ChatReportState>(CLOSED);
   const latest = useRef(state);
   latest.current = state;
-  /** Numbers the steps: an answer that comes after the report was left, or after another step, is dropped. */
   const step = useRef(0);
 
   const show = useCallback(
@@ -292,7 +253,6 @@ export function useChatReport(profileId: string, friendId: string): ChatReport {
     } catch (error) {
       if (step.current !== mine) return;
       const problem = problemOf(error);
-      // A chat that changed while it was looked at is shown again: what is sent is what was seen.
       if (problem === "changed") void show("changed");
       else setState({ stage: "preview", preview, problem });
     }

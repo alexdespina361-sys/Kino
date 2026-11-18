@@ -6,17 +6,12 @@ import type { TitleNoticeBook } from "./book";
 
 const MINUTE = 60_000;
 
-/**
- * What a profile is told of the titles it watches (book.ts): read by its screens when they open and now and then, marked as looked at when the bell
- * is opened, cleared one at a time. A host that does not look for them (no library, or `TITLE_NOTICES=off`) answers with none.
- */
 export function titleNoticeRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, book: TitleNoticeBook | undefined): void {
   const { store, authenticate, signedOut, tooMany, invalid, refused } = helpers;
   const readsByAccount = new RateLimiter(60, MINUTE);
   const writesByAccount = new RateLimiter(60, MINUTE);
   const base = "/api/profiles/:id/title-notices";
 
-  /** The profile of the account that asks, within what it may ask in a minute; else the answer that says why not has been sent. */
   const asker = (request: Parameters<typeof authenticate>[0], reply: Parameters<typeof signedOut>[0], limit: RateLimiter, profileId: string): boolean => {
     const auth = authenticate(request);
     if (!auth) return void signedOut(reply), false;

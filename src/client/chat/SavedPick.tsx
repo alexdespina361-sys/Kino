@@ -5,13 +5,6 @@ import { type SavedPicture, useSavedPictures } from "./saved";
 import { stickerSrc } from "./stickers";
 import type { ChatSession } from "./useChat";
 
-/**
- * The pictures the profile saved from its chats (saved.ts), at the top of their tab in the chat's panel: "Saved", the one saved last first. A press sends
- * one at once, as the grid under it does (and the panel goes with it). After Edit, a cross on each lets it go; one that cannot be shown any more (KLIPY took
- * the GIF away) is still let go that way. A remote walks it as the grid under it, the crosses too.
- */
-
-/** (As any message: the text as the server will keep it.) */
 const send = async (session: ChatSession, picture: SavedPicture): Promise<boolean> => {
   const checked = checkChatText(picture.text);
   return checked.ok ? session.send(checked.text) : false;
@@ -30,18 +23,15 @@ function SavedButton({
   picture: SavedPicture;
   className: string;
   nav: boolean;
-  /** The first of the stickers: where a remote lands when the tab opens (the grid of Kino's under it may be out of sight below, the judge, 17 Nov). */
   first: boolean;
   editing: boolean;
   waiting: boolean;
   onSend: () => void;
-  /** It is about to be one that cannot be pressed (the GIF did not come): the keys, if they are on it, are to go elsewhere first. */
   onGone: (button: HTMLButtonElement) => void;
 }) {
   const t = useT();
   const [failed, setFailed] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
-  // (A GIF that does not come any more is not sent: the friend would be sent a picture that is not there.)
   const gone = failed && picture.kind === "gif";
   const label = picture.kind === "gif" ? t(gone ? "chat.gifGone" : "chat.gif") : `${t("chat.sticker")}: ${picture.sticker.emoji}`;
   const fail = () => {
@@ -80,35 +70,22 @@ function SavedButton({
   );
 }
 
-/** What the arrows stop on in `within`, in order. */
 const stopsIn = (within: Element | null | undefined): HTMLElement[] => [...(within?.querySelectorAll<HTMLElement>("[data-nav]:not(:disabled)") ?? [])];
 
-/**
- * The saved GIFs (`kind` "gif") or stickers of the panel, with their heading and Edit; nothing when there are none. `grid` and `className` are the classes of the
- * grid under it and of its buttons, so that the two look alike; `nav`: walked with the arrows.
- */
 export function SavedPictures({ kind, session, grid, className, nav, onSent }: { kind: "gif" | "sticker"; session: ChatSession; grid: string; className: string; nav: boolean; onSent: () => void }) {
   const t = useT();
   const saved = useSavedPictures();
   const pictures = kind === "gif" ? saved.gifs : saved.stickers;
   const [editing, setEditing] = useState(false);
   const section = useRef<HTMLElement>(null);
-  /** While the keys are in this section (TV and computer pages): which of its stops they are on, and the pane it is in. */
   const held = useRef<{ at: number; pane: HTMLElement } | null>(null);
 
-  /**
-   * The keys go to the stop now at `at` in this section (else the last), or, when none is left, to the first of the pane under it. They are moved before what
-   * they were on goes: a stop taken away with the keys on it leaves them nowhere for a moment, and the page under the chat takes them then, as it does when a
-   * title goes from under the remote (tv/Browse.tsx). A screen only touched keeps no focus: nothing is moved, which would bring a phone's keyboard up in the
-   * GIF search.
-   */
   const rescue = (at: number, without: HTMLElement | null, pane: HTMLElement | null | undefined) => {
     const here = stopsIn(section.current).filter((each) => each !== without);
     const after = stopsIn(pane).filter((each) => each !== without && !section.current?.contains(each));
     (here[Math.min(at, here.length - 1)] ?? after[0])?.focus();
   };
 
-  // (Let go here, with the keys on its cross: they go to the cross that takes its place, else the one before it, else under the section.)
   const letGo = (picture: SavedPicture, at: number, cross: HTMLElement) => {
     if (nav && document.activeElement === cross && section.current) {
       const crosses = [...section.current.querySelectorAll<HTMLElement>("[data-testid='chat-saved-remove']")].filter((each) => each !== cross);
@@ -119,7 +96,6 @@ export function SavedPictures({ kind, session, grid, className, nav, onSent }: {
     if (pictures.length <= 1) setEditing(false);
   };
 
-  // (Let go elsewhere, on another screen of the profile, with the keys on it here: by then it is gone, and they are on nothing. They go where they would have.)
   useLayoutEffect(() => {
     const was = held.current;
     if (!nav || !was) return;
@@ -141,7 +117,6 @@ export function SavedPictures({ kind, session, grid, className, nav, onSent }: {
         if (nav && pane) held.current = { at: Math.max(0, stopsIn(section.current).indexOf(event.target as HTMLElement)), pane };
       }}
       onBlur={(event) => {
-        // (To somewhere else: they are not here. To nothing: perhaps what they were on went; the effect above will know.)
         if (event.relatedTarget instanceof Node && !section.current?.contains(event.relatedTarget)) held.current = null;
       }}
     >

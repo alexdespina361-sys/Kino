@@ -2,17 +2,8 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-/**
- * Where accounts are kept between restarts. Everything is a document: a key and a JSON value. The store holds all of them
- * in memory and tells this what changed; this only has to keep them somewhere.
- *
- * The three homes: nowhere (tests, `DATA_DIR=memory`), a JSON file (a PC, or a host with a disk that stays), and Postgres
- * (`DATABASE_URL`, for a host whose disk is wiped on every restart, like a free Render instance).
- */
 export interface Persistence {
-  /** Everything stored: key -> value. */
   load(): Promise<Map<string, unknown>>;
-  /** Store these, forget these. */
   save(changes: { put: Map<string, unknown>; remove: Set<string> }): Promise<void>;
   close?(): Promise<void>;
 }
@@ -28,7 +19,6 @@ export class MemoryPersistence implements Persistence {
   }
 }
 
-/** One JSON file, rewritten whole through a temporary file so a crash never leaves half of it. */
 export class FilePersistence implements Persistence {
   private docs = new Map<string, unknown>();
   private writing: Promise<void> = Promise.resolve();
@@ -44,7 +34,6 @@ export class FilePersistence implements Persistence {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) this.docs = new Map(Object.entries(parsed));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        // A file that cannot be read is kept aside, never overwritten: the next save starts a new one.
         const aside = `${this.file}.unreadable-${Date.now()}`;
         await rename(this.file, aside).catch(() => {});
         this.log.warn(`Could not read ${this.file} (${(error as Error).message}); moved it to ${aside} and started empty.`);
@@ -56,14 +45,12 @@ export class FilePersistence implements Persistence {
   save({ put, remove }: { put: Map<string, unknown>; remove: Set<string> }) {
     for (const [key, value] of put) this.docs.set(key, value);
     for (const key of remove) this.docs.delete(key);
-    // One write at a time, each of the whole file as it is by then.
     this.writing = this.writing.catch(() => {}).then(() => this.write());
     return this.writing;
   }
 
   private async write() {
     await mkdir(path.dirname(this.file), { recursive: true });
-    // The data is private (password hashes): keep it out of a repository that happens to contain the folder.
     await writeFile(path.join(path.dirname(this.file), ".gitignore"), "*\n", { flag: "wx" }).catch(() => {});
     const temporary = `${this.file}.tmp`;
     await writeFile(temporary, JSON.stringify(Object.fromEntries(this.docs)), { mode: 0o600 });
@@ -71,17 +58,12 @@ export class FilePersistence implements Persistence {
   }
 }
 
-/** The part of a Postgres client this needs: `pg`'s Pool and Client have it, and so does PGlite (which the tests use). */
 export interface SqlClient {
   query(text: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }>;
   end?(): Promise<void>;
 }
 
 export class PostgresPersistence implements Persistence {
-  /**
-   * (`db` is public: the shared subtitle timings keep a table in the same database.) `table` is where the documents go: the accounts' is `kino_docs`,
-   * and what has no business being loaded with them has a table of its own (the count of visitors: `stats/visits.ts`). It is a name of ours, never of anyone's making.
-   */
   constructor(
     readonly db: SqlClient,
     private readonly table = "kino_docs",
@@ -97,8 +79,6 @@ export class PostgresPersistence implements Persistence {
 
   async save({ put, remove }: { put: Map<string, unknown>; remove: Set<string> }) {
     if (put.size === 0 && remove.size === 0) return;
-    // One statement for both (a statement is all-or-nothing), so a server that stops between what is written and what is forgotten
-    // cannot keep one and lose the other: a friendship ended, an account deleted, would come back with the next start.
     await this.db.query(
       `with forgotten as (delete from ${this.table} where key = any($3::text[])) insert into ${this.table} (key, value) select * from unnest($1::text[], $2::jsonb[]) on conflict (key) do update set value = excluded.value`,
       [[...put.keys()], [...put.values()].map((value) => JSON.stringify(value)), [...remove]],
@@ -110,12 +90,6 @@ export class PostgresPersistence implements Persistence {
   }
 }
 
-/**
- * How the connection to a database is encrypted. Hosted databases (Neon, Supabase, Render) want TLS; a local one usually does not (`sslmode` in the URL,
- * or a local address, decides). With `DATABASE_CA_FILE` (the provider's root certificate: Supabase's is `prod-ca-2021.crt`) whoever answers has to show a
- * certificate of that root for the database's own name, or nothing is sent; without it the connection is encrypted but whoever answers is believed.
- * A file that cannot be read stops the server: it was asked for, and going on unchecked would hide that.
- */
 export function databaseTls(env: NodeJS.ProcessEnv): { ca?: string; rejectUnauthorized: boolean } | undefined {
   const url = env.DATABASE_URL ?? "";
   if (/sslmode=(disable|allow)|localhost|127\.0\.0\.1/.test(url)) return undefined;
@@ -123,10 +97,6 @@ export function databaseTls(env: NodeJS.ProcessEnv): { ca?: string; rejectUnauth
   return { ca: readFileSync(env.DATABASE_CA_FILE, "utf8"), rejectUnauthorized: true };
 }
 
-/**
- * Pick the home from the environment: `DATABASE_URL` (Postgres), else `DATA_DIR` (a folder; `memory` means nowhere), else a
- * `data` folder next to where the server was started.
- */
 export async function persistenceFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   log: { warn(message: string): void } = console,
@@ -136,11 +106,9 @@ export async function persistenceFromEnv(
     const ssl = databaseTls(env);
     if (ssl && !ssl.rejectUnauthorized) log.warn("Postgres: the connection is encrypted but the database's certificate is not checked: set DATABASE_CA_FILE to the provider's root certificate.");
     const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 4, ssl });
-    // A database that sleeps (Neon's free one does after a few quiet minutes) drops idle connections; without this that would crash the server.
     pool.on("error", (error) => log.warn(`Postgres: ${error.message}`));
     return { persistence: new PostgresPersistence(pool), describe: "Postgres (DATABASE_URL)", kind: "postgres" };
   }
-  // A free Render instance starts from a clean disk at every deploy and restart; the usual mistake is to leave the file where it is.
   if (env.RENDER && env.DATA_DIR === undefined) {
     log.warn("Render wipes this server's disk on every deploy and restart, so accounts kept in a file are lost with it. Set DATABASE_URL to a Postgres (Neon or Supabase have free ones), or put DATA_DIR on a persistent disk.");
   }

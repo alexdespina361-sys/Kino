@@ -4,10 +4,6 @@ import { openDevice, openLibrary, PHONE, test } from "./helpers";
 
 const hint = (page: Page) => page.getByTestId("update-hint");
 
-/**
- * The page asks the site which build it serves, at once (a part of it that could not be downloaded asks so: `vite:preloadError`), and waits for the
- * answer. `build` is what the site says: another one is a new Kino put on the site while the page was open; none is the page's own.
- */
 async function asks(page: Page, build?: string) {
   await page.unroute("**/api/build");
   if (build) await page.route("**/api/build", (route) => route.fulfill({ json: { build }, headers: { "cache-control": "no-store" } }));
@@ -16,7 +12,6 @@ async function asks(page: Page, build?: string) {
   await answered;
 }
 
-/** A film's picture on the screen, as the player has it (or none). */
 const film = (page: Page, on: boolean) =>
   page.evaluate((show) => {
     document.getElementById("e2e-film")?.remove();
@@ -32,13 +27,10 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     const phone = await openDevice(browser, PHONE);
     await phone.goto("/");
     await phone.waitForLoadState("networkidle");
-    // (The site, as it really is, names the build of the page it served: the script of the real index.html is read, not nothing. A server that named none, or
-    // a page that read none, would never offer anything, and the step below would pass all the same: the advisor, 17 Nov.)
     const real = await phone.evaluate(async () => ((await (await fetch("/api/build", { cache: "no-store" })).json()) as { build: unknown }).build);
     const mine = await phone.evaluate(() => /\/assets\/(index-[\w-]+)\.js/.exec([...document.scripts].map((script) => script.src).find((src) => /\/assets\/index-/.test(src)) ?? "")?.[1]);
     expect(real).toMatch(/^index-[\w-]+$/);
     expect(real).toBe(mine);
-    // (The site serves this page's own build: nothing.)
     await asks(phone);
     await phone.waitForTimeout(300);
     await expect(hint(phone)).toHaveCount(0);
@@ -57,7 +49,6 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     await phone.waitForTimeout(300);
     await expect(hint(phone)).toHaveCount(0);
 
-    // (Another one: offered again; but not over a film, and once the film is put away, it is there.)
     await film(phone, true);
     await asks(phone, "index-e2eNew2");
     await phone.waitForTimeout(2500);
@@ -68,7 +59,6 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     const reloaded = phone.waitForEvent("load");
     await phone.getByTestId("update-reload").click();
     await reloaded;
-    // (The page that was loaded is the site's: it asks nothing at once.)
     await phone.waitForTimeout(500);
     await expect(hint(phone)).toHaveCount(0);
   });
@@ -81,20 +71,16 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
 
     await asks(tv, "index-e2eNew1");
     await tv.clock.fastForward(5_000);
-    await expect(hint(tv)).toHaveCount(0); // (the remote was pressed a moment ago)
-    // (The keys are the question's before any other listener of the page's, one there before the question came too - a menu's Back, the feedback form's -
-    // which a listener added as the question came would come after: the judge, 17 Nov.)
+    await expect(hint(tv)).toHaveCount(0);
     await tv.evaluate(() => window.addEventListener("keydown", () => ((window as unknown as { heard: boolean }).heard = true), true));
     await tv.clock.fastForward(60_000);
     await expect(hint(tv)).toBeVisible();
-    // (The remote is on Later: a press meant for the page reloads nothing, the judge, 17 Nov.)
     await expect(tv.getByTestId("update-later")).toBeFocused();
-    // (Each arrow goes its way: a Right meant for the next tile stays on Later; Left is Reload.)
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("update-later")).toBeFocused();
     await tv.keyboard.press("ArrowLeft");
     await expect(tv.getByTestId("update-reload")).toBeFocused();
-    await tv.keyboard.press("ArrowDown"); // (the page under it does not move)
+    await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("update-reload")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("update-later")).toBeFocused();
@@ -103,7 +89,6 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     await expect(hint(tv)).toHaveCount(0);
     expect(await tv.evaluate(() => document.activeElement?.outerHTML.slice(0, 200) ?? "")).toBe(before);
 
-    // (The next one waits while something is typed, and while a window is open on the page.)
     await asks(tv, "index-e2eNew2");
     await tv.evaluate(() => {
       const box = document.createElement("input");
@@ -128,15 +113,13 @@ test.describe("a new Kino while a page is open (the owner's ask, 17 Nov)", () =>
     await tv.clock.fastForward(3_000);
     await expect(hint(tv)).toBeVisible();
 
-    // (The first OK - the remote picked up again - answers nothing, however long the question was up; a second later, OK on Reload reloads.)
     await expect(tv.getByTestId("update-later")).toBeFocused();
     await tv.clock.fastForward(5_000);
-    // (The page's clock stands still from here: "within its second" does not hang on how fast this machine is, the judge, 17 Nov.)
     await tv.clock.pauseAt((await tv.evaluate(() => Date.now())) + 100);
     await tv.keyboard.press("Enter");
     await expect(hint(tv)).toBeVisible();
     await tv.keyboard.press("ArrowLeft");
-    await tv.keyboard.press("Enter"); // (within its second: nothing)
+    await tv.keyboard.press("Enter");
     await expect(hint(tv)).toBeVisible();
     await tv.clock.fastForward(1_500);
     await expect(tv.getByTestId("update-reload")).toBeFocused();

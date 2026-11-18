@@ -11,12 +11,6 @@ import type { Cleared } from "./cleared";
 import { inboxToShow, planLines, planStatus, type PlanStatus } from "./plans";
 import { activityHint, bothWant, entriesOfList, entryOfActivity, entryOfRecommendation, friendHeadline, friendLine, listsOf, myScoreFor, nameOf, ratedBy, scoresByTitle, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
-/**
- * What the TV's friends pages are made of, worked out from what the server says of the friends: pure, like tv/pages.ts, so what
- * appears where can be tested without a screen. Browse.tsx draws it and walks it with the remote.
- */
-
-/** A friend's invitation to a watch party that is on now: pressing it joins. (Its title is short: the banner has room for one line.) */
 const entryOfParty = (item: PartyInvitation, from: string, now: number): Entry => ({
   id: `party:${item.id}`,
   title: t("friends.partyOf", { name: from }),
@@ -26,7 +20,6 @@ const entryOfParty = (item: PartyInvitation, from: string, now: number): Entry =
   note: `${formatCode(item.code)} · ${ago(item.at, now, getLanguage())}`,
 });
 
-/** ...one that has ended: pressing it asks the friend to watch together instead (only offered for a friend who tells what they watch). */
 const entryOfEndedParty = (item: PartyInvitation, from: Friend, now: number): Entry => ({
   id: `party:${item.id}`,
   title: t("friends.partyOf", { name: from.name }),
@@ -36,7 +29,6 @@ const entryOfEndedParty = (item: PartyInvitation, from: Friend, now: number): En
   note: `${t("friends.partyOver")} · ${ago(item.at, now, getLanguage())}`,
 });
 
-/** A friend's request to watch together: pressing it starts a party, and invites them to it. */
 const entryOfRequest = (item: TogetherRequest, from: string, now: number): Entry => ({
   id: `together:${item.id}`,
   title: t("friends.togetherOf", { name: from }),
@@ -46,18 +38,12 @@ const entryOfRequest = (item: TogetherRequest, from: string, now: number): Entry
   note: ago(item.at, now, getLanguage()),
 });
 
-/**
- * A plan to watch together, as a tile: pressing it asks the question (yes or no) or tells the news. One whose time has come starts the party instead,
- * as a friend's request for one does.
- */
 const entryOfPlan = (item: PlanItem, from: string, now: number): Entry => {
   const { heading, detail } = planLines(item, from, now);
   return { id: `plan:${item.id}`, title: heading, url: "", note: detail, inboxId: item.id, ...(planStatus(item, now) === "due" ? { wants: item.from } : { plan: item.id }) };
 };
-/** The plans in the order they matter: the ones whose time has come, the ones that ask, the ones that are on (the soonest first), the news that one was turned down. */
 const PLAN_ORDER: Record<PlanStatus, number> = { due: 0, asks: 1, agreed: 2, declined: 3, lapsed: 4 };
 
-/** Somebody who asked to be friends, as a tile with the picture they chose: pressing it asks whether to say yes. */
 const entryOfFriendRequest = (item: FriendRequest): Entry => ({
   id: `request:${item.from.id}`,
   title: tagLabel(item.from.name, item.from.tag),
@@ -67,10 +53,6 @@ const entryOfFriendRequest = (item: FriendRequest): Entry => ({
   note: t("friends.requestWants"),
 });
 
-/**
- * A friend, as a tile that opens their page, with the picture they chose; the line under the name is how many messages wait from them (quietly: a line, not a
- * popup), else what they are watching, else that they are online or when they last were, else since when they are friends.
- */
 const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: number, unread = 0): Entry => ({
   id: `friend:${friend.id}`,
   title: friend.name,
@@ -81,7 +63,6 @@ const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: n
   note: (unread > 0 ? t("chat.unreadShort", { count: unread }) : friendLine(friend, activity, now)) || t("friends.since", { day: formatDay(friend.since, getLanguage()) }),
 });
 
-/** A friend who wrote, as a line of the bell: pressing it opens the chat with them. */
 const entryOfChat = (friend: Friend, count: number): Entry => ({
   id: `chat:${friend.id}`,
   title: t("chat.unread", { count, name: friend.name }),
@@ -90,33 +71,15 @@ const entryOfChat = (friend: Friend, count: number): Entry => ({
   avatar: friend.avatar,
 });
 
-/** The last two tiles of the friends row: they open a page of their own over the library. */
 const addTile = (): Entry => ({ id: "add-friend", title: t("friends.add"), url: "", action: "addFriend" });
 const settingsTile = (): Entry => ({ id: "friend-settings", title: t("friends.settingsTile"), url: "", action: "friendSettings" });
-/** "Turn on: Share what I watch with friends": what is missing from the row of what they watch, and the way to the switch that makes it appear. */
 const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGive"), action: "friendSettings" });
 
-/**
- * The rows of the friends page, the friends first: the friends themselves (with the tiles to add one and to choose what is shared), then what waits for an
- * answer (the requests to be friends, invitations to the watch parties that are on, and the ones that are over from a friend who can be asked for another,
- * requests to watch together, plans to watch together, what friends sent), then a row of its own for what each of the friends who watched most lately
- * watched. Before the server has answered there are only the first row's last two tiles.
- * While this profile does not share what it watches (`iGet`: the one thing that is off until somebody turns it on, and what makes the rows of what friends
- * watch never appear, as a profile hears them while it shares its own) a last row has a tile that says so and opens the settings.
- */
-/** The rows of what waits for an answer (the bell lists them too): the page puts them under one heading, "Waiting for you", and the rows after them are what is not waiting. */
 const ASKING_ROWS: readonly string[] = ["friend-requests", "friend-parties", "friend-plans", "friend-sent"];
 
-/** How many friends get a row of what they watched: the ones who watched most lately (the others keep the line under their name, and their page). */
 export const FRIEND_ROWS = 3;
-/** Past every place a friend can have in a list (a friend who has none comes after the ones who do). */
 const NO_PLACE = 1_000_000;
 
-/**
- * The friends in the order the pages show them: the ones who wrote first (the newest message first), then the ones who watched something lately (the newest
- * first), then the others by name, and a friend who turned friends off last. Whether somebody is online is a dot and never a place: it flips every minute or
- * so, and the tiles would move under the remote.
- */
 export function friendOrder(state: FriendsState | null): Friend[] {
   const wrote = new Map(chatWaiting(state).map((notice, place) => [notice.friend, place]));
   const lately = new Map<string, number>();
@@ -130,7 +93,6 @@ export function friendOrder(state: FriendsState | null): Friend[] {
   });
 }
 
-/** The friends who watched lately (the one who watched most lately first), each with what they watched (the newest first); only the first few get a row of their own. */
 export function watchedLately(friends: readonly Friend[], activity: readonly ActivityItem[]): Array<{ friend: Friend; items: ActivityItem[] }> {
   const items = new Map<string, ActivityItem[]>();
   for (const item of activity) items.set(item.friend, [...(items.get(item.friend) ?? []), item]);
@@ -142,12 +104,10 @@ export function watchedLately(friends: readonly Friend[], activity: readonly Act
     .slice(0, FRIEND_ROWS);
 }
 
-/** What a friend watched lately, a row to each of the first few: their name is in the title, so the tiles need not say it again. */
 function watchedRows(friends: readonly Friend[], activity: readonly ActivityItem[], now: number): HomeRow[] {
   return watchedLately(friends, activity).map(({ friend, items }): HomeRow => ({ id: `friend-watched:${friend.id}`, layout: "wide", title: t("friends.watchedBy", { name: friend.name }), entries: items.map((item) => entryOfActivity(item, "", now)) }));
 }
 
-/** What the friends page says under its name: how many friends, and how many of them are online now (or how to make the first). */
 export function friendsSummary(state: FriendsState | null): string {
   const friends = state?.friends ?? [];
   if (friends.length === 0) return t("friends.none");
@@ -161,7 +121,6 @@ export function friendRows(state: FriendsState | null, now: number, iGet = true)
   const inbox = state?.inbox ?? [];
   const activity = state?.activity ?? [];
   const requests = state?.requests ?? [];
-  // (The friends are the first row, so that the remote starts on them: what waits for an answer is in the bell, and a row's worth of it is the next thing under them.)
   const rows: HomeRow[] = [{ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friendOrder(state).map((friend) => entryOfFriend(friend, activity, now, waitingFrom(state, friend.id))), addTile(), settingsTile()] }];
 
   if (requests.length > 0) rows.push({ id: "friend-requests", layout: "categories", title: t("friends.requests"), entries: requests.map(entryOfFriendRequest) });
@@ -185,34 +144,23 @@ export function friendRows(state: FriendsState | null, now: number, iGet = true)
 
   rows.push(...watchedRows(friends, activity, now));
 
-  // (the last row: it is a reminder, and a friend's page says it again)
   if (activity.length === 0 && !iGet && friends.some((friend) => friend.on)) rows.push({ id: "friend-activity-off", layout: "categories", title: t("friends.activity"), entries: [activityOffTile()] });
   return rows.map((row) => (ASKING_ROWS.includes(row.id) ? { ...row, group: t("bell.waiting") } : row));
 }
 
-/** A line of the TV's bell: the entry that pressing it acts on (the friends page's own), and what the line says. */
 export interface BellRow {
   entry: Entry;
   heading: string;
   detail?: string | undefined;
-  /** The picture of the friend it is about, where there is one. */
   avatar?: Entry["avatar"];
-  /** What a friend watched, for a line that says so: clearing the line is remembered by it (friends/cleared.ts). */
   activity?: ActivityItem;
-  /** Something new of a title the profile watches (titleNotices/notices.ts): the notice that clearing the line takes away. Its heading is the title's name, shown in the viewer's language. */
   notice?: string;
 }
 
-/**
- * What the bell lists on a TV: what waits for an answer (the friends page's own entries for requests to be friends, invitations, requests to watch
- * together and titles friends sent, a few of them), the friends made since it was last opened (`seenAt`: each line opens the friend's page) and what
- * friends watch lately, with how many waiting things are left for the friends page.
- */
 export function bellRows(state: FriendsState | null, now: number, cleared: Cleared = {}, seenAt = 0): { waiting: BellRow[]; joined: BellRow[]; lately: BellRow[]; more: number } {
   if (!state) return { waiting: [], joined: [], lately: [], more: 0 };
   const rows = friendRows(state, now);
   const asking = rows.filter((row) => ASKING_ROWS.includes(row.id)).flatMap((row) => row.entries);
-  // (The friends who wrote come after what asks for an answer, with the same few places: see `bellView`.)
   const wrote = chatWaiting(state).flatMap(({ friend: id, count }) => {
     const friend = state.friends.find((each) => each.id === id);
     return friend ? [entryOfChat(friend, count)] : [];
@@ -233,24 +181,14 @@ export function bellRows(state: FriendsState | null, now: number, cleared: Clear
   };
 }
 
-/** What was asked of the server for a friend's page: nothing yet (null), the answer, or why there is none. */
 export type Asked<T> = { data?: T; problem?: string } | null;
 
-/** What this profile keeps itself, for what it has in common with a friend: the titles in its lists, and its ratings (none while ratings are off). */
 export interface Mine {
   list: readonly { url: string }[];
   ratings: readonly Pick<LiveRating, "url" | "season" | "score">[];
 }
 const NOTHING_MINE: Mine = { list: [], ratings: [] };
 
-/**
- * A friend's page: the titles in the lists they keep (each list a section of its own, under its name, one under the other) or the ones they rated, the newest first.
- * Null for a friend who is gone. When there is nothing to show, `empty` says why: not shared, turned off, still asked, or nothing yet.
- * Under the name: what they are watching, whether they are online or when they last were, and since when they are friends; and, when what they watch is not
- * shown, the line that says why.
- * What the two have in common comes first: the titles both keep in a list are a section of their own above the friend's lists, and a title both rated says
- * this profile's score after the friend's.
- */
 export function friendGrid(view: View, state: FriendsState | null, lists: Asked<FriendLists>, ratings: Asked<FriendRatings>, iGet = true, now = Date.now(), mine: Mine = NOTHING_MINE): GridPage | null {
   if (view.kind !== "friend") return null;
   const friend = state?.friends.find((each) => each.id === view.id);
@@ -266,7 +204,6 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
     if (!friend.lists) return none(t("friends.notSharingLists", { name: friend.name }));
     if (!lists) return none(t("common.loading"));
     if (!lists.data) return none(lists.problem ?? t("common.loading"));
-    // (Each list is a section under its name, one under the other. A title in two lists is in both, so its id says which. The titles both keep come first.)
     const theirs = listsOf(lists.data);
     const both = bothWant(theirs, mine.list);
     const shown = [

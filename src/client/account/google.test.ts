@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deleteAfterGoogle, googleStartUrl, takeGoogleOutcome } from "./google";
 
-/** A page at `address`, with the history and the tab's storage a browser gives it (what the code changes is kept, to be looked at). */
 function page(address: string, storage: Map<string, string> | null = new Map()) {
   const at = { href: new URL(address, "https://kino.test").href };
   const replaced: string[] = [];
@@ -63,7 +62,7 @@ describe("takeGoogleOutcome", () => {
     expect(takeGoogleOutcome()).toBe("denied");
     expect(replaced).toEqual(["/tv?role=tv#top"]);
     expect(address()).toBe("https://kino.test/tv?role=tv#top");
-    expect(takeGoogleOutcome()).toBeNull(); // (a reload says nothing again)
+    expect(takeGoogleOutcome()).toBeNull();
   });
 
   it("knows every word the server says", () => {

@@ -8,18 +8,13 @@ import { describeError } from "./errors";
 
 interface GridProps {
   profiles: readonly Profile[];
-  /** The profile in use, marked with a ring. */
   current?: string | null | undefined;
-  /** "pick": choosing who is watching. "manage": each one opens its editor instead. */
   mode?: "pick" | "manage";
   onPick: (profile: Profile) => void;
-  /** Shown as a "new profile" tile while there is room for one. */
   onAdd?: () => void;
-  /** On the TV every tile is reached with the remote's arrow keys. */
   tv?: boolean;
 }
 
-/** "Who's watching?": the profiles of an account as big pictures with names, and a tile to add one while there is room. */
 export function ProfileGrid({ profiles, current, mode = "pick", onPick, onAdd, tv = false }: GridProps) {
   const t = useT();
   const nav = tv ? { "data-nav": true } : {};
@@ -65,24 +60,16 @@ export function ProfileGrid({ profiles, current, mode = "pick", onPick, onAdd, t
 }
 
 interface EditorProps {
-  /** Absent: a new profile. */
   profile?: Profile | undefined;
-  /** The pictures already taken by the account's other profiles (a new profile starts on the first free one). */
   taken?: readonly AvatarId[];
   onSave: (name: string, avatar: AvatarId) => Promise<void>;
-  /** Absent where there is nothing to go back to (a profile being set up for the first time: see ProfileSetup.tsx): no Cancel button. */
   onCancel?: (() => void) | undefined;
-  /** What the button that saves says, when that is not "Save". */
   saveLabel?: string | undefined;
-  /** Absent for the only profile an account has: it can't be removed. */
   onDelete?: (() => Promise<void>) | undefined;
-  /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and the buttons look like the TV's. */
   tv?: boolean;
-  /** The page's title, on the TV: it sits in the form's own grid, over the fields, so that it starts where they do. */
   heading?: string;
 }
 
-/** The name and picture of one profile. */
 export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete, tv = false, heading, saveLabel }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(profile?.name ?? "");
@@ -90,7 +77,7 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  useBackFirst(tv && confirming ? () => setConfirming(false) : undefined); // (the remote's Back says no to the question, and leaves the page only the next time)
+  useBackFirst(tv && confirming ? () => setConfirming(false) : undefined);
   const nav = tv ? { "data-nav": true } : {};
   const buttonClass = (kind: "main" | "plain" | "danger") =>
     tv ? `tv-action${kind === "main" ? " tv-action-primary" : kind === "danger" ? " tv-action-danger" : ""}` : `btn${kind === "main" ? " btn-red" : kind === "danger" ? " btn-danger" : ""}`;
@@ -175,7 +162,6 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete,
               <button type="button" className={buttonClass("danger")} disabled={busy} onClick={() => void run(onDelete)} data-testid="profile-delete-confirm" {...nav}>
                 <TrashIcon /> {t("common.delete")}
               </button>
-              {/* The button that was pressed is gone: on the TV the remote lands on the safe answer. */}
               <button type="button" className={buttonClass("plain")} disabled={busy} onClick={() => setConfirming(false)} data-testid="profile-delete-cancel" autoFocus={tv} {...nav}>
                 {t("common.cancel")}
               </button>

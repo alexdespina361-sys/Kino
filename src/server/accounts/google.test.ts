@@ -8,24 +8,15 @@ import { googleFromEnv, postForm, profileNameOf, REAUTH_MS, type GoogleConfig } 
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
 
-/**
- * "Continue with Google" against a Google of this file's own: a server on 127.0.0.1 that answers the token endpoint the way Google does (and the ways it should not),
- * for codes this file gives out as Google's sign-in page would. Nothing here reaches the real Google: the address of its sign-in page is only read, never visited.
- */
-
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 const CLIENT_ID = "kino-test-client.apps.example";
 const CLIENT_SECRET = "test-client-secret-that-is-not-real";
 const SITE = "kino.test";
 const OTHER = "kino-other.test";
 const FROM_GOOGLE = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
-/** What the phone's browser says of a page the Android app opens in it (a Custom Tab, with the app as its referrer). */
 const FROM_THE_APP = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
-/** Google's number for a person is about 21 digits: these cannot turn up in an answer by chance. */
 const ANA = "110248000000000000000001";
 const BEN = "110248000000000000000002";
-
-/* ------------------------------ a Google of our own ------------------------------ */
 
 type Answer = "ok" | "status" | "slow" | "huge" | "html" | "broken" | "redirect" | "noToken";
 interface Issued {
@@ -42,13 +33,10 @@ class FakeGoogle {
   server!: Server;
   origin = "";
   answer: Answer = "ok";
-  /** Google takes a code once; a test that has to see what this server does with one twice turns that off. */
   reusable = false;
   readonly codes = new Map<string, Issued>();
   readonly forms: URLSearchParams[] = [];
-  /** How often the address a redirect of the token endpoint points to was asked for (it must never be: a redirect is not followed). */
   redirectedTo = 0;
-  /** What must never reach a browser: the client's secret, the codes, the verifiers, the tokens and the people's numbers. */
   readonly secrets = new Set<string>([CLIENT_SECRET]);
 
   async open() {
@@ -57,7 +45,6 @@ class FakeGoogle {
     this.origin = `http://127.0.0.1:${(this.server.address() as AddressInfo).port}`;
   }
 
-  /** What Google's sign-in page does when the person picks their account: a code for this flow. */
   issue(issued: Issued): string {
     const code = `4/0A${randomBytes(18).toString("base64url")}`;
     this.codes.set(code, issued);
@@ -104,7 +91,6 @@ class FakeGoogle {
       case "slow":
         return void setTimeout(() => response.writeHead(200, json).end(body), 1500);
       case "huge":
-        // (Sent in pieces with no length said, as a stream that does not end where it should would be.)
         response.writeHead(200, json);
         response.write(body.slice(0, -1));
         response.write(`, "padding": "${"x".repeat(70 * 1024)}"`);
@@ -125,11 +111,8 @@ const google = new FakeGoogle();
 beforeAll(() => google.open());
 afterAll(() => new Promise<void>((resolve) => google.server.close(() => resolve())));
 
-/* ------------------------------ the site, and browsers ------------------------------ */
-
 const clock = { now: 0 };
 const apps: FastifyInstance[] = [];
-/** Every answer a browser of these tests was given, to look for what must never be in one. */
 const answers: LightMyRequestResponse[] = [];
 beforeEach(() => {
   clock.now = Date.UTC(2026, 10, 5, 12);
@@ -167,7 +150,6 @@ async function site(options: Omit<AppOptions, "google"> & { google?: GoogleConfi
 let addresses = 0;
 const nextAddress = () => `203.0.${(++addresses >> 8) & 255}.${addresses & 255}`;
 
-/** One browser, at one address of the site: it keeps its cookies (every one goes everywhere, which the server does not mind) and comes from an address of its own. */
 class Browser {
   readonly jar = new Map<string, string>();
   constructor(
@@ -227,13 +209,10 @@ interface Trip {
   device?: string;
   next?: string;
   sub?: string;
-  /** Claims of the ID token instead of (or besides) the right ones; `undefined` leaves one out. */
   claims?: Record<string, unknown>;
-  /** Something that happens while the person is at Google. */
   meanwhile?: () => void | Promise<void>;
 }
 
-/** A sign-in with Google, the way a browser goes through it: the button, Google's page (where the person picks their account), and the way back. */
 async function viaGoogle(browser: Browser, trip: Trip = {}) {
   const query = new URLSearchParams({ device: trip.device ?? "remote", next: trip.next ?? "/", ...(trip.mode ? { mode: trip.mode } : {}) });
   const start = await browser.get(`/api/auth/google/start?${query}`, { "sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate" });
@@ -248,7 +227,6 @@ async function viaGoogle(browser: Browser, trip: Trip = {}) {
   return { start, to, state, code, back, where: String(back.headers.location) };
 }
 
-/** A browser signed in with a password, on an account of that name. */
 async function withPassword(app: FastifyInstance, login = "robert", password = "correct horse") {
   const browser = new Browser(app);
   expect((await browser.post("/api/auth/register", { email: login, password })).statusCode).toBe(201);
@@ -256,8 +234,6 @@ async function withPassword(app: FastifyInstance, login = "robert", password = "
 }
 
 const meOf = async (browser: Browser) => (await browser.get("/api/me")).data.me;
-
-/* ------------------------------ the tests ------------------------------ */
 
 describe("signing in with Google", () => {
   it("makes an account for a new Google account: the browser goes to Google with a flow of its own and comes back signed in, with a profile named after the person", async () => {
@@ -282,7 +258,6 @@ describe("signing in with Google", () => {
     expect(start.headers["set-cookie"]).toBe(`kino_oauth=${state}; Path=/api/auth/google; HttpOnly; SameSite=Lax; Max-Age=600; Secure`);
     expect(start.headers["cache-control"]).toBe("no-store");
 
-    // What went to the token endpoint: the code with this client's secret and the verifier of the challenge Google was shown.
     const [form] = google.forms;
     expect(form && Object.fromEntries(form)).toEqual({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code: expect.any(String), code_verifier: expect.stringMatching(/^[\w-]{43}$/), redirect_uri: `https://${SITE}/api/auth/google/callback`, grant_type: "authorization_code" });
     expect(s256(form!.get("code_verifier")!)).toBe(to.searchParams.get("code_challenge"));
@@ -297,7 +272,6 @@ describe("signing in with Google", () => {
     expect(me.account).toEqual({ id: expect.any(String), email: expect.stringMatching(/^g-[a-z2-7]{12}$/), google: true, googleOnly: true });
     expect(me.profiles).toMatchObject([{ name: "Ana", avatar: "fox", tag: 1 }]);
     expect((await browser.get("/api/sessions")).data).toMatchObject([{ kind: "remote", current: true }]);
-    // Of the person, only Google's number for them is kept: not their address, their names or their picture.
     const kept = JSON.stringify(store.getAccount(me.account.id));
     expect(kept).toContain(`"google":{"sub":"${ANA}","only":true}`);
     for (const word of ["gmail", "Pop", "picture", "email_verified"]) expect(kept).not.toContain(word);
@@ -307,7 +281,7 @@ describe("signing in with Google", () => {
     const { app, store } = await site();
     const phone = new Browser(app);
     await viaGoogle(phone);
-    clock.now += 1000; // (so the list of devices has the TV first)
+    clock.now += 1000;
     const tv = new Browser(app);
     const { where } = await viaGoogle(tv, { device: "tv", next: "/tv" });
     expect(where).toBe("/tv");
@@ -344,7 +318,6 @@ describe("signing in with Google", () => {
     await viaGoogle(elsewhere);
     expect((await meOf(elsewhere)).account.id).toBe(me.account.id);
     expect((await new Browser(app).post("/api/auth/login", { email: "robert", password: "correct horse" })).statusCode).toBe(200);
-    // (Connecting it again is no change.)
     expect((await viaGoogle(browser, { mode: "link" })).where).toBe("/?google=linked");
   });
 
@@ -376,7 +349,6 @@ describe("signing in with Google", () => {
     const browser = new Browser(app);
     await viaGoogle(browser);
     expect((await browser.post("/api/me/child-pin", { next: "2580" })).statusCode).toBe(200);
-    // (No password anybody knows: an empty one, or any, is no proof.)
     expect((await browser.post("/api/me/child-pin", { next: null, password: "" })).data).toEqual({ error: "reauth_required" });
     expect((await browser.post("/api/me/child-pin", { next: null })).statusCode).toBe(403);
 
@@ -384,8 +356,7 @@ describe("signing in with Google", () => {
     const off = await browser.post("/api/me/child-pin", { next: null });
     expect(off.statusCode).toBe(200);
     expect(off.data.account.childPin).toBeUndefined();
-    expect((await browser.post("/api/me/delete", {})).data).toEqual({ error: "reauth_required" }); // (the proof was for the PIN)
-    // (The PIN itself still works as a proof, as for anybody.)
+    expect((await browser.post("/api/me/delete", {})).data).toEqual({ error: "reauth_required" });
     await browser.post("/api/me/child-pin", { next: "1357" });
     expect((await browser.post("/api/me/child-pin", { next: "2468", pin: "1357" })).statusCode).toBe(200);
   });
@@ -416,7 +387,6 @@ describe("signing in with Google", () => {
 describe("what a sign-in with Google does not take", () => {
   it("a way back without the cookie of the browser that started it, or with another one's: nothing is made, and the flow is used up", async () => {
     const { app, store } = await site();
-    // Somebody starts a sign-in with their own Google account and sends the way back, code and all, to somebody else.
     const attacker = new Browser(app);
     const start = await attacker.get("/api/auth/google/start?device=remote&next=/");
     const to = new URL(String(start.headers.location));
@@ -427,11 +397,9 @@ describe("what a sign-in with Google does not take", () => {
     const victim = new Browser(app);
     expect((await victim.get(link, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
     expect(await meOf(victim)).toBeNull();
-    // (Their own flow's cookie is no better.)
     await victim.get("/api/auth/google/start?device=remote&next=/");
     expect(victim.jar.get("kino_oauth")).not.toBe(state);
     expect((await victim.get(link, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
-    // And the flow is gone: not even the browser that started it can finish it now.
     expect((await attacker.get(link, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
     expect(store.countAccounts()).toBe(0);
     expect(google.forms).toHaveLength(0);
@@ -443,7 +411,7 @@ describe("what a sign-in with Google does not take", () => {
     browser.jar.set("kino_oauth", "made-up-state");
     expect((await browser.get("/api/auth/google/callback?state=made-up-state&code=4/0Amadeup", FROM_GOOGLE)).headers.location).toBe("/?google=failed");
 
-    google.reusable = true; // (only this server's own memory of the flow can turn the second one away)
+    google.reusable = true;
     const used = await viaGoogle(browser);
     expect(used.where).toBe("/");
     await browser.post("/api/auth/logout");
@@ -483,7 +451,6 @@ describe("what a sign-in with Google does not take", () => {
     expect(store.countAccounts()).toBe(2);
   });
 
-  // (RIGHT is the right claims for the flow: a token is three parts whatever is in them, and its second part is an object.)
   it.each(["not-a-token", "header.RIGHT", "header.RIGHT.signature.more", `header.${b64("null")}.signature`, `header.${b64("[]")}.signature`, "header.!!.signature"])(
     "an ID token that is not one (%s) is not taken",
     async (shape) => {
@@ -589,27 +556,26 @@ describe("what a sign-in with Google does not take", () => {
     const first = new Browser(full.app);
     expect((await viaGoogle(first)).where).toBe("/");
     expect((await viaGoogle(new Browser(full.app), { sub: BEN })).where).toBe("/?google=closed");
-    expect((await viaGoogle(new Browser(full.app))).where).toBe("/"); // (Ana's account is there: she signs in)
+    expect((await viaGoogle(new Browser(full.app))).where).toBe("/");
     expect(full.store.countAccounts()).toBe(1);
 
     const busy = await site({ signUpsPerHour: 1 });
     const address = nextAddress();
     expect((await viaGoogle(new Browser(busy.app, SITE, true, address))).where).toBe("/");
     expect((await viaGoogle(new Browser(busy.app, SITE, true, address), { sub: BEN })).where).toBe("/?google=busy");
-    expect((await new Browser(busy.app, SITE, true, address).post("/api/auth/register", { email: "carol", password: "x" })).statusCode).toBe(429); // (one count for both)
+    expect((await new Browser(busy.app, SITE, true, address).post("/api/auth/register", { email: "carol", password: "x" })).statusCode).toBe(429);
     expect(busy.store.countAccounts()).toBe(1);
   });
 
   it("connects a Google account to one account only", async () => {
     const { app, store } = await site();
-    await viaGoogle(new Browser(app)); // (Ana's Google account made an account of its own)
+    await viaGoogle(new Browser(app));
     const robert = await withPassword(app);
     expect((await viaGoogle(robert, { mode: "link" })).where).toBe("/?google=taken");
     expect((await meOf(robert)).account.google).toBeUndefined();
     expect((await viaGoogle(robert, { mode: "link", sub: BEN })).where).toBe("/?google=linked");
     const carol = await withPassword(app, "carol");
     expect((await viaGoogle(carol, { mode: "link", sub: BEN })).where).toBe("/?google=taken");
-    // (And an account that has one is not given a second.)
     expect((await viaGoogle(robert, { mode: "link", sub: "110248000000000000000003" })).where).toBe("/?google=failed");
     expect(store.findByGoogle(BEN)?.email).toBe("robert");
     expect(store.findByGoogle("110248000000000000000003")).toBeUndefined();
@@ -634,7 +600,7 @@ describe("what a sign-in with Google does not take", () => {
     const anaCookie = ana.jar.get("kino_session")!;
     expect((await viaGoogle(ana, { mode: "reauth", meanwhile: () => void ana.jar.set("kino_session", carolCookie) })).where).toBe("/?google=failed");
     ana.jar.set("kino_session", anaCookie);
-    expect((await viaGoogle(ana, { mode: "reauth", sub: BEN })).where).toBe("/?google=failed"); // (another Google account than the one it was made with)
+    expect((await viaGoogle(ana, { mode: "reauth", sub: BEN })).where).toBe("/?google=failed");
     expect((await ana.post("/api/me/delete")).statusCode).toBe(403);
     expect(google.forms.length).toBeGreaterThan(0);
   });
@@ -660,10 +626,8 @@ describe("what a sign-in with Google does not take", () => {
     expect((await new Browser(app).get("/api/auth/google/start?device=remote&next=/")).headers.location).toBe("/?google=busy");
     const code = google.issue({ challenge: to.searchParams.get("code_challenge")!, redirectUri: to.searchParams.get("redirect_uri")!, claims: claimsFor(to.searchParams.get("nonce")!, ANA) });
     expect((await first.get(`/api/auth/google/callback?state=${to.searchParams.get("state")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE)).headers.location).toBe("/");
-    // (the first one is done: its place is free)
     expect((await new Browser(app).get("/api/auth/google/start?device=remote&next=/")).headers.location).toMatch(/^https:\/\/accounts\.google\.com\//);
     expect((await new Browser(app).get("/api/auth/google/start?device=remote&next=/")).headers.location).toBe("/?google=busy");
-    // (ten minutes on, the ones nobody finished have run out)
     clock.now += 10 * 60_000 + 1;
     expect((await viaGoogle(new Browser(app))).where).toBe("/");
   }, 30_000);
@@ -677,7 +641,6 @@ describe("what a sign-in with Google does not take", () => {
     const theirs = await other.get("/api/auth/google/start?device=remote&next=/");
     const to = new URL(String(theirs.headers.location));
     for (let n = 0; n < 6; n++) await browser.get("/api/auth/google/start?device=remote&next=/");
-    // (the browser's first was let go: its way back fails; the other address's is still there)
     browser.jar.set("kino_oauth", states[0]!);
     expect((await browser.get(`/api/auth/google/callback?state=${states[0]}&code=x`, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
     const code = google.issue({ challenge: to.searchParams.get("code_challenge")!, redirectUri: to.searchParams.get("redirect_uri")!, claims: claimsFor(to.searchParams.get("nonce")!, ANA) });
@@ -728,7 +691,6 @@ describe("what a sign-in with Google does not take", () => {
   });
 });
 
-/** The token endpoint answers once with this in place of the ID token it would make. */
 async function withToken<T>(token: string, run: () => Promise<T>): Promise<T> {
   const handle = google.server.listeners("request")[0] as (request: IncomingMessage, response: ServerResponse) => void;
   google.server.removeAllListeners("request");
@@ -783,7 +745,7 @@ describe("googleFromEnv", () => {
     const said: string[] = [];
     const warn = (message: string) => void said.push(message);
     expect(googleFromEnv({}, warn)).toBeUndefined();
-    expect(said).toEqual([]); // (nothing set is nothing to say)
+    expect(said).toEqual([]);
     expect(googleFromEnv(all, warn)).toEqual({ clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, redirectUris: [`https://${SITE}/api/auth/google/callback`, `https://${OTHER}/api/auth/google/callback`] });
     for (const missing of Object.keys(all)) expect(googleFromEnv({ ...all, [missing]: " " }, warn), missing).toBeUndefined();
     expect(said.length).toBeGreaterThanOrEqual(3);
@@ -841,19 +803,12 @@ describe("profileNameOf", () => {
   });
 });
 
-/* ------------------------------ the Android app's round trip ------------------------------ */
-
 describe("signing in with Google from the Android app", () => {
-  /** The app's secret and its hash, as android/.../GoogleTrip.java makes them. */
   const appSecret = () => {
     const verifier = randomBytes(32).toString("base64url");
     return { verifier, challenge: s256(verifier) };
   };
 
-  /**
-   * The trip in the phone's browser (a Custom Tab: cookies of its own, no session), from the start with `app=` (or a ticket) to the way back to the app. Chrome says
-   * the start comes from another site: the app that opened the tab is its referrer (the owner's phone, 17 Nov: `{"error":"cross_site"}`).
-   */
   async function viaAppBrowser(app: FastifyInstance, start: string, sub = ANA, from: Record<string, string> = FROM_THE_APP) {
     const tab = new Browser(app);
     const first = await tab.get(start, from);
@@ -867,12 +822,10 @@ describe("signing in with Google from the Android app", () => {
     const back = await tab.get(`/api/auth/google/callback?state=${encodeURIComponent(to.searchParams.get("state") ?? "")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE);
     return { tab, back, where: String(back.headers.location) };
   }
-  /** The code of the way back to the app: an intent for the app's package alone (no other app that opens `kino4tv:` addresses can be given it), else the site. */
   const handoffOf = (where: string) => {
     const url = new URL(where);
     expect(`${url.protocol}//${url.host}${url.pathname}`).toBe("intent://google");
     expect(url.hash.slice(1).split(";")).toEqual(["Intent", "scheme=kino4tv", "package=com.kino4tv.app", expect.stringMatching(/^S\.browser_fallback_url=https?%3A%2F%2F[^;%]+%2F(tv)?$/), "end"]);
-    // (and the start of the app's hash, which the app checks before it uses up its secret)
     expect(url.searchParams.get("trip")).toMatch(/^[\w-]{16}$/);
     return url.searchParams.get("code") ?? "";
   };
@@ -885,18 +838,15 @@ describe("signing in with Google from the Android app", () => {
       const started = await tab.get(`/api/auth/google/start?device=remote&next=%2F&app=${challenge}`, headers);
       expect([started.statusCode, String(started.headers.location)]).toEqual([302, expect.stringMatching(/^https:\/\/accounts\.google\.com\//)]);
     }
-    // (A ticket that is not one is let in, and goes back saying so: nothing is started.)
     const stale = await tab.get(`/api/auth/google/start?ticket=${"x".repeat(43)}`, FROM_THE_APP);
     expect([stale.statusCode, stale.headers.location, stale.headers["set-cookie"]]).toEqual([302, "/?google=failed", undefined]);
     for (const [start, headers] of [
-      // not the app's trip: another mode, no hash or not one, a hash given twice
       ["/api/auth/google/start?device=remote&next=%2F", FROM_THE_APP],
       [`/api/auth/google/start?mode=link&app=${challenge}`, FROM_THE_APP],
       [`/api/auth/google/start?mode=reauth&app=${challenge}`, FROM_THE_APP],
       [`/api/auth/google/start?app=${challenge.slice(1)}`, FROM_THE_APP],
       [`/api/auth/google/start?app=${challenge}&app=${challenge}`, FROM_THE_APP],
       ["/api/auth/google/start?ticket=", FROM_THE_APP],
-      // not a page of its own
       [`/api/auth/google/start?app=${challenge}`, { ...FROM_THE_APP, "sec-fetch-dest": "iframe" }],
       [`/api/auth/google/start?app=${challenge}`, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", "sec-fetch-dest": "image" }],
       [`/api/auth/google/start?app=${challenge}`, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" }],
@@ -911,15 +861,13 @@ describe("signing in with Google from the Android app", () => {
     const { app, store } = await site();
     const { verifier, challenge } = appSecret();
     const code = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?device=remote&next=%2F&app=${challenge}`)).where);
-    expect(store.countAccounts()).toBe(0); // (Google said who it is: nothing is made yet)
+    expect(store.countAccounts()).toBe(0);
     const webview = new Browser(app);
     expect((await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`)).headers.location).toBe("/");
     expect(store.countAccounts()).toBe(1);
     expect((await meOf(webview)).profiles[0].name).toBe("Ana");
-    // (a trip of another site's: the person went through Google's chooser, the way back went to the app, which did not start it and claims nothing)
     handoffOf((await viaAppBrowser(app, `/api/auth/google/start?app=${appSecret().challenge}`, BEN)).where);
     expect(store.countAccounts()).toBe(1);
-    // (and a second trip of Ana's signs in to the account the first one made)
     const second = appSecret();
     const again = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?app=${second.challenge}`)).where);
     const other = new Browser(app);
@@ -928,14 +876,12 @@ describe("signing in with Google from the Android app", () => {
   });
 
   it("asks at the claim whether new accounts may be made, and how many from the address", async () => {
-    // (Two trips came back while there was room for one more account: the first claim takes it.)
     const full = await site({ maxAccounts: 1 });
     const [ana, ben] = [appSecret(), appSecret()];
     const fullCodes = [handoffOf((await viaAppBrowser(full.app, `/api/auth/google/start?app=${ana.challenge}`)).where), handoffOf((await viaAppBrowser(full.app, `/api/auth/google/start?app=${ben.challenge}`, BEN)).where)];
     expect((await new Browser(full.app).get(`/api/auth/google/app-claim?code=${fullCodes[0]}&verifier=${ana.verifier}`)).headers.location).toBe("/");
     expect((await new Browser(full.app).get(`/api/auth/google/app-claim?code=${fullCodes[1]}&verifier=${ben.verifier}`)).headers.location).toBe("/?google=closed");
     expect(full.store.countAccounts()).toBe(1);
-    // (The claims of one address count as its sign-ups.)
     const busy = await site({ signUpsPerHour: 1 });
     const address = nextAddress();
     const [first, second] = [appSecret(), appSecret()];
@@ -961,14 +907,13 @@ describe("signing in with Google from the Android app", () => {
     const code = handoffOf(where);
     expect(code).toMatch(/^[\w-]{43}$/);
     expect(new URL(where).searchParams.get("trip")).toBe(challenge.slice(0, 16));
-    expect(await meOf(tab)).toBeNull(); // (the browser is not signed in)
+    expect(await meOf(tab)).toBeNull();
 
     const webview = new Browser(app);
     const claimed = await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`, { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" });
     expect(claimed.statusCode).toBe(302);
     expect(claimed.headers.location).toBe("/tv");
     expect((await meOf(webview)).profiles[0].name).toBe("Ana");
-    // (good once)
     const again = new Browser(app);
     expect((await again.get(`/api/auth/google/app-claim?code=${code}&verifier=${verifier}`)).headers.location).toBe("/?google=failed");
     expect(await meOf(again)).toBeNull();
@@ -1021,7 +966,6 @@ describe("signing in with Google from the Android app", () => {
     expect(store.findByGoogle(BEN), "nothing is connected in the browser: only when the WebView claims it").toBeUndefined();
     expect((await webview.get(`/api/auth/google/app-claim?code=${handoffOf(where)}&verifier=${verifier}`)).headers.location).toBe("/?google=linked");
     expect(store.findByGoogle(BEN)?.email).toBe("robert");
-    // (The ticket is used up: a browser that brings it again is sent back saying it went wrong, and goes nowhere near Google.)
     expect((await new Browser(app).get(`/api/auth/google/start?ticket=${ticket}`)).headers.location).toBe("/?google=failed");
   });
 
@@ -1042,7 +986,6 @@ describe("signing in with Google from the Android app", () => {
   it("connects nothing for a ticket claimed by another session (even with the app's secret), or once the session that asked was signed out (the judge, 17 Nov)", async () => {
     const { app, store } = await site();
     const webview = await withPassword(app);
-    // (another session of the same account, the one a thief would have, claims with the secret: nothing, and the code is used up)
     const stolen = appSecret();
     const first = (await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: stolen.challenge })).data.ticket;
     const code = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?ticket=${first}`, BEN)).where);
@@ -1052,14 +995,12 @@ describe("signing in with Google from the Android app", () => {
     expect((await new Browser(app).get(`/api/auth/google/app-claim?code=${code}&verifier=${stolen.verifier}`)).headers.location).toBe("/?google=failed");
     expect((await webview.get(`/api/auth/google/app-claim?code=${code}&verifier=${stolen.verifier}`)).headers.location).toBe("/?google=failed");
     expect(store.findByGoogle(BEN)).toBeUndefined();
-    // (the session that asked signs out while the browser is at Google: nothing either)
     const late = appSecret();
     const second = (await webview.post("/api/auth/google/app-ticket", { mode: "link", challenge: late.challenge })).data.ticket;
     const code2 = handoffOf((await viaAppBrowser(app, `/api/auth/google/start?ticket=${second}`, BEN)).where);
     await webview.post("/api/auth/logout");
     expect((await webview.get(`/api/auth/google/app-claim?code=${code2}&verifier=${late.verifier}`)).headers.location).toBe("/?google=failed");
     expect(store.findByGoogle(BEN)).toBeUndefined();
-    // (and a reauth claimed by another session confirms nothing)
     const { app: app2, store: store2 } = await site();
     const { verifier: v1, challenge: c1 } = appSecret();
     const phone = new Browser(app2);
@@ -1087,7 +1028,6 @@ describe("signing in with Google from the Android app", () => {
 
   it("is a browser's ordinary round trip without `app=`, and `app=` that is no hash is not the app's", async () => {
     const { app } = await site();
-    // (from this site's own button: from another site, it is not let in at all, see above)
     const { where } = await viaAppBrowser(app, "/api/auth/google/start?device=remote&next=%2F&app=short", ANA, { "sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate" });
     expect(where).toBe("/");
   });

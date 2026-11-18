@@ -4,22 +4,14 @@ import { RateLimiter } from "../accounts/rateLimit";
 import type { SubsyncStore } from "./store";
 
 const MINUTE = 60_000;
-/** The most a body can be: every line of the longest file a timing may be for, with room to spare. */
 const BODY_LIMIT = 192 * 1024;
 
-/** What `/api/health` says about the shared timings: how many asks found one, how many did not, and how many timings were taken in. */
 export interface SubsyncStats {
   found: number;
   missed: number;
   stored: number;
 }
 
-/**
- * Shared subtitle timings, under /api/subsync/:key (see `shared/subsync.ts`): a screen that has timed a subtitle file to the sound leaves what it
- * did, and the next one that plays the same file on the same film starts from it. Open to every screen (a TV has no account), so what is
- * asked and what is left is kept small and slowed down per address; what is left is never trusted by the one who takes it (it checks it against
- * the sound it hears itself), which is the part that matters if somebody leaves rubbish.
- */
 export function subsyncRoutes(app: FastifyInstance, { store, stats }: { store: SubsyncStore; stats: SubsyncStats }): void {
   const reads = new RateLimiter(120, MINUTE);
   const writes = new RateLimiter(60, 10 * MINUTE, undefined, "subsync.writes");
@@ -37,11 +29,9 @@ export function subsyncRoutes(app: FastifyInstance, { store, stats }: { store: S
     const timing = await store.get(key);
     if (!timing) {
       stats.missed++;
-      // (Nobody has timed this file yet is the usual answer, so it is 204 and not 404: a browser prints every 404 in the console as an error, one for each subtitle file a screen shows.)
       return reply.code(204).header("Cache-Control", "no-store").send();
     }
     stats.found++;
-    // (A minute is enough to spare the store a screen that asks again, and short enough for what others add to reach the next one.)
     return reply.header("Cache-Control", "public, max-age=60").send(timing);
   });
 

@@ -1,22 +1,11 @@
 import { createSign } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-/**
- * Notifications to the Android app (docs/android-app.md), through Firebase Cloud Messaging's HTTP v1 API: the server signs a short JWT with the key of a service
- * account of the Firebase project, trades it at Google's token endpoint for an access token (kept until a little before it runs out), and posts each message to
- * `projects/<id>/messages:send`. Nothing here is on unless the host names the key's file (env FCM_SERVICE_ACCOUNT_FILE), which lives on the host only and never in
- * the repository; what is wrong with it is said without the key.
- *
- * A message is a data message (the app draws the notification itself, in the phone's words, and draws none while the app is open on that chat), with the high
- * priority Android needs to wake the app for it, and what it says is only who did what: never the words of a chat.
- */
-
 export const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 export const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const fcmSendUrl = (projectId: string) => `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`;
 
 const TIMEOUT_MS = 10_000;
-/** An access token is taken again this long before Google says it runs out. */
 const EARLY_MS = 5 * 60_000;
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
@@ -24,23 +13,18 @@ export interface FcmConfig {
   projectId: string;
   clientEmail: string;
   privateKey: string;
-  /** Google's, unless a test says otherwise (a fake on this machine: see `fcmFromEnv`). */
   tokenUrl: string;
   sendUrl: string;
   timeoutMs?: number;
 }
 
-/** What became of a message: `gone` is a device token Firebase no longer knows (the app was taken off, or its data cleared), which is let go. */
 export type PushResult = "sent" | "gone" | "failed";
 
 export interface PushMessage {
-  /** One device, or everybody who listens to a topic (the app's updates). */
   token?: string;
   topic?: string;
   data: Record<string, string>;
-  /** Messages with the same key wait as one while the phone is offline (each friend's chat is one). */
   collapseKey?: string;
-  /** How long Firebase keeps trying a phone that is off. */
   ttlSeconds?: number;
 }
 
@@ -48,10 +32,6 @@ export interface PushSender {
   send(message: PushMessage): Promise<PushResult>;
 }
 
-/**
- * What Firebase said was wrong, from the body of a refusal: Google's status (`NOT_FOUND`, `INVALID_ARGUMENT`, ...), Firebase's own code (`UNREGISTERED`, ...) and
- * the message. Nothing for a body that is not one.
- */
 export function fcmError(text: string): { status?: string; code?: string; message?: string } {
   try {
     const error = (JSON.parse(text) as { error?: { status?: unknown; message?: unknown; details?: unknown } }).error;
@@ -68,7 +48,6 @@ export function fcmError(text: string): { status?: string; code?: string; messag
   }
 }
 
-/** Whether a refusal says the token is no phone's: Firebase's UNREGISTERED, or a token that is not one (INVALID_ARGUMENT about the registration token). */
 export function tokenRefused(text: string): boolean {
   const { code, status, message } = fcmError(text);
   return code === "UNREGISTERED" || ((code === "INVALID_ARGUMENT" || status === "INVALID_ARGUMENT") && /registration token/i.test(message ?? ""));
@@ -83,10 +62,6 @@ const isLoopback = (address: string) => {
   }
 };
 
-/**
- * The sender's settings from the host's: `FCM_SERVICE_ACCOUNT_FILE`, the JSON key of a service account as Google gives it. `FCM_TOKEN_URL` and `FCM_SEND_URL` send it
- * to a fake instead; they are for tests, so they count only with `ALLOW_PRIVATE_NETWORK=1` (which no deployed server has) and only for an address on this machine.
- */
 export function fcmFromEnv(env: NodeJS.ProcessEnv, warn: (message: string) => void = () => {}): FcmConfig | undefined {
   const file = env.FCM_SERVICE_ACCOUNT_FILE?.trim();
   if (!file) return undefined;
@@ -116,7 +91,6 @@ export function fcmFromEnv(env: NodeJS.ProcessEnv, warn: (message: string) => vo
 
 const base64url = (value: string | Buffer) => Buffer.from(value).toString("base64url");
 
-/** The JWT a service account proves itself with (RS256, an hour at most, for Firebase messaging only). */
 export function serviceJwt(config: Pick<FcmConfig, "clientEmail" | "privateKey" | "tokenUrl">, nowMs: number): string {
   const iat = Math.floor(nowMs / 1000);
   const head = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -139,7 +113,6 @@ export class FcmSender implements PushSender {
     return AbortSignal.timeout(this.config.timeoutMs ?? TIMEOUT_MS);
   }
 
-  /** An access token, the one kept while it lasts, else a new one (one ask at a time). Nothing when Google would not give one. */
   private accessToken(): Promise<string | undefined> {
     if (this.access && this.access.until > this.now()) return Promise.resolve(this.access.token);
     this.asking ??= (async () => {
@@ -170,7 +143,6 @@ export class FcmSender implements PushSender {
     return this.asking;
   }
 
-  /** Send one message: "gone" when Firebase says the token is no phone's any more (the token is let go), "failed" for anything else that went wrong. */
   async send(message: PushMessage): Promise<PushResult> {
     if (!message.token === !message.topic) return "failed";
     const access = await this.accessToken();
@@ -186,10 +158,8 @@ export class FcmSender implements PushSender {
         signal: this.timeout,
       });
       if (answer.ok) return "sent";
-      if (answer.status === 401) this.access = undefined; // (taken back early: the next one asks for a new one)
+      if (answer.status === 401) this.access = undefined;
       const text = await answer.text().catch(() => "");
-      // A token Firebase says it does not know (UNREGISTERED), or one that is no token at all: let go. Any other refusal is ours or Google's, a 404 of a wrong
-      // project's address as well (the judge, 17 Nov: every phone's would have been let go), and keeps the token.
       if (message.token && tokenRefused(text)) return "gone";
       this.log.warn(`Firebase: a message was refused (${answer.status}${fcmError(text).code ? ` ${fcmError(text).code}` : ""}).`);
       return "failed";

@@ -1,9 +1,3 @@
-// The TV by key only (arrows, OK, Back), the way a remote reaches things: for each screen a picture of it with the remote where it would be, and a
-// check of that: something is focused, it is on the screen and it shows (:focus-visible). A screen where that is not so is a FAIL: a remote has
-// nothing to press there. The key words: L R U D = the arrows, OK = Enter, B = Escape, a number repeats ("3R").
-//
-//   node scripts/ui-walk/tv-keys.mjs [hd|full] [names...]       (through run.mjs: --only=tv-keys; names are steps: --steps=keys-rate)
-// The pictures go to <out>/tv-1280-keys/ (tv-1920-keys/), and what the remote is on, screen by screen, to focus.txt beside them.
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { chromium, wait, HD, FULL_HD, openContext, snap, step, pointerAway, out, movies } from "./lib.mjs";
 import { seed } from "./seed.mjs";
@@ -21,7 +15,6 @@ const pressAll = async (page, text, gap = 230) => {
   await wait(250);
 };
 
-/** Opens the film the walk can play (it is not the first tile: the remote is put on it, as the arrows above would have done, and from there it is keys) and shows the controls. */
 const playFilm = async (page) => {
   await page.locator(`.tv-tile[title="${movies[1].title}"]`).first().focus();
   await page.keyboard.press("Enter");
@@ -30,10 +23,9 @@ const playFilm = async (page) => {
   await page.keyboard.press("Enter");
   await page.locator('[data-testid="tv"][data-state="playing"]').waitFor({ timeout: 20_000 });
   await wait(1200);
-  await page.keyboard.press("ArrowDown"); // (the first press shows the controls and puts the remote on them)
+  await page.keyboard.press("ArrowDown");
   await wait(500);
 };
-/** [name, keys, after]: the screens a remote reaches from the library's first screen (the same ones the TV audit drove). */
 const SCREENS = [
   ["home", ""],
   ["home-next-tile", "R"],
@@ -46,11 +38,9 @@ const SCREENS = [
   ["search", "L U OK 2D R"],
   ["rate", "OK 2R OK"],
   ["rate-low", "OK 2R OK 4L"],
-  // (the profile is the corner button of the top row: two Ups from the first screen, then OK; its page has Settings at the right of its top)
   ["profile", "2U OK"],
   ["profile-settings", "2U OK R"],
   ["profile-card", "2U OK D"],
-  // (an arrow goes to what is nearest in that direction: Right of Sign in is the first colour dot, level with it; the language row is above the dots, a switch below)
   ["settings", "2U OK R OK"],
   ["settings-colour", "2U OK R OK R"],
   ["settings-colour-next", "2U OK R OK 2R"],
@@ -65,7 +55,7 @@ const SCREENS = [
   }],
   ["player-menu", "", async (page) => {
     await playFilm(page);
-    await pressAll(page, "3R OK"); // (skip back, skip forward, then the speed button: its menu opens on the speed that is on)
+    await pressAll(page, "3R OK");
     await page.getByTestId("audio-subtitles-modal").waitFor();
     await wait(400);
   }],

@@ -1,14 +1,5 @@
 import type { Direction } from "./dpad";
 
-/**
- * Where the arrow keys lead on the library screen. The screen is a few blocks ("zones") of buttons laid out in rows: the menu
- * on the left, the account button on top (with the full screen one beside it), the banner's buttons (Play, the list) under it on the pages with rows, and in the middle
- * either rows of titles, a grid (the lists have a row of buttons over theirs, a friend's page one button under it), or the search keyboard with its filter and results. A title's own page lies over all of these
- * while it is open, and the arrow keys do not leave it: its Close button in the corner, under it its row of buttons (`detail`), and for a show,
- * under those, a row of seasons and the episodes of the one that is shown, one under the other; last, the rows of titles it lists (the other parts of its collection,
- * titles like it: `related`, a row of tiles each).
- * Pure, so the walking can be tested without a screen.
- */
 export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "foot" | "detail" | "close" | "seasons" | "episodes" | "related";
 
 export interface Pos {
@@ -17,10 +8,8 @@ export interface Pos {
   col: number;
 }
 
-/** How many buttons each row of a zone has. A zone that is not on screen is left out. */
 export type Shape = Partial<Record<Zone, number[]>>;
 
-/** `row: -1` asks the screen to pick: the menu entry for the page that is open, or the title the remote was last on. */
 export type Target = Pos | { zone: "rail" | "content"; row: -1; col: -1 } | null;
 
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -28,11 +17,9 @@ const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 
 export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   const lengths = shape[at.zone] ?? [];
-  // A phone's menu is a bar of places along the bottom (one row of them), not a column down the left: what took the remote to the menu on the left takes it to the
-  // bar below, Left and Right walk the bar, and Up leaves it for the titles.
   const bar = shape.rail?.length === 1 && (shape.rail[0] ?? 0) > 1;
-  const menu: Target = bar ? null : RAIL; // (what Left leads to from the first thing of a page)
-  const toBar: Target = bar ? RAIL : null; // (what Down leads to from the last)
+  const menu: Target = bar ? null : RAIL;
+  const toBar: Target = bar ? RAIL : null;
 
   if (at.zone === "rail") {
     if (bar) {
@@ -46,12 +33,10 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return null;
   }
 
-  // A title's own page: Close in the corner, the buttons under it, then the seasons and the episodes of a show, then the rows of titles. Nothing leads out of it.
   const BUTTONS: Pos = { zone: "detail", row: 0, col: 0 };
   const CLOSE: Pos = { zone: "close", row: 0, col: 0 };
   const firstEpisode: Pos | null = shape.episodes?.length ? { zone: "episodes", row: 0, col: 0 } : null;
   const firstRelated: Pos | null = shape.related?.length ? { zone: "related", row: 0, col: 0 } : null;
-  /** What is above the rows of titles: the last episode, else the seasons, else the buttons. */
   const aboveRelated: Pos = shape.episodes?.length ? { zone: "episodes", row: shape.episodes.length - 1, col: 0 } : shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : BUTTONS;
   if (at.zone === "close") {
     if (direction === "down") return BUTTONS;
@@ -69,14 +54,12 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return direction === "up" ? BUTTONS : (firstEpisode ?? firstRelated);
   }
   if (at.zone === "episodes") {
-    // (One across, or two on a wide screen, in reading order: sideways walks a line of them, up and down land on the same place of the next line, or the last of a shorter one.)
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[at.row] ?? 1) - 1 ? { ...at, col: at.col + 1 } : null;
     if (direction === "up") return at.row > 0 ? { ...at, row: at.row - 1 } : shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : BUTTONS;
     return at.row < lengths.length - 1 ? { ...at, row: at.row + 1, col: Math.min(at.col, (lengths[at.row + 1] ?? 1) - 1) } : firstRelated;
   }
   if (at.zone === "related") {
-    // (A row of titles slides along; a step up or down lands on the same place of the next row, or the last title of a shorter one.)
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[at.row] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
     const row = at.row + (direction === "up" ? -1 : 1);
@@ -85,7 +68,6 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   }
 
   if (at.zone === "foot") {
-    // The one button under a page's titles (a friend's Remove): up leads to the last row of the titles, else to the buttons over them; nothing is beside it but the menu.
     if (direction === "up") {
       const rows = shape.grid ?? [];
       if (rows.length > 0) return { zone: "grid", row: rows.length - 1, col: 0 };
@@ -96,10 +78,8 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   }
 
   if (at.zone === "top") {
-    // The account button and, beside it, the full screen one.
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
-    // (A phone's page of rows has its sections as a row of buttons where the others have a banner.)
     return direction === "down" ? (shape.hero?.length ? { zone: "hero", row: 0, col: 0 } : shape.rows?.length && shape.chips?.length ? { zone: "chips", row: 0, col: 0 } : CONTENT) : null;
   }
 
@@ -112,7 +92,6 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   }
 
   const length = lengths[at.row] ?? 0;
-  // The keyboard's last row has three wide keys under six narrow ones, so a step there keeps to what is above or below it.
   const into = (row: number): Pos => {
     const next = lengths[row] ?? 1;
     const col = at.zone === "keys" ? Math.floor(((at.col + 0.5) * next) / Math.max(1, length)) : at.col;
@@ -138,8 +117,7 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     case "up":
       if (at.row > 0) return into(at.row - 1);
       if (at.zone === "rows" && shape.hero?.length) return { zone: "hero", row: 0, col: 0 };
-      if (at.zone === "rows" && shape.chips?.length) return { zone: "chips", row: 0, col: 0 }; // (the page says which of them: the one that is shown)
-      // (A page can have two rows of buttons over its titles, as the ratings' filters are: up from the titles is the lower of them.)
+      if (at.zone === "rows" && shape.chips?.length) return { zone: "chips", row: 0, col: 0 };
       if ((at.zone === "results" || at.zone === "grid") && shape.chips?.length) return { zone: "chips", row: shape.chips.length - 1, col: Math.min(at.col, (shape.chips[shape.chips.length - 1] ?? 1) - 1) };
       return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     case "down":
@@ -155,25 +133,21 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   }
 }
 
-/** Row lengths for `count` things laid out `columns` to a row. */
 export function gridRows(count: number, columns: number): number[] {
   const rows: number[] = [];
   for (let left = count; left > 0; left -= columns) rows.push(Math.min(columns, left));
   return rows;
 }
 
-/** Things in sections, one under the other: how many each section has, and the heading over it. */
 export interface GridSection {
   title: string;
   count: number;
 }
 
-/** Row lengths for things in sections, `columns` to a row, each section starting a row of its own (so the last row of one is as short as it is). */
 export function sectionRows(sections: readonly GridSection[], columns: number): number[] {
   return sections.flatMap((section) => gridRows(section.count, columns));
 }
 
-/** Where each of the things of those sections lies (as `sectionRows` has the rows), and, for the first of each section, the heading that stands over it. */
 export function sectionPlaces(sections: readonly GridSection[], columns: number): Array<{ row: number; col: number; heading?: string }> {
   const places: Array<{ row: number; col: number; heading?: string }> = [];
   let first = 0;

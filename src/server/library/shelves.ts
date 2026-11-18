@@ -1,37 +1,21 @@
 import type { LibrarySection } from "../../shared";
 
-/**
- * The shelves of the library: further TMDB queries, made from small tables, that the page asks for a few at a time as it is scrolled
- * (see `shelfPlan`). The categories of `filmpire.ts` are the first rows; these are what comes after, and what finds the older titles
- * the popular lists never reach: a window of dates sorted by the number of votes ("known by many") or, with a floor of votes, by
- * the score. Nothing here is about a title or a franchise.
- *
- * Every shelf is in one section (Movies, Series, Cartoons or Anime). The live-action ones ask TMDB to leave animation out; the animated
- * ones ask for it, and the source sees to the rest: TMDB cannot be asked for "any language but Japanese", so a cartoon shelf gets some
- * anime in its pages, and the source drops it from them (see `askPage`).
- */
-
 export interface FilmpireCategory {
   id: string;
   title: string;
-  /** The TMDB path and query, without the key and without `page`. */
   path: string;
   type: "movie" | "tv";
-  /** The page the titles are browsed on. Without one, the live-action page of the type: Movies for a film category, Series for a show category. */
   section?: LibrarySection;
 }
 
 type Type = FilmpireCategory["type"];
 type Animated = Extract<LibrarySection, "cartoon" | "anime">;
 
-/** TMDB's genre for animation: a title that has it is a cartoon or an anime, and no film or show of the live-action sections. */
 export const ANIMATION_GENRE = 16;
 
-/** TMDB TV genres for unscripted content without playback availability (News: 10763, Soap: 10766, Talk: 10767). */
 export const UNSCRIPTED_TV_GENRES = [10763, 10766, 10767] as const;
 
 const live = (type: Type): LibrarySection => (type === "movie" ? "movie" : "series");
-/** The section a category is in: the one it says, else the live-action one of its type. */
 export const sectionOfCategory = (cat: FilmpireCategory): LibrarySection => cat.section ?? live(cat.type);
 
 const DISCOVER: Record<Type, string> = {
@@ -40,7 +24,6 @@ const DISCOVER: Record<Type, string> = {
 };
 const DATE: Record<Type, string> = { movie: "primary_release_date", tv: "first_air_date" };
 
-/** A shelf of a section (the live-action one of its type, unless it says): the live-action ones ask for no animation (and TV series leave out unscripted talk/news/soaps), so that their pages are not part empty once unusable titles are taken out. */
 const shelf = (type: Type, id: string, title: string, query: string, section: LibrarySection = live(type)): FilmpireCategory => {
   const without = section === live(type)
     ? (type === "tv" ? `&without_genres=${ANIMATION_GENRE},${UNSCRIPTED_TV_GENRES.join(",")}` : `&without_genres=${ANIMATION_GENRE}`)
@@ -58,11 +41,9 @@ const before = (type: Type, year: number) => `${DATE[type]}.lte=${year}-12-31`;
 const byVotes = "sort_by=vote_count.desc";
 const byScore = (floor: number) => `vote_count.gte=${floor}&sort_by=vote_average.desc`;
 
-/** How many votes a title of a decade needs to count among its best (the older the decade, the fewer people have voted on anything). */
 const MOVIE_FLOOR: Record<number, number> = { 1930: 200, 1940: 300, 1950: 500, 1960: 600, 1970: 1200, 1980: 2000, 1990: 3000, 2000: 4000, 2010: 5000 };
 const TV_FLOOR: Record<number, number> = { 1960: 100, 1970: 150, 1980: 200, 1990: 400, 2000: 800, 2010: 1500 };
 
-/** [id word, TMDB genre, name, votes a title needs to be among the best of its genre]. */
 const MOVIE_GENRES: ReadonlyArray<readonly [string, number, string, number]> = [
   ["action", 28, "Action", 3000],
   ["adventure", 12, "Adventure", 3000],
@@ -80,7 +61,6 @@ const MOVIE_GENRES: ReadonlyArray<readonly [string, number, string, number]> = [
   ["war", 10752, "War", 1500],
   ["western", 37, "Western", 800],
 ];
-/** The genres that have classics, hidden gems: the same words, TMDB's numbers. */
 const CLASSIC_GENRES = ["action", "adventure", "comedy", "crime", "drama", "fantasy", "horror", "mystery", "romance", "scifi", "thriller", "war", "western"];
 const GEM_GENRES = ["comedy", "drama", "horror", "scifi", "thriller"];
 const movieGenre = (word: string) => MOVIE_GENRES.find(([key]) => key === word)!;
@@ -106,7 +86,6 @@ const MOVIE_BEST_DECADES = [1930, 1940, ...MOVIE_DECADES];
 const TV_DECADES = [1970, 1980, 1990, 2000, 2010];
 const TV_BEST_DECADES = [1960, ...TV_DECADES];
 
-/** [language, name of its films, name of its series (none: no row of series)]. */
 const WORLD: ReadonlyArray<readonly [string, string, string | null]> = [
   ["fr", "French Cinema", "French Series"],
   ["es", "Spanish-Language Cinema", "Spanish-Language Series"],
@@ -122,26 +101,16 @@ const WORLD: ReadonlyArray<readonly [string, string, string | null]> = [
 
 const GEMS = { movie: "vote_average.gte=7.2&vote_count.gte=400&vote_count.lte=3000&sort_by=vote_average.desc", tv: "vote_average.gte=7.5&vote_count.gte=150&vote_count.lte=1200&sort_by=vote_average.desc" };
 
-/* ------------------------------ animation: the Cartoons and the Anime ------------------------------ */
-
-/** TMDB's keyword "anime", which most Japanese animation has. */
 const ANIME_KEYWORD = 210024;
 
-/**
- * What the animation of a section is asked for as: only the Japanese, or all but what has the keyword "anime" (TMDB cannot be asked for "any
- * language but"; the anime that has no keyword is left out by the source, see the top of this file). `genre` narrows it to one more (TMDB's comma means "all of").
- */
 export const animated = (section: Animated, genre?: number) =>
   `with_genres=${ANIMATION_GENRE}${genre ? `,${genre}` : ""}${section === "anime" ? "&with_original_language=ja" : `&without_keywords=${ANIME_KEYWORD}`}`;
 
-/** What each section's shows and films are called in the names of its shelves. */
 const ANIMATED_NAME: Record<Animated, { tv: string; movie: string; word: string }> = {
   cartoon: { tv: "Cartoon Series", movie: "Cartoon Movies", word: "Cartoon" },
   anime: { tv: "Anime Series", movie: "Anime Movies", word: "Anime" },
 };
-/** The decades that have enough animation of the section to fill a shelf (older anime is in the shelves of the classics and of the best). */
 const ANIMATED_DECADES: Record<Animated, readonly number[]> = { cartoon: [1980, 1990, 2000, 2010], anime: [1990, 2000, 2010, 2020] };
-/** [id word, TMDB genre, name] of the genres whose animation has a shelf of the best, for shows and for films, by section; and the votes a title needs to be among them. */
 const ANIMATED_GENRES: Record<Animated, Record<"tv" | "movie", ReadonlyArray<readonly [string, number, string]>>> = {
   cartoon: {
     tv: [["comedy", 35, "Comedy"], ["action-adventure", 10759, "Action & Adventure"], ["scifi-fantasy", 10765, "Sci-Fi & Fantasy"]],
@@ -156,7 +125,6 @@ const ANIMATED_FLOOR: Record<Animated, Record<"tv" | "movie", number>> = { carto
 const ANIMATED_SECTIONS: readonly Animated[] = ["cartoon", "anime"];
 const TYPES: readonly Type[] = ["tv", "movie"];
 
-/** Decades of animation, for shows and for films, of both sections. */
 const ANIMATED_DECADE_SHELVES = ANIMATED_SECTIONS.flatMap((section) =>
   TYPES.flatMap((type) =>
     ANIMATED_DECADES[section].map((start) =>
@@ -164,7 +132,6 @@ const ANIMATED_DECADE_SHELVES = ANIMATED_SECTIONS.flatMap((section) =>
     ),
   ),
 );
-/** The best of animation in a genre, for shows and for films, of both sections. */
 const ANIMATED_GENRE_SHELVES = ANIMATED_SECTIONS.flatMap((section) =>
   TYPES.flatMap((type) =>
     ANIMATED_GENRES[section][type].map(([word, genre, name]) =>
@@ -172,7 +139,6 @@ const ANIMATED_GENRE_SHELVES = ANIMATED_SECTIONS.flatMap((section) =>
     ),
   ),
 );
-/** The classics, the hidden gems and the best of each, and (for the cartoons) the animation of other countries. */
 const ANIMATED_OTHER_SHELVES = [
   shelf("tv", "classic-cartoons", "Classic Cartoons", `${animated("cartoon")}&${before("tv", 1989)}&${byVotes}`, "cartoon"),
   shelf("movie", "classic-cartoon-movies", "Classic Cartoon Movies", `${animated("cartoon")}&${before("movie", 1979)}&${byVotes}`, "cartoon"),
@@ -191,11 +157,6 @@ const ANIMATED_OTHER_SHELVES = [
   shelf("movie", "best-anime-movies", "Best Anime Movies", `${animated("anime")}&${byScore(600)}`, "anime"),
 ];
 
-/**
- * Each group is one kind of shelf, in no order of its own (see `shelfPlan`); the groups of films and of series alternate. The animation has three
- * of its own, each of both sections, so that on Home (which takes one shelf from each group in turn) it is a fifth of the shelves, and on the
- * Cartoons and the Anime page (which take those of their own) it is a decade, a genre and a classic or a favourite in turn.
- */
 export const SHELF_GROUPS: ReadonlyArray<readonly FilmpireCategory[]> = [
   MOVIE_DECADES.map((start) => shelf("movie", `movies-${start}s`, `Movies of the ${start}s`, `${decade("movie", start)}&${byVotes}`)),
   TV_DECADES.map((start) => shelf("tv", `series-${start}s`, `Series of the ${start}s`, `${decade("tv", start)}&${byVotes}`)),
@@ -237,7 +198,6 @@ export const SHELF_GROUPS: ReadonlyArray<readonly FilmpireCategory[]> = [
 
 export const FILMPIRE_SHELVES: readonly FilmpireCategory[] = SHELF_GROUPS.flat();
 
-/** A small seeded shuffle: the same order every time, so a page asked for twice (or by two screens) is the same page. */
 function shuffled<T>(list: readonly T[], seed: number): T[] {
   let state = (seed * 2654435761) >>> 0;
   const random = () => {
@@ -255,11 +215,6 @@ function shuffled<T>(list: readonly T[], seed: number): T[] {
   return out;
 }
 
-/**
- * The order the shelves come in as the page is scrolled: one from each group in turn (films and series alternate, a decade is never
- * followed by another decade), each group in its own fixed shuffle. `section` keeps only the shelves of one page (Movies, Series, Cartoons
- * or Anime); without one it is Home's, which has them all.
- */
 export function shelfPlan(section?: LibrarySection, groups: ReadonlyArray<readonly FilmpireCategory[]> = SHELF_GROUPS): FilmpireCategory[] {
   const wanted = (cat: FilmpireCategory) => !section || sectionOfCategory(cat) === section;
   const queues = groups.map((group, at) => shuffled(group.filter(wanted), at + 1)).filter((queue) => queue.length > 0);

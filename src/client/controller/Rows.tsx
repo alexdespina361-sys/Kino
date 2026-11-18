@@ -11,10 +11,6 @@ import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { RemoveButton, SavedMark, useListToggle, type ListToggle } from "./Round";
 
-/**
- * A heading (with something small at its far end, if need be) and a row of cards that scrolls sideways, to the screen's edge. `wide`:
- * big cards that snap one at a time, the next one showing at the edge (the row of what is half watched).
- */
 export function CardRow({ title, testId, aside, wide, children }: { title: string; testId: string; aside?: ReactNode; wide?: boolean; children: ReactNode }) {
   return (
     <section className={`lib-row${wide ? " is-wide" : ""}`} data-testid={testId} aria-label={title}>
@@ -24,7 +20,6 @@ export function CardRow({ title, testId, aside, wide, children }: { title: strin
   );
 }
 
-/** A row's heading, with something small at its far end if there is something to put there. */
 export function RowHead({ title, aside }: { title: string; aside?: ReactNode }) {
   if (!aside) return <h3>{title}</h3>;
   return (
@@ -38,21 +33,15 @@ export function RowHead({ title, aside }: { title: string; aside?: ReactNode }) 
 interface CardProps {
   title: string;
   image?: string | undefined;
-  /** A line under the title: the episode, what is left. */
   note?: string | undefined;
-  /** 0..1: a thin bar across the foot of the picture. */
   progress?: number;
-  /** The score this profile gave the title, in the picture's corner. */
   score?: number | undefined;
   playLabel: string;
-  /** The cross in the corner: a card that cannot be taken off its row (a rated title's) has none. */
   removeLabel?: string;
   onPlay: () => void;
   onRemove?: () => void;
   testId: string;
-  /** How the title stands with the lists: a hold on the card does what a tap on the button of its page does. */
   toggle?: ListToggle;
-  /** What a hold on the card does when the title has no list to toggle. */
   onHold?: () => void;
 }
 
@@ -61,7 +50,6 @@ export function Card({ title, image, note, progress = 0, score, playLabel, remov
   const scoreWords = useScoreWords();
   return (
     <div className="lib-tile" data-testid={`${testId}-item`} data-in-list={toggle?.inList}>
-      {/* (The button's name is its own words, which leave out what is inside it: the score is added to them.) */}
       <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={score === undefined ? playLabel : `${playLabel}. ${scoreWords(score)}`} data-testid={`${testId}-play`}>
         <Poster className="lib-art" title={title} image={image}>
           {score !== undefined && <ScoreBadge score={score} />}
@@ -84,10 +72,6 @@ export function Card({ title, image, note, progress = 0, score, playLabel, remov
   );
 }
 
-/**
- * "Continue watching": the cards of what this profile started, newest first, big and one at a time. Tapping one picks it up where it
- * stopped; a hold puts the title in a list, and the cross takes it off the row.
- */
 export function ContinueRow({
   items,
   onPlay,
@@ -132,25 +116,16 @@ export function ContinueRow({
 interface ListRowsProps {
   lists: readonly ListInfo[];
   items: readonly LiveListItem[];
-  /** A tap on a title: its page opens. */
   onOpen: (entry: Entry) => void;
-  /** With more than one list, a hold on a title asks which lists it is in. */
   onPick: (entry: ListEntry) => void;
   onRemove: (url: string, list: string) => void;
-  /** Open the sheet where lists are made, renamed and deleted. */
   onManage: () => void;
 }
 
-/** Whether `ListRows` has anything to show: a list with a title in it, or several lists (the way to them). */
 export function hasListRows(lists: readonly ListInfo[], items: readonly LiveListItem[]): boolean {
   return lists.length >= 2 || lists.some((info) => items.some((item) => listOf(item) === info.id));
 }
 
-/**
- * The lists this profile keeps: a row for each that has a title in it, named as the list is, the titles saved for later. The first
- * row has the way to the lists themselves; when there are several lists and all are empty the way is there on its own, and until
- * the first title is saved (one list, empty) there is nothing at all.
- */
 export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: ListRowsProps) {
   const t = useT();
   const scores = useScores();
@@ -198,10 +173,6 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
   );
 }
 
-/**
- * What this profile rated: a row of the titles and seasons it gave a score, the newest first, with the score under each. A tap opens
- * the title (where its rating, note and stats are); "See all" opens the whole list. There is no row until something is rated.
- */
 export function RatingsRow({ ratings, onOpen, onAll }: { ratings: readonly LiveRating[]; onOpen: (entry: Entry) => void; onAll: () => void }) {
   const t = useT();
   if (ratings.length === 0) return null;

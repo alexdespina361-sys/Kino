@@ -5,7 +5,6 @@ import {
   computeTrackScore,
 } from "./diversity";
 
-/** A file of the subtitle site as `listedSubtitles` lists it: through the proxy, from strem.io. */
 const crowd = (n: number) => `/api/proxy?url=${encodeURIComponent(`https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/${n}`)}&format=vtt`;
 
 describe("diversity subtitle cleanup", () => {
@@ -16,7 +15,6 @@ describe("diversity subtitle cleanup", () => {
     expect(inferSubtitleSource({ id: 3, label: "English", url: "https://opensubtitles-v3.strem.io/sub.srt" })).toBe("opensubtitles");
     expect(inferSubtitleSource({ id: 4, label: "English", url: "https://dl.subdl.com/sub.zip" })).toBe("subdl");
     expect(inferSubtitleSource({ id: 5, label: "English", url: "https://bcdn.hakunaymatata.com/sub.vtt" })).toBe("provider");
-    // (As `listedSubtitles` really writes them: through the proxy, from strem.io's file host.)
     expect(inferSubtitleSource({ id: 6, label: "English · Film.2024.1080p.WEB-DL", url: crowd(1) })).toBe("opensubtitles");
     expect(inferSubtitleSource({ id: 7, label: "English", url: `/api/proxy?url=${encodeURIComponent("https://cdn.example/captions/en.vtt")}&format=vtt` })).toBe("provider");
     expect(inferSubtitleSource({ id: 8, label: "English", url: `/api/proxy?url=${encodeURIComponent("https://vixsrc.to/sub.vtt")}&format=vtt` })).toBe("vixsrc");
@@ -31,7 +29,6 @@ describe("diversity subtitle cleanup", () => {
   });
 
   it("limits one language from taking all slots: picks top 3 from best source + top 1 from each other", () => {
-    // 6 OpenSubtitles tracks, 3 Provider tracks, 2 TVSubtitles tracks in English
     const tracks = [
       ...Array.from({ length: 6 }, (_, i) => ({
         id: `os_${i}`,
@@ -57,10 +54,6 @@ describe("diversity subtitle cleanup", () => {
     ];
 
     const result = filterDiverseSubtitles(tracks);
-    // Best source (provider) should have 3 tracks
-    // opensubtitles should have 1 track
-    // tvsubtitles should have 1 track
-    // Total for English should be 5 tracks!
     expect(result).toHaveLength(5);
     const sources = result.map((t) => inferSubtitleSource(t));
     expect(sources.filter((s) => s === "provider")).toHaveLength(3);
@@ -70,30 +63,25 @@ describe("diversity subtitle cleanup", () => {
 
   it("preserves multi-language coverage across languages", () => {
     const raw = [
-      // 10 English tracks
       ...Array.from({ length: 10 }, (_, i) => ({
         id: `en_${i}`,
         url: `https://opensubtitles/en_${i}.srt`,
         label: `English ${i}`,
         lang: "en",
       })),
-      // 5 Romanian tracks
       ...Array.from({ length: 5 }, (_, i) => ({
         id: `ro_${i}`,
         url: `/api/subtitles/ro/sub_${i}.vtt`,
         label: `Romanian ${i}`,
         lang: "ro",
       })),
-      // 2 Spanish tracks
       { id: "es_0", url: "https://opensubtitles/es_0.srt", label: "Spanish 0", lang: "es" },
       { id: "es_1", url: "https://opensubtitles/es_1.srt", label: "Spanish 1", lang: "es" },
-      // 1 German track
       { id: "de_0", url: "https://opensubtitles/de_0.srt", label: "German", lang: "de" },
     ];
 
     const filtered = filterDiverseSubtitles(raw);
     const langs = filtered.map((t) => t.lang);
-    // English comes first, then Romanian, then Spanish, then German
     expect(langs.slice(0, 3)).toEqual(["en", "en", "en"]);
     expect(langs.includes("ro")).toBe(true);
     expect(langs.includes("es")).toBe(true);

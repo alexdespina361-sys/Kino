@@ -2,18 +2,15 @@ import { useLanguage, useT } from "../i18n";
 import { BackspaceIcon } from "../shared/icons";
 import { KEYBOARD_KEYS } from "./librarySearch";
 
-/** What a language writes beyond a to z, on keys of their own: a list may be named in the language of the person. */
 const EXTRA_LETTERS: Partial<Record<string, readonly string[]>> = { ro: [..."ăâîșț"], it: [..."àèéìòù"] };
 
 interface Props {
   onKey: (char: string) => void;
   onDelete: () => void;
   onClear: () => void;
-  /** More keys after the letters: a sentence wants a few marks. */
   more?: readonly string[];
 }
 
-/** The keys for typing the name of a list with the remote: the letters and digits of the search, twelve to a row, then Space, Delete and Clear. */
 export function NameKeys({ onKey, onDelete, onClear, more = [] }: Props) {
   const t = useT();
   const language = useLanguage();

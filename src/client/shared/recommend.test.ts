@@ -63,7 +63,7 @@ describe("createLikeThis", () => {
     again.ask(seed);
     await settle();
     expect(again.get("k")).toBeUndefined();
-    expect(again.look("k")).toBeNull(); // (the rows after it are laid out without it)
+    expect(again.look("k")).toBeNull();
     expect(heard).toHaveBeenCalledTimes(1);
     again.ask(seed);
     await settle();
@@ -73,7 +73,6 @@ describe("createLikeThis", () => {
     refused.ask(seed);
     await settle();
     expect(refused.look("k")).toBeNull();
-    // (a site opened again asks again)
     again.reset();
     expect(again.look("k")).toBeUndefined();
   });
@@ -94,17 +93,17 @@ describe("createLikeThis", () => {
     up = true;
     clock += ASK_AGAIN_MS - 1;
     store.refresh();
-    expect(store.look("k")).toBeNull(); // (too soon: the page has what it had)
+    expect(store.look("k")).toBeNull();
     expect(heard).toHaveBeenCalledTimes(1);
     clock += 1;
     store.refresh();
     expect(store.look("k")).toBeUndefined();
-    expect(heard).toHaveBeenCalledTimes(2); // (the page lays its rows out again, and asks)
+    expect(heard).toHaveBeenCalledTimes(2);
     store.ask(seed);
     await settle();
     expect(store.look("k")).toEqual([item("1")]);
     expect(fetchFake).toHaveBeenCalledTimes(2);
-    store.refresh(); // (nothing to forget: nobody is told)
+    store.refresh();
     expect(heard).toHaveBeenCalledTimes(3);
   });
 
@@ -153,7 +152,7 @@ describe("createLikeThis", () => {
     const fetchFake = answering({ items: [item("1")] });
     const store = createLikeThis({ fetch: fetchFake as unknown as typeof fetch, max: 2 });
     for (const key of ["a", "b", "c"]) store.ask({ ...seed, key, url: `https://x.example/${key}` });
-    expect(store.look("c")).toBeUndefined(); // (told a moment later, not while a page is being drawn)
+    expect(store.look("c")).toBeUndefined();
     await settle();
     expect(fetchFake).toHaveBeenCalledTimes(2);
     expect(store.look("a")).toEqual([item("1")]);

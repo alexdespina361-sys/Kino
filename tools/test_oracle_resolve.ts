@@ -5,19 +5,16 @@ async function testAll12() {
   const adapter = createFilmpireAdapter();
 
   const targets = [
-    // 4 Anime
     { kind: "Anime", name: "Madoka Magica: Walpurgisnacht", url: "https://filmpire.sc/watch/823219" },
     { kind: "Anime", name: "Jujutsu Kaisen S1E1", url: "https://filmpire.sc/watch/95479?s=1&e=1" },
     { kind: "Anime", name: "Attack on Titan S1E1", url: "https://filmpire.sc/watch/1429?s=1&e=1" },
     { kind: "Anime", name: "Demon Slayer S1E1", url: "https://filmpire.sc/watch/85937?s=1&e=1" },
 
-    // 4 Movies
     { kind: "Movie", name: "The Odyssey", url: "https://filmpire.sc/watch/332794" },
     { kind: "Movie", name: "The Matrix", url: "https://filmpire.sc/watch/603" },
     { kind: "Movie", name: "Inception", url: "https://filmpire.sc/watch/27205" },
     { kind: "Movie", name: "Interstellar", url: "https://filmpire.sc/watch/157336" },
 
-    // 4 Series
     { kind: "Series", name: "Doctor Who S1E1", url: "https://filmpire.sc/watch/57243?s=1&e=1" },
     { kind: "Series", name: "Breaking Bad S1E1", url: "https://filmpire.sc/watch/1396?s=1&e=1" },
     { kind: "Series", name: "Game of Thrones S1E1", url: "https://filmpire.sc/watch/1399?s=1&e=1" },

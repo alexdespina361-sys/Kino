@@ -26,27 +26,14 @@ export interface SubtitleSearchParams {
   episode?: number | string;
 }
 
-/**
- * How much is taken from a subtitle site, at most. The sites are other people's: an archive, a file or a page that is larger than any real one is not
- * read to its end, and a file that unpacks to more than a subtitle ever is, is left out. (Generous: a season's pack is a few megabytes, one subtitle a
- * few hundred kilobytes.)
- */
 export const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 export const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_ARCHIVE_FILES = 400;
 
-/**
- * How many titles' subtitles are kept in memory, and how much text they may come to together. Past either, the titles asked about longest ago go (their
- * tracks answer 404 until the title is looked up again; what is under `dataDir` is read again then, not fetched).
- */
 export const MAX_KEPT_TITLES = 300;
 export const MAX_KEPT_CHARS = 64 * 1024 * 1024;
 
-/**
- * What an answer holds, read up to `max` bytes: nothing when it says it is longer, or turns out to be. (`arrayBuffer()` and `text()` read whatever is
- * sent, to the end.)
- */
 export async function readCapped(res: Response, max: number): Promise<Buffer | undefined> {
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > max) {
@@ -70,15 +57,10 @@ export async function readCapped(res: Response, max: number): Promise<Buffer | u
   return Buffer.concat(chunks);
 }
 
-/** A page of a subtitle site as text, or nothing when it is larger than a page is (see `readCapped`). */
 async function pageText(res: Response): Promise<string | undefined> {
   return (await readCapped(res, MAX_PAGE_BYTES))?.toString("utf8");
 }
 
-/**
- * Whether a subtitle file the subtitle site lists is at the site's own place (`*.strem.io`, over https). Its list is another party's words: a file it
- * says is somewhere else is not fetched, so the list cannot send this server to an address of its choosing.
- */
 export function isListedFile(link: string): boolean {
   try {
     const url = new URL(link);
@@ -88,10 +70,6 @@ export function isListedFile(link: string): boolean {
   }
 }
 
-/**
- * One pool of connections for each rule about addresses, which looks at the address a name leads to when it connects (see `guardedLookup`). A name can
- * answer one address when it is looked at and another when it is connected to ("DNS rebinding"): only this look is the one that counts.
- */
 const sitePools = new WeakMap<(address: string) => boolean, Agent>();
 function sitePool(isAllowed: (address: string) => boolean): Agent {
   let pool = sitePools.get(isAllowed);
@@ -102,14 +80,12 @@ function sitePool(isAllowed: (address: string) => boolean): Agent {
   return pool;
 }
 
-/** `fetch` through the pool of `isAllowed` (the `undici` package's own, as the pool is; what it answers is used as any `Response` is). */
 const guardedSend = (isAllowed: (address: string) => boolean): typeof fetch =>
   ((input: string | URL, init?: RequestInit) =>
     undiciFetch(input, { ...(init as UndiciRequestInit), headers: Object.fromEntries(new Headers(init?.headers)), dispatcher: sitePool(isAllowed) })) as unknown as typeof fetch;
 
 const addressesOf = async (host: string): Promise<string[]> => (await lookup(host, { all: true })).map((found) => found.address);
 
-/** `promise`, or the reason `signal` was called off for when that comes first. */
 function within<T>(promise: Promise<T>, signal: AbortSignal | null | undefined): Promise<T> {
   if (!signal) return promise;
   if (signal.aborted) return Promise.reject(signal.reason);
@@ -120,18 +96,11 @@ function within<T>(promise: Promise<T>, signal: AbortSignal | null | undefined):
   });
 }
 
-/**
- * `fetch` for the subtitle sites. A site may answer with a redirect, and `fetch` on its own follows one wherever it leads: here every address on the way,
- * the first included, has to be a public one (by its name's addresses when it is a name, looked at before the request and again when it connects), so a
- * site's answer cannot have this server read from itself or from the network it stands in. A cookie is not carried to another origin. The look at a name
- * is given up on with the request. (`send`, `isAllowed` and `resolve` are for tests; a `send` of its own connects as it likes.)
- */
 export function siteFetch(send?: typeof fetch, isAllowed: (address: string) => boolean = isPublicAddress, resolve: (host: string) => Promise<string[]> = addressesOf): typeof fetch {
   const sending = send ?? guardedSend(isAllowed);
   const check = async (url: URL, signal: AbortSignal | null | undefined): Promise<void> => {
     if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("not a web address");
     const host = url.hostname.replace(/^\[|\]$/g, "");
-    // (An address written out is not looked up when it is connected to: it is looked at here, at every step.)
     const addresses = isIP(host) ? [host] : await within(resolve(host), signal);
     if (addresses.length === 0 || addresses.some((address) => !isAllowed(address))) throw new Error("address not allowed");
   };
@@ -147,7 +116,6 @@ export function siteFetch(send?: typeof fetch, isAllowed: (address: string) => b
       const next = new URL(location, url);
       const headers = new Headers(ask.headers);
       if (next.origin !== url.origin) headers.delete("cookie");
-      // (As a browser does: what was posted is asked for with GET where the redirect is not a 307 or a 308.)
       if (res.status === 303 || ((res.status === 301 || res.status === 302) && ask.method === "POST")) {
         headers.delete("content-type");
         ask = { ...ask, method: "GET", body: undefined };
@@ -159,11 +127,6 @@ export function siteFetch(send?: typeof fetch, isAllowed: (address: string) => b
   };
 }
 
-/**
- * The name a subtitle is asked for by, made the episode's own. A site's pack holds a whole season and its files were numbered from one for every episode,
- * so two episodes had a subtitle of the same name: whichever was looked up last answered for both, and a browser that had kept the first (the files are
- * served to be kept) showed it for the second. (What was kept on disk under the old names is renamed as it is read.)
- */
 export function episodeId(id: string, season: number | undefined, episode: number | undefined): string {
   if (!season || !episode) return id;
   const suffix = `_s${season}e${episode}`;
@@ -173,10 +136,6 @@ export function episodeId(id: string, season: number | undefined, episode: numbe
 const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
 const win1250Decoder = new TextDecoder("windows-1250", { fatal: false });
 
-/**
- * Normalizes Romanian diacritics, converting legacy cedillas (ş, ţ, Ş, Ţ)
- * to standard comma-below characters (ș, ț, Ș, Ț).
- */
 export function normalizeRomanianText(text: string): string {
   return text
     .replace(/\u015E/g, "Ș")
@@ -185,13 +144,9 @@ export function normalizeRomanianText(text: string): string {
     .replace(/\u0163/g, "ț");
 }
 
-/**
- * Decodes raw bytes of a subtitle file, automatically detecting UTF-8 vs Windows-1250 / ISO-8859-2.
- */
 export function decodeSubtitleBytes(buf: Buffer | Uint8Array): string {
   const nodeBuf = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
   const utf8 = utf8Decoder.decode(nodeBuf);
-  // If UTF-8 contains replacement characters or unmapped 8-bit characters typical of CP1250:
   if (utf8.includes("\uFFFD") || (/[\x80-\xFF]/.test(utf8) && !/[ăîâșțĂÎÂȘȚşţŞŢ]/.test(utf8))) {
     try {
       const win = win1250Decoder.decode(nodeBuf);
@@ -199,32 +154,23 @@ export function decodeSubtitleBytes(buf: Buffer | Uint8Array): string {
         return normalizeRomanianText(win);
       }
     } catch {
-      // fallback to utf8
     }
   }
   return normalizeRomanianText(utf8);
 }
 
-/**
- * Converts SRT subtitle format to standard WebVTT format.
- */
 export function srtToVtt(srt: string): string {
   let clean = srt.replace(/^\uFEFF/, "").trim();
   if (clean.startsWith("WEBVTT")) return clean;
-  // Convert timestamps 00:00:00,000 -> 00:00:00.000
   clean = clean.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
   return `WEBVTT\n\n${clean}`;
 }
 
-/**
- * Extracts .srt files from a ZIP buffer in memory without external dependencies.
- */
 export function extractSrtFromZip(zipBuf: Buffer): Array<{ name: string; content: string }> {
   const files: Array<{ name: string; content: string }> = [];
   let pos = 0;
   while (pos < zipBuf.length - 4) {
     if (zipBuf.readUInt32LE(pos) === 0x04034b50) {
-      // (A header cut short by the end of the archive, or more files than a pack has: what was found so far is the answer.)
       if (pos + 30 > zipBuf.length || files.length >= MAX_ARCHIVE_FILES) break;
       const method = zipBuf.readUInt16LE(pos + 8);
       const cSize = zipBuf.readUInt32LE(pos + 18);
@@ -235,7 +181,6 @@ export function extractSrtFromZip(zipBuf: Buffer): Array<{ name: string; content
       const data = zipBuf.subarray(dataStart, dataStart + cSize);
       if (name.toLowerCase().endsWith(".srt")) {
         try {
-          // (A file that unpacks to more than a subtitle is: `inflateRawSync` throws past the size, and the file is left out like a broken one.)
           if (method !== 8 && data.length > MAX_FILE_BYTES) throw new Error("too large");
           const raw = method === 8 ? zlib.inflateRawSync(data, { maxOutputLength: MAX_FILE_BYTES }) : data;
           const text = decodeSubtitleBytes(raw);
@@ -243,7 +188,6 @@ export function extractSrtFromZip(zipBuf: Buffer): Array<{ name: string; content
             files.push({ name, content: text });
           }
         } catch {
-          // ignore corrupted individual zip entry
         }
       }
       pos = dataStart + cSize;
@@ -254,10 +198,6 @@ export function extractSrtFromZip(zipBuf: Buffer): Array<{ name: string; content
   return files;
 }
 
-/**
- * A title's words as a site's address writes them: lower case, without accents or apostrophes, only letters and digits ("Amélie" is `amelie`,
- * "Schindler's List" is `schindlers list`).
- */
 export const wordsOf = (text: string): string[] =>
   text
     .normalize("NFD")
@@ -267,14 +207,11 @@ export const wordsOf = (text: string): string[] =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
-/** A file of an archive that its name says is English and not Romanian too ("Thrones" and "Bros" say neither: the judge, 17 Nov). */
 export const isEnglishFile = (name: string): boolean => {
   const words = wordsOf(name);
-  // ("en" alone is not taken for English: it is a word of Romanian and French names too.)
   return words.some((word) => word === "english" || word === "eng") && !words.some((word) => ["ro", "rom", "romana", "romanian", "romaneste"].includes(word));
 };
 
-/** Checks if a filename matches the requested season and episode. */
 export function matchesEpisode(fileName: string, season: number, episode: number): boolean {
   const base = fileName.toLowerCase();
   const sep = "[\\s._-]*";
@@ -287,18 +224,10 @@ export function matchesEpisode(fileName: string, season: number, episode: number
   return patterns.some((p) => p.test(base));
 }
 
-/**
- * Romanian subtitles for a title, from the Romanian subtitle sites (Subs.ro, Subtitrari-Noi) and, when those have few, OpenSubtitles. The sites send whole
- * archives, which are unpacked here and kept (in memory, and under `dataDir` when there is one), so a title is asked about once; the tracks point at
- * `/api/subtitles/ro/:id.vtt`, answered from what is kept. The two Romanian sites are asked at once, and the archives each lists are fetched at once: a
- * look-up for a title new to them takes as long as the slowest archive, not the sum of them all.
- */
 export class RomanianSubtitleManager {
   private cache = new Map<string, RomanianSubtitle[]>();
-  private subtitleById = new Map<string, string>(); // subId -> vtt
-  /** How much text `subtitleById` holds (see `MAX_KEPT_CHARS`). */
+  private subtitleById = new Map<string, string>();
   private keptChars = 0;
-  /** The titles being asked about now: a second ask for one of them (a screen and the look-up made ahead for it) waits for the first. */
   private pending = new Map<string, Promise<RomanianSubtitle[]>>();
   private dataDir?: string;
   private readonly get: typeof fetch;
@@ -318,7 +247,7 @@ export class RomanianSubtitleManager {
     const key = `${params.imdbId || params.tmdbId || params.title}:${s || 0}:${e || 0}`;
 
     let cached = this.cache.get(key);
-    if (cached) this.keep(key, cached); // (asked about again: the last to go)
+    if (cached) this.keep(key, cached);
     if (!cached) {
       let underway = this.pending.get(key);
       if (!underway) {
@@ -336,14 +265,12 @@ export class RomanianSubtitleManager {
     }));
   }
 
-  /** What is kept for `key` on disk, else what the sites have, kept from then on. */
   private async find(key: string, params: SubtitleSearchParams): Promise<RomanianSubtitle[]> {
     let subs = this.dataDir ? await this.loadFromDisk(key) : undefined;
     if (!subs) {
       subs = await this.fetchAll(params);
       if (this.dataDir && subs.length > 0) void this.saveToDisk(key, subs);
     }
-    // (Each subtitle is asked for by a name of the episode's own: see `episodeId`.)
     const season = params.season ? Number(params.season) : undefined;
     const episode = params.episode ? Number(params.episode) : undefined;
     subs = subs.map((sub) => ({ ...sub, id: episodeId(sub.id, season, episode) }));
@@ -351,7 +278,6 @@ export class RomanianSubtitleManager {
     return subs;
   }
 
-  /** Keeps a title's subtitles as the newest, and lets the titles asked about longest ago go while there are too many of them or too much text (see `MAX_KEPT_TITLES`). */
   private keep(key: string, subs: RomanianSubtitle[]): void {
     this.forget(key);
     this.cache.set(key, subs);
@@ -370,7 +296,6 @@ export class RomanianSubtitleManager {
     if (!subs) return;
     this.cache.delete(key);
     for (const sub of subs) {
-      // (A title asked about by its number and by its name is two titles here with the same subtitles: they stay while either does.)
       let heldElsewhere = false;
       for (const others of this.cache.values()) if (others.some((other) => other.id === sub.id)) heldElsewhere = true;
       if (heldElsewhere) continue;
@@ -384,7 +309,6 @@ export class RomanianSubtitleManager {
     const seenHashes = new Set<string>();
 
     const addSub = (sub: RomanianSubtitle) => {
-      // Basic fingerprint to avoid duplicates
       const hash = `${sub.vtt.length}_${sub.vtt.slice(50, 150)}`;
       if (!seenHashes.has(hash)) {
         seenHashes.add(hash);
@@ -393,7 +317,6 @@ export class RomanianSubtitleManager {
     };
     const quietly = (found: Promise<RomanianSubtitle[]>): Promise<RomanianSubtitle[]> => found.catch(() => []);
 
-    // 1, 2 and 3: Subs.ro, Subtitrari-Noi, and Titrari.ro (direct IMDB index), asked at once.
     const [subsRoSubs, subtNoiSubs, titrariSubs, osSubs] = await Promise.all([
       quietly(this.fetchFromSubsRo(params)),
       quietly(this.fetchFromSubtitrariNoi(params)),
@@ -405,7 +328,6 @@ export class RomanianSubtitleManager {
     for (const s of titrariSubs) addSub(s);
     for (const s of osSubs) addSub(s);
 
-    // 3. Fallback to OpenSubtitles Stremio endpoint if needed
     if (false) {
       for (const s of await quietly(this.fetchFromOpenSubtitles(params))) addSub(s);
     }
@@ -454,11 +376,9 @@ export class RomanianSubtitleManager {
     const matches = [...text.matchAll(/href="https:\/\/subs\.ro\/subtitrare\/([^\/]+)\/(\d+)"/g)];
     const year = params.year ? Number(params.year) : NaN;
     const targetYear = Number.isFinite(year) ? year : undefined;
-    // (An address may write "Schindler's" as `schindlers` or as `schindler-s`: both are tried.)
     const targets = params.title ? [wordsOf(params.title), wordsOf(params.title.replace(/['’`]/g, " "))] : [];
 
     const filteredMatches = matches.filter((m) => {
-      // If we searched with external_id (imdbId), Subs.ro already strictly matched the title
       if (imdbId) return true;
       if (targets.length === 0 || targets[0]!.length === 0) return true;
       const slug = m[1]!;
@@ -466,25 +386,20 @@ export class RomanianSubtitleManager {
       const slugYear = yMatch ? Number(yMatch[1]) : undefined;
       if (targetYear && slugYear && Math.abs(slugYear - targetYear) > 1) return false;
       const slugBase = yMatch ? slug.slice(0, yMatch.index) : slug;
-      // (The title's words, accents or not, at the end of the address, or at its start with nothing after them but a season: "amelie" is
-      // Amélie, "the-office-sezonul-2" is The Office, "amelie-goes-home" is another film. The judge, 17 Nov.)
       const words = wordsOf(slugBase);
       return targets.some((target) => {
         const from = (at: number) => at >= 0 && target.every((word, n) => words[at + n] === word);
         const after = words[target.length];
-        // (At the end only for a title of two words or more, or with the year agreeing: "her" would be the end of "kill-her" and of any film.)
         const atEnd = (target.length >= 2 || (targetYear !== undefined && slugYear !== undefined)) && from(words.length - target.length);
         return (from(0) && (after === undefined || /^(sezon|sezonul|season|seria|s\d+)$/.test(after))) || atEnd;
       });
     });
     const chosenMatches = (filteredMatches.length > 0 ? filteredMatches : (imdbId ? matches : [])).slice(0, 3);
 
-    // (The archives are fetched at once, and their subtitles listed in the order the site gave them.)
     const archives = await Promise.all(
       chosenMatches.map(async (m): Promise<RomanianSubtitle[]> => {
         const slug = m[1]!;
         const id = m[2]!;
-        // If series, filter by season in slug if present
         if (season && slug.includes("sezon") && !slug.includes(`sezonul-${season}`) && !slug.includes(`sezon-${season}`)) return [];
         try {
           const dlUrl = `https://subs.ro/subtitrare/descarca/${slug}/${id}`;
@@ -550,9 +465,6 @@ export class RomanianSubtitleManager {
     if (!res.ok) return list;
     const html = (await pageText(res)) ?? "";
 
-    // Match entries to strictly verify title and year
-    // (Each entry: the link of its title, then its archive before the link of the next. The page has its `content-main` once, so the entries are
-    // not looked for only right after it: the judge, 17 Nov.)
     const entryMatches = [...html.matchAll(/<a[^>]*href='[^']*id=(\d+)'[^>]*>([^<]+)<\/a>(?:(?!href='[^']*id=\d)[\s\S])*?href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)];
     const targetYear = params.year ? Number(params.year) : undefined;
     const targetNorm = params.title ? wordsOf(params.title).join("") : "";
@@ -575,7 +487,6 @@ export class RomanianSubtitleManager {
       ? validZips
       : (params.imdbId ? [...html.matchAll(/href="(?:\d+-)?(https:\/\/subtitrari-noi\.ro\/Arhive\/[^"]+\.zip)"/g)].slice(0, 2).map((m) => m[1]!) : []);
 
-    // (The archives are fetched at once, and their subtitles listed in the order the site gave them.)
     const archives = await Promise.all(
       chosenZips.map(async (zipUrl, n): Promise<RomanianSubtitle[]> => {
         try {
@@ -688,17 +599,14 @@ export class RomanianSubtitleManager {
 
     const res = await this.get(endpoint, { signal: AbortSignal.timeout(8_000) });
     if (!res.ok) return list;
-    // (The list names every language's files: longer than a page, so it is read up to what a file may be.)
     const answer = await readCapped(res, MAX_FILE_BYTES);
     if (answer === undefined) return list;
     const data = JSON.parse(answer.toString("utf8")) as {
       subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }>;
     };
 
-    // (Only a file at the subtitle site's own place is fetched: see `isListedFile`.)
     const roSubs = (data.subtitles || []).filter((s) => (s.lang === "ron" || s.lang === "ro" || s.lang === "rum") && typeof s.url === "string" && isListedFile(s.url));
 
-    // (The files are fetched at once, and listed in the order the site gave them.)
     const files = await Promise.all(
       roSubs.slice(0, 3).map(async (item, n): Promise<RomanianSubtitle | undefined> => {
         try {
@@ -708,7 +616,6 @@ export class RomanianSubtitleManager {
           if (!buf) return undefined;
           const text = decodeSubtitleBytes(buf);
           const release = item.subtitleFileName?.replace(/\.(srt|vtt)$/i, "") || "OpenSubtitles";
-          // (The site's own name for the file goes into an address: letters, digits, `_` and `-` of it only.)
           const name = String(item.id ?? "").replace(/[^\w-]/g, "").slice(0, 40);
           return { id: `os_${name || n + 1}`, label: `Romanian · ${release}`.slice(0, 100), vtt: srtToVtt(text), source: "opensubtitles", release };
         } catch {
@@ -727,7 +634,7 @@ export class RomanianSubtitleManager {
       const filePath = path.join(this.dataDir, "subtitles", "ro", `${safeKey}.json`);
       const raw = await readFile(filePath, "utf8");
       const now = new Date();
-      await utimes(filePath, now, now).catch(() => {}); // (read again: the last to go, see `trimKept`)
+      await utimes(filePath, now, now).catch(() => {});
       return JSON.parse(raw) as RomanianSubtitle[];
     } catch {
       return undefined;
@@ -746,20 +653,13 @@ export class RomanianSubtitleManager {
       await writeFile(filePath, text, "utf8");
       await trimKept(dir);
     } catch {
-      // non-fatal
     }
   }
 }
 
-/**
- * How many titles' subtitles are kept on disk (under `DATA_DIR`), and how much they may come to together. A title is a few hundred kilobytes; every title
- * that has subtitles writes one file, and anyone can ask about any title, so the folder is not let grow without end: past either, the files written or read
- * longest ago go (a title whose file went is asked of the sites again when it is looked up).
- */
 export const MAX_DISK_TITLES = 3000;
 export const MAX_DISK_BYTES = 1024 * 1024 * 1024;
 
-/** Lets go of the oldest titles' files in `dir` (by when each was last written or read) until there are no more than `titles` of them, together no larger than `bytes`. */
 export async function trimKept(dir: string, titles = MAX_DISK_TITLES, bytes = MAX_DISK_BYTES): Promise<void> {
   const names = (await readdir(dir)).filter((name) => name.endsWith(".json"));
   const files = await Promise.all(
@@ -780,7 +680,6 @@ export async function trimKept(dir: string, titles = MAX_DISK_TITLES, bytes = MA
 let defaultManager: RomanianSubtitleManager | undefined;
 export function getRomanianSubtitleManager(dataDir?: string): RomanianSubtitleManager {
   if (!defaultManager) {
-    // (`DATA_DIR=memory` means nowhere, as it does for the accounts: not a folder of that name.)
     const home = dataDir ?? process.env.DATA_DIR;
     defaultManager = new RomanianSubtitleManager(home === "memory" ? undefined : home);
   }

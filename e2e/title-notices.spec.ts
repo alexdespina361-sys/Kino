@@ -3,18 +3,12 @@ import { en } from "../src/client/i18n/en";
 import { openDevice, openLibrary, openTvSignIn, PHONE, PICTURE_NAMED, test } from "./helpers";
 import { TEST_ACCOUNT } from "./testAccount";
 
-/**
- * What is new of the titles a profile watches (a new episode, a new film of a series of films: src/shared/titleNotices.ts) is in the bell, on a TV and on
- * a phone. The server these run against looks for none (it has no library), so the answers are the test's: what is asked of the server is checked.
- */
-
 let counter = 0;
 const fresh = () => ({ ...TEST_ACCOUNT, email: TEST_ACCOUNT.email.replace("@", `+news${Date.now().toString(36)}${++counter}@`) });
 
 const episode = { id: "tv-7", at: Date.now() - 60_000, what: "episode", title: "The Show", url: "https://filmpire.sc/watch/7?s=1&e=1", year: 2024, season: 2, episode: 4, read: false };
 const film = { id: "movie-102", at: Date.now() - 120_000, what: "film", title: "Part Three", url: "https://filmpire.sc/watch/102", year: 2026, like: "Part One", read: false };
 
-/** The notices of whichever profile asks, kept by the test: looked at and cleared as the server would, and what was asked is remembered. */
 function notices() {
   const state = { items: [episode, film] as Array<typeof episode | typeof film>, asked: [] as string[] };
   const setup = async (context: BrowserContext) => {
@@ -37,7 +31,7 @@ async function signUpOnTv(tv: Page) {
   await tv.getByTestId("auth-email").fill(account.email);
   await tv.getByTestId("auth-password").fill(account.password);
   await tv.getByTestId("auth-submit").click();
-  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED); // (a new profile is named after its picture)
+  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
 }
 
 test.describe("what is new of the titles a profile watches", () => {
@@ -57,20 +51,17 @@ test.describe("what is new of the titles a profile watches", () => {
     await expect(lines.nth(1)).toContainText("A new film, after Part One");
     await expect(tv.getByTestId("tv-bell-empty")).toHaveCount(0);
 
-    // Opening it is looking: the server is told, and the count is gone.
     await expect.poll(() => state.asked).toContain("POST /seen");
     await tv.getByTestId("tv-bell-back").click();
     await expect(tv.getByTestId("tv-bell-page")).toHaveCount(0);
     await expect(tv.getByTestId("tv-bell-badge")).toHaveCount(0);
 
-    // The cross clears a line, here and on the server.
     await tv.getByTestId("tv-bell").click();
     await tv.getByTestId("tv-bell-titles").getByTestId("tv-bell-clear").first().click();
     await expect(lines).toHaveCount(1);
     await expect.poll(() => state.asked).toContain("POST /dismiss");
     expect(state.items.map((item) => item.id)).toEqual(["movie-102"]);
 
-    // The line that is left opens its title's page.
     await lines.first().click();
     await expect(tv.getByTestId("tv-detail-title")).toContainText("Part Three");
   });

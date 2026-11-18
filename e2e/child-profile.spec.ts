@@ -2,12 +2,6 @@ import { expect, type Browser, type BrowserContext, type Page } from "@playwrigh
 import { en } from "../src/client/i18n/en";
 import { guestStorage, openDevice, openTvSettings, PHONE, place, pressMenuLine, readPairingCode, test, withLibrary } from "./helpers";
 
-/*
- * A child's profile (the owner, 15 Nov 2026): "Only cartoons appear, and friends are off for that profile; everything else stays the same. The search, Home, the
- * sections and the title links must all respect it." Only a cartoon that the movie database files for children (`kids`) is for children: not a cartoon for grown-ups,
- * not an anime, not a film.
- */
-
 const watch = (n: number) => `https://filmpire.sc/watch/${n}`;
 const title = (n: number, name: string, extra: Record<string, unknown>) => ({ id: `filmpire-${extra.kind === "series" ? "tv" : "movie"}-${n}`, title: name, year: 2010, url: watch(n), image: `/p${n}.jpg`, ...extra });
 const kid = title(101, "Kid Cartoon", { kind: "movie", section: "cartoon", kids: true });
@@ -18,7 +12,6 @@ const unlistedKid = title(105, "Unlisted Kid", { kind: "movie", section: "cartoo
 const unlistedGrown = title(106, "Unlisted Grown", { kind: "movie" });
 const kidToo = title(107, "Kid Cartoon Two", { kind: "movie", section: "cartoon", kids: true });
 const EVERY = [kid, grownCartoon, kidAnime, grownFilm, unlistedKid, unlistedGrown, kidToo];
-/** What a child's profile must not see, anywhere. */
 const NOT_FOR_CHILDREN = ["Grown Cartoon", "Kid Anime", "Grown Film", "Unlisted Grown"];
 
 const library = {
@@ -30,7 +23,6 @@ const library = {
   ],
 };
 
-/** The library, its search (every title answers every word), one title by its id, and what goes with a title (every title goes with every other). */
 async function serve(context: BrowserContext): Promise<void> {
   await withLibrary(library, () => ({ items: [kid, grownCartoon, kidAnime, grownFilm, kidToo], exact: 5 }))(context);
   await context.route(/\/api\/library\/title\?/, (route) => {
@@ -43,11 +35,9 @@ async function serve(context: BrowserContext): Promise<void> {
 }
 
 const card = (item: { title: string; url: string }, at: number) => ({ key: `card-${item.url.slice(-3)}`, at, title: item.title, url: item.url, position: 600, duration: 5400 });
-/** Part way through: two titles the rows list, and two they do not (the screen asks the server about those). */
 const cards = [card(kid, 4), card(grownFilm, 3), card(unlistedKid, 2), card(unlistedGrown, 1)];
 const CHILD = { key: "child", at: 1, value: true };
 
-/** Every name of `names` the page has shown at any moment, as text or as a title, from its first paint on (a test looks at it at the end). */
 async function recordShown(context: BrowserContext, names: readonly string[]): Promise<void> {
   await context.addInitScript((watched) => {
     const seen = new Set<string>();
@@ -63,7 +53,6 @@ async function recordShown(context: BrowserContext, names: readonly string[]): P
 }
 const shown = (page: Page) => page.evaluate(() => [...(window as unknown as { __shown: Set<string> }).__shown]);
 
-/** Nothing on the page that is not for children (`also`: other names that must not be there either). */
 async function onlyForChildren(page: Page, also: readonly string[] = []): Promise<void> {
   for (const name of [...NOT_FOR_CHILDREN, ...also]) await expect(page.locator("body"), name).not.toContainText(name);
 }
@@ -82,9 +71,8 @@ test.describe("a child's profile on the TV", () => {
     const tv = await childTv(browser);
     const browse = tv.getByTestId("tv-browse");
     await expect(browse).toContainText("Kid Cartoon");
-    await expect(browse).toContainText("Unlisted Kid"); // (a card the rows do not list, once the server has said what it is)
+    await expect(browse).toContainText("Unlisted Kid");
     await onlyForChildren(tv, ["Anime Shelf", "Film Shelf"]);
-    // No sections to choose, no watch party.
     for (const line of ["rail-movies", "rail-series", "rail-cartoons", "rail-anime", "rail-party"]) await expect(tv.getByTestId(line)).toHaveCount(0);
     await expect(tv.getByTestId("rail-search")).toHaveCount(1);
 
@@ -101,7 +89,7 @@ test.describe("a child's profile on the TV", () => {
     await tv.getByTestId("rail-home").click();
     await tv.locator('[data-testid="tv-browse-tile"][title="Kid Cartoon"]').first().click();
     await expect(tv.getByTestId("tv-detail")).toContainText("Kid Cartoon");
-    await expect(tv.getByTestId("tv-detail")).toContainText("Kid Cartoon Two"); // (what goes with it, for children)
+    await expect(tv.getByTestId("tv-detail")).toContainText("Kid Cartoon Two");
     await onlyForChildren(tv);
   });
 
@@ -130,7 +118,6 @@ test.describe("a child's profile on the TV", () => {
     await expect(tv.getByTestId("tv-browse")).toContainText("Kid Cartoon");
     await onlyForChildren(tv, ["Anime Shelf", "Film Shelf"]);
 
-    // (The way back to the switch is where it was: the corner's button, then Settings.)
     await openTvSettings(tv);
     await tv.getByTestId("tv-child").click();
     await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "false");
@@ -143,7 +130,6 @@ test.describe("a child's profile on the TV", () => {
     const context = await browser.newContext({ viewport });
     await serve(context);
     await recordShown(context, NOT_FOR_CHILDREN);
-    // The account and its child's profile were made on another screen: this one has nothing of it kept.
     const name = `child${Date.now().toString(36)}`;
     const made = await context.request.post("/api/auth/register", { data: { email: name, password: "kino-test-pass-1", device: "tv" } });
     expect(made.ok()).toBe(true);
@@ -151,7 +137,6 @@ test.describe("a child's profile on the TV", () => {
     const at = Date.now();
     const sync = await context.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0, settings: [{ key: "child", at, value: true }], progress: cards.map((each) => ({ ...each, at: at - each.at })) } });
     expect(sync.ok()).toBe(true);
-    // (Who is signed in, and then the first exchange, are slow to come: a screen that drew the library before either would show it.)
     for (const slow of [/\/api\/me$/, /\/api\/profiles\/[^/]+\/sync/]) {
       await context.route(slow, async (route) => {
         await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -172,7 +157,7 @@ test.describe("a child's profile on the phone", () => {
     const tv = await openDevice(browser, { viewport }, {}, serve);
     await tv.goto("/tv");
     await pressMenuLine(tv, "rail-connect");
-    const phone = await openDevice(browser, PHONE, { ...guestStorage({ settings: [CHILD], progress: cards }), "kino.linkbox": "1" }, serve); // (the box for links turned on: a child's profile has none all the same)
+    const phone = await openDevice(browser, PHONE, { ...guestStorage({ settings: [CHILD], progress: cards }), "kino.linkbox": "1" }, serve);
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
@@ -194,10 +179,9 @@ test.describe("a child's profile on the phone", () => {
     await onlyForChildren(phone);
     await phone.getByTestId("library-result").first().click();
     await expect(phone.getByTestId("title-sheet")).toContainText("Kid Cartoon");
-    await expect(phone.getByTestId("title-sheet")).toContainText("Kid Cartoon Two"); // (what goes with it, for children)
+    await expect(phone.getByTestId("title-sheet")).toContainText("Kid Cartoon Two");
     await onlyForChildren(phone);
 
-    // No watch party in the TV's menu.
     await phone.getByTestId("title-back").click();
     await phone.getByTestId("menu").click();
     await expect(phone.getByTestId("tvs-open")).toBeVisible();

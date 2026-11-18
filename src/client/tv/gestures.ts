@@ -1,36 +1,16 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
-/**
- * What a hand does to the picture of a playing video: a tap or a click, two in a row on one side of it, or a finger (or a mouse button)
- * held down on it. They are told apart from the pointer's own events, so that a tap is only acted on once it is known not to be the
- * first of two. A finger and a mouse are told the same way: a mouse's double click skips by the side it lands on, and its held button
- * plays faster, just as a finger's do.
- */
-
-/** A second tap that comes this soon after the first makes the two a double tap. */
 export const DOUBLE_TAP_MS = 260;
-/** After a double tap, one more tap on the same side this soon skips again (as on YouTube), without having to be a double itself. */
 export const CHAIN_MS = 800;
-/** A finger (or a mouse button) that rests on the picture this long without moving is a hold. */
 export const HOLD_MS = 450;
-/** A pointer that moves further than this many pixels between pressing and lifting was dragging, not tapping. */
 export const MOVE_PX = 14;
-/** The share of the picture's width, at each side, that skips; the middle is left to the double tap that goes full screen. */
 export const SIDE_SHARE = 0.4;
-/** How fast a hold plays. */
 export const HOLD_SPEED = 2;
 
 export type Side = "back" | "forward" | "middle";
-/** A finger (or a pen), or a mouse (a remote that points is one). */
 export type PointerKind = "touch" | "mouse";
-/**
- * Where a press landed: on the picture itself, or on the bars laid over it (the title, and the progress and buttons) away from anything
- * that is pressed there. A finger on either is a finger on the picture, since on a phone the bars take much of it and a tap there
- * must still put them away; a mouse is not (a click a button's width beside it would pause the film), and a hold only means something on the picture.
- */
 export type Zone = "picture" | "bar";
 
-/** Which part of the picture a tap at `x` (of a picture `width` wide) is in. */
 export function sideOf(x: number, width: number): Side {
   if (!(width > 0)) return "middle";
   const share = x / width;
@@ -40,16 +20,9 @@ export function sideOf(x: number, width: number): Side {
 export const kindOf = (pointerType: string): PointerKind => (pointerType === "mouse" ? "mouse" : "touch");
 
 export interface PictureActions {
-  /**
-   * One tap or click. `wasVisible` is whether the controls were up when the pointer came down: a tap is acted on after a short wait
-   * (to see whether a second follows), and the controls may have faded in that time, which is no reason to bring them back.
-   */
   tap(kind: PointerKind, wasVisible: boolean): void;
-  /** Two taps in a row on one side (skip that way), or in the middle (full screen); and each further tap in a run of skips. */
   doubleTap(side: Side): void;
-  /** A finger or a mouse button has been held on the picture. Says whether that took: it only means something while the picture plays. */
   hold(): boolean;
-  /** The held finger (or button) let go, or the hold was cut short. */
   release(): void;
 }
 
@@ -57,11 +30,9 @@ export interface PressStart {
   id: number;
   x: number;
   y: number;
-  /** How wide the picture is. */
   width: number;
   kind: PointerKind;
   wasVisible: boolean;
-  /** Where it landed; on the picture when not said. */
   zone?: Zone;
 }
 
@@ -72,20 +43,16 @@ interface Press extends PressStart {
 }
 
 interface Pending {
-  /** Whose tap it was: a finger's tap and a mouse's click are no pair. */
   kind: PointerKind;
   side: Side;
   wasVisible: boolean;
-  /** Undefined while a second press is down, which decides what the first one was. */
   timer: ReturnType<typeof setTimeout> | undefined;
 }
 
-/** Follows the pointers on the picture and says what they did, through `actions`. Knows nothing of the page, so it can be tried on its own. */
 export class PictureGestures {
   private press: Press | undefined;
   private pending: Pending | undefined;
   private chain: { kind: PointerKind; side: Side; until: number } | undefined;
-  /** The pointers that are down: a second finger turns a tap into something else (a pinch), which is none of ours. */
   private readonly down = new Set<number>();
   private spoiled = false;
 
@@ -96,14 +63,12 @@ export class PictureGestures {
     if (this.down.size > 1) return this.spoil();
     this.spoiled = false;
     const waiting = this.pending;
-    if (waiting && waiting.kind !== start.kind) this.flush(); // (a finger's tap and a mouse click are no pair: the one that waited stands by itself)
+    if (waiting && waiting.kind !== start.kind) this.flush();
     else if (waiting?.timer) {
-      // A second press has begun: the first tap waits for it, and is not acted on while it is down.
       clearTimeout(waiting.timer);
       waiting.timer = undefined;
     }
     const press: Press = { ...start, moved: false, held: false, holdTimer: undefined };
-    // Not on the bars: resting a finger (or a button) by a control on the way to it is no wish to play faster.
     if (start.zone !== "bar") press.holdTimer = setTimeout(() => this.holdNow(press), HOLD_MS);
     this.press = press;
   }
@@ -113,13 +78,11 @@ export class PictureGestures {
     if (!press || press.id !== id || press.moved) return;
     if (Math.hypot(x - press.x, y - press.y) <= MOVE_PX) return;
     press.moved = true;
-    if (press.held) return; // a hold goes on while the finger drifts
-    // Dragging: not a hold, and not a tap at the end. (A tap that was waiting for this press to be its second stands by itself.)
+    if (press.held) return;
     this.endPress();
     this.flush();
   }
 
-  /** The pointer was lifted. */
   end(id: number): void {
     this.down.delete(id);
     if (this.spoiled) {
@@ -134,7 +97,6 @@ export class PictureGestures {
     this.tapped(press);
   }
 
-  /** The pointer was taken away (the browser started something else with it). */
   cancel(id: number): void {
     this.down.delete(id);
     if (this.down.size === 0) this.spoiled = false;
@@ -143,7 +105,6 @@ export class PictureGestures {
     this.flush();
   }
 
-  /** Forget everything under way (a menu opened, the picture went away). */
   reset(): void {
     this.down.clear();
     this.spoiled = false;
@@ -155,12 +116,11 @@ export class PictureGestures {
   private holdNow(press: Press): void {
     press.holdTimer = undefined;
     if (this.press !== press || press.moved) return;
-    this.dropPending(); // a tap, then a hold: the tap does not count
-    this.chain = undefined; // (nor does a run of skips go on past it)
+    this.dropPending();
+    this.chain = undefined;
     press.held = this.actions.hold();
   }
 
-  /** A press that will not be a tap (it dragged, was cancelled, or a second finger came): a hold in progress ends, the rest is dropped, and a run of skips is over. */
   private endPress(): void {
     const press = this.press;
     this.press = undefined;
@@ -181,7 +141,6 @@ export class PictureGestures {
     this.pending = undefined;
   }
 
-  /** The first tap of a pair turned out to be a tap by itself: act on it now. */
   private flush(): void {
     const pending = this.pending;
     if (!pending) return;
@@ -192,7 +151,7 @@ export class PictureGestures {
   private tapped(press: Press): void {
     const now = Date.now();
     const side = sideOf(press.x, press.width);
-    if (this.chain && this.chain.kind !== press.kind) this.chain = undefined; // (a run of skips belongs to the hand that began it: a click is not one more tap of a finger's run)
+    if (this.chain && this.chain.kind !== press.kind) this.chain = undefined;
     if (this.chain && now < this.chain.until && this.chain.side === side) {
       this.chain.until = now + CHAIN_MS;
       this.dropPending();
@@ -207,7 +166,7 @@ export class PictureGestures {
       this.actions.doubleTap(side);
       return;
     }
-    if (first) this.flush(); // a tap on the other side: the first one stands by itself
+    if (first) this.flush();
     const pending: Pending = { kind: press.kind, side, wasVisible: press.wasVisible, timer: undefined };
     pending.timer = setTimeout(() => {
       this.pending = undefined;
@@ -217,37 +176,23 @@ export class PictureGestures {
   }
 }
 
-/** What is pressed, and does something of its own: a press on it is not on the picture. */
 const CONTROLS = 'button, a, input, select, textarea, [role="slider"], [role="button"]';
 
-/**
- * Where an event landed, as far as the picture goes: on the video or the empty part of what is laid over it (`data-picture`), or on
- * the text and the empty space of the bars (`data-picture="bar"`), and not on a control, nor on a card or menu of the page's own.
- */
 export function zoneOf(target: EventTarget | null): Zone | null {
   if (!(target instanceof HTMLElement) || target.closest(CONTROLS)) return null;
   const zone = target.closest<HTMLElement>("[data-picture]");
   return zone ? (zone.dataset.picture === "bar" ? "bar" : "picture") : null;
 }
 
-/** Whether an event landed on the picture or its bars, and not on a control or a card. */
 export const isPicture = (target: EventTarget | null): boolean => zoneOf(target) !== null;
 
 interface PictureOptions {
   actions: PictureActions;
-  /** Whether the picture takes taps now: a video is on, and no card or menu of the page's own is over it. */
   enabled: boolean;
-  /** Which video is on: a hand that is busy with one is not busy with the next that takes its place. */
   source: string;
-  /** Whether the controls are up at this moment. */
   controlsUp: () => boolean;
 }
 
-/**
- * Taps, double taps and holds on the picture. `onPointerDown` goes on the element that holds the picture and everything over it; the
- * rest is listened to on the window, so a press that ends elsewhere still ends. `kindRef` is what the last press was, and
- * `echoOfTouch` tells a mouse move that is only the browser's imitation of a finger from a real one.
- */
 export function usePictureGestures({ actions, enabled, source, controlsUp }: PictureOptions) {
   const latest = useRef({ actions, enabled, controlsUp });
   latest.current = { actions, enabled, controlsUp };
@@ -263,7 +208,6 @@ export function usePictureGestures({ actions, enabled, source, controlsUp }: Pic
   const kindRef = useRef<PointerKind>("mouse");
   const touchedAtRef = useRef(0);
 
-  // What is under way belongs to the picture it began on: it is forgotten when that stops taking taps, or another video takes its place.
   useEffect(() => {
     gestures.reset();
   }, [enabled, source, gestures]);
@@ -298,17 +242,12 @@ export function usePictureGestures({ actions, enabled, source, controlsUp }: Pic
       const { enabled: on, controlsUp: up } = latest.current;
       const zone = zoneOf(event.target);
       if (!on || !zone || (kind === "mouse" && (event.button !== 0 || zone === "bar"))) return gestures.reset();
-      if (kind === "touch") event.preventDefault(); // the browser's mouse events that follow a touch are not wanted: the touch was handled here
+      if (kind === "touch") event.preventDefault();
       gestures.start({ id: event.pointerId, x: event.clientX, y: event.clientY, width: event.currentTarget.clientWidth, kind, wasVisible: up(), zone });
     },
   };
 }
 
-/**
- * Whether the last thing that touched the page was a finger, and not a mouse or a key: a finger has no hover and no keys, so the
- * controls that only it needs (the big pause button while the picture plays) are put up for it. A remote's keys, or a mouse, take them
- * away, except a mouse that presses one of those controls (marked `data-for-touch`): it is not pulled from under the click.
- */
 export function useTouchUi(): boolean {
   const [touch, setTouch] = useState(() => matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0);
   useEffect(() => {

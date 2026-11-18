@@ -32,12 +32,8 @@ import { useSwipeAway } from "../shared/swipe";
 import { Card, CardRow } from "./Rows";
 import "./friends.css";
 
-/** What a screen does with a title somebody opened (nothing, on a phone that has no TV to play it on). */
 type OpenTitle = ((entry: Entry) => void) | undefined;
 
-/* ------------------------------ a code, looked up ------------------------------ */
-
-/** A friend's code, looked up: who it is from, and the button that makes the two of them friends. */
 function CodeCard({ code, onDone }: { code: string; onDone: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -88,7 +84,6 @@ function CodeCard({ code, onDone }: { code: string; onDone: () => void }) {
   );
 }
 
-/** A tag that was looked for: who has it, and the button that asks them to be friends (they have to say yes). */
 function TagCard({ text, onDone }: { text: string; onDone: () => void }) {
   const t = useT();
   const { seen, problem, waiting, busy, send } = useTagAsk(text, onDone);
@@ -121,7 +116,6 @@ function TagCard({ text, onDone }: { text: string; onDone: () => void }) {
   );
 }
 
-/** The sheet a friend's link opens (`/?friend=ABCD2345`): sign in if need be, then who it is from and a button to add them (a profile friends are turned off for is told so). */
 export function FriendInvite({ code, onClose, onSignIn }: { code: string; onClose: () => void; onSignIn: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -159,9 +153,6 @@ export function FriendInvite({ code, onClose, onSignIn }: { code: string; onClos
   );
 }
 
-/* ------------------------------ adding a friend ------------------------------ */
-
-/** A code made for a friend: the code, a QR code and a link to send, and a way to take it back. */
 function InviteCard({ invite }: { invite: OpenInvite }) {
   const t = useT();
   const language = useLanguage();
@@ -170,7 +161,7 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   const code = typedLinkCode(invite.code);
   const codeText = useRef<HTMLSpanElement>(null);
   const canShare = typeof navigator.share === "function";
-  const share = () => navigator.share({ title: t("friends.shareTitle"), url: link }).catch(() => undefined); // (a share sheet that was closed is no error)
+  const share = () => navigator.share({ title: t("friends.shareTitle"), url: link }).catch(() => undefined);
 
   return (
     <div className="code-card" data-testid="friend-invite">
@@ -197,10 +188,6 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   );
 }
 
-/**
- * This profile's own tag, with the button that copies it: what a friend types to find them (on the page for adding friends, and on the profile's own; `testId`
- * tells them apart). `help`: the line on what it is for (the profile's screen leaves it out: held sideways, its column then fits the screen).
- */
 export function YourTag({ label, testId = "friend-your-tag", help = true }: { label: string; testId?: string; help?: boolean }) {
   const t = useT();
   const shown = useRef<HTMLElement>(null);
@@ -218,7 +205,6 @@ export function YourTag({ label, testId = "friend-your-tag", help = true }: { la
   );
 }
 
-/** Ways of becoming friends: make a code to give, type the one you were given, or find somebody by their tag (they have to say yes). */
 function AddFriend() {
   const t = useT();
   const account = useAccount();
@@ -227,7 +213,6 @@ function AddFriend() {
   const [problem, setProblem] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
   const code = linkCodeOf(typed);
-  /** What was typed to find a tag, and what was looked for (only when asked to: a tag has no length that says it is complete). */
   const [tagTyped, setTagTyped] = useState("");
   const [looked, setLooked] = useState("");
   const mine = account.profile?.tag !== undefined ? tagLabel(account.profile.name, account.profile.tag) : undefined;
@@ -245,7 +230,7 @@ function AddFriend() {
   };
 
   const out = friends.state?.invites ?? [];
-  useQuickLooks(out.length > 0); // (a code on the screen: the friend who uses it appears within seconds)
+  useQuickLooks(out.length > 0);
 
   return (
     <Group title={t("friends.add")}>
@@ -321,7 +306,6 @@ function AddFriend() {
   );
 }
 
-/** Somebody who asked to be friends: who it is, and the buttons that say yes or no. */
 export function RequestRow({ request }: { request: FriendRequest }) {
   const t = useT();
   const answer = useAnswerRequests();
@@ -350,9 +334,6 @@ export function RequestRow({ request }: { request: FriendRequest }) {
   );
 }
 
-/* ------------------------------ the page of friends ------------------------------ */
-
-/** A friend's picture, with a small green dot on it while they are online. */
 function FriendPic({ friend, size }: { friend: Friend; size?: "big" }) {
   return (
     <span className={size ? `friend-pic ${size}` : "friend-pic"} data-online={friend.on && friend.online === true}>
@@ -361,10 +342,6 @@ function FriendPic({ friend, size }: { friend: Friend; size?: "big" }) {
   );
 }
 
-/**
- * Asks a friend to watch together: they get a request with a button that starts a party and invites this profile to it. `ended` is the
- * invitation to a party that is over, if that is where this was pressed: once the friend is asked it is of no more use.
- */
 function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
   const t = useT();
   const account = useAccount();
@@ -381,10 +358,6 @@ function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
   };
 }
 
-/**
- * A plan to watch together, as a line of the inbox: it asks for an answer (Accept, Decline), is on (a line to read, and to dismiss), is due (the button that
- * starts the party, when there is a TV to start it on), or was turned down (news to read). Answering is for the server to accept: a plan that is gone says so.
- */
 function PlanRow({ item, from, onStartParty, dismiss, swipe }: { item: PlanItem; from: string; onStartParty: ((friendId: string) => void) | undefined; dismiss: ReactNode; swipe: ReturnType<typeof useSwipeAway> }) {
   const t = useT();
   const account = useAccount();
@@ -399,7 +372,7 @@ function PlanRow({ item, from, onStartParty, dismiss, swipe }: { item: PlanItem;
       await friends.answerPlan(item.id, yes);
     } catch (error) {
       account.say(describeError(error));
-      void friends.refresh(); // (a plan that is gone is gone from the list)
+      void friends.refresh();
     } finally {
       setBusy(false);
     }
@@ -436,7 +409,7 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
   const t = useT();
   const language = useLanguage();
   const ask = useAskTogether();
-  const swipe = useSwipeAway(onDismiss); // (the cross does the same)
+  const swipe = useSwipeAway(onDismiss);
   const now = Date.now();
   const from = friend?.name ?? "";
   const dismiss = (
@@ -459,7 +432,6 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
               {t("friends.join")}
             </a>
           )}
-          {/* (A party that is over becomes a question: can they start another, for the two of them?) */}
           {!live && friend && canAskTogether(friend) && (
             <button className="btn btn-red" onClick={() => void ask(friend.id, item.id)} data-testid="inbox-ask">
               {t("friends.askTogether")}
@@ -505,10 +477,6 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
   );
 }
 
-/**
- * Everything friends: who they are (first), what they sent, what each of them is watching (a row to a friend), and how to add another. While this profile does not
- * share what it watches (off until it is turned on), a card says so and leads to the settings, where the switch is (`onOpenSettings`).
- */
 export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSettings }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle; onStartParty?: (friendId: string) => void; onOpenSettings?: () => void }) {
   const t = useT();
   const friends = useFriends();
@@ -516,7 +484,6 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
   const iGet = friendChoices(settings).friendsGet;
   const { state } = friends;
 
-  // Opening the page is seeing what is in the inbox, and how things stand now (a switch just turned on changes what is told).
   useEffect(() => {
     void friends.refresh();
   }, []);
@@ -621,8 +588,6 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
   );
 }
 
-/* ------------------------------ one friend ------------------------------ */
-
 function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: OpenTitle }) {
   const t = useT();
   const { list: mine } = useProfileData();
@@ -634,7 +599,6 @@ function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: Ope
   const lists = listsOf(answer.data);
   const progress = answer.data.progress;
   if (lists.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noLists", { name: friend.name })}</p>;
-  // (What both keep in a list comes first: something to watch together.)
   const both = bothWant(lists, mine);
   return (
     <div className="page-stack" data-testid="friend-lists">
@@ -656,7 +620,6 @@ function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: Ope
   );
 }
 
-/** How far a friend got in a title they rated: the episode they are at and how far into it, with a thin bar. */
 function HowFar({ progress }: { progress: FriendProgress | undefined }) {
   const how = progress && progressNote(progress);
   if (!progress || !how) return null;
@@ -684,7 +647,6 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
   if (answer.problem || !answer.data) return <p className="auth-error" role="alert">{answer.problem}</p>;
   const ratings = sortRatings(ratedBy(answer.data), "new");
   const progress = answer.data.progress;
-  // (A title both rated says this profile's score after the friend's: none while this profile has ratings turned off.)
   const scores = scoresByTitle(ratingsShown(settings) ? mine : []);
   if (ratings.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noRatings", { name: friend.name })}</p>;
   return (
@@ -721,11 +683,6 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
   );
 }
 
-/**
- * Plans a watch together with a friend: the day and the time (the phone's own pickers, in this phone's own time) and a few words if there are some. It
- * starts on this evening or the next one, and refuses a time the server would (not under five minutes ahead, not over thirty days). The friend
- * answers in their bell, and says whether the plan is on.
- */
 function PlanSheet({ friend, onClose }: { friend: Friend; onClose: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -753,7 +710,7 @@ function PlanSheet({ friend, onClose }: { friend: Friend; onClose: () => void })
       const answer = await friends.send([friend.id], { kind: "plan", when, ...(note.trim() ? { note: note.trim() } : {}) });
       if (answer.sent.length === 0) {
         setProblem(t("friends.declined", { names: friend.name }));
-        void friends.refresh(); // (what the server just said is what the page shows from now on)
+        void friends.refresh();
         setBusy(false);
         return;
       }
@@ -799,7 +756,6 @@ function PlanSheet({ friend, onClose }: { friend: Friend; onClose: () => void })
   );
 }
 
-/** A friend's page: their lists and their ratings (as far as they share them), and a way to stop being friends. */
 export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string; onOpenTitle: OpenTitle; onGone: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -815,7 +771,6 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  // A friend who is gone (taken off from the other side, or from another screen), or friends turned off from another screen, leave nothing to show.
   useEffect(() => {
     if (!friends.on || (friends.state && !friend)) onGone();
   }, [friends.on, friends.state, friend, onGone]);
@@ -843,7 +798,6 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         <FriendPic friend={friend} size="big" />
         <div className="account-who">
           <h1 data-testid="friend-name">{friend.name}</h1>
-          {/* (What they are doing and whether they are online, or when they last were, on a line of its own: since when they are friends under it.) */}
           {friend.on && friendHeadline(friend, friends.state?.activity ?? [], Date.now()) && (
             <p className="friend-now" data-online={friend.online === true} data-testid="friend-now">
               {friendHeadline(friend, friends.state?.activity ?? [], Date.now())}
@@ -905,13 +859,6 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   );
 }
 
-/* ------------------------------ sending to friends ------------------------------ */
-
-/**
- * Pick the friends a title or an invitation to a watch party goes to, with a few words of why for a title. Only friends who take
- * things are offered; the server has the last word on who gets it (it says who it reached and who is not taking things). When it
- * reached nobody the sheet stays, with the few words typed, so that they need not be typed again for the next friend.
- */
 export function FriendPicker({ title, withNote, build, onClose }: { title: string; withNote?: boolean; build: (note: string | undefined) => Message; onClose: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -923,7 +870,6 @@ export function FriendPicker({ title, withNote, build, onClose }: { title: strin
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  // Who takes things is looked at when the sheet opens, not only every half minute: somebody who just stopped is not offered.
   useEffect(() => {
     void friends.refresh();
   }, []);
@@ -941,15 +887,13 @@ export function FriendPicker({ title, withNote, build, onClose }: { title: strin
     try {
       const answer = await friends.send([...picked], build(note.trim() || undefined));
       const names = (ids: readonly string[]) => ids.map((id) => nameOf(all, id)).filter(Boolean).join(", ");
-      // (Both are told when some took it and some did not: the ones who did must not be sent it again.)
       const told: string[] = [];
       if (answer.sent.length > 0) told.push(t(withNote ? "friends.sent" : "friends.inviteSent", { names: names(answer.sent) }));
       if (answer.declined.length > 0) {
         told.push(t(answer.declined.length > 1 ? "friends.declinedMany" : "friends.declined", { names: names(answer.declined) }));
-        void friends.refresh(); // (what the server just said is what the list shows from now on)
+        void friends.refresh();
       }
       if (answer.sent.length === 0) {
-        // Nobody took it: the sheet stays, with the few words typed, so that it can go to somebody else.
         setPicked((now) => new Set([...now].filter((id) => !answer.declined.includes(id))));
         setProblem(told.join(". "));
         setBusy(false);
@@ -1001,7 +945,6 @@ export function FriendPicker({ title, withNote, build, onClose }: { title: strin
   );
 }
 
-/** "Recommend to a friend", on a title's page: nothing unless friends are on. */
 export function RecommendButton({ entry }: { entry: Entry }) {
   const t = useT();
   const friends = useFriends();
@@ -1024,7 +967,6 @@ export function RecommendButton({ entry }: { entry: Entry }) {
   );
 }
 
-/** "Invite friends" on the code of a watch party: they get the code in their inbox, and a button that joins. */
 export function InviteFriendsButton({ code, endsAt }: { code: string; endsAt: number }) {
   const t = useT();
   const friends = useFriends();
@@ -1040,9 +982,6 @@ export function InviteFriendsButton({ code, endsAt }: { code: string; endsAt: nu
   );
 }
 
-/* ------------------------------ on the home screen ------------------------------ */
-
-/** What friends have sent, where the library is: an invitation to a watch party that is on now, a request for one, and the titles they recommended. */
 export function FriendsHome({ onOpenTitle, onStartParty }: { onOpenTitle: OpenTitle; onStartParty: (friendId: string) => void }) {
   const t = useT();
   const friends = useFriends();

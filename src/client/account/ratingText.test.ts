@@ -3,14 +3,12 @@ import type { LiveRating } from "../../shared";
 import { loadLanguage, translate } from "../i18n";
 import { averageText, factLines, mergeFacts, ratingFor, ratingNote, ratingSummary, scoreOf, scoresOf, scoreWord, SCORES, sortRatings, storedFacts } from "./ratingText";
 
-// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
 await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const en = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("en", key, params);
 const ro = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("ro", key, params);
 
 const rated = (key: string, score: number, ratedAt = 1, extra: Partial<LiveRating> = {}): LiveRating => ({ key, at: ratedAt, title: key, url: `https://x.example/${key}`, score, ratedAt, ...extra });
-/** Noon in the middle of the month, so the day is the same in every time zone. */
 const DAY = Date.UTC(2026, 9, 12, 12);
 
 describe("the scores", () => {

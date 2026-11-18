@@ -39,7 +39,7 @@ describe("the line under a friend's name", () => {
   it("is nothing for a friend who watched nothing, and that they are online when they are", () => {
     expect(friendLine(sam, [], NOW)).toBe("");
     expect(friendLine({ ...sam, online: true }, [], NOW)).toBe(t("friends.online"));
-    expect(friendLine({ ...sam, online: true }, [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" })); // (what they watch says more)
+    expect(friendLine({ ...sam, online: true }, [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" }));
     expect(friendLine({ ...sam, on: false, online: true }, [], NOW)).toBe(t("friends.paused"));
   });
 
@@ -50,8 +50,8 @@ describe("the line under a friend's name", () => {
     expect(friendLine(seen(3 * 3_600_000), [], NOW)).toBe(t("friends.lastOnline", { when: "3 hours ago" }));
     expect(friendLine(seen(26 * 3_600_000), [], NOW)).toBe(t("friends.lastOnline", { when: "yesterday" }));
     expect(friendLine(seen(10 * 86_400_000), [], NOW)).toBe(t("friends.lastOnlineDay", { day: formatDay(NOW - 10 * 86_400_000, "en") }));
-    expect(friendLine(seen(-5 * 60_000), [], NOW)).toBe(t("friends.lastOnlineNow")); // (a clock here behind the server's)
-    expect(friendLine({ ...seen(5 * 60_000), online: true }, [], NOW)).toBe(t("friends.online")); // (told while they are online too)
+    expect(friendLine(seen(-5 * 60_000), [], NOW)).toBe(t("friends.lastOnlineNow"));
+    expect(friendLine({ ...seen(5 * 60_000), online: true }, [], NOW)).toBe(t("friends.online"));
     expect(friendLine(seen(5 * 60_000), [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" }));
     expect(friendLine({ ...seen(5 * 60_000), on: false }, [], NOW)).toBe(t("friends.paused"));
     expect(presenceLine({ ...seen(5 * 60_000), on: false }, NOW)).toBe("");
@@ -69,7 +69,7 @@ describe("the top of a chat with a friend (the owner, 17 Nov: by the clock, neve
     expect(presenceInChat(seen(at(12, 9, 10)), now)).toBe(t("chat.lastOnlineAt", { day: dayOf(at(12, 9, 10), now, "en"), time: stampOf(at(12, 9, 10), "en") }));
     expect(presenceInChat(seen(at(12, 9, 10)), now)).toContain("12 Nov");
     expect(presenceInChat(seen(now - 20_000), now)).toBe(t("friends.lastOnlineNow"));
-    expect(presenceInChat(seen(now + 5 * 60_000), now)).toBe(t("friends.lastOnlineNow")); // (a clock here behind the server's)
+    expect(presenceInChat(seen(now + 5 * 60_000), now)).toBe(t("friends.lastOnlineNow"));
     expect(presenceInChat({ ...seen(at(17, 14, 32)), online: true }, now)).toBe(t("friends.online"));
     expect(presenceInChat(sam, now)).toBe("");
     expect(presenceInChat({ ...seen(at(17, 14, 32)), on: false }, now)).toBe("");

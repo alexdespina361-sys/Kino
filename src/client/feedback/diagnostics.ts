@@ -3,22 +3,11 @@ import { roleOfThisPage, thisIsHandHeld } from "../role";
 import { describeElement } from "../shared/debug";
 import { isEditable } from "../tv/keys";
 
-/**
- * What the page can say about itself when somebody sends feedback: the device, the screen, the last things pressed, the errors, the film. It is
- * recorded from the start of the page (installDiagnostics, called by main.tsx) into small rings, and read when the form is opened. Nothing leaves
- * the browser unless the person sends it, the form shows exactly what would go (and lets each part be switched off), and what is recorded leaves
- * out what was typed, links' queries, codes and tokens.
- */
-
-/* ------------------------------ leaving things out ------------------------------ */
-
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const URLS = /\b(?:https?|wss?|blob):[^\s"'<>)\]]+/g;
 const IPV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
-/** A long run of letters and digits is a token, an id or a code: what it was is no use to anybody reading a report. */
 const LONG = /\b(?=[\w-]*\d)[A-Za-z0-9_-]{24,}\b/g;
 
-/** An address as far as a report needs it: the page of this site (no query, no hash, ids and codes as :id), or only the host of another. */
 export function redactUrl(raw: string, base = typeof location === "undefined" ? "http://localhost/" : location.href): string {
   let url: URL;
   try {
@@ -39,7 +28,6 @@ export function redactUrl(raw: string, base = typeof location === "undefined" ? 
   return path.length > 100 ? `${path.slice(0, 99)}…` : path;
 }
 
-/** A text with the links shortened, and any address, token or IP left out. */
 export function redactText(text: string): string {
   return text
     .replace(URLS, (link) => redactUrl(link))
@@ -47,8 +35,6 @@ export function redactText(text: string): string {
     .replace(IPV4, "<ip>")
     .replace(LONG, "<token>");
 }
-
-/* ------------------------------ what is recorded ------------------------------ */
 
 interface Note {
   at: number;
@@ -58,25 +44,20 @@ interface Note {
 const trail: Note[] = [];
 const errors: Note[] = [];
 const failed: Note[] = [];
-/** The screens the person has been on, newest last: where a report is about is the last that was not the account's own. */
 const screens: Array<{ id: string; area: FeedbackArea | undefined }> = [];
 let installed = false;
 
 function push(ring: Note[], text: string, max: number, at = Date.now()): void {
   const last = ring[ring.length - 1];
-  if (last && last.text === text && at - last.at < 1000) return; // (the same line twice at once is one)
+  if (last && last.text === text && at - last.at < 1000) return;
   ring.push({ at, text: redactText(text).slice(0, 400) });
   if (ring.length > max) ring.splice(0, ring.length - max);
 }
 
-/** Lines for the report: "12s ago  tap button[tv-search]". */
 export function seconds(ring: Note[], now: number, max: number): string[] {
   return ring.slice(-max).map((note) => `${Math.max(0, Math.round((now - note.at) / 1000))}s ago  ${note.text}`);
 }
 
-/* ------------------------------ where the person is ------------------------------ */
-
-/** Screens the page knows by an element it has only there, most particular first. `area` is what a report from that screen is probably about. */
 const VIEWS: Array<{ selector: string; id: string; area?: FeedbackArea }> = [
   { selector: '[data-testid="tv"][data-state="error"]', id: "film that would not play", area: "wontplay" },
   { selector: '[data-testid="tv"][data-state="playing"], [data-testid="tv"][data-state="paused"], [data-testid="tv"][data-state="loading"]', id: "film", area: "player" },
@@ -92,14 +73,12 @@ const VIEWS: Array<{ selector: string; id: string; area?: FeedbackArea }> = [
   { selector: '[data-testid="code-input"], [data-testid="scan"]', id: "pairing", area: "pairing" },
 ];
 
-/** The screen the person is on, as far as the page can tell. */
 export function viewNow(doc: Document | undefined = typeof document === "undefined" ? undefined : document): { id: string; area: FeedbackArea | undefined } | undefined {
   if (!doc) return undefined;
   for (const view of VIEWS) {
     try {
       if (doc.querySelector(view.selector)) return { id: view.id, area: view.area };
     } catch {
-      // (a selector this browser does not know: the next one)
     }
   }
   return undefined;
@@ -115,17 +94,13 @@ function sample(): void {
   push(trail, `screen: ${view.id}`, FEEDBACK_LIMITS.trail);
 }
 
-/** Where a report is probably about: the screen before the feedback was opened (the profile the button is on is not where the trouble was). */
 export function guessArea(): FeedbackArea | undefined {
   for (let at = screens.length - 1; at >= 0; at--) if (screens[at]?.area) return screens[at]!.area;
   return undefined;
 }
 
-/* ------------------------------ installing ------------------------------ */
-
 const KEYS_NOTED = new Set(["Enter", "Escape", "Backspace", "BrowserBack", "GoBack", "MediaPlayPause", "MediaStop", "MediaTrackNext", "MediaTrackPrevious"]);
 
-/** Whether this is part of the feedback's own screens (marked data-feedback-skip). */
 const inFeedback = (target: EventTarget | null): boolean => target instanceof Element && target.closest("[data-feedback-skip]") !== null;
 
 function labelOf(target: EventTarget | null): string {
@@ -145,7 +120,6 @@ function reasonText(reason: unknown): string {
   }
 }
 
-/** Starts the recording (once). Everything it does is on the page it is in: no ask is made and nothing is kept outside it. */
 export function installDiagnostics(): void {
   if (installed || typeof window === "undefined") return;
   installed = true;
@@ -154,7 +128,7 @@ export function installDiagnostics(): void {
   document.addEventListener(
     "click",
     (event) => {
-      if (inFeedback(event.target)) return; // (what is pressed in the form itself is not the trouble)
+      if (inFeedback(event.target)) return;
       push(trail, `tap ${labelOf(event.target)}`, FEEDBACK_LIMITS.trail);
       later();
     },
@@ -163,7 +137,6 @@ export function installDiagnostics(): void {
   document.addEventListener(
     "keydown",
     (event) => {
-      // (What is typed in a field is not recorded, not even which keys: only the keys that press or leave something.)
       if (!KEYS_NOTED.has(event.key) || isEditable(event.target) || inFeedback(event.target)) return;
       push(trail, `key ${event.key} on ${describeElement(document.activeElement)}`, FEEDBACK_LIMITS.trail);
       later();
@@ -177,7 +150,6 @@ export function installDiagnostics(): void {
     "error",
     (event) => {
       const target = event.target;
-      // A script or a style sheet of the page that did not load is a broken page; a picture that did not is not worth a line.
       if (target instanceof HTMLScriptElement || target instanceof HTMLLinkElement) {
         push(errors, `did not load: ${redactUrl(target instanceof HTMLScriptElement ? target.src : target.href)}`, FEEDBACK_LIMITS.errors);
       } else if (event.message) {
@@ -193,14 +165,11 @@ export function installDiagnostics(): void {
     try {
       push(errors, `console.error: ${args.map((each) => (typeof each === "string" ? each : reasonText(each))).join(" ")}`, FEEDBACK_LIMITS.errors);
     } catch {
-      // (a line that cannot be made is no reason for the page to stop)
     }
   };
 
-  // The asks the page makes of its own server that fail, which is where a film that will not load or a list that will not show usually shows first.
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    // (A Request or a URL object as well as a string; written so that a browser without `Request` does not stumble on it.)
     const where = typeof input === "string" ? input : "href" in input ? input.href : input.url;
     const method = init?.method ?? (typeof input === "object" && "method" in input ? input.method : "GET");
     try {
@@ -226,10 +195,7 @@ function noteFailed(method: string, where: string, status: number | string): voi
   push(failed, `${method.toUpperCase()} ${path} -> ${status}`, FEEDBACK_LIMITS.failed);
 }
 
-/* ------------------------------ collecting ------------------------------ */
-
 export interface Include {
-  /** The device, the app's version, the language and the screen it is on. */
   device: boolean;
   steps: boolean;
   errors: boolean;
@@ -241,7 +207,6 @@ const text = (selector: string): string | undefined => document.querySelector(se
 function playbackNow(): NonNullable<FeedbackContext["playback"]> | undefined {
   const tv = document.querySelector<HTMLElement>('[data-testid="tv"]');
   const video = document.querySelector<HTMLVideoElement>("video");
-  // (a phone that is the remote of a TV has no video of its own: the line that says how the TV's one is doing has the state and the error)
   const remote = document.querySelector<HTMLElement>('[data-testid="player-state"]');
   const state = tv?.getAttribute("data-state") ?? remote?.getAttribute("data-state") ?? text('[data-testid="player-state"]');
   if (!state && !video) return undefined;
@@ -297,13 +262,11 @@ function deviceNow(): NonNullable<FeedbackContext["device"]> {
   return device;
 }
 
-/** The build of the page: the name of its script, which changes with every build. */
 export function buildId(doc: Document | undefined = typeof document === "undefined" ? undefined : document): string {
   const src = [...(doc?.scripts ?? [])].map((script) => script.src).find((each) => /\/assets\/index-[\w-]+\.js/.test(each));
   return /\/assets\/(index-[\w-]+)\.js/.exec(src ?? "")?.[1] ?? "dev";
 }
 
-/** What would be sent with a report, for the parts that are on. */
 export function collectContext(include: Include, extra: { signedIn?: boolean } = {}): FeedbackContext {
   const now = Date.now();
   const context: FeedbackContext = {};
@@ -314,7 +277,6 @@ export function collectContext(include: Include, extra: { signedIn?: boolean } =
     context.lang = document.documentElement.lang || undefined;
     context.accent = document.documentElement.dataset.accent || undefined;
     context.device = deviceNow();
-    // (The focus is in the form while it is open: what had it before is no longer known, so nothing is said.)
     const focus = inFeedback(document.activeElement) ? "-" : describeElement(document.activeElement);
     context.where = { path: redactUrl(location.href), ...(screens[screens.length - 1] ? { view: screens[screens.length - 1]!.id } : {}), ...(focus !== "-" ? { focus } : {}) };
     context.session = {
@@ -331,7 +293,6 @@ export function collectContext(include: Include, extra: { signedIn?: boolean } =
     const playback = playbackNow();
     if (playback) context.playback = playback;
   }
-  // (Nothing to say for a part is left out, not sent empty.)
   for (const key of ["trail", "errors", "failed"] as const) if (context[key]?.length === 0) delete context[key];
   return context;
 }

@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type KeyboardEvent, type PointerEvent } from "react";
 import { episodeLabel, previousEpisode, type Command, type NormalizedMedia, type PlayerState, type TvInfo } from "../../shared";
 import { reportWontPlay } from "../feedback/store";
 import { Rich } from "../i18n/Rich";
 import { t, useT } from "../i18n";
-import { hostOf } from "../shared/format";
+import { hostOf, formatRemaining, formatTime } from "../shared/format";
 import { Poster } from "../shared/Poster";
 import {
   Back10Icon,
@@ -19,13 +19,82 @@ import {
   SubtitlesIcon,
 } from "../shared/icons";
 import { friendlyError, hasPictureChoice, pictureName, trackName } from "../shared/words";
-import { SeekBar } from "./SeekBar";
+
+interface SeekBarProps {
+  currentTime: number;
+  duration: number;
+  buffered?: number;
+  onSeek: (time: number) => void;
+}
+function SeekBar({ currentTime, duration, buffered = 0, onSeek }: SeekBarProps) {
+  useT();
+  const barRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<number | null>(null);
+  const shown = drag ?? currentTime;
+  const percent = (time: number) => (duration > 0 ? Math.max(0, Math.min(100, (time / duration) * 100)) : 0);
+
+  const timeAt = (event: PointerEvent) => {
+    const rect = barRef.current!.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * duration;
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    const step = event.key === "ArrowLeft" ? -5 : event.key === "ArrowRight" ? 5 : 0;
+    if (!step) return;
+    event.preventDefault();
+    onSeek(Math.max(0, Math.min(duration, currentTime + step)));
+  };
+
+  return (
+    <div className="seek" data-testid="time" data-current={Math.floor(shown)} data-duration={Math.floor(duration)}>
+      <div
+        ref={barRef}
+        className={`seek-bar ${drag !== null ? "dragging" : ""}`}
+        role="slider"
+        tabIndex={0}
+        aria-label={t("hud.seek")}
+        aria-valuemin={0}
+        aria-valuemax={Math.floor(duration)}
+        aria-valuenow={Math.floor(shown)}
+        aria-valuetext={formatTime(shown)}
+        data-testid="seek"
+        onKeyDown={onKeyDown}
+        onPointerDown={(event) => {
+          if (duration <= 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDrag(timeAt(event));
+        }}
+        onPointerMove={(event) => drag !== null && setDrag(timeAt(event))}
+        onPointerUp={(event) => {
+          if (drag === null) return;
+          onSeek(timeAt(event));
+          setDrag(null);
+        }}
+        onPointerCancel={() => setDrag(null)}
+      >
+        <div className="seek-track">
+          <div className="seek-buffered" style={{ width: `${percent(buffered)}%` }} />
+          <div className="seek-fill" style={{ width: `${percent(shown)}%` }} />
+          <div className="seek-thumb" style={{ left: `${percent(shown)}%` }} />
+        </div>
+        {drag !== null && (
+          <div className="seek-bubble" style={{ left: `${percent(drag)}%` }}>
+            {formatTime(drag)}
+          </div>
+        )}
+      </div>
+      <div className="seek-times">
+        <span>{formatTime(shown)}</span>
+        <span>{formatRemaining(shown, duration)}</span>
+      </div>
+    </div>
+  );
+}
 
 export type SheetKind = "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party" | "tvs";
 
 interface RemoteProps {
   tv: TvInfo;
-  /** The phone is connected to the server and the TV is connected to the server. */
   online: boolean;
   media: NormalizedMedia;
   player: PlayerState;
@@ -34,11 +103,9 @@ interface RemoteProps {
   onNext: () => void;
   onPrevious: () => void;
   onOpen: (sheet: SheetKind) => void;
-  /** "Change video": the remote steps aside, to the page where a link is pasted and a title is picked. */
   onChangeVideo: () => void;
 }
 
-/** What the title is called on the remote (a show without the episode, which has a line of its own). */
 export function mediaTitle(media: NormalizedMedia): string {
   const raw = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
   return media.series && raw.includes("·") ? raw.split("·")[0]!.trim() : raw;
@@ -48,7 +115,7 @@ export function stateLabel(player: PlayerState, tvName: string): string {
   if (player.state === "error") return friendlyError(player.error);
   if (player.state === "loading") return t("common.loading");
   if (player.buffering) return t("remote.buffering");
-  if (player.upNext && player.upNext.seconds !== null) return t("remote.upNextIn", { seconds: player.upNext.seconds }); // the TV's Up Next card, counting down
+  if (player.upNext && player.upNext.seconds !== null) return t("remote.upNextIn", { seconds: player.upNext.seconds });
   if (player.state === "playing") return t("remote.playingOn", { tv: tvName });
   if (player.ended) return t("end.finished");
   if (player.state === "paused") return t("remote.paused");
@@ -68,17 +135,14 @@ export function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode
   );
 }
 
-/** The remote: what's playing, a seek bar, transport buttons, and the extras that apply to this video. */
 export function Remote({ tv, online, media, player, send, onStop, onNext, onPrevious, onOpen, onChangeVideo }: RemoteProps) {
   useT();
-  // It takes the place of the library, which may have been scrolled far down: it starts at its own top (the title, and the TV's menu, are there).
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
   }, []);
   const series = media.series;
   const title = mediaTitle(media);
   const playing = player.state === "playing";
-  // A TV can't be sent into full screen without a press on the TV itself; if it hasn't gone in shortly after the tap, say so.
   const [fsHint, setFsHint] = useState(false);
   const fullscreenRef = useRef(player.fullscreen);
   fullscreenRef.current = player.fullscreen;
@@ -106,7 +170,6 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
   return (
     <div className="remote">
       <section className="now-playing">
-        {/* The picture fills what would be blank between the header and the title; a screen that is not tall enough for it has none (shell.css). */}
         <div className="remote-art" data-testid="remote-art">
           <Poster title={title} image={media.poster ?? media.backdrop} />
         </div>
@@ -124,19 +187,16 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
             {busy && <span className="spinner" />}
             {stateLabel(player, tv.name)}
           </p>
-          {/* The video would not play: telling the team is one press away (the form begins with what the line says). */}
           {player.state === "error" && (
             <button className="state-action" data-testid="remote-report" aria-label={t("feedback.report")} onClick={() => reportWontPlay(friendlyError(player.error))}>
               {t("feedback.reportShort")}
             </button>
           )}
-          {/* The TV is about to start the next episode by itself: the way to say no is here too, not only on the TV's remote. */}
           {player.upNext && player.upNext.seconds !== null && (
             <button className="state-action" data-testid="upnext-cancel" onClick={() => send({ type: "DISMISS_UP_NEXT" })} disabled={!online}>
               {t("common.cancel")}
             </button>
           )}
-          {/* The TV shows its Skip button (an opening, a "previously on", credits): it is pressed from here too. */}
           {player.skip && !(player.upNext && player.upNext.seconds !== null) && (
             <button className="state-action" data-testid="remote-skip" onClick={() => send({ type: "SKIP_SEGMENT" })} disabled={!online}>
               {t(player.skip.kind === "intro" ? "hud.skipIntro" : player.skip.kind === "recap" ? "hud.skipRecap" : "hud.skipCredits")}

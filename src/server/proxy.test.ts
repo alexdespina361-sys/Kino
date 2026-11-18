@@ -40,7 +40,6 @@ describe("rewriteM3u8", () => {
   describe("what a playlist may come to", () => {
     const base = "https://media.example/stream/list.m3u8";
     const pieces = (count: number) => `#EXTM3U\n${Array.from({ length: count }, (_, n) => `#EXTINF:4,\nseg${n}.ts\n`).join("")}`;
-    /** Every address of the playlist gets it written in again: the longest text a request can make of it (each `%` comes out as three characters). */
     const referer = "%".repeat(2048);
 
     it("rewrites a playlist of 20,000 pieces whole, and refuses one of 20,001", () => {
@@ -61,12 +60,10 @@ describe("rewriteM3u8", () => {
     });
 
     it("refuses a playlist that comes out larger than 16 MiB, from lines of a few bytes and a long referer", () => {
-      // (5,000 of them: well under the count above, 30 MB as they come out.)
       expect(() => rewriteM3u8(`#EXTM3U\n${"a\n".repeat(5_000)}`, base, referer)).toThrow(PlaylistTooLong);
     });
 
     it("counts what comes out as each address of a line does, not when the line is done", () => {
-      // (10,000 addresses in one line: 60 MB with the referer in each.)
       const keys = `#EXTM3U\n#EXT-X-SESSION-KEY:${'URI="k.key",'.repeat(10_000)}\n`;
       expect(() => rewriteM3u8(keys, base, referer)).toThrow(PlaylistTooLong);
     });
@@ -85,17 +82,12 @@ describe("srtToVtt", () => {
   });
 });
 
-/**
- * The proxy against a real server on this machine. Only 127.0.0.2 counts as a place the proxy may go to here, so that 127.0.0.1 and
- * `localhost` (the same machine, by number and by name) stand for the private addresses that a public server must keep out of.
- */
 describe("handleStreamProxy", () => {
   const OKAY = "127.0.0.2";
   const allowed = (address: string) => address === OKAY;
   let upstream: http.Server;
   let port: number;
   let app: FastifyInstance;
-  /** The same proxy with the cache that screens watching together share. */
   let sharing: FastifyInstance;
   const hits: string[] = [];
   let endlessLetGo = false;
@@ -132,12 +124,10 @@ describe("handleStreamProxy", () => {
         return void response.end("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
       }
       if (url.pathname === "/many.m3u8") {
-        // (More pieces than any film has, each of them a few bytes.)
         response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
         return void response.end(`#EXTM3U\n${"a.ts\n".repeat(30_000)}`);
       }
       if (url.pathname === "/hls/playlist") {
-        // (Many servers write the type like this, and the address says nothing.)
         response.writeHead(200, { "content-type": "application/x-mpegURL" });
         return void response.end("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
       }
@@ -146,7 +136,6 @@ describe("handleStreamProxy", () => {
         return void response.end("ONE-BYTES");
       }
       if (url.pathname === "/p/slow.ts") {
-        // (Half of it now and half a moment later: a screen that asks in between finds it still arriving.)
         response.writeHead(200, { "content-type": "video/mp2t", "content-length": "10" });
         response.write("HALF1");
         return void setTimeout(() => response.end("HALF2"), 150);
@@ -166,13 +155,11 @@ describe("handleStreamProxy", () => {
         return void response.end("gone");
       }
       if (url.pathname === "/p/zipped.ts") {
-        // (The length it gives is that of the packed bytes, not of the piece that comes out of them.)
         const packed = gzipSync("ZIPPED-BYTES");
         response.writeHead(200, { "content-type": "video/mp2t", "content-encoding": "gzip", "content-length": String(packed.length) });
         return void response.end(packed);
       }
       if (url.pathname === "/p/part.ts") {
-        // (Part of a file, although no part was asked for: it says where in the file it is.)
         response.writeHead(206, { "content-type": "video/mp2t", "content-range": "bytes 0-4/50", "content-length": "5" });
         return void response.end("PART1");
       }
@@ -190,18 +177,15 @@ describe("handleStreamProxy", () => {
         return void response.end(bytes);
       }
       if (url.pathname === "/long-chunked.srt") {
-        // (No length given: how long it is is known only when it has all come.)
         response.writeHead(200, { "content-type": "text/plain" });
         for (let part = 0; part < 3; part++) response.write(Buffer.alloc(1024 * 1024 + 1, "a"));
         return void response.end();
       }
       if (url.pathname === "/stacked.mp4") {
-        // (More content codings than a client takes, and the connection dropped before the body: an advisory for undici 8.11 (GHSA-xjj6-f33q-929c) says that took the whole process down.)
         response.writeHead(200, { "content-type": "video/mp4", "content-encoding": "gzip, gzip, gzip, gzip, gzip, gzip", "content-length": "100" });
         response.flushHeaders();
         return void setTimeout(() => response.socket?.destroy(), 20);
       }
-      // (Pages and pictures under the names of films and subtitles: what a browser must never be told is a page when it comes from here.)
       if (url.pathname === "/page.vtt" || url.pathname === "/error-without-a-suffix") {
         response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
         return void response.end("<p>an error page</p>");
@@ -224,13 +208,11 @@ describe("handleStreamProxy", () => {
         return void response.end("sound");
       }
       if (url.pathname.startsWith("/typed/")) {
-        // (Whatever it is told to call itself, in as many Content-Type headers as it is told: `?t=["video/mp4;, text/html"]`.)
         const types = JSON.parse(url.searchParams.get("t") ?? "[]") as string[];
         response.writeHead(200, ["content-length", "5", ...types.flatMap((type) => ["content-type", type])]);
         return void response.end("12345");
       }
       if (url.pathname === "/endless") {
-        // (Says it is sixteen megabytes and goes on writing for as long as anyone listens.)
         response.writeHead(200, { "content-type": "video/mp4", "content-length": String(16 * 1024 * 1024) });
         const writing = setInterval(() => response.write(Buffer.alloc(64 * 1024)), 5);
         return void response.on("close", () => {
@@ -243,7 +225,6 @@ describe("handleStreamProxy", () => {
         return void response.end("odd");
       }
       if (url.pathname === "/huge.m3u8" || url.pathname === "/packed-huge.m3u8") {
-        // (Nine megabytes of playlist; the second is nine megabytes once it is unpacked, from some kilobytes.)
         const text = Buffer.concat([Buffer.from("#EXTM3U\n"), Buffer.alloc(9 * 1024 * 1024, "#")]);
         if (url.pathname === "/huge.m3u8") {
           response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl", "content-length": String(text.length) });
@@ -326,13 +307,13 @@ describe("handleStreamProxy", () => {
     await counting.ready();
     try {
       const through = (target: string, headers: Record<string, string> = {}) => counting.inject({ url: `/api/proxy?url=${encodeURIComponent(target)}`, headers });
-      await through(at(OKAY, "/seg.ts")); // 13 bytes (and shared)
-      await through(at(OKAY, "/seg.ts")); // 13 more, from memory this time: it is sent all the same
-      await through(at(OKAY, "/range.mp4"), { range: "bytes=2-5" }); // 4
-      const playlist = await through(at(OKAY, "/list.m3u8")); // as it was rewritten
+      await through(at(OKAY, "/seg.ts"));
+      await through(at(OKAY, "/seg.ts"));
+      await through(at(OKAY, "/range.mp4"), { range: "bytes=2-5" });
+      const playlist = await through(at(OKAY, "/list.m3u8"));
       expect(stats).toEqual({ bytes: 13 + 13 + 4 + Buffer.byteLength(playlist.body), requests: 4, refused: 0 });
       expect((await through(at("127.0.0.1", "/seg.ts"))).statusCode).toBe(403);
-      expect(stats.requests).toBe(4); // (a refusal sends nothing on)
+      expect(stats.requests).toBe(4);
     } finally {
       await counting.close();
     }
@@ -372,13 +353,11 @@ describe("handleStreamProxy", () => {
       }
       expect(stats.bytes).toBe(before.bytes);
       expect(stats.refused).toBe(before.refused + 4);
-      // (A range, a piece's other names and a plain "this is a subtitle" on the address make no difference to what it is.)
       expect((await quiet.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/range.mp4"))}`, headers: { range: "bytes=0-3" } })).statusCode).toBe(403);
       expect((await through("/list.m3u8", "&format=vtt")).statusCode).toBe(403);
     });
 
     it("carries film from a host it was set up to carry from and from no other: a name under `.space` or `.cyou` is not carried for being one", async () => {
-      // (As it used to be: a piece of a film at any such name went through, whatever `video` said.)
       hits.length = 0;
       for (const host of ["cdn.example.space", "anything.cyou"]) {
         const answer = await quiet.inject({ url: `/api/proxy?url=${encodeURIComponent(`https://${host}/hls/seg.ts`)}` });
@@ -398,7 +377,6 @@ describe("handleStreamProxy", () => {
         expect(piece.statusCode).toBe(200);
         expect(piece.body).toBe("SEGMENT-BYTES");
         expect((await exempt.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/list.m3u8"))}` })).statusCode).toBe(200);
-        // (A host that is not named is turned away as before, and the log says which it was, without the link.)
         const other = await exempt.inject({ url: `/api/proxy?url=${encodeURIComponent("https://cdn.example.space/hls/seg.ts?token=SECRET")}` });
         expect(other.statusCode).toBe(403);
         expect(lines.filter((line) => line.msg === "proxy-refused").map((line) => line.host)).toEqual(["cdn.example.space"]);
@@ -442,7 +420,6 @@ describe("handleStreamProxy", () => {
     });
 
     it("passes on as a subtitle only what has a subtitle's times in it, and of another site's error no more than a few words", async () => {
-      // (Anyone can ask for any address "as a subtitle": what comes back must be one, or this server is a way to read other sites' pages from its address.)
       const before = { ...stats };
       for (const path of ["/page.html", "/p/plain.mp4"]) {
         const answer = await through(path, "&format=vtt");
@@ -453,7 +430,6 @@ describe("handleStreamProxy", () => {
       const error = await through("/long-error", "&format=vtt");
       expect(error.statusCode).toBe(404);
       expect(error.body).toBe("Upstream returned HTTP 404");
-      // (A short one is still said, as it was: see "does not call the other end's error page a page".)
       expect((await through("/error-without-a-suffix", "&format=vtt")).body).toBe("<p>an error page</p>");
     });
 
@@ -476,10 +452,8 @@ describe("handleStreamProxy", () => {
       await production.close();
     });
     type Answer = Awaited<ReturnType<typeof ask>>;
-    /** The type a browser takes an answer for: what the Fetch standard makes of the header (it reads a list and keeps the last type), not what the header looks like. */
     const typeSeen = async (answer: Answer) => (await new Response("", { headers: { "content-type": String(answer.headers["content-type"]) } }).blob()).type.split(";")[0];
     const KINDS = /^(text\/plain|text\/vtt|application\/(json|octet-stream|vnd\.apple\.mpegurl)|(video|audio)\/[a-z0-9.-]+)$/;
-    /** Not a page by its type, not one by guessing, and not able to run if it were taken for one. */
     const inert = async (answer: Answer, name: string) => {
       expect(await typeSeen(answer), name).toMatch(KINDS);
       expect(answer.headers["x-content-type-options"], name).toBe("nosniff");
@@ -517,7 +491,6 @@ describe("handleStreamProxy", () => {
     });
 
     it("passes on the type of video or audio and nothing the other end wrote after it: a browser reads `video/mp4;, text/html` as a list, and takes the last", async () => {
-      // [what the other end calls it (one header each), what a piece of a film is called, what any other file is called]
       const cases: [string[], string, string][] = [
         [["video/mp4;, text/html"], "video/mp4", "video/mp4"],
         [["video/mp4; codecs=avc1", "text/html"], "video/mp4", "video/mp4"],
@@ -546,7 +519,6 @@ describe("handleStreamProxy", () => {
     });
 
     it("gives no other website leave to read what comes through: not a piece, a playlist, a subtitle, a file, a refusal or a failure", async () => {
-      // (This site's own pages ask from this site; a page of another one that could read these would be using the server to fetch for it.)
       const kinds: [string, FastifyInstance, string][] = [
         ["a piece", app, at(OKAY, "/seg.ts")],
         ["a piece that screens share", sharing, at(OKAY, "/seg.ts")],
@@ -632,8 +604,6 @@ describe("handleStreamProxy", () => {
     });
 
     it("turns away a 'url' or a 'referer' that is given twice, instead of taking the two as one text", async () => {
-      // (A name given twice reaches a handler as a list, and a list of two addresses reads as one address with a comma in it: the second of two referers
-      // would also have been as long as it liked.)
       const piece = encodeURIComponent(at(OKAY, "/seg.ts"));
       const page = encodeURIComponent("https://player.example/embed");
       const asks = [`url=${piece}&url=${piece}`, `url=${piece}&referer=${page}&referer=${page}`, `url=${piece}&referer=${page}&referer=${encodeURIComponent("x".repeat(5000))}`];
@@ -642,8 +612,6 @@ describe("handleStreamProxy", () => {
   });
 
   it("answers with a failure, and goes on serving, when the other end stacks more content codings than a client takes and drops the connection", async () => {
-    // (Any visitor can send the proxy to a server of their own: a library that fell over on that one answer would take every screen down with it. What the
-    // old one did was throw from a socket that nobody listens to, which ends the whole process, so the test listens for exactly that.)
     const thrown: unknown[] = [];
     const note = (error: unknown) => void thrown.push(error);
     process.on("uncaughtException", note);
@@ -673,7 +641,6 @@ describe("handleStreamProxy", () => {
   });
 
   it("refuses a name that leads to such an address, as it does the numbers", async () => {
-    // (A name is no number to look at: where it leads is known only when the connection is made.)
     hits.length = 0;
     const answer = await ask(at("localhost", "/seg.ts"));
     expect(answer.statusCode).toBe(403);
@@ -692,7 +659,7 @@ describe("handleStreamProxy", () => {
       const answer = await ask(at(OKAY, `/hop?to=${encodeURIComponent(at(host, "/seg.ts"))}`));
       expect(answer.statusCode).toBe(403);
     }
-    expect(hits).toEqual(["GET /hop", "GET /hop"]); // (the redirects were asked for; where they led was not)
+    expect(hits).toEqual(["GET /hop", "GET /hop"]);
   });
 
   it("gives up on a redirect that leads to itself", async () => {
@@ -719,8 +686,8 @@ describe("handleStreamProxy", () => {
             .on("error", reject);
         });
       }
-      expect(sockets).toHaveLength(1); // (one connection carried all fifteen)
-      expect(sockets[0]!.listenerCount("close")).toBeLessThan(6); // (it was fifteen more than the server's own, and Node warns of a leak from eleven)
+      expect(sockets).toHaveLength(1);
+      expect(sockets[0]!.listenerCount("close")).toBeLessThan(6);
     } finally {
       agent.destroy();
       await live.close();
@@ -747,7 +714,7 @@ describe("handleStreamProxy", () => {
     it("goes there once for screens that ask while the piece is still arriving, and each gets all of it", async () => {
       hits.length = 0;
       const first = askShared(at(OKAY, "/p/slow.ts"));
-      await pause(60); // (half of it is here)
+      await pause(60);
       const answers = await Promise.all([first, askShared(at(OKAY, "/p/slow.ts")), askShared(at(OKAY, "/p/slow.ts"))]);
       expect(answers.map((answer) => answer.body)).toEqual(["HALF1HALF2", "HALF1HALF2", "HALF1HALF2"]);
       expect(timesAsked("/p/slow.ts")).toBe(1);
@@ -793,7 +760,7 @@ describe("handleStreamProxy", () => {
 
     it("does not keep a piece the other end cut off, and fetches it again the next time", async () => {
       hits.length = 0;
-      await askShared(at(OKAY, "/p/cut.ts")).catch(() => undefined); // (what the screen gets is a broken answer)
+      await askShared(at(OKAY, "/p/cut.ts")).catch(() => undefined);
       await pause(80);
       await askShared(at(OKAY, "/p/cut.ts")).catch(() => undefined);
       expect(timesAsked("/p/cut.ts")).toBe(2);

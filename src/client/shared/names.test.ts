@@ -18,7 +18,6 @@ describe("the name a title is shown with", () => {
   });
 
   it("is its own until the answer comes; a title with no name in the language keeps its English one, and its English description", async () => {
-    // (the store is filled through `useShown` on a page; here the answer is put in the way a page's ask would have)
     vi.useFakeTimers();
     const asked: string[][] = [];
     const answers: Record<string, LocalName> = { "movie-27205": { title: "Începutul", description: "Un hoț." }, "tv-114410": {} };
@@ -34,11 +33,9 @@ describe("the name a title is shown with", () => {
     expect(asked).toEqual([["movie-27205", "tv-114410"]]);
     expect(shownIn(film, "ro")).toEqual({ title: "Începutul", description: "Un hoț." });
     expect(shownIn(anime, "ro")).toEqual({ title: "Chainsaw Man", description: "Denji." });
-    // (known now: not asked again)
     want("ro", "movie-27205");
     await vi.advanceTimersByTimeAsync(100);
     expect(asked).toHaveLength(1);
-    // (Italian is another book)
     expect(shownIn(film, "it").title).toBe("Inception");
   });
 

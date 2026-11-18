@@ -3,7 +3,6 @@ import { nameIdOf } from "../../shared";
 import { buildApp } from "../app";
 import { createNameBook, localNameOf, NAME_TTL_MS, NAMES_QUEUE_MAX } from "./names";
 
-/** The movie database, as far as a name is asked of it: what it says of each title in each language, and how many times it was asked. */
 function tmdb(docs: Record<string, unknown>, { fail = new Set<string>(), slow = new Set<string>() } = {}) {
   const asked: string[] = [];
   const get = (async (input: string | URL, init?: { signal?: AbortSignal }) => {
@@ -115,7 +114,6 @@ describe("the names kept for everyone", () => {
   });
 
   it("lets only so many questions wait for their turn, everybody's together: past it a title is left out and nothing is queued or counted for it", async () => {
-    // (a movie database that answers nothing until it is let: every question stays where it is)
     const open: Array<() => void> = [];
     const asked: string[] = [];
     const get = (async (input: string | URL) => {
@@ -127,15 +125,12 @@ describe("the names kept for everyone", () => {
     const counted: string[] = [];
     const mayAsk = (id: string) => (counted.push(id), true);
     const ids = (from: number, count: number) => Array.from({ length: count }, (_, n) => `movie-${from + n}`);
-    // Eight are at the movie database at once; the queue behind them takes NAMES_QUEUE_MAX and no more.
     for (let from = 1; from < 1001; from += 40) await book.of("ro", ids(from, 40), mayAsk);
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(asked).toHaveLength(8);
     expect(counted).toHaveLength(8 + NAMES_QUEUE_MAX);
-    // (one that is already waiting is waited for by another page too, and is not counted twice)
     await book.of("ro", ["movie-1", "movie-9"], mayAsk);
     expect(counted).toHaveLength(8 + NAMES_QUEUE_MAX);
-    // When the queue has gone down there is room again.
     while (open.length > 0 || asked.length < 8 + NAMES_QUEUE_MAX) {
       open.splice(0).forEach((go) => go());
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -167,7 +162,6 @@ describe("GET /api/library/names", () => {
     expect(res.json()).toEqual({ names: { "movie-27205": { title: "Începutul" } } });
     expect(res.headers["cache-control"]).toBe("no-store");
     expect(asked).toHaveLength(1);
-    // (what is kept is answered whatever the allowance)
     const again = await app.inject({ method: "GET", url: "/api/library/names?lang=ro&ids=movie-27205" });
     expect(again.json()).toEqual({ names: { "movie-27205": { title: "Începutul" } } });
     await app.close();

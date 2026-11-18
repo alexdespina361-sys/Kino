@@ -1,4 +1,3 @@
-/* C1: how big what is pressed looks. B draws it smaller (about 40 px) and keeps a 44 px reach round it (A draws it at the 44-48 px it is). */
 :root[data-ui="polish"] .phone-ui .btn { min-height: 40px; }
 :root[data-ui="polish"] .phone-ui .lib-pill,
 :root[data-ui="polish"] .phone-ui .cap-choice,

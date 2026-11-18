@@ -13,7 +13,6 @@ describe("a message that is a GIF", () => {
     expect(gifOf(`  ${GIF}  `)).toBe(GIF);
     expect(gifOf("https://static1.klipy.com/a/b.gif")).toBe("https://static1.klipy.com/a/b.gif");
     expect(gifOf("https://static2.klipy.com/a/b.GIF")).toBe("https://static2.klipy.com/a/b.GIF");
-    // (KLIPY's rule: the address as they gave it, its query too)
     expect(gifOf("https://static.klipy.com/a/b.webp?v=2&t=x")).toBe("https://static.klipy.com/a/b.webp?v=2&t=x");
   });
 
@@ -56,7 +55,7 @@ describe("a message that is a GIF", () => {
     expect(picture).toContain('alt="GIF"');
     expect(html).not.toContain("<a ");
     expect(html.split('data-testid="chat-gif"').length - 1).toBe(1);
-    expect(html).toContain(`see ${GIF}`); // (the second is words with an address in them: text)
+    expect(html).toContain(`see ${GIF}`);
     expect(html).toContain("chat-bubble-gif");
   });
 

@@ -1,11 +1,5 @@
-/**
- * What a new password is worth, said before an account is made: "none" for no password at all (anyone who types the name is in), "weak" for one
- * that is quick to guess (short, the name itself, one character over and over, or one of the first things anybody tries), nothing for the rest.
- * A nudge and not a rule: the server takes any password, and the person decides.
- */
 export type Weakness = "none" | "weak";
 
-/** Shorter than this is quick to guess. */
 export const GOOD_LENGTH = 6;
 
 const FIRST_GUESSES = new Set([
@@ -35,7 +29,6 @@ const FIRST_GUESSES = new Set([
   "kino123",
 ]);
 
-/** `name` is the name the account is made with, as it was typed. */
 export function weakness(name: string, password: string): Weakness | null {
   if (password === "") return "none";
   const word = password.toLowerCase();

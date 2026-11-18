@@ -28,7 +28,6 @@ const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("not really a picture")]);
 const picture = (id = "pic1", data: Buffer = PNG, extra: object = {}) => ({ id, name: "screen.png", mime: "image/png", role: "screenshot", data: data.toString("base64"), ...extra });
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-/** A store that is turning reports away says so in its log: not in these. */
 const quiet = { warn: () => {} };
 
 const report = (n: number, extra: Partial<NewReport> = {}): NewReport => ({
@@ -44,11 +43,8 @@ const report = (n: number, extra: Partial<NewReport> = {}): NewReport => ({
   ...extra,
 });
 
-/* ------------------------------ the store, in each of its homes ------------------------------ */
-
 interface Home {
   backend: FeedbackBackend;
-  /** A second backend over what the first one kept (the server was started again). */
   again(): FeedbackBackend;
   done(): Promise<void>;
 }
@@ -77,7 +73,6 @@ const homes: Array<[string, () => Promise<Home>]> = [
   ],
 ];
 
-// (Each test of the Postgres home starts a whole database in WebAssembly, which on a machine that is busy with the rest of the suite takes longer than the 5 s a test is given.)
 describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) => {
   let home: Home | undefined;
   const make = async () => (home = await open());
@@ -91,7 +86,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     const store = await FeedbackStore.open({ backend });
     const first = await store.create(report(1, { files: [{ meta: { id: "pic1", name: "a.png", mime: "image/png", role: "screenshot" }, data: PNG }] }));
     expect(first.created).toBe(true);
-    // (Sent again, even at the same moment: one report.)
     const [second, third] = await Promise.all([store.create(report(1, { message: "other words" })), store.create(report(1))]);
     expect([second.created, third.created]).toEqual([false, false]);
     expect(second.record.id).toBe(first.record.id);
@@ -102,7 +96,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     expect(restarted.byKey(key(1))?.message).toBe("It broke 1");
     expect(restarted.byKey("some other key")).toBeUndefined();
     expect((await restarted.file(first.record.id, "pic1"))?.data.equals(PNG)).toBe(true);
-    // The next report does not take the number of one that is kept.
     expect((await restarted.create(report(2))).record.id).toBe("2");
   });
 
@@ -127,20 +120,17 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     const { backend } = await make();
     const big = Buffer.concat([PNG, Buffer.alloc(40_000)]);
     const withFile = (n: number) => report(n, { files: [{ meta: { id: `pic${n}1`, name: "a.png", mime: "image/png", role: "screenshot" }, data: big }] });
-    // Room for two files of this size (and the words), not three.
     const store = await FeedbackStore.open({ backend, maxBytes: 2 * big.length + 3 * 6 * 1024, maxReports: 3 });
     const one = (await store.create(withFile(1))).record;
     const two = (await store.create(withFile(2))).record;
     await store.update(one.id, (draft) => void (draft.status = "done"));
     await store.create(withFile(3));
-    // The closed one lost its picture; its words stay, and so do the other reports' pictures.
     expect(store.get(one.id)?.files[0]?.gone).toBe(true);
     expect(await store.file(one.id, "pic11")).toBeUndefined();
     expect(await backend.getFile(one.id, "pic11")).toBeUndefined();
     expect(store.get(one.id)?.message).toBe("It broke 1");
     expect((await store.file(two.id, "pic21"))?.data.length).toBe(big.length);
 
-    // A fourth report is one too many: the closed one goes, not the older open one.
     await store.create(report(4));
     expect(store.get(one.id)).toBeUndefined();
     expect(store.get(two.id)).toBeDefined();
@@ -158,17 +148,14 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     expect(store.size).toBe(2);
     expect([store.get(one.id)?.status, store.get(two.id)?.status]).toEqual(["new", "new"]);
     expect(store.byKey(key(3))).toBeUndefined();
-    // (Whoever runs the site is told: that is the only way to know that reports are being turned away.)
     expect(told).toEqual([expect.stringContaining("turned a report away")]);
 
-    // (What was turned away did not use up a number. A report that is closed makes room; the one that is open stays.)
     await store.update(one.id, (draft) => void (draft.status = "done"));
     const before = store.rev;
     expect((await store.create(report(3))).record.id).toBe("3");
     expect(store.get(one.id)).toBeUndefined();
     expect(store.get(two.id)?.status).toBe("new");
     expect(store.size).toBe(2);
-    // (The team's watch hears of it: the report that went, and the one that came.)
     expect(store.rev).toBe(before + 2);
     const restarted = await FeedbackStore.open({ backend: again(), log: quiet });
     expect(restarted.list().map((each) => each.id).sort()).toEqual(["2", "3"]);
@@ -178,28 +165,22 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     const { backend } = await make();
     const big = Buffer.concat([PNG, Buffer.alloc(40_000)]);
     const withFile = (n: number, extra: Partial<NewReport> = {}) => report(n, { files: [{ meta: { id: `pic${n}1`, name: "a.png", mime: "image/png", role: "screenshot" }, data: big }], ...extra });
-    // Room for the words of five reports and two files of this size.
     const store = await FeedbackStore.open({ backend, maxBytes: 2 * big.length + 5 * 6 * 1024, log: quiet });
     const one = (await store.create(withFile(1))).record;
     const two = (await store.create(withFile(2))).record;
 
-    // Left to itself it is all or nothing: a report with files that do not fit is not taken.
     await expect(store.create(withFile(3))).rejects.toBeInstanceOf(FeedbackFull);
     expect(store.size).toBe(2);
-    // Where the files may be left out, the words are kept and the file is named.
     const three = await store.create(withFile(3), { filesOptional: true });
     expect(three.refused).toEqual(["pic31"]);
     expect(three.record).toMatchObject({ id: "3", message: "It broke 3", files: [] });
     expect(await backend.getFile(three.record.id, "pic31")).toBeUndefined();
-    // The files of the reports that are open are as they were.
     expect((await store.file(one.id, "pic11"))?.data.length).toBe(big.length);
     expect((await store.file(two.id, "pic21"))?.data.length).toBe(big.length);
-    // A report that is only its files is not kept without them. (The answers to the questions are words.)
     await expect(store.create(withFile(4, { message: "" }), { filesOptional: true })).rejects.toBeInstanceOf(FeedbackFull);
     const four = await store.create(withFile(4, { message: "", details: { steps: "Play the film" } }), { filesOptional: true });
     expect([four.record.id, four.refused]).toEqual(["4", ["pic41"]]);
 
-    // The team closes one: its files make room (the words stay), and the next report keeps its file.
     await store.update(one.id, (draft) => void (draft.status = "done"));
     const five = await store.create(withFile(5), { filesOptional: true });
     expect(five.refused).toEqual([]);
@@ -209,7 +190,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     expect((await store.file(five.record.id, "pic51"))?.data.length).toBe(big.length);
     expect((await store.file(two.id, "pic21"))?.data.length).toBe(big.length);
 
-    // And when not even the words fit, nothing is taken.
     await expect(store.create(report(6), { filesOptional: true })).rejects.toBeInstanceOf(FeedbackFull);
     expect(store.size).toBe(5);
   });
@@ -218,7 +198,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     const { backend } = await make();
     const big = Buffer.concat([PNG, Buffer.alloc(40_000)]);
     const withFile = (n: number) => report(n, { files: [{ meta: { id: `pic${n}1`, name: "a.png", mime: "image/png", role: "screenshot" }, data: big }] });
-    // Room for the words of three reports and two files: the third report needs one of the two to go, to the byte.
     const store = await FeedbackStore.open({ backend, maxBytes: 2 * big.length + 3 * 6 * 1024, log: quiet });
     const one = (await store.create(withFile(1))).record;
     const two = (await store.create(withFile(2))).record;
@@ -236,7 +215,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     const { backend } = await make();
     const big = Buffer.concat([PNG, Buffer.alloc(40_000)]);
     const withFile = (n: number) => report(n, { files: [{ meta: { id: `pic${n}1`, name: "a.png", mime: "image/png", role: "screenshot" }, data: big }] });
-    // A thousand bytes less than the third report needs when one file has gone.
     const store = await FeedbackStore.open({ backend, maxBytes: 2 * big.length + 3 * 6 * 1024 - 1000, log: quiet });
     const one = (await store.create(withFile(1))).record;
     const two = (await store.create(withFile(2))).record;
@@ -266,10 +244,8 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
   it("keeps the files that fit, in the order they came, and names the ones that are left out", async () => {
     const { backend } = await make();
     const file = (id: string, size: number) => ({ meta: { id, name: `${id}.png`, mime: "image/png" as const, role: "screenshot" as const }, data: Buffer.concat([PNG, Buffer.alloc(size - PNG.length)]) });
-    // Room for the words of a report and for 40,056 bytes of files.
     const store = await FeedbackStore.open({ backend, maxBytes: 6 * 1024 + 40_056, log: quiet });
     const made = await store.create(report(1, { files: [file("big1", 30_028), file("mid1", 20_028), file("sml1", 10_028)] }), { filesOptional: true });
-    // (The middle one does not fit, and the small one after it fits to the byte.)
     expect(made.refused).toEqual(["mid1"]);
     expect(made.record.files.map((each) => each.id)).toEqual(["big1", "sml1"]);
     expect((await store.file(made.record.id, "sml1"))?.data.length).toBe(10_028);
@@ -284,7 +260,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     const maxBytes = 2 * big.length + 3 * 6 * 1024;
     const store = await FeedbackStore.open({ backend, maxReports: 3, maxBytes, log: quiet });
     const arrived = await Promise.allSettled([1, 2, 3, 4, 5].map((n) => store.create(withFile(n), { filesOptional: true })));
-    // Three have a place, and two files fit; the other two reports are turned away.
     expect(arrived.filter((each) => each.status === "fulfilled")).toHaveLength(3);
     expect(arrived.flatMap((each) => (each.status === "rejected" ? [each.reason] : []))).toEqual([expect.any(FeedbackFull), expect.any(FeedbackFull)]);
     expect(store.size).toBe(3);
@@ -292,7 +267,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
     expect(store.list().flatMap((record) => record.files)).toHaveLength(2);
   });
 
-  // (A Postgres that is made for each of them takes a second or so, and more on a busy machine.)
   describe("the answers of a sender", { timeout: 30_000 }, () => {
     const big = Buffer.concat([PNG, Buffer.alloc(40_000)]);
     const small = Buffer.concat([PNG, Buffer.alloc(1_000)]);
@@ -302,7 +276,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
 
     it("are held to the budget as a new report is: a closed report's files make room, the pictures that still do not fit are left out, and the words are kept", async () => {
       const { backend } = await make();
-      // Room for the words of four reports and three pictures.
       const store = await FeedbackStore.open({ backend, maxBytes: 3 * big.length + 4 * 6 * 1024, log: quiet });
       const one = (await store.create(withFile(1))).record;
       const two = (await store.create(withFile(2))).record;
@@ -310,7 +283,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
       await closed(store, one.id);
 
       const added = await store.addMessage(two.id, { from: "user", text: "More", files: [pictureOf("ans1"), pictureOf("ans2")] });
-      // (The closed report's picture went for the first; the second does not fit, and is named.)
       expect(added).toMatchObject({ message: { text: "More", files: ["ans1"] }, refused: ["ans2"] });
       expect(store.get(one.id)?.files[0]?.gone).toBe(true);
       expect(store.get(one.id)?.message).toBe("It broke 1");
@@ -322,7 +294,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
 
     it("are turned away when not even their words fit, and nothing of them is kept; the words go again once a closed report has made room", async () => {
       const { backend } = await make();
-      // Room for the words of two reports and one picture, and a hundred bytes.
       const store = await FeedbackStore.open({ backend, maxBytes: big.length + 2 * 6 * 1024 + 100, log: quiet });
       const one = (await store.create(withFile(1))).record;
       const two = (await store.create(report(2))).record;
@@ -330,7 +301,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
       await expect(store.addMessage(two.id, { from: "user", text: "w".repeat(150), files: [pictureOf("ans1", small)] })).rejects.toBeInstanceOf(FeedbackFull);
       expect(store.get(two.id)).toMatchObject({ messages: [], files: [] });
       expect(await backend.getFile(two.id, "ans1")).toBeUndefined();
-      // (Words that fit are taken, as they were.)
       expect(await store.addMessage(two.id, { from: "user", text: "w".repeat(50) })).toMatchObject({ refused: [] });
 
       await closed(store, one.id);
@@ -346,11 +316,9 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
       const one = (await store.create(withFile(1))).record;
       const two = (await store.create(report(2))).record;
 
-      // The room is all taken, and the team may still write.
       const asked = await store.addMessage(two.id, { from: "team", text: "Which film?", asks: true, status: "needs_info" });
       expect(asked).toMatchObject({ message: { from: "team", text: "Which film?" }, refused: [] });
       expect(store.bytes).toBe(big.length + 2 * 6 * 1024 + Buffer.byteLength("Which film?"));
-      // (The sender, though, is not taken in beyond the budget.)
       await expect(store.addMessage(two.id, { from: "user", text: "Any film" })).rejects.toBeInstanceOf(FeedbackFull);
 
       await closed(store, one.id);
@@ -360,7 +328,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
 
     it("do not take the files of the report they are for, though it is closed: the answer opens it again", async () => {
       const { backend } = await make();
-      // Room for the words of two reports and one picture, and no more than a hundred bytes.
       const store = await FeedbackStore.open({ backend, maxBytes: big.length + 2 * 6 * 1024 + 100, log: quiet });
       const one = (await store.create(withFile(1))).record;
       await store.create(report(2));
@@ -374,7 +341,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
 
     it("are exact when many arrive at once: the room that was found is the room there is", async () => {
       const { backend } = await make();
-      // Room for the words of four reports, two pictures, and the four short answers.
       const maxBytes = 4 * 6 * 1024 + 2 * big.length + 4;
       const store = await FeedbackStore.open({ backend, maxBytes, log: quiet });
       const reports: FeedbackRecord[] = [];
@@ -395,7 +361,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
       await store.addMessage(record.id, { from: "user", text: "é".repeat(100) });
       await store.addMessage(record.id, { from: "team", text: "Which film?" });
       expect(store.bytes).toBe(6 * 1024 + 200 + 11);
-      // ...and what is taken away is given back.
       await store.remove(record.id);
       expect(store.bytes).toBe(0);
     });
@@ -412,7 +377,6 @@ describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) =>
   });
 });
 
-/** A backend that holds the next save until it is let go: a slow write, with whatever comes after it waiting for its turn. */
 class SlowSave extends MemoryFeedbackBackend {
   private gate: Promise<void> | undefined;
 
@@ -442,7 +406,6 @@ describe("making room while a closed report is being opened again", () => {
     await store.create(report(2));
     await store.update(one.id, (draft) => void (draft.status = "done"));
 
-    // (The report is closed when it is chosen to make room, and open when its turn comes.)
     const release = backend.hold();
     const writing = sentAgain(store, one.id);
     const arriving = expect(store.create(report(3))).rejects.toBeInstanceOf(FeedbackFull);
@@ -457,7 +420,6 @@ describe("making room while a closed report is being opened again", () => {
 
   it("does the same for the files of a report", async () => {
     const backend = new SlowSave();
-    // (And a little for the words of the answer: the lines of a thread count for what they are.)
     const store = await FeedbackStore.open({ backend, maxBytes: 2 * big.length + 3 * 6 * 1024 + 100, log: quiet });
     const one = (await store.create(withFile(1))).record;
     await store.create(withFile(2));
@@ -469,12 +431,10 @@ describe("making room while a closed report is being opened again", () => {
     await wait(20);
     release();
     await writing;
-    // (Its file was to make the room, but it is open now: it is the new report's file that is left out.)
     expect((await arriving).refused).toEqual(["pic31"]);
     expect((await store.file(one.id, "pic11"))?.data.length).toBe(big.length);
   });
 
-  // (The sender's answers are taken in one turn with the new reports, so they cannot open a report in the middle of it; the team's changes are not.)
   const putBack = (store: FeedbackStore, id: string) => store.update(id, (draft) => void (draft.status = "in_review"));
 
   it("leaves a report alone that the team put back in review before its turn came, for its place", async () => {
@@ -521,7 +481,6 @@ it("tells a change from no change when it is waited for", async () => {
   const waiting = store.waitForChange(before, 2000);
   await store.create(report(1));
   expect(await waiting).toBe(before + 1);
-  // A revision from before a restart (it is ahead) is answered at once with the one there is.
   expect(await store.waitForChange(before + 50, 2000)).toBe(before + 1);
 });
 
@@ -535,12 +494,10 @@ describe("the reports one sender has open", () => {
     await expect(store.create(from("sender-a", 4), most)).rejects.toBeInstanceOf(TooManyOpen);
     expect(store.size).toBe(3);
     expect(store.byKey(key(4))).toBeUndefined();
-    // (A report that is sent again is the same report: it is not another one open. A sender of another address, and one with no address, have their own.)
     expect((await store.create(from("sender-a", 1), most)).created).toBe(false);
     expect((await store.create(from("sender-b", 5), most)).created).toBe(true);
     expect((await store.create(report(6), most)).created).toBe(true);
 
-    // A report the team plans is still open; one it has closed, or deleted, is not.
     await store.update("1", (draft) => void (draft.status = "planned"));
     await expect(store.create(from("sender-a", 4), most)).rejects.toBeInstanceOf(TooManyOpen);
     await store.update("1", (draft) => void (draft.status = "duplicate"));
@@ -548,7 +505,6 @@ describe("the reports one sender has open", () => {
     await expect(store.create(from("sender-a", 7), most)).rejects.toBeInstanceOf(TooManyOpen);
     await store.remove("2");
     expect((await store.create(from("sender-a", 7), most)).created).toBe(true);
-    // (With no limit asked for, there is none.)
     expect((await store.create(from("sender-a", 8))).created).toBe(true);
   });
 
@@ -566,7 +522,6 @@ describe("the reports one sender has open", () => {
     const { record } = await store.create(from("203.0.113.77", 1), most);
     expect(JSON.stringify([...backend.records.values()])).not.toContain("203.0.113.77");
     expect(JSON.stringify(record)).not.toContain("203.0.113.77");
-    // (So a server that starts again does not know it: a restart forgives, as it does for the allowances.)
     const restarted = await FeedbackStore.open({ backend, log: quiet });
     for (const n of [2, 3, 4]) await restarted.create(from("203.0.113.77", n), most);
     await expect(restarted.create(from("203.0.113.77", 5), most)).rejects.toBeInstanceOf(TooManyOpen);
@@ -574,7 +529,6 @@ describe("the reports one sender has open", () => {
 
   it("are counted from an address that is kept only as long as its report is: one taken out, or given up for a place, takes the address along", async () => {
     const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 2, log: quiet });
-    // (The addresses are in the store's memory and nowhere else, so that is where this looks.)
     const remembered = () => [...(store as unknown as { senders: Map<string, string> }).senders.keys()];
     await store.create(from("203.0.113.77", 1), most);
     await store.create(from("203.0.113.78", 2), most);
@@ -608,7 +562,6 @@ describe("whether a new report would be turned away", () => {
   });
 
   it("is when the reports that are open take all the room, and not when the files of ones that are closed can make it", async () => {
-    // Room for the words of two reports and one picture.
     const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: big.length + 2 * 6 * 1024, log: quiet });
     await store.create(withFile(1));
     expect(store.full).toBe(false);
@@ -619,13 +572,11 @@ describe("whether a new report would be turned away", () => {
   });
 
   it("counts the places that a closed report makes whole, with its words", async () => {
-    // Two places, both taken, one of them by a report that is closed; room for the words of three reports but a thousand bytes.
     const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 2, maxBytes: 3 * 6 * 1024 - 1000, log: quiet });
     await store.create(report(1));
     await store.create(report(2));
     expect(store.full).toBe(true);
     await closed(store, "1");
-    // (The new report takes the place of the closed one, words and all.)
     expect(store.full).toBe(false);
     expect((await store.create(report(3))).created).toBe(true);
     expect(store.list().map((each) => each.id).sort()).toEqual(["2", "3"]);
@@ -653,7 +604,6 @@ describe("the budget, whatever mix of reports and answers comes", () => {
   const FILE_SIZES = [0, 1_000, 5_000, 12_000, 25_000];
 
   it("is never passed: a seeded run of reports, answers and closings, with the files kept and counted exactly, and `full` saying what a report would meet", async () => {
-    // (A budget that is nearly always spent, and ones that are spent now and then.)
     for (const [seed, maxBytes] of [[11, 90_000], [12, 150_000], [13, 250_000], [14, 400_000]] as const) {
       const next = seeded(seed);
       const pick = <T>(items: readonly T[]): T => items[Math.floor(next() * items.length)]!;
@@ -673,7 +623,6 @@ describe("the budget, whatever mix of reports and answers comes", () => {
         const status = feedbackClosed(record.status) ? ("in_review" as const) : undefined;
         await store.addMessage(id, { from: "user", text, files: attached, ...(status ? { status } : {}) });
       };
-      /** A thing that may be turned away for want of room, and nothing else. */
       const unlessFull = async (job: () => Promise<unknown>): Promise<boolean> => {
         try {
           await job();
@@ -696,7 +645,6 @@ describe("the budget, whatever mix of reports and answers comes", () => {
         } else if (roll < 0.75) {
           await unlessFull(() => answer(pick(ids)));
         } else if (roll < 0.85) {
-          // (Several at once.)
           await Promise.all([pick(ids), pick(ids), pick(ids)].map((id) => unlessFull(() => answer(id))));
         } else if (roll < 0.95) {
           await store.update(pick(ids), (draft) => void (draft.status = pick(["done", "declined", "in_review", "needs_info", "planned"] as const)));
@@ -707,7 +655,6 @@ describe("the budget, whatever mix of reports and answers comes", () => {
       for (let round = 0; round < 150; round++) {
         await step();
         expect(store.bytes, `seed ${seed}, round ${round}`).toBeLessThanOrEqual(maxBytes);
-        // Every file that is kept is in the backend, and nothing else is.
         const kept = store.list().flatMap((record) => record.files.filter((file) => !file.gone).map((file) => `${record.id}/${file.id}`));
         expect([...backend.files.keys()].sort(), `seed ${seed}, round ${round}`).toEqual(kept.sort());
       }
@@ -715,7 +662,6 @@ describe("the budget, whatever mix of reports and answers comes", () => {
   });
 
   it("holds the words of a sender's answers to it as well as the files: a thread is not a way past it", async () => {
-    // Room for the words of a report and two answers of the longest kind (and a little).
     const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: 6 * 1024 + 2 * FEEDBACK_LIMITS.text + 100, log: quiet });
     const { record } = await store.create(report(1));
     const long = "w".repeat(FEEDBACK_LIMITS.text);
@@ -734,8 +680,6 @@ describe("the budget, whatever mix of reports and answers comes", () => {
     expect(store.bytes).toBe(6 * 1024 + FEEDBACK_MAX_MESSAGES * FEEDBACK_LIMITS.text * 2);
   });
 });
-
-/* ------------------------------ the routes ------------------------------ */
 
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -769,7 +713,6 @@ const data = (response: LightMyRequestResponse): any => {
   }
 };
 
-/** One browser: it keeps its cookie, and sends it back. */
 class Client {
   cookie = "";
   constructor(
@@ -815,7 +758,6 @@ describe("sending a report", () => {
     expect(record.details).toEqual({ steps: "Play the film", expected: "On time" });
     expect(record.context).toMatchObject({ build: "abc", device: { viewport: [390, 844] }, trail: ["tap Play"] });
     expect(record.files).toMatchObject([{ id: "pic1", mime: "image/png", role: "screenshot", bytes: PNG.length }]);
-    // The key itself is not kept.
     expect(JSON.stringify(record)).not.toContain(key(1));
 
     const again = await page.post("/api/feedback", { key: key(1), kind: "idea", message: "other" });
@@ -880,7 +822,6 @@ describe("sending a report", () => {
     const picturesOnly = await page.post("/api/feedback", { key: key(2), attachments: [picture()] });
     expect(picturesOnly.statusCode).toBe(201);
     expect(feedback.get(picturesOnly.data.id)?.title).toBe("(no text)");
-    // (A picture that is rejected leaves nothing to keep.)
     const none = await page.post("/api/feedback", { key: key(3), attachments: [picture("big1", Buffer.concat([PNG, Buffer.alloc(FEEDBACK_LIMITS.imageBytes)]))] });
     expect(none.statusCode).toBe(400);
     expect(none.data.rejected).toEqual([{ id: "big1", reason: "too_big" }]);
@@ -896,7 +837,6 @@ describe("sending a report", () => {
     expect(kept.reduce((sum, file) => sum + file.bytes, 0)).toBeLessThanOrEqual(FEEDBACK_LIMITS.totalBytes);
     expect(kept.map((file) => file.id)).toEqual(["a001", "a002", "a003", "a004"]);
     expect(sent.data.rejected).toEqual([{ id: "a005", reason: "too_big" }]);
-    // (More than a request may carry is turned away whole, before anything is read.)
     const huge = await new Client(app).post("/api/feedback", { key: key(2), message: "Too much", attachments: ["b001", "b002", "b003", "b004", "b005", "b006"].map((id) => picture(id, chunk)) });
     expect(huge.statusCode).toBe(413);
   });
@@ -924,7 +864,6 @@ describe("sending a report", () => {
 
   it("keeps the words of a report and says which of its pictures were left out when the room for pictures is taken by reports that are open", async () => {
     const chunk = Buffer.concat([PNG, Buffer.alloc(40_000)]);
-    // Room for the words of three reports and one picture of this size.
     const { app, feedback } = await start({ maxBytes: chunk.length + 3 * 6 * 1024 });
     const page = new Client(app);
     const staff = team(app);
@@ -937,13 +876,11 @@ describe("sending a report", () => {
     expect(feedback.get("2")).toMatchObject({ message: "With another", files: [] });
     expect((await staff.get("/api/admin/feedback/1/files/pic1")).statusCode).toBe(200);
 
-    // A report that is only a picture is nothing without it.
     const onlyPicture = await page.post("/api/feedback", { key: key(3), attachments: [picture("pic3", chunk)] });
     expect(onlyPicture.statusCode).toBe(503);
     expect(onlyPicture.data).toEqual({ error: "full" });
     expect(feedback.size).toBe(2);
 
-    // The team closes the first: its picture makes room (its words stay) and the next report keeps its picture.
     await staff.patch("/api/admin/feedback/1", { status: "done" });
     const third = await page.post("/api/feedback", { key: key(3), attachments: [picture("pic3", chunk)] });
     expect(third.data).toMatchObject({ id: "3", rejected: [] });
@@ -953,22 +890,19 @@ describe("sending a report", () => {
   });
 
   it("gives the allowances back when the store cannot take a report: a full store does not use up the address's, nor everybody's", async () => {
-    // (The clock is the limiters' own: it is set before they are made, and moved to get past the ten minutes.)
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       const { app } = await start({ maxReports: 1 });
       const sendFrom = (address: string, n: number) => app.inject({ method: "POST", url: "/api/feedback", remoteAddress: address, payload: { key: key(n), message: `Report ${n}` } });
       const staff = team(app);
       let n = 0;
-      expect((await sendFrom("198.51.100.1", ++n)).statusCode).toBe(201); // (the only place)
-      // More tries that are turned away than any allowance holds: 6 in ten minutes from an address, 42 in a day, and 200 in an hour from everybody.
+      expect((await sendFrom("198.51.100.1", ++n)).statusCode).toBe(201);
       for (let address = 2; address <= 8; address++) {
         for (let each = 0; each < 30; each++) expect((await sendFrom(`198.51.100.${address}`, ++n)).statusCode).toBe(503);
       }
       vi.setSystemTime(Date.now() + 11 * 60_000);
       for (let each = 0; each < 15; each++) expect((await sendFrom("198.51.100.2", ++n)).statusCode).toBe(503);
 
-      // The team closes the report: an address that has not sent anything else is taken at once, and so is the one that tried 45 times.
       await staff.patch("/api/admin/feedback/1", { status: "done" });
       expect((await sendFrom("198.51.100.9", ++n)).statusCode).toBe(201);
       await staff.patch("/api/admin/feedback/2", { status: "done" });
@@ -983,11 +917,9 @@ describe("sending a report", () => {
     try {
       const { app, feedback } = await start();
       const sendFrom = (address: string, n: number) => app.inject({ method: "POST", url: "/api/feedback", remoteAddress: address, payload: { key: key(n), message: `Report ${n}` } });
-      // Six reports: what an address may send in ten minutes, and what it may have open.
       for (let n = 1; n <= 6; n++) expect((await sendFrom("198.51.100.1", n)).statusCode).toBe(201);
       vi.setSystemTime(Date.now() + 11 * 60_000);
 
-      // Ten minutes on it may send again, but the team has not dealt with any of the six. (A refused try does not use up the allowance: it stays what it is.)
       for (let n = 7; n <= 14; n++) {
         const refused = await sendFrom("198.51.100.1", n);
         expect([refused.statusCode, refused.json()]).toEqual([429, { error: "too_many_open" }]);
@@ -996,7 +928,6 @@ describe("sending a report", () => {
       expect(feedback.size).toBe(6);
       expect((await sendFrom("198.51.100.2", 15)).statusCode).toBe(201);
 
-      // One closed makes room for one.
       expect((await team(app).patch("/api/admin/feedback/3", { status: "declined" })).statusCode).toBe(200);
       expect((await sendFrom("198.51.100.1", 16)).statusCode).toBe(201);
       expect((await sendFrom("198.51.100.1", 17)).json()).toEqual({ error: "too_many_open" });
@@ -1033,7 +964,6 @@ describe("sending a report", () => {
     const blocked = await page.post("/api/feedback", { key: key(7), message: "Report 7" });
     expect(blocked.statusCode).toBe(429);
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
-    // (A report that was kept can be sent again, it costs nothing.)
     expect((await page.post("/api/feedback", { key: key(1), message: "Report 1" })).statusCode).toBe(200);
   });
 
@@ -1044,7 +974,6 @@ describe("sending a report", () => {
     const blocked = await page.post("/api/feedback", { key: key(31), attachments: [{ id: "bad" }] });
     expect(blocked.statusCode).toBe(429);
     expect(feedback.size).toBe(0);
-    // (Another address has its own.)
     const elsewhere = await app.inject({ method: "POST", url: "/api/feedback", remoteAddress: "198.51.100.7", payload: { key: key(32), message: "From elsewhere" } });
     expect(elsewhere.statusCode).toBe(201);
   });
@@ -1057,7 +986,6 @@ describe("sending a report", () => {
     expect(refused.statusCode).toBe(400);
     expect(refused.data).toEqual({ error: "invalid_request" });
     expect(feedback.size).toBe(0);
-    // (Up to there it is read: the files that are past the limit are said to be too many.)
     const sent = await page.post("/api/feedback", { key: key(2), message: "Some", attachments: files(FEEDBACK_LIMITS.attachments * 4) });
     expect(sent.statusCode).toBe(201);
     expect(sent.data.rejected).toHaveLength(FEEDBACK_LIMITS.attachments * 4);
@@ -1072,11 +1000,9 @@ describe("sending a report", () => {
     expect(refused.statusCode).toBe(400);
     expect(refused.data).toEqual({ error: "invalid_request" });
     expect(feedback.size).toBe(0);
-    // (Up to there it is read, and the questions there are get their answers.)
     const sent = await page.post("/api/feedback", { key: key(2), message: "Some", details: { ...answers(most - 1), steps: "Open it" } });
     expect(sent.statusCode).toBe(201);
     expect(feedback.get(sent.data.id)?.details).toEqual({ steps: "Open it" });
-    // (Answers that are not a set of answers are read as none, as they always were: they are not too many.)
     expect((await page.post("/api/feedback", { key: key(3), message: "Text", details: "x".repeat(500) })).statusCode).toBe(201);
     expect((await page.post("/api/feedback", { key: key(4), message: "List", details: Array.from({ length: 500 }, () => "x") })).statusCode).toBe(201);
   });
@@ -1087,7 +1013,6 @@ describe("sending a report", () => {
     const refused = await page.post("/api/feedback/reply", { key: key(1), text: "More", attachments: Array.from({ length: FEEDBACK_LIMITS.attachments * 4 + 1 }, () => ({})) });
     expect(refused.statusCode).toBe(400);
     expect(refused.data).toEqual({ error: "invalid_request" });
-    // (That was the first of thirty tries; a body that is not even an object is one as well.)
     for (let n = 2; n <= 30; n++) expect((await page.post("/api/feedback/reply", [])).statusCode).toBe(400);
     expect((await page.post("/api/feedback/reply", [])).statusCode).toBe(429);
   });
@@ -1131,7 +1056,6 @@ describe("hearing back", () => {
     const opened = await page.post("/api/feedback/open", { key: key(1) });
     expect(opened.statusCode).toBe(200);
     expect(opened.data).toMatchObject({ id: "1", message: "It stops", status: "needs_info", attachments: [{ id: "pic1", role: "screenshot" }], messages: [{ from: "team", text: "Which film was it?", asks: true }] });
-    // What the team keeps for itself is not in it.
     expect(JSON.stringify(opened.data)).not.toMatch(/stall|tags|note/i);
     expect((await page.post("/api/feedback/check", { keys: [key(1)] })).data.items[0].unread).toBe(0);
 
@@ -1176,7 +1100,6 @@ describe("hearing back", () => {
 
   it("keeps the words of an answer and says which of its pictures were left out when the room for pictures is taken by reports that are open", async () => {
     const chunk = Buffer.concat([PNG, Buffer.alloc(40_000)]);
-    // Room for the words of three reports and one picture of this size.
     const { app, feedback } = await start({ maxBytes: chunk.length + 3 * 6 * 1024 });
     const page = new Client(app);
     const staff = team(app);
@@ -1191,7 +1114,6 @@ describe("hearing back", () => {
     expect((await staff.get("/api/admin/feedback/1/files/pic1")).statusCode).toBe(200);
     expect(feedback.bytes).toBeLessThanOrEqual(chunk.length + 3 * 6 * 1024);
 
-    // The team closes the first: its picture makes room (its words stay) and the next answer keeps its picture.
     await staff.patch("/api/admin/feedback/1", { status: "done" });
     const next = await page.post("/api/feedback/reply", { key: key(2), text: "Again", attachments: [picture("pic3", chunk)] });
     expect(next.data.rejected).toEqual([]);
@@ -1202,7 +1124,6 @@ describe("hearing back", () => {
 
   it("turns an answer away with a 503 when not even its words fit, and keeps nothing of it; the team closing a report makes room", async () => {
     const chunk = Buffer.concat([PNG, Buffer.alloc(40_000)]);
-    // Room for the words of two reports and one picture, and not a byte more.
     const { app, feedback } = await start({ maxBytes: chunk.length + 2 * 6 * 1024 });
     const page = new Client(app);
     await page.post("/api/feedback", { key: key(1), message: "With a picture", attachments: [picture("pic1", chunk)] });
@@ -1231,7 +1152,6 @@ describe("hearing back", () => {
     expect(mine.data.items).toMatchObject([{ id: "1", title: "From the phone" }]);
     expect((await laptop.post("/api/feedback/open", { id: "1" })).data.message).toBe("From the phone");
     expect((await laptop.post("/api/feedback/reply", { id: "1", text: "And from the laptop" })).statusCode).toBe(201);
-    // Another account has none of them.
     const other = new Client(app);
     await other.post("/api/auth/register", { email: "b@example.com", password: "correct horse" });
     expect((await other.get("/api/feedback/mine")).data.items).toEqual([]);
@@ -1248,7 +1168,6 @@ describe("the team's side", () => {
       await new Client(app).post("/api/feedback", { key: key(1), message: "Hello" });
       const response = await new Client(app, { authorization: `Bearer ${token ?? "x"}` }).get("/api/admin/feedback");
       expect(response.statusCode).toBe(404);
-      // (No team's side, so /api/health has no counters to give: the short answer, whatever the request brings.)
       const health = await app.inject({ url: "/api/health", headers: { authorization: `Bearer ${token ?? "x"}` } });
       expect([health.statusCode, health.json().feedback]).toEqual([200, undefined]);
     }
@@ -1262,9 +1181,8 @@ describe("the team's side", () => {
     expect((await team(app).get("/api/admin/feedback")).statusCode).toBe(200);
     const guesser = new Client(app, { authorization: "Bearer nope-nope-nope-nope-nope-nope" });
     for (let n = 0; n < 7; n++) expect((await guesser.get("/api/admin/feedback")).statusCode).toBe(401);
-    // (Ten wrong tries in all; even the right token waits then.)
     expect((await team(app).get("/api/admin/feedback")).statusCode).toBe(429);
-    expect((await app.inject("/api/health")).statusCode).toBe(200); // (anyone's /api/health still answers)
+    expect((await app.inject("/api/health")).statusCode).toBe(200);
   });
 
   it("lists, filters, reads, downloads, answers, sorts and deletes", async () => {
@@ -1315,7 +1233,6 @@ describe("the team's side", () => {
     const woke = await waiting;
     expect(woke.data.rev).toBe(start0 + 1);
     expect(woke.data.items).toMatchObject([{ id: "1", waiting: true }]);
-    // The sender writing again is a change too; the team answering is one as well.
     const next = staff.get(`/api/admin/feedback/changes?since=${woke.data.rev}&wait=5`);
     await wait(30);
     await new Client(app).post("/api/feedback/reply", { key: key(1), text: "More" });

@@ -223,7 +223,6 @@ describe("hianime library", () => {
     expect(result).not.toBeNull();
     expect(result?.type).toBe("sub");
     expect(result?.stream.src).toBe("https://hls.test/9901/sub.m3u8");
-    // Non-Zoko MegaPlay is skipped without wasting a network request
     expect(asked.filter((u) => u === megaDub)).toHaveLength(0);
   });
 

@@ -10,7 +10,7 @@ describe("what may be written", () => {
   it("is not empty, and not just something that cannot be seen", () => {
     expect(checkChatText("")).toEqual({ ok: false, error: "empty" });
     expect(checkChatText("   \n\t ")).toEqual({ ok: false, error: "empty" });
-    expect(checkChatText("​‮⁦­")).toEqual({ ok: false, error: "empty" }); // (zero width, direction marks, a soft hyphen)
+    expect(checkChatText("​‮⁦­")).toEqual({ ok: false, error: "empty" });
   });
 
   it("has no characters that hide or turn text around", () => {
@@ -25,7 +25,6 @@ describe("what may be written", () => {
   it("may be as long as the limit and not longer, counting what is left after it is cleaned", () => {
     expect(checkChatText("x".repeat(CHAT_TEXT_MAX))).toMatchObject({ ok: true });
     expect(checkChatText("x".repeat(CHAT_TEXT_MAX + 1))).toEqual({ ok: false, error: "too_long" });
-    // (blanks the page would not show do not count against it)
     expect(checkChatText(`  ${"x".repeat(CHAT_TEXT_MAX)}  \n\n  `)).toMatchObject({ ok: true });
     expect(checkChatText(`${"x ".repeat(CHAT_TEXT_MAX)}`)).toEqual({ ok: false, error: "too_long" });
   });
@@ -39,17 +38,16 @@ describe("what may be written", () => {
     expect(checkChatText(` ${gif} `)).toEqual({ ok: true, text: gif });
     expect(checkChatText(`${gif}?w=220`)).toEqual({ ok: true, text: `${gif}?w=220` });
     for (const fake of [
-      "https://static1.klipy.com:8443/ii/abc/x.webp", // (a port)
-      "https://someone:pw@static.klipy.com/x.gif", // (a name and password)
-      "http://static.klipy.com/x.gif", // (not https)
-      "https://static.klipy.com/x.svg", // (not a picture KLIPY gives)
-      "https://static.klipy.com.evil.example/x.gif", // (another host)
+      "https://static1.klipy.com:8443/ii/abc/x.webp",
+      "https://someone:pw@static.klipy.com/x.gif",
+      "http://static.klipy.com/x.gif",
+      "https://static.klipy.com/x.svg",
+      "https://static.klipy.com.evil.example/x.gif",
       "https://evil.example/static.klipy.com/x.gif",
       "javascript:static.klipy.com",
     ]) {
       expect(checkChatText(fake), fake).toEqual({ ok: false, error: "not_a_picture" });
     }
-    // (words with an address among them, and an address of somewhere else, stay words)
     expect(checkChatText("look at https://static.klipy.com:8443/x.gif")).toMatchObject({ ok: true });
     expect(checkChatText("https://www.youtube.com/watch?v=x")).toMatchObject({ ok: true });
     expect(checkChatText("klipy.com is where the GIFs come from")).toMatchObject({ ok: true });

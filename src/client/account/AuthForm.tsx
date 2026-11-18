@@ -10,21 +10,13 @@ import { weakness, type Weakness } from "./password";
 
 interface AuthFormProps {
   initialMode?: "signIn" | "signUp";
-  /** Called once somebody is signed in (or signed up). */
   onDone?: (me: Me) => void;
-  /** Called when the form turns from signing in to making an account, or back, so the page around it can say which. */
   onMode?: (mode: "signIn" | "signUp") => void;
-  /** Called when the question that comes before an account with a poor password is made turns on or off: while it is on, Back is the form's (a TV page around it leaves Back to it). */
   onWarning?: (asking: boolean) => void;
-  /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and none is focused until one is pressed. */
   tv?: boolean;
   autoFocus?: boolean;
 }
 
-/**
- * A name and a password (anything at all, even none), to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV.
- * An account is not made with a poor password (none, or one that is quick to guess) until it is said what that means, and the person agrees.
- */
 export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv = false, autoFocus = false }: AuthFormProps) {
   const t = useT();
   const account = useAccount();
@@ -50,7 +42,6 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
     onChange: (event: ChangeEvent<HTMLInputElement>) => setPassword(event.target.value),
   };
 
-  /** The form, or the question that comes before an account with a poor password. The page around it is told in the same update, so Back is never both's. */
   const ask = (next: Weakness | null) => {
     setWarning(next);
     onWarning?.(next !== null);
@@ -64,7 +55,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
       onDone?.(me);
     } catch (cause) {
       setError(describeError(cause));
-      ask(null); // (the form again, with what went wrong)
+      ask(null);
     } finally {
       setBusy(false);
     }
@@ -82,12 +73,10 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
     await go();
   };
 
-  /** Back to the form from the question, with the remote on the password. */
   const change = () => {
     refocus.current = true;
     ask(null);
   };
-  // The question is a page of its own in the form's place: the remote lands on the safe button, and Back (on a TV) is "change it".
   useEffect(() => {
     if (warning) changeRef.current?.focus();
     else if (refocus.current) {
@@ -138,7 +127,6 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           {...nav}
-          // (the TV's page lands on the name, as it did before Google's button was put above it)
           {...(tv ? { "data-autofocus": true } : {})}
         />
       </label>
@@ -147,7 +135,6 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
         {tv ? <input {...passwordField} type="password" {...nav} /> : <PasswordInput {...passwordField} />}
         {signingUp && <small data-testid="auth-password-hint">{t(password ? "auth.passwordHint" : "auth.noPasswordNote")}</small>}
       </label>
-      {/* The name others see (friends, parties, chat): chosen here, or later with the picture; left empty, the profile is named after its picture. */}
       {signingUp && (
         <label className="auth-field" htmlFor={`${id}-nickname`}>
           <span>{t("auth.nickname")}</span>

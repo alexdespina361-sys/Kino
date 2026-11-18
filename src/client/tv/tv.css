@@ -1,28 +1,17 @@
-/*
- * The TV screen. Everything is sized in em, and 1em here is 1% of the screen width (see .tv),
- * so it looks the same on a 720p stick and a 4K panel, and is readable from the couch.
- * On a screen too small for that (a phone, a narrow window) the unit stops shrinking at 9px, and below 760px wide the pages
- * are laid out for a hand-held screen: the last block of this file.
- */
 .tv {
   position: fixed;
   inset: 0;
   overflow: hidden;
   background: #000;
   color: #fff;
-  --em: max(min(1vw, 1.7778vh), 9px); /* 16:9 box inside any window shape (also for what is drawn at a size of its own: see the HUD's focus captions) */
+  --em: max(min(1vw, 1.7778vh), 9px);
   font-size: var(--em);
   user-select: none;
   -webkit-user-select: none;
-  -webkit-touch-callout: none; /* (a finger held on the picture plays it faster: no menu for the long press) */
-  touch-action: manipulation; /* (a double tap skips: the page does not zoom to it) */
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 .tv[data-hud="hidden"][data-state="playing"] { cursor: none; }
-/*
- * On a computer (role.ts, `isDesk`) the page stops growing with the window at the size it has on a 1920 by 1080 screen: a wider monitor shows more of the
- * library, not the same titles larger, and the browser's own zoom (Ctrl and +) makes it bigger for whoever wants that. Up to 1920 by 1080 nothing changes.
- * (Not in a narrow window: that is laid out as a hand-held screen, with its own size, further down.)
- */
 @media (min-width: 900px) {
   :root[data-fit="desk"] .tv { --em: max(min(1vw, 1.7778vh, 19.2px), 9px); }
 }
@@ -35,20 +24,15 @@
   object-fit: contain;
   background: #000;
 }
-/* ✦ 2K (enhance/enhancer.ts): the picture redrawn over the video, in the same place and shape. It takes no taps (they go to the video under it), and shows
-   nothing until its first frame is drawn, so the video shows through until then and again the moment it goes. */
 .tv-enhance-layer { position: absolute; inset: 0; pointer-events: none; }
 .tv-enhance { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; pointer-events: none; }
 .tv-enhance:not([data-drawn]) { visibility: hidden; }
-/* The picture takes taps, double taps and holds (gestures.ts) and nothing of it scrolls, so a touch on it is left to the page: the browser starts no pan of its own. */
 .tv-video, .tv-overlay { touch-action: none; -webkit-tap-highlight-color: transparent; }
-/* The controls are the page's own (Hud.tsx). If a browser draws its player's anyway (see nativePlayer.ts), they are kept out of sight; one rule each, as a browser drops a whole rule for a name it does not know. */
 .tv-video::-webkit-media-controls { display: none !important; }
 .tv-video::-webkit-media-controls-enclosure { display: none !important; }
 .tv-video::-webkit-media-controls-panel { display: none !important; }
 .tv-video::-webkit-media-controls-overlay-play-button { display: none !important; }
 .tv-video::-webkit-media-controls-start-playback-button { display: none !important; }
-/* Subtitles are drawn by the page (Captions.tsx), so every look setting works the same on every TV browser. */
 .tv-captions {
   position: absolute;
   left: 0;
@@ -62,7 +46,6 @@
   pointer-events: none;
   transition: bottom 0.25s ease;
 }
-/* While the controls are up, the subtitles ride above them instead of hiding underneath. */
 .tv[data-hud="visible"] .tv-captions { bottom: max(var(--caption-bottom), 26vh); }
 .tv-caption {
   max-width: 100%;
@@ -72,8 +55,6 @@
   text-align: center;
   white-space: pre-line;
 }
-
-/* ------------------------------ buttons ------------------------------ */
 
 .tv-btn {
   display: inline-flex;
@@ -108,9 +89,8 @@
 .tv-btn-red:hover { background: var(--accent-hover); }
 .tv-btn-ghost { background: rgba(255, 255, 255, 0.14); }
 .tv-btn-on { background: rgb(var(--accent-rgb) / 0.85); }
-.tv-btn-on:not(:focus-visible) { color: var(--accent-ink); } /* (focused, it is the pale one every button is, and white is right on that) */
+.tv-btn-on:not(:focus-visible) { color: var(--accent-ink); }
 
-/* Whatever the remote has selected must be unmistakable from across the room. */
 .tv-btn:focus-visible,
 .tv-opt:focus-visible,
 .tv-ok:focus-visible {
@@ -119,10 +99,7 @@
   transform: scale(1.08);
 }
 .tv-btn:not(.tv-btn-play):not(.tv-btn-red):focus-visible { background: rgba(255, 255, 255, 0.3); }
-/* In a list that scrolls an option keeps its size: a larger one would be cut off at the list's edges, which also grew a scrollbar. The ring is enough. */
 .tv-opt:focus-visible { transform: none; }
-
-/* ------------------------------ idle / pairing ------------------------------ */
 
 .tv-screen {
   position: absolute;
@@ -141,7 +118,7 @@
 .tv-brand {
   position: absolute;
   top: 3em;
-  left: calc(6em / 2.2); /* the screen's own side padding (6em), so a page of left-aligned content lines up with it */
+  left: calc(6em / 2.2);
   font-size: 2.2em;
 }
 .tv-headline { margin: 0; font-size: 4em; font-weight: 700; letter-spacing: -0.01em; }
@@ -155,7 +132,6 @@
   color: #000;
 }
 .tv-ok:focus-visible { outline-color: var(--accent); outline-offset: 0.18em; }
-/* The buttons on the start screens: one size, side by side, whatever they say. */
 .tv-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; justify-content: center; gap: 1.4em; margin-top: 0.6em; }
 .tv-action {
   display: inline-flex;
@@ -192,11 +168,8 @@
   font-size: 1.6em;
   font-weight: 600;
 }
-/* The "use this screen as…" link is reachable with the remote too, so it shows where the focus is. */
 .tv .role-switch:focus-visible { color: #000; background: #fff; outline: 0.14em solid var(--accent); outline-offset: 0.1em; text-decoration: none; }
 
-/* The first moments of a screen that has just opened: the name and a greeting over the library as it fills in, then it fades away
-   (by itself, or at the first press). It never takes a press: the library under it is already there. */
 .tv-welcome {
   position: absolute;
   inset: 0;
@@ -215,8 +188,6 @@
 .tv-welcome[data-leaving="true"] { opacity: 0; }
 .tv-welcome .logo { font-size: 7em; animation: tv-welcome-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .tv-welcome p { margin: 0; font-size: 2em; font-weight: 600; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); animation: tv-welcome-in 0.9s 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-/* A welcome that waits for the press that goes full screen takes the presses itself (a click anywhere is that press), and its one
-   button is always the chosen one: it looks like a focused button from the start, since OK can only mean it. */
 .tv-welcome[data-asking="true"] { pointer-events: auto; cursor: pointer; }
 .tv-welcome[data-asking="true"][data-leaving="true"] { pointer-events: none; }
 .tv-welcome .tv-action {
@@ -315,18 +286,15 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
-  width: max-content; /* (a box placed from `left: 50%` would otherwise only get the half of the screen that is left of it) */
+  width: max-content;
   max-width: 80%;
   padding: 0.6em 1.8em;
-  /* A pill for the short words; the longer explanation that follows a slow server wraps inside it. */
   border-radius: 1.4em;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(0, 0, 0, 0.82);
   font-size: 1.8em;
   text-align: center;
 }
-
-/* ------------------------------ player overlay ------------------------------ */
 
 .tv-overlay {
   position: absolute;
@@ -337,8 +305,7 @@
   transition: opacity 0.3s ease, visibility 0s linear 0s;
 }
 .tv-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
-/* The top and bottom bars slide a little as they fade, instead of just blinking out. */
-.hud-top, .hud-bottom { position: relative; z-index: 1; transition: transform 0.3s ease; } /* above the pause shade (.hud-center), which only the picture is to be dimmed by */
+.hud-top, .hud-bottom { position: relative; z-index: 1; transition: transform 0.3s ease; }
 .tv-overlay.hidden .hud-top { transform: translateY(-1.4em); }
 .tv-overlay.hidden .hud-bottom { transform: translateY(1.4em); }
 
@@ -362,7 +329,6 @@
   max-width: 70em;
 }
 .hud-episode { display: flex; align-items: center; gap: 0.9em; font-size: 1.5em; color: #ddd; }
-/* What the episode is called, under its numbers. */
 .hud-ep-name {
   max-width: 70em;
   overflow: hidden;
@@ -388,7 +354,6 @@
 
 .hud-center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .hud-spinner { font-size: 6em; }
-/* Waiting for the picture. Outside the overlay, so it shows while the controls are away; its way out is the only part that takes presses. */
 .hud-busy { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1em; pointer-events: none; }
 .hud-stuck {
   display: flex;
@@ -403,12 +368,6 @@
 }
 .hud-stuck p { margin: 0; font-size: 1.7em; color: #d8d8d8; }
 
-/*
- * A film on its way (Starting.tsx): the film's own screen from the press of Play, with its picture, its title where the player puts it, and a line
- * at the bottom that moves on with the wait. It lies under the player's controls and lines, and lets the picture's taps through (its Cancel aside).
- * The line fills quickly at first and then ever more slowly, a little further once the video is on its way, and to the end as the picture comes:
- * a wait that is seen to move is a shorter one.
- */
 .tv-starting {
   position: absolute;
   inset: 0;
@@ -417,7 +376,7 @@
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  background: #050505; /* (a browser from before color-mix: an old TV) */
+  background: #050505;
   background: radial-gradient(ellipse at 30% 20%, color-mix(in srgb, var(--accent, #e50914) 22%, #000) 0%, #050505 70%);
   pointer-events: none;
   transition: opacity 0.45s ease;
@@ -434,7 +393,6 @@
   transform: scale(1.03);
   animation: tv-starting-drift 24s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
 }
-/* Shade for the words, top and bottom, as the player's bars have. */
 .tv-starting::after {
   content: "";
   position: absolute;
@@ -445,7 +403,7 @@
 .tv-starting .hud-top { background: none; }
 .tv-starting-from { margin: 0; font-size: 1.5em; color: #ddd; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8); }
 .tv-starting-foot { display: flex; flex-direction: column; gap: 1em; }
-.tv-starting .hud-bottom { padding-top: 0; background: none; } /* (the player's bar's place, edges and all, on every screen) */
+.tv-starting .hud-bottom { padding-top: 0; background: none; }
 .tv-starting-line { margin: 0; font-size: 1.6em; color: #e4e4e4; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
 .tv-starting-track { position: relative; height: 0.55em; overflow: hidden; border-radius: 0.3em; background: rgba(255, 255, 255, 0.22); }
 .tv-starting-fill {
@@ -470,12 +428,9 @@
   .tv-starting-fill { animation: none; width: 45%; }
   .tv-starting[data-phase="loading"] .tv-starting-fill { animation: none; width: 90%; }
 }
-/* OK presses it, so it looks pressed-to-be from the start. */
 .hud-stuck .tv-btn { outline: 0.2em solid #fff; outline-offset: 0.12em; }
-/* While the picture is held, what you are watching is said once, big, on the left (the corner title steps aside), over a soft shade. */
 .hud-titles { transition: opacity 0.25s ease; }
 .tv-overlay[data-paused] .hud-titles { opacity: 0; }
-/* The same while a finger holds it at 2x: the pill that says so takes the top of the picture, over the title when the controls are up. */
 .tv-overlay[data-boosting] .hud-titles { opacity: 0; }
 .hud-center::before {
   content: "";
@@ -499,16 +454,10 @@
   animation: hud-card-in 0.4s ease both;
 }
 .hud-pause-card small { font-size: 1.3em; font-weight: 600; color: #b3b3b3; text-transform: uppercase; letter-spacing: 0.1em; }
-/* A very long name is cut by lines, so that the card stays clear of the title bar and the controls whatever it says. */
 .hud-pause-card b { display: -webkit-box; overflow: hidden; font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
 .hud-pause-card span { font-size: 1.6em; color: #ddd; }
 .hud-pause-card em { display: -webkit-box; overflow: hidden; font-size: 1.9em; font-style: normal; font-weight: 700; color: #fff; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 @keyframes hud-card-in { from { opacity: 0; transform: translateY(-44%); } }
-/*
- * The big button in the middle: play while paused, and for a finger pause while the picture plays. Big enough to be hit without aiming
- * (a tap that misses it only shows or hides the controls, which is why it is as big as it is). The row around it lets clicks through;
- * the button itself takes them.
- */
 .hud-paused {
   --size: 15em;
   display: grid;
@@ -527,7 +476,6 @@
 .hud-paused:hover { transform: scale(1.06); background: rgba(0, 0, 0, 0.7); }
 .hud-paused:active { transform: scale(0.96); }
 .hud-paused svg { font-size: calc(var(--size) * 0.5); }
-/* A finger held on the picture plays it faster for as long as it stays: said at the top, whether or not the controls are up. */
 .hud-boost {
   position: absolute;
   top: 2.4em;
@@ -546,7 +494,6 @@
 }
 .hud-boost svg { font-size: 1.1em; }
 .hud-boost b { font-weight: 800; font-variant-numeric: tabular-nums; }
-/* The browser wants a press before it plays video with sound (a phone, a TV nobody has touched yet): the whole screen is the button. */
 .tv-tap {
   position: absolute;
   inset: 0;
@@ -570,7 +517,6 @@
   text-align: center;
 }
 .hud-error h2 { margin: 0; font-size: 2.4em; text-wrap: balance; }
-/* A video that would not play from any source: what it was and what went wrong over a dark veil, with two ways on. */
 .tv-fail {
   position: absolute;
   inset: 0;
@@ -585,7 +531,6 @@
 .tv-fail .hud-error h2 { max-width: 12em; font-size: 3.2em; line-height: 1.1; }
 .tv-fail .tv-actions { margin-top: 1.6em; }
 .tv-fail .tv-action { white-space: nowrap; }
-/* The way to tell the team, below the two ways on: quieter, so OK on the card still means "try again". */
 .tv-fail .tv-report { margin-top: 0.5em; min-width: 0; padding: 0.55em 1.1em; font-size: 1.35em; }
 .tv-fail .tv-report:not(:hover):not(:focus-visible) { background: transparent; box-shadow: inset 0 0 0 0.08em rgba(255, 255, 255, 0.28); }
 
@@ -603,10 +548,8 @@
   transform: translate(-50%, -50%);
   animation: hud-toast 0.9s ease-out forwards;
 }
-/* A sentence ("Speed 1.5×") rather than a number: smaller, and up under the title so it doesn't cover the picture. */
 .hud-toast.notice { top: 24%; font-size: 2.4em; font-weight: 700; white-space: nowrap; animation-duration: 1.8s; }
-/* A skip is flashed on the half of the picture it went towards, the way a double tap does on a phone. */
-.hud-toast.side-back { left: max(22%, 2.6em); } /* (the least a long total of skips, "−120s", needs on a narrow phone to stay on the screen) */
+.hud-toast.side-back { left: max(22%, 2.6em); }
 .hud-toast.side-forward { left: min(78%, calc(100% - 2.6em)); }
 @keyframes hud-toast {
   0% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
@@ -622,7 +565,7 @@
 .hud-progress { display: flex; align-items: center; gap: 1.6em; }
 .hud-time { flex: none; min-width: 4.6em; font-size: 1.6em; color: #ddd; font-variant-numeric: tabular-nums; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
 .hud-time:last-child { text-align: right; }
-.hud-bar { flex: 1; padding: 1em 0; cursor: pointer; touch-action: none; } /* (a finger that drags the dot is not scrolling the page) */
+.hud-bar { flex: 1; padding: 1em 0; cursor: pointer; touch-action: none; }
 .hud-bar-track { position: relative; height: 0.55em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.28); transition: height 0.12s ease; }
 .hud-bar:hover .hud-bar-track, .hud-bar[data-scrubbing] .hud-bar-track { height: 0.8em; }
 .hud-bar-tip {
@@ -650,34 +593,23 @@
   transform: translate(-50%, -50%);
   transition: transform 0.12s ease;
 }
-/* The dot is something to pick up: it grows under the pointer, and while it is held. */
 .hud-bar:not([data-readonly]) .hud-bar-thumb { cursor: grab; }
 .hud-bar:not([data-readonly]):hover .hud-bar-thumb { transform: translate(-50%, -50%) scale(1.15); }
 .hud-bar[data-scrubbing], .hud-bar[data-scrubbing] .hud-bar-thumb { cursor: grabbing; }
 .hud-bar[data-scrubbing] .hud-bar-thumb { transform: translate(-50%, -50%) scale(1.3); }
-/*
- * The controls are one line, on any screen and in any language, with every button there is (series, subtitles, sources, quality).
- * Fit.ts measures them, and when they would be wider than the row it says so in the row's data-fit: the room between them goes
- * first, then the episode names, then the long labels, which leave their icons (a button with data-fold is data-folded then).
- * Only a screen no wider than a phone gets as far as wrapping.
- */
 .hud-controls { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 0.5em 1.2em; margin-top: 0.4em; }
 .hud-group { display: flex; flex: none; align-items: center; gap: 0.5em; }
 .hud-controls .tv-btn { font-size: 1.3em; padding: 0.5em 0.8em; gap: 0.4em; }
 .hud-controls .tv-btn-icon { font-size: 2em; padding: 0.25em; }
-.hud-controls .tv-btn-play { font-size: 2.3em; width: 1.6em; height: 1.6em; padding: 0; margin-right: 0.15em; } /* room for its ring, which is wide, before the icon beside it */
-/* "Previous" / "Next episode" over the episode's name, which is cut rather than allowed to widen the button. */
+.hud-controls .tv-btn-play { font-size: 2.3em; width: 1.6em; height: 1.6em; padding: 0; margin-right: 0.15em; }
 .tv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25em; min-width: 0; }
 .tv-btn-sub { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15; }
-/* A source is named by the site it came from, at whatever length. */
 .tv-btn-cut { max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
 
 .hud-controls[data-fit~="tight"] { column-gap: 0.8em; }
 .hud-controls[data-fit~="tight"] .hud-group { gap: 0.3em; }
 .hud-controls[data-fit~="tight"] .tv-btn:not(.tv-btn-icon):not(.tv-btn-play) { padding-inline: 0.55em; gap: 0.3em; }
 .hud-controls[data-fit~="names"] .tv-btn-sub { display: none; }
-/* A control that is only an icon says what it is while the remote is on it (a mouse has the tooltip). It is drawn above the button, at a size of its own,
-   and above the progress row too: the times are at the ends of that row, right over the first and the last buttons, and a caption must not cover them. */
 .hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible { position: relative; }
 .hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible::after {
   content: attr(aria-label);
@@ -699,10 +631,8 @@
   transform: translateX(-50%);
   pointer-events: none;
 }
-/* The first and the last of the bar are at the edges of the screen: their captions grow inwards. */
 .hud-controls .hud-group:first-child .tv-btn-play:focus-visible::after { left: 0; transform: none; }
 .hud-controls .hud-group:last-child .tv-btn:last-child:focus-visible::after { right: 0; left: auto; transform: none; }
-/* A button that has given up its words is an icon button like the rest of them. */
 .hud-controls .tv-btn[data-folded] { font-size: 2em; padding: 0.25em; border-radius: 50%; }
 .hud-controls .tv-btn[data-folded] .tv-btn-label { display: none; }
 .hud-controls .tv-btn[data-folded]:not(.tv-btn-on):not(:focus-visible) { background: transparent; }
@@ -710,19 +640,13 @@
 .hud-controls[data-fit~="small"] .tv-btn { font-size: 1.1em; }
 .hud-controls[data-fit~="small"] .tv-btn-icon, .hud-controls[data-fit~="small"] .tv-btn[data-folded] { font-size: 1.7em; }
 .hud-controls[data-fit~="small"] .tv-btn-play { font-size: 2em; }
-/* Nothing else is left to give up: a screen too narrow for the controls puts the last of them on a row of their own. */
 .hud-controls[data-fit~="wrap"] { flex-wrap: wrap; }
 .hud-controls[data-fit~="wrap"] .hud-group { flex: 0 1 auto; flex-wrap: wrap; min-width: 0; }
 
-/*
- * The Skip intro / Skip recap / Skip credits button, and the Next episode one (Hud.tsx's SkipPill): a pill over the bottom right of the picture, just over
- * the progress bar. New, filling, under the pointer, with the remote on it or with the controls up, it is whole; else see-through, so that it does not sit on
- * the film like a sign. While it counts down it fills up from the left with the accent, a second at a time.
- */
 .hud-skip {
   position: absolute;
   right: 3.2em;
-  bottom: 13em; /* the controls are one line */
+  bottom: 13em;
   z-index: 25;
   display: flex;
   align-items: center;
@@ -732,19 +656,15 @@
   transition: bottom 0.3s ease, opacity 0.3s ease;
   animation: hud-rise 0.3s ease;
 }
-/* With the controls gone it drops down to where they were. */
 .tv[data-hud="hidden"] .hud-skip { bottom: 4em; }
 .tv[data-hud="visible"] .hud-skip,
 .hud-skip[data-fresh],
 .hud-skip[data-counting="true"],
 .hud-skip:hover,
 .hud-skip:focus-within { opacity: 1; }
-/* A Skip button that is no longer new goes (the owner, 17 Nov: after 5 seconds), and comes back with the controls. The Next episode button stays. */
-/* (Not taken out: the remote's Up still reaches it, and it shows again as it does.) */
 .hud-skip:not([data-kind="next"]):not([data-fresh]):not([data-counting="true"]) { opacity: 0; pointer-events: none; }
 .tv[data-hud="visible"] .hud-skip:not([data-kind="next"]):not([data-fresh]):not([data-counting="true"]),
 .hud-skip:not([data-kind="next"]):not([data-fresh]):not([data-counting="true"]):focus-within { opacity: 1; pointer-events: auto; }
-/* (Going, its bar runs out: a little quieter than the fill that acts.) */
 .hud-skip[data-fading] .hud-skip-fill { opacity: 0.55; }
 @keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; } }
 .hud-skip-btn {
@@ -772,7 +692,6 @@
   transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 .hud-skip-btn > svg { flex: none; width: 1.25em; height: 1.25em; }
-/* OK presses it while it is new (Back turns it down): it wears the chosen one's ring, as the remote's focus does elsewhere. */
 .hud-skip[data-fresh] .hud-skip-btn,
 .hud-skip-btn:hover,
 .hud-skip-btn:focus-visible { border-color: #fff; background: rgba(36, 36, 42, 0.82); outline: none; }
@@ -801,9 +720,6 @@
 .hud-skip-close:hover,
 .hud-skip-close:focus-visible { border-color: #fff; background: rgba(36, 36, 42, 0.85); color: #fff; outline: none; }
 
-/* ------------------------------ the end card ------------------------------ */
-
-/* A film that has played to its end: a dark veil over the last frame, what it was, the way out, and a few titles like it. */
 .tv-end {
   position: absolute;
   inset: 0;
@@ -835,8 +751,6 @@
 .tv-end-tile:focus-visible { color: #fff; transform: scale(1.06); outline: none; z-index: 2; }
 .tv-end-tile:focus-visible .tv-end-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
-/* ------------------------------ audio / subtitles / speed / quality ------------------------------ */
-
 .tv-menu-backdrop {
   position: absolute;
   inset: 0;
@@ -848,10 +762,8 @@
 }
 @keyframes tv-fade { from { opacity: 0; } to { opacity: 1; } }
 .tv-menu {
-  /* Width by number of columns (data-cols), never wider than the screen. Not fit-content (it measures the text, so labels
-     got cut off) and not a percentage (the backdrop is a content-sized grid, so that came out far too small). */
   width: min(92vw, 40em);
-  max-height: 94vh; /* a short screen (a phone on its side) scrolls the panel instead of cutting it off */
+  max-height: 94vh;
   overflow-y: auto;
   padding: 2.6em 3em;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -861,16 +773,14 @@
 }
 .tv-menu-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.6em; }
 .tv-menu-top h2 { margin: 0; font-size: 2.4em; font-weight: 800; }
-.tv-menu-note { margin: -0.9em 0 1.4em; font-size: 1.3em; color: #8a8a8a; } /* the track menu of a film with one audio language: what the title does not offer */
+.tv-menu-note { margin: -0.9em 0 1.4em; font-size: 1.3em; color: #8a8a8a; }
 .tv-menu[data-cols="2"] { width: min(92vw, 68em); }
 .tv-menu[data-cols="3"] { width: min(92vw, 72em); }
 .tv-menu[data-kind="episodes"][data-cols="1"] { width: min(92vw, 52em); }
-/* Audio, languages, releases and adjustments side by side: wide enough for all four, and still inside the screen. */
 .tv-menu[data-kind="tracks"] { width: min(94vw, 92em); }
 .tv-menu[data-kind="tracks"][data-cols="2"] { width: min(94vw, 72em); }
 .tv-menu[data-kind="tracks"] .tv-opt { font-size: 1.5em; }
 .tv-menu-cols { display: flex; gap: 2.4em; }
-/* A fixed-height stage (tall enough for the largest size) so choosing a size never moves the panel. */
 .tv-sub-preview {
   display: grid;
   place-items: end center;
@@ -882,15 +792,12 @@
   overflow: hidden;
 }
 .tv-sub-preview .tv-caption { white-space: normal; transition: font-size 0.15s ease; }
-/* Styling subtitles: the picture shows through, the panel moves to the top, and a sample sits where the real ones will. */
 .tv-menu-backdrop[data-kind="captions"] { place-items: start center; padding-top: 1.2em; background: rgba(0, 0, 0, 0.4); }
 .tv-menu[data-kind="captions"] { padding: 1.3em 3em; }
 .tv-menu[data-kind="captions"] .tv-menu-top { margin-bottom: 0.6em; }
 .tv-menu[data-kind="captions"] .tv-menu-top h2 { font-size: 2.1em; }
-/* Six settings and half of the seventh: the panel ends above where the highest subtitles are drawn, and the half row says there is more. */
 .tv-menu[data-kind="captions"] .tv-opts { max-height: min(25.3em, 46vh); }
 .tv-menu[data-kind="captions"] .tv-opt { padding: 0.55em 0.9em; font-size: 1.4em; }
-/* A short list of choices (speed, quality, sources) is shown whole, not cut off with half an option showing. */
 .tv-menu[data-kind="speed"] .tv-opts, .tv-menu[data-kind="quality"] .tv-opts, .tv-menu[data-kind="sources"] .tv-opts { max-height: min(40em, 62vh); }
 .tv-caption-stage {
   position: absolute;
@@ -907,7 +814,6 @@
 .tv-menu-col { flex: 1 1 20em; min-width: 0; }
 .tv-menu-col[data-size="narrow"] { flex: 0 0 18em; }
 .tv-menu-col[data-size="wide"] { flex: 1 1 24em; }
-/* Release names are long and have no spaces: let them break, and show two lines before cutting them off. */
 .tv-menu-col[data-wrap="true"] .tv-opt span {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -925,8 +831,8 @@
   max-height: min(34em, 42vh);
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 0.5em; /* room for the ring around the option the remote is on */
-  scroll-padding-block: 0.9em; /* a focused option scrolls into view with room around it, not flush against the edge */
+  padding: 0.5em;
+  scroll-padding-block: 0.9em;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 }
@@ -944,13 +850,11 @@
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .tv-opt:hover { background: rgba(255, 255, 255, 0.14); }
-/* A label between groups of options ("More languages"): not an option, so the remote walks past it. */
 .tv-opt-heading { margin-top: 0.6em; padding: 0 0.4em; font-size: 1.3em; font-weight: 700; color: #8a8a8a; text-transform: uppercase; letter-spacing: 0.08em; }
 .tv-opt[data-active="true"] { background: rgb(var(--accent-rgb) / 0.25); color: #fff; font-weight: 700; }
 .tv-opt svg { flex: none; }
 .tv-opt:not(.tv-ep) span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* A show's episodes with a picture and a line about each, the way a streaming app lists them: wider and taller than the plain list, a few at a time. */
 .tv-menu[data-kind="episodes"][data-rich="true"] { width: min(94vw, 82em); }
 .tv-menu[data-kind="episodes"][data-rich="true"][data-cols="1"] { width: min(94vw, 68em); }
 .tv-menu[data-kind="episodes"][data-rich="true"] .tv-menu-col { flex-basis: 15em; }
@@ -990,7 +894,6 @@
 .tv-ep-meta { display: inline-flex; flex: none; align-items: center; gap: 0.3em; font-size: 1.15em; color: #9a9a9a; white-space: nowrap; }
 .tv-ep-meta[data-state="watched"] { color: #46d369; }
 .tv-ep-meta[data-state="now"] { color: #fff; font-weight: 700; }
-/* No source had it the last times it was played: said in words, and its picture is dimmed (Play still looks again). */
 .tv-ep-gone { align-self: flex-start; padding: 0.15em 0.6em; border-radius: 999px; background: rgba(255, 186, 73, 0.16); color: #ffc46b; font-size: 1em; font-weight: 700; }
 .tv-ep[data-unavailable] .tv-ep-still { opacity: 0.5; }
 .tv-ep-about {
@@ -1003,23 +906,16 @@
   color: #b5b5b5;
 }
 
-/* A screen that watches along has the player's bars like any other. Under the title it says whose film this is, and when it is being brought to the host's picture. */
 .hud-follow { display: flex; align-items: center; gap: 0.5em; font-size: 1.4em; font-weight: 600; color: #d4d4d4; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8); }
 .hud-follow svg { flex: none; font-size: 1.15em; }
 .hud-follow span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hud-follow em { flex: none; padding: 0.05em 0.6em; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 0.85em; font-style: normal; font-weight: 700; color: #fff; }
-/* Who held the film ("Paused by Anna"), on the pause card. */
 .hud-held { align-self: flex-start; margin-top: 0.4em; padding: 0.2em 0.9em; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 1.6em; font-weight: 700; color: #fff; }
-/* The bar of a guest that only watches shows where the film is, and nothing is pressed on it. */
 .hud-bar[data-readonly] { cursor: default; }
 .hud-bar[data-readonly]:hover .hud-bar-track { height: 0.55em; }
 .hud-bar[data-readonly] .hud-bar-thumb { display: none; }
-/* Without the playback's group (a guest that only watches) the one group left stays at the end of the row, where the player's second one is. */
 .hud-controls .hud-group:only-child { margin-left: auto; }
 
-/* ------------------------------ library ------------------------------ */
-
-/* A banner for the title the remote is on, rows of titles under it. Nothing here scrolls the page: the rows are moved in script. */
 .tv-browse {
   position: absolute;
   inset: 0;
@@ -1029,7 +925,6 @@
   overflow: hidden;
   background: var(--bg);
 }
-/* Each picture is fully opaque and fades in over the one before it; the dimming is the shade's, so when the old one goes there is nothing to see change. */
 .tv-hero-bg {
   position: absolute;
   inset: 0 0 auto 0;
@@ -1038,7 +933,7 @@
   background-size: cover;
   background-position: center 30%;
   animation: tv-fade-in 1s ease both;
-  pointer-events: none; /* a picture is not something to press: the page under it gets the click */
+  pointer-events: none;
 }
 @keyframes tv-fade-in { from { opacity: 0; } }
 .tv-browse-shade {
@@ -1051,7 +946,6 @@
     rgba(11, 11, 12, 0.45);
 }
 .tv-browse > :not(.tv-hero-bg):not(.tv-browse-shade):not(.tv-rail):not(.tv-detail):not(.tv-screen) { position: relative; }
-/* A page over the library (which lists a title is in, making and changing a list) covers all of it. */
 .tv-browse > .tv-screen { z-index: 80; }
 
 .tv-browse-top {
@@ -1062,7 +956,6 @@
   padding: 1.8em 4.4em 0 7em;
 }
 .tv-browse-logo { font-size: 2.2em; padding: 0; border: 0; background: none; color: inherit; font-family: inherit; line-height: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-/* The account button and, beside it, a round one for full screen: the same height, the same way of answering the remote. */
 .tv-browse-corner { display: flex; align-items: center; gap: 0.6em; margin-left: auto; font-size: 1.5em; }
 .tv-browse-corner .tv-account-chip { position: static; font-size: 1em; }
 .tv-corner-button {
@@ -1079,12 +972,10 @@
 .tv-corner-button svg { width: 1.2em; height: 1.2em; }
 .tv-corner-button:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .tv-corner-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
-/* The bell: a number on it while something waits for an answer, a quieter dot when friends only watched something. */
 .tv-bell { position: relative; }
 .tv-bell-badge { position: absolute; top: -0.2em; right: -0.25em; box-sizing: border-box; min-width: 1.5em; height: 1.5em; padding: 0 0.35em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.75em; font-style: normal; font-weight: 800; line-height: 1.5em; text-align: center; pointer-events: none; }
 .tv-bell-dot { position: absolute; top: 0.4em; right: 0.4em; width: 0.45em; height: 0.45em; border-radius: 50%; background: currentColor; opacity: 0.85; pointer-events: none; }
 
-/* The banner takes the top third; moving down to the rows below the first lets it shrink to a line or two, so the rows get the room. */
 .tv-hero {
   flex: none;
   height: 17.5em;
@@ -1097,7 +988,7 @@
   transition: height 0.3s ease;
 }
 .tv-browse[data-deep="true"] .tv-hero { height: 8em; }
-.tv-browse[data-deep="true"] .tv-hero .tv-hero-about, .tv-browse[data-deep="true"] .tv-hero .tv-hero-actions { display: none; } /* the banner's own; a title's page (.tv-detail) is not in it, and keeps its buttons */
+.tv-browse[data-deep="true"] .tv-hero .tv-hero-about, .tv-browse[data-deep="true"] .tv-hero .tv-hero-actions { display: none; }
 .tv-browse[data-deep="true"] .tv-hero-title { font-size: 2.4em; }
 .tv-hero-eyebrow { margin: 0; font-size: 1.3em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 .tv-hero-title {
@@ -1110,7 +1001,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tv-hero .tv-hero-status { font-size: 2.4em; text-wrap: balance; white-space: normal; } /* a sentence, not a title: it wraps instead of being cut short */
+.tv-hero .tv-hero-status { font-size: 2.4em; text-wrap: balance; white-space: normal; }
 .tv-hero-meta { margin: 0; font-size: 1.4em; font-weight: 600; color: #cfcfd4; }
 .tv-detail-gone { margin: 0.4em 0 0; max-width: 40em; font-size: 1.2em; font-weight: 600; color: #ffc46b; }
 .tv-hero-about {
@@ -1125,7 +1016,7 @@
 }
 .tv-hero-text { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.4em; min-height: 0; animation: tv-rise 0.4s ease both; }
 @keyframes tv-rise { from { opacity: 0; transform: translateY(0.9em); } }
-.tv-hero-actions { display: flex; flex-wrap: wrap; gap: 0.9em; margin-top: 0.3em; padding: 0.25em; } /* (wraps: on a phone, "Remove from Continue watching" beside "Resume" was cut off at the edge) */
+.tv-hero-actions { display: flex; flex-wrap: wrap; gap: 0.9em; margin-top: 0.3em; padding: 0.25em; }
 .tv-hero-button {
   display: inline-flex;
   align-items: center;
@@ -1141,15 +1032,13 @@
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 .tv-hero-button.is-primary { background: var(--accent); color: var(--accent-ink); }
-/* (Play while the episode a friend's message asked for is looked up: it waits, a moment - the remote stays on it.) */
 .tv-hero-button[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
 .tv-hero-button:hover { background: rgba(255, 255, 255, 0.28); }
 .tv-hero-button.is-primary:hover { background: var(--accent-hover); }
 .tv-hero-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
 .tv-hero-button svg { flex: none; }
-.tv-actions-start { grid-auto-columns: max-content; justify-content: start; } /* a button as wide as its words, at the left, not one that fills the banner */
+.tv-actions-start { grid-auto-columns: max-content; justify-content: start; }
 
-/* A title's own page, over the library: its picture, what it is, and what can be done with it (the same buttons as the banner's). */
 .tv-detail {
   position: absolute;
   inset: 0;
@@ -1157,15 +1046,11 @@
   background: var(--bg);
   animation: tv-fade 0.25s ease, tv-arrive 0.5s linear;
 }
-/* The page scrolls over its picture, which stays: a film's is only its first screen, a show has its episodes under that. */
 .tv-detail-scroll { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden auto; scrollbar-width: none; }
 .tv-detail-scroll::-webkit-scrollbar { display: none; }
 .tv-detail-hero { flex: none; min-height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
-/* A show's first screen leaves a little of the episodes showing under its buttons, so it is clear there is more. */
 .tv-detail[data-show="true"] .tv-detail-hero { min-height: calc(100% - 10.5em); }
 .tv-detail[data-show="true"] .tv-detail-text { padding-bottom: 2.4em; }
-/* While it arrives the page lets the pointer through to the library: the second click of a double click would otherwise land on the
-   page, closing it or pressing Play, and the title would seem not to open at all. */
 @keyframes tv-arrive { from, to { pointer-events: none; } }
 .tv-detail-text { position: relative; display: flex; flex-direction: column; gap: 0.5em; max-width: 62em; padding: 0 4em 4.5em 7em; animation: tv-rise 0.4s ease both; }
 .tv-detail-title { margin: 0; font-size: 4.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; overflow-wrap: anywhere; }
@@ -1180,7 +1065,6 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* (Shown whole after "Show more…": the clamps of the smaller screens and of the polish give way too.) */
 :root .tv-detail-about.is-open { display: block; -webkit-line-clamp: unset !important; overflow: visible; }
 .tv-detail .about-more {
   display: block;
@@ -1199,32 +1083,27 @@
 }
 .tv-detail .about-more:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 4px; }
 .tv-detail .tv-hero-actions { flex-wrap: wrap; margin-top: 0.8em; }
-.tv-detail .tv-hero-button { font-size: 1.7em; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; } /* "Remove from <a list of your own>" can be longer than a small screen is wide */
-.tv-detail .tv-detail-close { position: absolute; top: 1.8em; right: 3.4em; z-index: 1; font-size: 1.3em; } /* (3.4 of its own 1.3em: the 4.4em that the library's corner buttons are from the edge) */
+.tv-detail .tv-hero-button { font-size: 1.7em; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.tv-detail .tv-detail-close { position: absolute; top: 1.8em; right: 3.4em; z-index: 1; font-size: 1.3em; }
 .tv-detail .tv-detail-notice { position: absolute; top: 2em; left: 50%; z-index: 2; max-width: 50%; text-align: center; transform: translateX(-50%); }
 
-/* A show's seasons and episodes, under its buttons. The cards are the player's own (.tv-opt.tv-ep); the section darkens the picture it slides over. */
 .tv-detail-eps { position: relative; flex: none; padding: 1em 4em 6em 7em; background: linear-gradient(to bottom, transparent, var(--bg) 5em); }
 .tv-detail-eps > * { max-width: 62em; }
-.tv-detail-eps > .tv-filters-box { max-width: none; } /* the seasons run as far as there is room */
+.tv-detail-eps > .tv-filters-box { max-width: none; }
 .tv-detail-eps-title { margin: 0 0 0.5em; font-size: 1.9em; font-weight: 800; letter-spacing: -0.01em; }
-.tv-detail-list { display: flex; flex-direction: column; gap: 0.5em; padding: 0.5em; margin: 0 -0.5em; } /* room for the ring around the one the remote is on */
-/* On a TV or a computer two across, in reading order (Episodes.tsx), as far as the page's right margin; a card's picture is a little smaller there, to leave its words room. */
+.tv-detail-list { display: flex; flex-direction: column; gap: 0.5em; padding: 0.5em; margin: 0 -0.5em; }
 .tv-detail-eps > .tv-detail-list:not([data-cols="1"]) { display: grid; grid-template-columns: repeat(var(--ep-cols, 2), minmax(0, 1fr)); gap: 0.5em 1em; max-width: none; }
 .tv-detail-list:not([data-cols="1"]) > .tv-opt.tv-ep { grid-template-columns: 2.2em 10.5em minmax(0, 1fr); gap: 0.9em; }
 .tv-detail-eps-note { margin: 0.2em 0 0; font-size: 1.5em; color: var(--muted); }
-/* Show earlier over the episodes listed, Show more under them (24 at a time: Episodes.tsx), a line of their own across the columns. */
 .tv-detail-list > .tv-detail-eps-more { grid-column: 1 / -1; align-self: center; justify-self: center; display: inline-flex; align-items: center; gap: 0.45em; margin: 0.2em 0; }
 .tv-detail-eps-more svg { flex: none; font-size: 1.1em; }
 
-/* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */
 .tv-rows {
   flex: 1 1 0;
   min-height: 0;
   position: relative;
   overflow: hidden auto;
   scrollbar-width: none;
-  /* (The page keeps its own place when a row comes in over the one on the screen: see `noteAnchor` in Browse.tsx. The browser's way did not hold here.) */
   overflow-anchor: none;
 }
 .tv-rows::-webkit-scrollbar { display: none; }
@@ -1237,13 +1116,11 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  /* A title that has scrolled off to the left fades out before the menu's icons (6em wide) instead of sliding under them. */
   -webkit-mask-image: linear-gradient(90deg, transparent 5.2em, #000 6.2em, #000 93%, transparent);
   mask-image: linear-gradient(90deg, transparent 5.2em, #000 6.2em, #000 93%, transparent);
 }
 .tv-row-tiles::-webkit-scrollbar { display: none; }
 
-/* A title is a wide picture with its name under it. */
 .tv-tile {
   flex: none;
   width: 15em;
@@ -1253,7 +1130,7 @@
   color: #bdbdc4;
   transition: transform 0.18s ease, color 0.18s ease;
 }
-.tv-tile-body { display: flex; flex-direction: column; gap: 0.3em; width: 100%; min-width: 0; }
+.tv-tile-stack { gap: 0.3em; }
 .tv-tile-art {
   position: relative;
   display: grid;
@@ -1267,7 +1144,6 @@
 }
 .tv-tile-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .tv-tile-initial { font-size: 4em; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
-/* What is written under a title is read from the couch: no smaller than about 1.1% of the screen's width (22 px on a 1080p one). */
 .tv-tile-name {
   font-size: 1.3em;
   font-weight: 600;
@@ -1278,15 +1154,9 @@
 }
 .tv-tile-year { font-size: 1.25em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-tile:hover { color: #fff; }
-/* A title (or category, or card) that has the focus shows it, whatever gave it: a press takes none (see Tile), so a title is only ever focused by the arrow keys or by the click that opened it, and the ring is where the remote is. (:focus-visible would hide it after a mouse click or a tap, and the title that was clicked, and is where the remote stands on the way back, would look like any other.) */
 .tv-tile:focus { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
 .tv-tile:focus .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
-/*
- * For a mouse: a small round button in the corner of a picture keeps the title (＋), lets it go (× in the accent colour, once it is
- * kept), or clears a card off Continue watching (× in grey), without opening it. A remote has the banner's buttons and the title's
- * page for the same, and a finger has its own page, so only a pointer that can hover is shown them.
- */
 .tv-tile-corner {
   position: absolute;
   top: 0.5em;
@@ -1302,10 +1172,10 @@
   color: #fff;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
-.tv-tile-corner svg { width: 1.2em; height: 1.2em; }
+.tv-tile-corner::before { content: ""; width: 1.2em; height: 1.2em; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center / contain no-repeat; }
+.tv-tile-corner[data-corner="add"]::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
 .tv-tile-corner[data-corner="kept"] { background: var(--accent); box-shadow: none; color: var(--accent-ink); }
 
-/* The score this profile gave a title, in the corner opposite the button (so a mouse's buttons never cover it): a star and a number. */
 .tv-tile-art .score-badge {
   position: absolute;
   top: 0.5em;
@@ -1328,23 +1198,16 @@
   .tv-tile-corner { display: grid; }
   .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #000; transform: scale(1.14); }
   .tv-tile-corner:active { transform: scale(0.9); }
-  /* (The corner is part of the tile, so pressing it presses the tile too; only the corner should sink.) */
   .tv-tile:has(.tv-tile-corner:active):not(:focus) { transform: none; }
 }
 
 .tv-skeleton { height: 8.44em; border-radius: 0.6em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
 .tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
 @keyframes tv-shimmer { to { background-position: -200% 0; } }
-/* Under the last row of a page that goes on as it is scrolled: a line when the rows that come next could not be had (they are asked for again in a moment). */
 .tv-rows-note { margin: 0.4em 2.4em 1.4em 4.1em; font-size: 1.4em; color: var(--muted); }
-/* In a search: the titles with every word typed, then this heading, then the closest others. It runs the width of the grid. */
 .tv-results-closest, .tv-grid-heading { grid-column: 1 / -1; margin: 0.6em 0 -0.2em; font-size: 1.7em; font-weight: 700; color: #e8e8ec; }
-/* (A grid in sections, a friend's lists, starts with the first heading right under the buttons.) */
 .tv-grid-heading:first-child { margin-top: 0; }
 
-/* ------------------------------ library: menu, categories, search ------------------------------ */
-
-/* The menu: a strip of icons down the left that opens into names while the remote is on it, over whatever is there. */
 .tv-rail {
   position: absolute;
   z-index: 6;
@@ -1380,22 +1243,15 @@
   text-align: left;
   transition: background 0.15s, color 0.15s, margin-right 0.2s ease;
 }
-/*
- * Shut, the menu is a strip of icons, and an entry is a box as wide as its icon needs, in the middle of the strip: the margins are
- * what is left of the strip on each side, so the box lit for the focused entry is round its icon, never beside it. Open, the
- * entry stretches to the right (the strip's own width moves in step with this margin).
- */
 .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: 0.68em; }
 .tv-rail-item { position: relative; }
 .tv-rail-item[data-apart="true"] { margin-top: 0.9em; }
-/* (A name that is longer than the menu is wide ends in dots inside the lit box, rather than running out of it.) */
 .tv-rail-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-item span { opacity: 1; }
 .tv-rail-item svg { flex: none; font-size: 1.15em; }
 .tv-rail-item:hover { color: #fff; }
 .tv-rail-item[aria-current="page"] { color: #fff; box-shadow: inset 0.14em 0 0 var(--accent); }
 .tv-rail-item:focus-visible { background: #fff; color: #000; outline: none; box-shadow: none; }
-/* A state: a dot on the icon while the menu is shut; once it is open, a count beside the name (the party), or the name says it (a phone is connected). */
 .tv-rail-badge { flex: none; margin-left: auto; padding: 0.1em 0.7em; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.35); color: #fff; font-size: 0.78em; font-style: normal; opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-badge { opacity: 1; }
 .tv-rail-item:focus-visible .tv-rail-badge { background: rgba(0, 0, 0, 0.12); color: #000; }
@@ -1410,33 +1266,22 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-/* A category sits under that heading, in line with its words. */
 .tv-rail-category { margin-left: 1.6em; padding-left: 0.6em; font-size: 1.5em; }
 
-/* A whole category, or the search results: titles in a grid under a heading. */
 .tv-view, .tv-search { flex: 1 1 0; min-height: 0; display: flex; padding: 0.6em 4em 0 7em; }
 .tv-view { flex-direction: column; }
 .tv-view-title { margin: 0; font-size: 3em; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
 .tv-view-meta { margin: 0.2em 0 0; font-size: 1.5em; font-weight: 600; color: #b4b4bb; }
-/* What the page cannot show, and why (a friend's page, when what they watch is not told): smaller than the line above it, and never wider than a line can be read. */
 .tv-view-hint { margin: 0.3em 0 0.6em; max-width: 38em; font-size: 1.15em; font-weight: 500; line-height: 1.35; color: #9a9aa4; }
 .tv-view-empty { margin: 1.4em 0 0; max-width: 28em; font-size: 1.8em; line-height: 1.4; color: var(--muted); }
-/* One line of buttons however many there are (a screenful of lists would wrap into rows the arrow keys do not follow); it slides to the one with the focus. The padding is room for its ring. */
 .tv-filters { display: flex; flex: none; gap: 0.8em; padding: 0.8em; margin: -0.5em; overflow-x: auto; scrollbar-width: none; }
 .tv-filters::-webkit-scrollbar { display: none; }
 .tv-filters > * { flex: none; }
-/* The ratings' filters: the sections over the scores, each button with how many titles it keeps in a small pill of its own. */
 .tv-rating-filters { display: flex; flex-direction: column; gap: 0.15em; margin: 0.7em 0 0.5em; }
 .tv-choice-count { min-width: 1.5em; padding: 0.08em 0.45em; border-radius: 999px; background: rgba(255, 255, 255, 0.12); font-size: 0.7em; font-weight: 700; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; }
 .tv-choice[aria-checked="true"] .tv-choice-count { background: rgba(255, 255, 255, 0.22); }
 .tv-choice:focus-visible .tv-choice-count { background: rgba(0, 0, 0, 0.1); }
-/* A friend's page has up to six buttons in its line (the way back, their lists and ratings, to ask them to watch and to plan it, the chat): in Romanian the words of the long ones are as wide as the screen with the usual room round them, so there is less of it, and all six show without sliding. */
 .tv-filters-friend > .tv-choice { padding-inline: 0.85em; }
-/*
- * A friend's page: their picture beside their name and what they are doing, then the one line of buttons in two groups (see Browse.tsx), the way back a
- * round button with an arrow, their lists and ratings one switch of two, and what to do with them pushed to the right, watching together first and in the
- * accent. Removing them is a quiet line at the foot: it asks first, and it is not what anybody comes to the page for.
- */
 .tv-friend-head { display: flex; flex: none; align-items: center; gap: 1.4em; margin-bottom: 0.9em; }
 .tv-friend-head .tv-person-pic { font-size: 6.6em; }
 .tv-friend-head .tv-person-pic[data-online="true"]::after { right: 0; bottom: 0; width: 0.2em; height: 0.2em; }
@@ -1488,9 +1333,7 @@
 .tv-query-hint { color: #6f6f78; font-weight: 500; }
 .tv-caret { width: 0.08em; height: 1.1em; margin-left: 0.1em; background: var(--accent); animation: tv-blink 1s steps(1) infinite; }
 .tv-caret.is-still { animation: none; }
-/* What is selected in the drawn search box (SearchField): lit as a field lights it, in the colour of the page. */
 .tv-query .is-selected { background: rgb(var(--accent-rgb) / 0.45); color: #fff; }
-/* Text that is typed (a box of the TV's own, a phone's or a computer's) and the messages of a chat can be selected and copied, though the rest of the screen cannot. */
 .tv input, .tv textarea, .tv .chat-text { -webkit-user-select: text; user-select: text; }
 @keyframes tv-blink { 50% { opacity: 0; } }
 .tv-keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5em; margin-top: 1.2em; }
@@ -1513,13 +1356,10 @@
 .tv-key:hover { background: rgba(255, 255, 255, 0.2); }
 .tv-key:focus-visible { background: #fff; color: #000; outline: none; transform: scale(1.08); z-index: 2; }
 
-/* ------------------------------ account: chip, sign-in, profiles, panel ------------------------------ */
-
 .tv-screen-compact { gap: 1.5em; padding: 5.5em 6em 2.5em; }
 .tv-headline-small { font-size: 3.4em; }
 .tv-hint { margin: 0; font-size: 1.5em; color: var(--muted); }
 
-/* Top right of the library: who is watching, or a way to sign in. */
 .tv-account-chip {
   position: absolute;
   top: 2.6em;
@@ -1540,7 +1380,6 @@
 .tv-account-chip:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .tv-account-chip:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
 
-/* Signing in with the phone: the code in the steps, the QR code beside them, and what it is waiting for under both. */
 .tv-link-code { font-size: 3.4em; letter-spacing: 0.1em; }
 .tv-screen-compact .tv-pair { gap: 5em; }
 .tv-screen-compact .tv-qr { width: 19em; padding: 1em; }
@@ -1551,12 +1390,10 @@
 .tv-signin-status.is-problem { color: #ffb4b4; }
 .tv-screen-compact .tv-actions { margin-top: 0; }
 
-/* A TV with a phone says who else may come in: the steps and the QR code of the party page's invite, under a line of their own. */
 .tv-join-title { margin: 0.4em 0 -0.3em; font-size: 1.8em; font-weight: 700; }
 .tv-screen-compact .tv-ready-icon { width: 4.4em; height: 4.4em; }
 .tv-screen-compact .tv-ready-icon svg { font-size: 2.6em; }
 
-/* A name and password on the TV: for a TV that has a keyboard. */
 .tv .auth-tv { width: 50em; gap: 1.1em; text-align: left; }
 .tv .auth-tv .auth-field, .tv .profile-editor-tv .auth-field { gap: 0.4em; }
 .tv .auth-tv .auth-field > span, .tv .profile-editor-tv .auth-field > span { font-size: 1.5em; letter-spacing: 0.06em; }
@@ -1568,24 +1405,21 @@
 .tv .auth-tv .tv-link-input { text-align: center; text-transform: uppercase; letter-spacing: 0.16em; }
 .tv-approve-body { max-width: 34em; text-align: center; }
 
-/* Who is watching: the pictures big enough to read from the couch, the focused one raised and ringed. */
 .profile-tv { display: flex; flex-wrap: wrap; justify-content: center; gap: 2.4em 3.6em; margin: 0.6em 0 0; }
 .profile-tv li { flex: none; }
-.profile-tv .profile-tile { width: auto; gap: 1.1em; color: #9a9aa2; } /* room for the picture to grow and be ringed without touching the name */
+.profile-tv .profile-tile { width: auto; gap: 1.1em; color: #9a9aa2; }
 .profile-tv .profile-picture { font-size: 10em; }
 .profile-tv .profile-name { max-width: 5.5em; font-size: 2.2em; }
-/* The picture is 10em, so its rings are in hundredths of that: 0.03em is a third of an em of the page. */
 .profile-tv .profile-tile:hover .profile-picture, .profile-tv .profile-tile:focus-visible .profile-picture { transform: scale(1.1); box-shadow: 0 0 0 0.03em #fff, 0 0.06em 0.2em rgba(0, 0, 0, 0.6); }
 .profile-tv .profile-tile[aria-current="true"] .profile-picture { box-shadow: 0 0 0 0.025em var(--accent); }
 .profile-tv .profile-tile[aria-current="true"]:focus-visible .profile-picture { box-shadow: 0 0 0 0.03em #fff, 0 0.06em 0.2em rgba(0, 0, 0, 0.6); }
 .profile-tv .profile-tile:hover .profile-name, .profile-tv .profile-tile:focus-visible .profile-name { color: #fff; }
 
-/* Making or changing a profile: the picture on the left, and on the right the name (typed with a keyboard) and the pictures to choose from. */
 .tv .profile-editor-tv { display: grid; grid-template-columns: auto minmax(0, 46em); align-items: start; gap: 1.3em 6em; width: min(100%, 72em); text-align: left; }
 .tv .profile-editor-tv > * { grid-column: 2; margin: 0; }
 .tv .profile-editor-tv .editor-preview { grid-column: 1; grid-row: 1 / span 6; align-self: center; font-size: 12em; }
 .tv .profile-editor-tv .avatar-picker legend { padding: 0 0 0.5em; font-size: 1.5em; letter-spacing: 0.06em; }
-.tv .profile-editor-tv .avatar-choices { gap: 1em; padding: 0.4em; } /* room for the one with the focus to grow and be ringed */
+.tv .profile-editor-tv .avatar-choices { gap: 1em; padding: 0.4em; }
 .tv .profile-editor-tv .avatar-choice { transition: transform 0.15s, box-shadow 0.15s; }
 .tv .profile-editor-tv .avatar-choice:hover { transform: scale(1.08); }
 .tv .profile-editor-tv .avatar-choice[aria-checked="true"] { box-shadow: 0 0 0 0.25em var(--accent); transform: none; }
@@ -1595,27 +1429,21 @@
 .tv .profile-editor-tv .editor-actions .tv-action { flex: 1; min-width: 0; }
 .tv .profile-editor-tv .editor-confirm { gap: 1em; padding: 1.2em 1.4em; border-radius: 0.7em; }
 .tv .profile-editor-tv .editor-confirm p { font-size: 1.6em; line-height: 1.35; }
-/* What cannot be taken back: a warmer button than the rest. */
-/* The lists a title can be in, one button each, with a tick on those it is in. */
 .tv-list-picks { display: flex; flex-direction: column; gap: 0.8em; width: min(100%, 26em); max-height: 42vh; overflow-y: auto; padding: 0.4em; }
 .tv-list-picks .tv-action { justify-content: flex-start; }
 .tv-list-picks .tv-action[aria-pressed="true"]:not(:focus-visible) { background: rgb(var(--accent-rgb) / 0.3); color: #fff; box-shadow: inset 0 0 0 0.1em var(--accent); }
-/* A way to make a list, last among the lists: outlined, so that it is not taken for one of them. */
 .tv-list-picks .tv-action-new:not(:hover):not(:focus-visible) { background: transparent; box-shadow: inset 0 0 0 0.08em rgba(255, 255, 255, 0.28); }
-/* A list's editor has a name and no picture: one column. */
 .tv .profile-editor-tv.list-editor-tv { grid-template-columns: minmax(0, 46em); justify-content: center; }
 .tv .profile-editor-tv.list-editor-tv > * { grid-column: 1; }
-/* The name is typed on keys of the page (twelve to a row; a screen held in the hand has its own keyboard). Everything is a little smaller than elsewhere, so that it all stays on the screen. */
 .tv-name-keys { grid-template-columns: repeat(12, 1fr); gap: 0.4em; margin-top: 0; }
 .tv-name-keys .tv-key { padding: 0.3em 0; font-size: 1.5em; }
 .tv-name-keys .tv-key-wide { grid-column: span 4; font-size: 1.2em; }
-.tv-name-keys .tv-key-first { grid-column: 1 / span 4; } /* the wide keys start a row of their own, after however many letters there are */
+.tv-name-keys .tv-key-first { grid-column: 1 / span 4; }
 @media (min-width: 900px) {
   .tv .profile-editor-tv.list-editor-tv { gap: 0.9em; }
   .tv .list-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .list-editor-tv .tv-action { font-size: 1.5em; }
 }
-/* Rating a title: the ten scores in a row, the word for the one chosen, what the note says, and the few lines about the watching. */
 .tv-rate-scopes { flex-wrap: wrap; justify-content: center; }
 .tv-rate-scopes .tv-choice { padding: 0.4em 1.1em; font-size: 1.5em; }
 .tv-scores { display: flex; justify-content: center; gap: 0.8em; padding: 0.5em; }
@@ -1644,7 +1472,6 @@
 .tv .rating-editor-tv.list-editor-tv { grid-template-columns: minmax(0, 70em); }
 .tv-action:disabled { opacity: 0.4; }
 
-/* A list already at the end has nowhere to move: its button stays, so the remote does not lose its place. */
 .tv-action[aria-disabled="true"] { opacity: 0.4; }
 .tv-action-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
 .tv-action-danger:hover { background: rgba(255, 107, 107, 0.34); color: #fff; }
@@ -1695,7 +1522,6 @@
 .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
 .tv-switch-row[aria-checked="true"] .tv-switch::after { transform: translateX(1.1em); }
 
-/* What the account says in passing (what was brought across at sign-in), over everything. */
 .tv-toast {
   position: absolute;
   left: 50%;
@@ -1722,10 +1548,6 @@
   100% { opacity: 0; }
 }
 
-/*
- * The one thing from friends that is let over a film (an invitation to something under way): a small, dark note in the corner, under the
- * clock, that fades in and out where it is. It never takes the middle of the picture or the bottom, where the subtitles and the buttons are.
- */
 .tv-note {
   position: absolute;
   right: 1.6em;
@@ -1756,16 +1578,11 @@
   100% { opacity: 0; }
 }
 
-/*
- * What a pointer that rests against the top or the bottom edge shows while the page waits to move (a ring that fills over the wait) and while it
- * moves (the arrow goes on): a shade along the edge, and the ring at the pointer. It takes no pointer, and it is only there while a page would move.
- * (EdgeScrollHint.tsx)
- */
 .tv-edge {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 85; /* over the pages and their menus (the highest is 80), under the welcome */
+  z-index: 85;
   height: 9em;
   pointer-events: none;
   animation: tv-edge-in 0.2s ease-out both;
@@ -1775,7 +1592,7 @@
 .tv-edge-puck {
   position: absolute;
   left: var(--tv-edge-x, 50%);
-  left: clamp(3em, var(--tv-edge-x, 50%), calc(100% - 3em)); /* (a pointer in the corner keeps the whole ring on the screen; a browser that does not know clamp() leaves it where the pointer is) */
+  left: clamp(3em, var(--tv-edge-x, 50%), calc(100% - 3em));
   display: grid;
   place-items: center;
   width: 4.4em;
@@ -1802,18 +1619,11 @@
   to { transform: rotate(var(--turn)) translateX(0.3em); }
 }
 
-/* ------------------------------ library: the rows of the home page ------------------------------ */
-
 .tv-row { animation: tv-rise 0.45s ease both; }
-/* Only the rows a first look can see rise in. The rest, below the screen, are there at once: 30-odd rows moving together, out of sight, were work for a slow TV
-   while it was showing its first posters (18 Nov; with no row rising at all the first posters came 0.6-0.7 s sooner, but the first rows keep their entrance). */
 .tv-rows > .tv-row:nth-child(n + 4) { animation: none; }
 
-/* A ranking: big outlined numbers tucked behind tall posters. */
 .tv-tile-ranked { width: auto; flex-direction: row; align-items: flex-start; }
-.tv-tile-ranked .tv-tile-body { position: relative; z-index: 1; width: 8.6em; flex: none; }
-.tv-tile-ranked .tv-tile-art { aspect-ratio: 2 / 3; }
-/* The box is as tall as the poster and the poster slides over its right edge; the digits inside are sized on their own. */
+.tv-tile-ranked .tv-tile-art { z-index: 1; width: 8.6em; flex: none; aspect-ratio: 2 / 3; }
 .tv-rank { flex: none; display: flex; align-items: flex-end; justify-content: flex-end; width: 4.6em; height: 12.9em; margin-right: -1.1em; }
 .tv-rank-wide { width: 7.2em; }
 .tv-rank b {
@@ -1828,7 +1638,6 @@
 }
 .tv-tile-ranked:focus .tv-rank b { -webkit-text-stroke-color: #fff; }
 
-/* What is part way through: a little wider, with a play badge and a bar for how far it got. */
 .tv-tile-continue { width: 17em; }
 .tv-tile-play {
   position: absolute;
@@ -1843,7 +1652,6 @@
 .tv-tile-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 0.45em; background: rgba(255, 255, 255, 0.28); }
 .tv-tile-progress i { display: block; height: 100%; background: var(--accent); }
 
-/* A category: a tile of its own colour (from its name), with the first title's picture dimmed behind its name. */
 .tv-tile-category {
   position: relative;
   width: 15em;
@@ -1861,18 +1669,12 @@
 .tv-tile-category::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent 65%); }
 .tv-category-name, .tv-category-count { position: relative; z-index: 1; }
 .tv-category-name { font-size: 1.6em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-/* (What a place of the profile's page says under its name is a line or two, and the banner says all of it; a third line would push the name out of the tile.) */
 .tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tv-tile-category:focus { transform: scale(1.1); box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
-/* A friend: the picture they chose beside their name, with a green dot on it while they are online. The tile is wider than a category's, to keep as much room for the words. */
 .tv-tile-person { width: 21em; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.9em; }
 .tv-person-pic { position: relative; z-index: 1; flex: none; font-size: 4.6em; line-height: 0; }
 .tv-person-pic[data-online="true"]::after { content: ""; position: absolute; right: -0.04em; bottom: -0.04em; width: 0.28em; height: 0.28em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.06em #101012; }
 .tv-person-text { position: relative; z-index: 1; display: flex; flex: 1 1 0; flex-direction: column; justify-content: center; gap: 0.2em; min-width: 0; }
-/*
- * People are not categories: a friend's card is one quiet surface (no colour of its own from the name, which made a row of them look like a box of sweets),
- * their picture is what tells them apart. Add a friend and the settings are the same card with a glyph where the picture is, so the row reads as one thing.
- */
 .tv-tile-person { background: linear-gradient(155deg, #27272c, #18181b 72%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
 .tv-tile-person::after { display: none; }
 .tv-tile-person .tv-category-name { font-size: 1.45em; font-weight: 700; }
@@ -1884,15 +1686,11 @@
 .tv-tile-tool[data-tool="add-friend"] { background: transparent; box-shadow: inset 0 0 0 0.12em rgba(255, 255, 255, 0.18); }
 .tv-tile-tool[data-tool="add-friend"] .tv-tool-icon { background: var(--accent); }
 .tv-friends-head .tv-hero-title { margin-bottom: 0.1em; }
-/* The button under a friend's titles: apart from the buttons over them, and red. */
 .tv-view-foot { flex: none; padding: 0.4em 0 1.8em; }
 .tv-choice-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
 .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.34); color: #fff; }
 .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
 
-/* ------------------------------ watch party ------------------------------ */
-
-/* Start one or join one: two big cards, side by side. */
 .tv-party-choices { display: flex; gap: 2.4em; margin-top: 0.4em; }
 .tv-party-choice {
   display: flex;
@@ -1913,16 +1711,11 @@
 .tv-party-choice:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.05); }
 .tv-party-choice:focus-visible small { color: #444; }
 
-/* How to get in: smaller than the pairing page's steps, because the list of who is in sits under it. */
 .tv-party-invite .tv-steps { font-size: 1.8em; }
 .tv-party-invite .tv-code { font-size: 3.4em; }
 .tv-screen-compact .tv-party-invite { gap: 4em; }
 .tv-screen-compact .tv-party-invite .tv-qr { width: 15em; padding: 0.8em; }
 .tv-screen-compact .tv-party-invite .tv-qr p { font-size: 1.1em; }
-/*
- * The link the QR code holds, to copy into a chat: under the code, in line with it, the whole of it with a button beside it. Its text
- * is as big as the TV's small text goes (1.3em of the screen: the steps it sits in are 1.8em on the page and 1.35em in the panel).
- */
 .tv-link-row { padding-left: 2.1em; }
 .tv-link-row .copy-link { flex: 1 1 auto; font-size: 0.72em; }
 .tv-menu .tv-link-row .copy-link { font-size: 0.97em; }
@@ -1932,15 +1725,14 @@
 .tv .copy-link-button[data-state="copied"]:not(:focus-visible) { background: var(--ok); color: #0b0b0c; }
 .tv .copy-link-note { margin: 0.4em 0 0; color: #ffb4b4; font-size: 0.92em; font-weight: 600; }
 
-/* Who is in: a chip each, the host first. */
 .tv-party-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em 0.8em; max-width: 80em; margin: 0; padding: 0; list-style: none; }
 .tv-party-member {
   display: inline-flex;
-  flex-wrap: wrap; /* (what the host can do to a guest goes under its name where it does not fit beside it) */
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5em;
   padding: 0.35em 0.8em 0.35em 1em;
-  border-radius: 1.2em; /* (a pill on one line) */
+  border-radius: 1.2em;
   background: rgba(255, 255, 255, 0.1);
   font-size: 1.7em;
   font-weight: 600;
@@ -1950,7 +1742,7 @@
 .tv-party-member[data-online="false"] .tv-party-dot { background: #8a8a8a; }
 .tv-party-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tv-party-member small { font-size: 0.78em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.tv-party-actions { display: inline-flex; gap: 0.4em; margin-left: auto; } /* (both go under the name together where they do not fit beside it) */
+.tv-party-actions { display: inline-flex; gap: 0.4em; margin-left: auto; }
 .tv-party-remove {
   padding: 0.25em 0.8em;
   border-radius: 999px;
@@ -1963,7 +1755,6 @@
 .tv-party-remove:hover { background: rgba(255, 255, 255, 0.24); color: #fff; }
 .tv-party-remove:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.12em; }
 
-/* Typing a party's code: six boxes (the sixth digit sends it) and a number pad for a remote with no digits. */
 .tv-code-boxes { display: flex; gap: 0.5em; margin: 0.4em 0 0; }
 .tv-code-boxes i {
   display: grid;
@@ -1980,21 +1771,17 @@
 }
 .tv-code-boxes i[data-filled="true"] { background: rgba(255, 255, 255, 0.18); border-bottom-color: var(--accent); }
 .tv-code-boxes i:nth-child(3) { margin-right: 0.5em; }
-/* The boxes take a click or a tap as a text field does: a field over them, seen through, has the cursor and the keyboard (JoinPage in Party.tsx). */
 .tv-code-entry { position: relative; }
-/* The boxes and Paste: one under the other, as if there were no box round them (a screen as flat as a phone on its side puts them side by side, below). */
 .tv-code-line { display: contents; }
 .tv-code-field { position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: transparent; caret-color: transparent; font-size: 16px; opacity: 0; cursor: text; }
 .tv-party-error { min-height: 1.4em; margin: 0; font-size: 1.6em; font-weight: 600; color: #ffb4b4; visibility: hidden; }
 .tv-party-error.is-shown { visibility: visible; }
 .tv-pad { display: grid; grid-template-columns: repeat(3, 5.6em); gap: 0.5em; }
 .tv-pad .tv-key { padding: 0.4em 0; }
-/* The PIN of a child's profile (Pin.tsx): four boxes in one group, dots for digits, and the way to take off a forgotten one under the pad. */
 .tv-pin-boxes i:nth-child(3) { margin-right: 0; }
 .tv-pin-note { max-width: 36em; margin: 0; text-align: center; }
 .tv-pin-help { max-width: 40em; text-align: center; }
 
-/* Over a film: the same, in the panel the other pickers use. */
 .tv-menu[data-kind="party"] { width: min(94vw, 80em); }
 .tv-menu[data-kind="party"][data-cols="1"] { width: min(92vw, 52em); }
 .tv-party-start p { margin: 0 0 1.2em; font-size: 1.8em; line-height: 1.35; color: #cfcfd4; }
@@ -2010,29 +1797,19 @@
 .tv-party-side .tv-party-members { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 0.5em; }
 .tv-party-side .tv-party-member { font-size: 1.5em; }
 .tv-party-side .tv-hint { font-size: 1.3em; }
-/* Choosing the friends to invite, inside the panel: the friends in a list that scrolls, then Send and Cancel (Send says it cannot with its looks, since a disabled button would stop the remote). */
 .tv-party-pick { display: flex; flex-direction: column; gap: 1em; }
 .tv-party-pick .tv-opts { max-height: min(24em, 34vh); }
 .tv-party-pick-problem { color: #ffb4b4; }
 .tv-opt[aria-disabled="true"] { opacity: 0.4; }
 .tv-opt[aria-disabled="true"]:hover { background: rgba(255, 255, 255, 0.06); }
 
-/* A press is felt: whatever answers a click sinks a little while it is held (after every focus rule, so it wins over the focus ring's growth). */
 .tv-tile:active, .tv-tile-category:active, .tv-end-tile:active, .tv-ep:active, .tv-rail-item:active, .tv-btn:active, .tv-action:active, .tv-hero-button:active, .tv-choice:active,
 .tv-key:active, .tv-opt:active, .tv-swatch:active, .tv-switch-row:active, .tv-corner-button:active, .tv-account-chip:active,
 .tv-party-choice:active, .tv-party-remove:active { transform: scale(0.96); }
 
-/* ------------------------------ a hand-held screen ------------------------------ */
-
-/*
- * A phone, a tablet, or a window that narrow, is read at arm's length rather than across a room: the unit stays at 10px instead of
- * following the width, and what sits side by side on a TV is stacked. Swipes scroll and taps press; every button and every key is the
- * same. (Any wider and the TV's own layout fits: Browse.tsx asks for the same width.)
- */
 @media (max-width: 899px) {
   .tv { --em: 10px; }
 
-  /* Pages with a few things in the middle: from the top down, scrolling when there is more than fits, centred when there is less. */
   .tv-screen { justify-content: flex-start; gap: 1.6em; padding: 6em 1.6em 2.4em; overflow-y: auto; }
   .tv-screen::before, .tv-screen::after { content: ""; margin: auto; }
   .tv-screen-compact { gap: 1.4em; padding: 6em 1.6em 2.4em; }
@@ -2046,7 +1823,7 @@
   .tv-ok { font-size: 2em; }
   .tv-spinner { font-size: 4em; }
   .tv-ready-icon { width: 5em; height: 5em; }
-  .tv-actions { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); width: 100%; max-width: 28em; } /* stacked, and one width */
+  .tv-actions { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); width: 100%; max-width: 28em; }
   .tv-action { min-width: 0; font-size: 1.6em; }
   .tv .role-switch { font-size: 1.3em; }
 
@@ -2057,17 +1834,13 @@
   .tv-qr, .tv-screen-compact .tv-qr { width: 16em; padding: 1em; }
   .tv-qr p, .tv-screen-compact .tv-qr p { font-size: 1.1em; }
 
-  /* The pickers of who is watching and the settings. */
   .tv-choices { flex-wrap: wrap; }
-  /* A few short choices (the languages) stay on one line however narrow the page is: they share its width. */
   .tv-choices-fit { flex-wrap: nowrap; gap: 0.5em; }
   .tv-choices-fit .tv-choice { flex: 1 1 0; min-width: 0; justify-content: center; padding-inline: 0.3em; }
   .tv-choice { font-size: 1.5em; }
   .tv-rate-scopes .tv-choice { font-size: 1.3em; }
   .tv-scores { flex-wrap: wrap; gap: 0.6em; padding: 0.2em; }
-  /* Ten scores on a phone's width: two rows of five, not nine and one. */
   .tv-screen-compact .tv-scores { display: grid; grid-template-columns: repeat(5, auto); justify-content: center; }
-  /* The rating page's buttons (up to four, with More open) two to a row, so that the note above them keeps its room; one left over takes the row. */
   .tv-rate-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tv-rate-actions > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   .tv-score { font-size: 2em; }
@@ -2075,14 +1848,13 @@
   .tv-rate-note { font-size: 1.3em; }
   .tv-rate-facts li { font-size: 1.2em; }
   .tv-swatch { font-size: 1.4em; }
-  /* (Six round buttons in a row are wider than the page where the text is set larger: the page is clipped at its edge, not scrolled, so the row wraps.) */
   .tv-swatches { flex-wrap: wrap; row-gap: 0.7em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
   .tv .auth-tv { width: 100%; }
   .tv .auth-tv .auth-field input, .tv .profile-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .profile-editor-tv { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 1.2em; }
   .tv .profile-editor-tv .editor-preview { align-self: center; font-size: 7em; }
-  .tv .profile-editor-tv > .tv-headline { text-align: center; } /* (stacked, the title is over the picture, in the middle, as it was before it went into the form) */
+  .tv .profile-editor-tv > .tv-headline { text-align: center; }
   .tv .profile-editor-tv .editor-confirm p { font-size: 1.4em; }
   .tv-name-keys { display: none; }
   .profile-tv { gap: 1.6em 2em; }
@@ -2091,7 +1863,6 @@
   .tv-toast { max-width: calc(100% - 3em); bottom: 3em; font-size: 1.5em; }
   .tv-note { right: 1.2em; top: 6em; max-width: calc(100% - 2.4em); font-size: 1.3em; }
 
-  /* The library: a thin menu on the left, a smaller banner, rows that swipe sideways and a page that swipes down. */
   .tv-rail { width: 5.6em; padding: 5em 0 2em; }
   .tv-rail[data-open="true"] { width: 24em; }
   .tv-rail-item { margin: 0 1.2em 0 0.68em; font-size: 1.6em; }
@@ -2099,7 +1870,7 @@
   .tv-rail-category { font-size: 1.4em; }
   .tv-browse-top { gap: 1em; padding: 1.2em 1.4em 0 6.4em; }
   .tv-browse-logo { font-size: 1.8em; }
-  .tv-browse-logo .logo { top: -0.216em; } /* (its "o" level with the buttons: see polish/tv.css) */
+  .tv-browse-logo .logo { top: -0.216em; }
   .tv-browse-corner { font-size: 1.3em; }
   .tv-hero { height: 17em; max-width: none; padding: 0 1.4em 0.6em 6.4em; }
   .tv-browse[data-deep="true"] .tv-hero { height: 6em; }
@@ -2127,7 +1898,7 @@
   .tv-tile-person.tv-tile-tool { width: 15em; }
   .tv-person-pic { font-size: 3.8em; }
   .tv-tile-ranked { width: auto; }
-  .tv-tile-ranked .tv-tile-body { width: 7.2em; }
+  .tv-tile-ranked .tv-tile-art { width: 7.2em; }
   .tv-rank { width: 3.8em; height: 10.8em; }
   .tv-rank-wide { width: 6em; }
   .tv-rank b { font-size: 7.3em; }
@@ -2146,7 +1917,6 @@
   input.tv-query { width: 100%; background: transparent; color: #fff; font-family: inherit; font-weight: 600; outline: none; border-top: 0; border-inline: 0; border-radius: 0; }
   input.tv-query::placeholder { color: #6f6f78; font-weight: 500; }
 
-  /* The player: the same controls, tucked closer to the edges. */
   .hud-top { padding: 1.4em 1.6em 3.6em; }
   .hud-title { max-width: 100%; font-size: 1.9em; }
   .hud-episode { font-size: 1.3em; }
@@ -2192,7 +1962,6 @@
   .tv-fs-prompt { bottom: 6em; font-size: 1.5em; }
   .tv-banner { top: 2em; font-size: 1.4em; }
 
-  /* The pickers over the film: one column, as high as the screen allows. */
   .tv-menu, .tv-menu[data-cols], .tv-menu[data-kind] { width: min(94vw, 40em); padding: 1.6em; }
   .tv-menu-top { margin-bottom: 1em; }
   .tv-menu-top h2 { font-size: 1.8em; }
@@ -2208,7 +1977,6 @@
   .tv-menu[data-kind="captions"] .tv-opts { max-height: min(16em, 26vh); }
   .tv-sub-preview { height: 10vh; }
 
-  /* A watch party. */
   .tv-party-choices { flex-direction: column; gap: 1.2em; width: 100%; max-width: 28em; }
   .tv-party-choice { width: 100%; padding: 1.2em; }
   .tv-party-choice svg { font-size: 2.6em; }
@@ -2226,7 +1994,6 @@
   .tv-key { font-size: 1.6em; }
 }
 
-/* A phone held upright has no room for the card of what is paused beside the big button in the middle: it goes above it, over a shade of its own. */
 @media (max-width: 520px) and (orientation: portrait) {
   .hud-pause-card { left: 1.6em; right: 1.6em; top: auto; bottom: calc(50% + 6.5em); max-width: none; align-items: center; text-align: center; transform: none; }
   .hud-pause-card b { -webkit-line-clamp: 3; }
@@ -2234,17 +2001,14 @@
   .hud-center::before { background: radial-gradient(ellipse 90% 40% at 50% 38%, rgba(0, 0, 0, 0.68), transparent); }
 }
 
-/* A phone held sideways, or a window as flat as one: the same pages, with whatever takes height giving some back. */
 @media (max-height: 520px) {
   .tv-screen { justify-content: flex-start; gap: 1.2em; padding-top: 4.4em; padding-bottom: 1.6em; overflow-y: auto; }
   .tv-screen::before, .tv-screen::after { content: ""; margin: auto; }
-  /* (The party's code: Paste beside the boxes, which stay in the middle, so that the pad and Back are on the screen too.) */
   .tv-code-line { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; align-self: stretch; column-gap: 1.2em; }
   .tv-code-line .tv-code-entry { grid-column: 2; }
   .tv-code-line .tv-code-paste { grid-column: 3; justify-self: start; }
   .tv-brand { top: 1.4em; font-size: 1.8em; }
   .tv-browse-top { padding-top: 0.8em; }
-  /* (The menu's nine lines in the height of a phone held sideways: closer together, so that the last of them is on the screen too.) */
   .tv-rail { gap: 0.2em; padding-top: 2.4em; padding-bottom: 1.2em; }
   .tv-rail-item { padding-top: 0.35em; padding-bottom: 0.35em; }
   .tv-hero { height: 13em; }
@@ -2269,13 +2033,11 @@
   .tv-end-tile { max-width: 8em; }
 }
 
-/* ...and a smaller phone held sideways (320 high): the menu's lines closer still. */
 @media (max-height: 360px) {
   .tv-rail { gap: 0; padding-top: 1.2em; padding-bottom: 0.8em; }
   .tv-rail-item { padding-top: 0.2em; padding-bottom: 0.2em; font-size: 1.45em; }
 }
 
-/* ...and a short screen that is also wide (a phone sideways) still has the room for things to sit side by side. */
 @media (max-height: 520px) and (min-width: 600px) {
   .tv-pair, .tv-screen-compact .tv-pair, .tv-screen-compact .tv-party-invite { flex-direction: row; }
   .tv-actions { grid-auto-flow: column; grid-auto-columns: 1fr; width: auto; max-width: none; }
@@ -2283,7 +2045,6 @@
   .tv-rate-actions > :last-child:nth-child(odd) { grid-column: auto; }
   .tv-party-choices { flex-direction: row; width: auto; max-width: none; }
   .tv-party-choice { width: 22em; }
-  /* The party panel over a film: the code and the people side by side. One above the other they are taller than the screen, and the panel opened scrolled to the bottom. */
   .tv-menu[data-kind="party"][data-cols="2"] { width: min(96vw, 80em); }
   .tv-menu[data-kind="party"] .tv-menu-cols { flex-direction: row; gap: 1.6em; }
   .tv-menu[data-kind="party"] .tv-party-invite-col { flex: 1 1 0; }
@@ -2292,12 +2053,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-skip, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
-  /* (What fades out at the end is simply shown for its time: a quick animation would leave it where it ends, gone.) */
   .tv-toast, .tv-note { animation: none; }
-  /* (The ring is half full while the page waits and full once it moves: the same news without the filling.) */
   .tv-edge, .tv-edge-chevron { animation: none !important; }
   .tv-edge[data-phase="waiting"] .fill { animation: none; stroke-dashoffset: 50; }
-  .tv-detail { animation-duration: 0.01s, 0.5s; } /* the fade is quick; the pointer is still let through for as long */
+  .tv-detail { animation-duration: 0.01s, 0.5s; }
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-skip { transition-duration: 0.01s; }
   .tv-hero { transition: none; }

@@ -1,14 +1,10 @@
-/* Friends on the phone: the page of friends, one friend's page, what they sent, and the sheet that sends things. */
-
 .friend-list, .inbox-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 
 .friend-avatar { flex: none; font-size: 40px; line-height: 0; }
 .friend-avatar.small { font-size: 28px; }
-/* A friend's picture with a little green dot on it while they are online. */
 .friend-pic { position: relative; flex: none; font-size: 40px; line-height: 0; }
 .friend-pic.big { font-size: 72px; }
 .friend-pic[data-online="true"]::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: max(10px, 0.22em); height: max(10px, 0.22em); border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 2px var(--surface); }
-/* How far a friend got in a title they rated: the episode and the share of it, then a thin bar. */
 .rating-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8rem; }
 .rating-progress > span { flex: none; }
 .rating-progress i { flex: 1; max-width: 96px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.18); }
@@ -25,7 +21,6 @@
   .friend-row:hover { background: var(--surface-2); }
 }
 
-/* Friends turned off in the settings: who is still a friend, a row (not a button) with the button that ends it. */
 .kept-friends { display: flex; flex-direction: column; gap: 10px; }
 .friend-row.kept { flex-wrap: wrap; cursor: default; }
 .friend-row.kept:active { background: var(--surface); transform: none; }
@@ -34,21 +29,18 @@
   .friend-row.kept:hover { background: var(--surface); }
 }
 
-/* A code somebody gave, looked up: who it is from, and the button that makes them a friend. */
 .friend-code-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
 .friend-code-card .btn { flex: none; min-height: 44px; }
 .friend-code { font-size: 1.7rem; }
 
-/* What friends sent. A title is a row like a rating's, with its cross beside it; an invitation has the button that joins. */
 .inbox-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--surface); }
 .inbox-item > .mini { align-self: center; }
 .inbox-open { flex: 1; min-width: 0; align-items: center; }
 .inbox-text { display: flex; flex-direction: column; flex: 1 1 11rem; gap: 2px; min-width: 0; padding: 8px 4px 8px 8px; }
 .inbox-text small { color: var(--muted); font-size: 0.8rem; }
-.inbox-actions { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; } /* (the answer and the cross under it wrap together, at the right, not one of them alone) */
-.inbox-item .btn, .friend-party .btn { flex: none; margin-left: auto; min-height: 40px; padding: 0 14px; font-size: 0.9rem; } /* (where the words need the room, as in a long language on a narrow phone, the button goes under them, at the right) */
+.inbox-actions { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; }
+.inbox-item .btn, .friend-party .btn { flex: none; margin-left: auto; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
 
-/* Finding a friend by tag: the box and its button on one line; and this profile's own tag, to give to a friend. */
 .tag-row { display: flex; gap: 8px; }
 .tag-row input { flex: 1; min-width: 0; }
 .tag-row .btn { flex: none; min-height: 44px; }
@@ -59,35 +51,27 @@
 .your-tag .copy-link-button { min-height: 38px; padding: 0 12px; font-size: 0.85rem; white-space: nowrap; }
 .your-tag > p { flex: 1 0 100%; margin: 0; }
 
-/* An invitation to a watch party, or a request for one, over the home screen, until it is answered or sent away. */
 .friend-party { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .friend-party > span { flex: 1 1 11rem; min-width: 0; }
 
-/* The bell beside the profile's picture: a number on it while something waits for an answer, a quieter dot when friends only watched something. */
 .bell-button { position: relative; }
 .bell-badge { position: absolute; top: 1px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 0.7rem; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
 .bell-dot { position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
-/* What a friend watched, in the bell's list: the whole row opens the title. */
-/* A line a finger can swipe away to the side (shared/swipe.ts): up and down stays the list's scrolling. It comes back softly when let go too soon. */
 .inbox-item { touch-action: pan-y; transition: transform 0.18s ease, opacity 0.18s ease; }
 .sheet-section-with-action { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sheet-clear { min-height: 44px; margin: -12px -8px -12px 0; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .sheet-clear:active { color: var(--text); background: var(--surface); }
 .bell-lately { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; padding: 4px 0 4px 4px; text-align: left; }
-/* Nothing new: the bell drawn quietly in a round, a line that says so, and room round them before the button under it. */
 .bell-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 16px 28px; text-align: center; }
 .bell-empty-icon { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 8px; border-radius: 50%; background: var(--surface-2); color: var(--muted); box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.03); }
 .bell-empty-icon svg { width: 28px; height: 28px; }
 .bell-empty b { font-size: 1.1rem; }
 .bell-empty p { margin: 0; }
 
-/* The button that asks a second time before a friend goes. */
 .btn-danger[data-asking="true"] { background: var(--bad); color: #0b0b0c; }
 
-/* Planning a watch together (see PlanSheet): the day and time are the phone's own pickers, kept as wide as a text box, and the time that was chosen reads out under them. */
 .auth-field input[type="date"], .auth-field input[type="time"] { min-width: 0; min-height: 3.25rem; text-align: left; }
 .plan-when { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
 .plan-when svg { flex: none; color: var(--muted); }
 
-/* A title's poster on a line of the bell (something new of what the profile watches): the size of a friend's picture, upright. */
 .bell-title-poster { flex: none; width: 34px; height: 50px; border-radius: 6px; background: var(--fill-1, rgb(255 255 255 / 0.08)); object-fit: cover; }

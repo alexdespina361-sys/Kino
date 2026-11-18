@@ -41,16 +41,16 @@ describe("how a watch party shows the profile of a screen", () => {
     const store = await AccountStore.open({ persistence: new MemoryPersistence(), now: () => clock.now, flushMs: 0 });
     const created = store.createAccount("sam", "hash");
     if (!created.ok) throw new Error("could not create");
-    store.updateProfile(created.value.id, created.value.profiles[0]!.id, { name: "Sam" }); // (as its owner calls it at setup)
+    store.updateProfile(created.value.id, created.value.profiles[0]!.id, { name: "Sam" });
     const profile = store.profilesOf(created.value.id)[0]!;
     const proofs = new ScreenProofs(() => clock.now);
-    const choose = (friends: boolean) => store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: (clock.now += 1000), value: !friends }] }); // (only `friendsOff` turns friends off now)
+    const choose = (friends: boolean) => store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: (clock.now += 1000), value: !friends }] });
     return { store, account: created.value, profile, proofs, shown: screenProfiles(store, proofs), choose };
   }
 
   it("is the name, the picture and the tag of a profile that has friends on, and nobody when they are turned off for it, or it is gone", async () => {
     const { store, account, profile, shown, choose } = await sam();
-    expect(shown.card(profile.id)).toEqual({ name: "Sam", avatar: "fox", tag: 1 }); // (friends are on for everybody)
+    expect(shown.card(profile.id)).toEqual({ name: "Sam", avatar: "fox", tag: 1 });
     choose(true);
     expect(shown.card(profile.id)).toEqual({ name: "Sam", avatar: "fox", tag: 1 });
     choose(false);

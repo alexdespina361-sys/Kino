@@ -1,6 +1,5 @@
 import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 
-/** scrypt, from Node itself: slow on purpose, so a stolen list of hashes cannot be tried at speed. */
 export interface PasswordCost {
   N: number;
   r: number;
@@ -12,7 +11,6 @@ const KEY_LENGTH = 64;
 const derive = (password: string, salt: Buffer, options: ScryptOptions) =>
   new Promise<Buffer>((resolve, reject) => scrypt(password, salt, KEY_LENGTH, { ...options, maxmem: 64 * 1024 * 1024 }, (error, key) => (error ? reject(error) : resolve(key))));
 
-/** "scrypt$N$r$p$salt$hash": everything needed to check a password later, including how it was made. (Tests pass a cheaper `cost`.) */
 export async function hashPassword(password: string, cost: PasswordCost = COST): Promise<string> {
   const salt = randomBytes(16);
   const key = await derive(password, salt, cost);
@@ -31,6 +29,5 @@ export async function verifyPassword(password: string, stored: string): Promise<
   }
 }
 
-/** Something to check a password against when there is no such account, so a wrong e-mail takes as long as a wrong password. */
 let decoy: Promise<string> | undefined;
 export const decoyHash = () => (decoy ??= hashPassword(randomBytes(12).toString("hex")));

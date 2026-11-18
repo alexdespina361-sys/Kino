@@ -5,7 +5,6 @@ import { ACCENT_INK, ACCENT_SWATCH } from "./theme";
 
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
-/** What the stylesheet says for one accent (the first one, red, is the root's own). */
 function declared(accent: string, name: string): string | undefined {
   const block = accent === ACCENTS[0] ? /:root\s*\{([^}]*)\}/.exec(css) : new RegExp(`:root\\[data-accent="${accent}"\\]\\s*\\{([^}]*)\\}`).exec(css);
   return new RegExp(`--${name}:\\s*([^;]+);`).exec(block?.[1] ?? "")?.[1]?.trim();

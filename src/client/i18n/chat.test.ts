@@ -9,7 +9,6 @@ import { chatEn } from "./chat.en";
 import { chatIt } from "./chat.it";
 import { chatRo } from "./chat.ro";
 
-// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
 await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
@@ -45,7 +44,6 @@ describe("the words of the chat", () => {
     for (const [language, words, dictionary] of [["en", chatEn, own], ["ro", chatRo, romanian], ["it", chatIt, italian]] as const) {
       for (const [key, text] of Object.entries(words)) expect(dictionary[key], `${language} ${key}`).toBe(text);
     }
-    // (a key twice in the spread would be the last one winning: the chat's file must not be quietly overriding a word of the website)
     const source = readFileSync(join(__dirname, "en.ts"), "utf8");
     for (const key of Object.keys(english)) expect(source.includes(`"${key}":`), `en.ts has its own ${key}`).toBe(false);
   });

@@ -12,7 +12,7 @@ describe("what is kept of the friends when the server has not answered for a whi
     expect(stale.friends.map((each) => each.online)).toEqual([undefined, undefined, undefined]);
     expect(stale.friends.map((each) => each.id)).toEqual(["sam", "robin", "kim"]);
     expect(stale.friends[2]).toMatchObject({ activity: false });
-    expect(kept.friends[0]).toMatchObject({ online: true }); // (what was kept is not changed)
+    expect(kept.friends[0]).toMatchObject({ online: true });
   });
 
   it("is the very same answer when nobody was online", () => {

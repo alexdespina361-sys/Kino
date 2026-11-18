@@ -12,7 +12,6 @@ describe("the next window for the recogniser, when the sound comes as the film p
 
   it("goes back to the ones not heard, as far as it may", () => {
     expect(nextWindow({ ...live, heard: [{ from: 30, to: 45 }] })).toBe(15);
-    // (the newest whole window at 199 s is 180..195)
     expect(nextWindow({ ...live, playhead: 200, covered: [{ from: 0, to: 199 }], heard: [{ from: 135, to: 195 }] })).toBe(180 - LIVE_BEHIND * WINDOW);
     expect(nextWindow({ ...live, playhead: 200, covered: [{ from: 0, to: 199 }], heard: [{ from: 120, to: 195 }] })).toBeUndefined();
   });
@@ -48,7 +47,6 @@ describe("the next window for the recogniser", () => {
   });
 
   it("leaves out a window that cannot be done before the picture is past it (a slow device)", () => {
-    // 15 s of sound at a speed of 0.5 takes 30 s: the windows ending 10 s and 25 s ahead of the picture are too soon, the one ending 40 s ahead is not
     expect(nextWindow({ ...plan, playhead: 20, speed: 0.5 })).toBe(45);
   });
 

@@ -1,11 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { openDevice, PHONE, test, tvRoot, withLibrary } from "./helpers";
 
-/*
- * A title's own address: while its page is open the address bar names it (`?title=movie-603`), so the link can be copied and sent; opening that link opens the
- * title's page, on any device, over Home. The history is not added to: Back does what it did.
- */
-
 const films = [
   { id: "filmpire-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "/fixtures/sample.mp4?n=1" },
   { id: "filmpire-tv-1399", title: "A Long Show", year: 2011, kind: "series", url: "/fixtures/sample.mp4?n=2" },
@@ -14,7 +9,6 @@ const films = [
 const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: films }] };
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 
-/** The library, and the server's answer to a link's title: the ones it knows, by id, and how often it was asked. */
 function serve(asked: string[]) {
   return async (context: BrowserContext) => {
     await withLibrary(library)(context);
@@ -49,7 +43,6 @@ test.describe("a title's own address", () => {
     await tv.getByTestId("tv-browse-tile").nth(1).click();
     await expect.poll(() => search(tv)).toBe("?title=tv-1399");
     await tv.getByTestId("tv-detail-close").click();
-    // (a title that is not one of the library's, as a link pasted on the phone, has no address of its own)
     await tv.getByTestId("tv-browse-tile").nth(2).click();
     await expect(tv.getByTestId("tv-detail")).toBeVisible();
     expect(search(tv)).toBe("");
@@ -75,12 +68,12 @@ test.describe("a title's own address", () => {
     await expect(tv.getByTestId("tv-detail")).toContainText("The Matrix");
     await tv.getByTestId("tv-detail-play").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
-    await expect.poll(() => search(tv)).toBe(""); // (a film plays: the address names no page)
-    await tv.keyboard.press("Escape"); // back to the library
+    await expect.poll(() => search(tv)).toBe("");
+    await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeVisible();
-    await tv.waitForTimeout(600); // (time for a look-up, had one been asked)
+    await tv.waitForTimeout(600);
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
-    expect(asked).toEqual(["filmpire-movie-603"]); // (asked once, when the link was opened)
+    expect(asked).toEqual(["filmpire-movie-603"]);
     await tv.reload();
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeVisible();
     await tv.waitForTimeout(600);
@@ -94,9 +87,7 @@ test.describe("a title's own address", () => {
     await expect.poll(() => asked).toEqual(["filmpire-movie-999"]);
     await expect.poll(() => search(tv)).toBe("");
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
-    // (it used to be Home without a word: the judge, 16 Nov)
     await expect(tv.getByTestId("tv-notice")).toHaveText("The title in that link couldn't be found. Here's the library.");
-    // (and one that names nothing is not asked about at all, and says the same)
     const odd: string[] = [];
     const other = await open(browser, "/tv?title=../../etc", odd);
     await expect(other.getByTestId("tv-notice")).toHaveText("The title in that link couldn't be found. Here's the library.");
@@ -110,9 +101,8 @@ test.describe("a title's own address", () => {
     expect(answer?.status()).toBe(404);
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tv.getByTestId("tv-notice")).toHaveText("There's no page at that address. Here's the library.");
-    expect(new URL(tv.url()).pathname).toBe("/"); // (what followed the path is kept)
+    expect(new URL(tv.url()).pathname).toBe("/");
     expect(search(tv)).toBe("?role=tv");
-    // ...once: the library drawn again (after a film) does not say it again, and the site's own pages say nothing
     await tv.getByTestId("tv-browse-tile").first().click();
     await tv.getByTestId("tv-detail-play").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
@@ -127,19 +117,18 @@ test.describe("a title's own address", () => {
   test("the phone that is the remote says the same of an address that is no page of the site", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, serve([]));
     expect((await phone.goto("/no/such/page"))?.status()).toBe(404);
-    await expect(phone.getByTestId("pair-notice")).toHaveText("There's no page at that address."); // (no TV yet: its first screen says it)
+    await expect(phone.getByTestId("pair-notice")).toHaveText("There's no page at that address.");
     expect(new URL(phone.url()).pathname).toBe("/");
   });
 
   test("on a computer, the browser's Back closes a title's page, then steps back through the library's pages to Home, as a phone's does", async ({ browser, baseURL }) => {
-    // (told it is a computer: the other tests' screens are told they are watched from the couch, see playwright.config.ts)
     const kept = [
       { name: "kino.fullscreen.left", value: "1" },
       { name: "kino.fit", value: "desk" },
     ];
     const pc = await open(browser, "/tv", [], { viewport: { width: 1280, height: 720 }, storageState: { cookies: [], origins: [{ origin: baseURL!, localStorage: kept }] } });
     expect(await pc.evaluate(() => document.documentElement.dataset.fit)).toBe("desk");
-    const view = async () => (await pc.getByTestId("tv-browse").getAttribute("data-view"))?.split(":")[0]; // (the kind of page: its key says which one too)
+    const view = async () => (await pc.getByTestId("tv-browse").getAttribute("data-view"))?.split(":")[0];
     await pc.getByTestId("rail-categories").click();
     await expect.poll(view).toBe("categories");
     await pc.locator(".tv-grid .tv-tile").first().click();
@@ -156,9 +145,8 @@ test.describe("a title's own address", () => {
     await expect.poll(view).toBe("categories");
     await pc.goBack();
     await expect.poll(view).toBe("home");
-    await expect(pc.getByTestId("tv-browse")).toBeVisible(); // (still on the site: the next Back is the one that leaves it)
+    await expect(pc.getByTestId("tv-browse")).toBeVisible();
 
-    // A page closed by its own button takes its step off the history again: Back from Home is not a page that was closed already.
     await pc.getByTestId("tv-browse-tile").nth(0).click();
     await expect(pc.getByTestId("tv-detail")).toBeVisible();
     await pc.getByTestId("tv-detail-close").click();
@@ -166,7 +154,6 @@ test.describe("a title's own address", () => {
     await expect.poll(() => search(pc)).toBe("");
     await expect.poll(() => pc.evaluate(() => (history.state as { layers?: number } | null)?.layers ?? 0)).toBe(0);
 
-    // A film is a step too: Back leaves it for the library, and the site stays (it left the site before, from the film).
     await pc.getByTestId("tv-browse-tile").nth(0).click();
     await pc.getByTestId("tv-detail-play").click();
     await expect(tvRoot(pc)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });

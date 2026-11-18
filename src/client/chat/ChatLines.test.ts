@@ -21,7 +21,7 @@ describe("the messages of a chat", () => {
     const html = render({ lines: [line(1, false, "<img src=x onerror=alert(1)> https://example.com/a?b=1 <a href='https://evil.test'>hi</a>")] });
     expect(html).not.toContain("<img");
     expect(html).not.toContain("<a ");
-    expect(html).not.toMatch(/<[a-z][^>]*\shref=/i); // (the words "href=" are in the text, escaped; no element has one)
+    expect(html).not.toMatch(/<[a-z][^>]*\shref=/i);
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(html).toContain("https://example.com/a?b=1");
   });
@@ -68,7 +68,6 @@ describe("the messages of a chat", () => {
     expect(count(html, "chat-picture")).toBe(1);
     expect(tagOf(html, "chat-picture")).not.toContain("aria-expanded");
     expect(count(html, "chat-bubble")).toBe(0);
-    // (and only read where nothing is pressed: a report, a TV that is only a remote)
     expect(render({ lines: [line(1, false, "\u{1F37F}")] })).not.toContain("<button");
   });
 
@@ -100,7 +99,7 @@ describe("a message that names a title", () => {
     const html = render({ lines: [line(1, false, `Tonight? ${LINK}`)], onOpenTitle: () => {} });
     expect(count(html, "chat-card-loading")).toBe(1);
     expect(html).toContain("Tonight?");
-    expect(html).not.toContain(LINK); // (the address is the card's, not the words')
+    expect(html).not.toContain(LINK);
   });
 
   it("is a card with the poster and the name once it is known, which is a button only when it can open the title", async () => {
@@ -112,7 +111,7 @@ describe("a message that names a title", () => {
     expect(html).toContain("https://image.example/m.jpg");
     expect(html).not.toContain(LINK);
     expect(html).not.toMatch(/<a\s/);
-    expect(tagOf(render({ lines: [line(1, false, LINK)] }), "chat-card")).toMatch(/^<span/); // (nothing to open it with: only shown)
+    expect(tagOf(render({ lines: [line(1, false, LINK)] }), "chat-card")).toMatch(/^<span/);
   });
 
   it("is a card the remote is given by the list, not by the D-pad (a card scrolled out of view is still on the page)", async () => {
@@ -137,7 +136,6 @@ describe("a message that names a title", () => {
     expect(theirs).toMatch(/data-testid="chat-card-score">[^]*?Sam gave it 8\/10</);
     expect(tagOf(theirs, "chat-card")).toContain('aria-label="Open A Show, S2:E5 · from 12:34, Sam gave it 8/10"');
     expect(render({ lines: [line(1, true, `A Show (2011) ${asked}`)], onOpenTitle: () => {} })).toContain("You gave it 8/10");
-    // (an address that asks for nothing: the card as it was)
     const plain = render({ lines: [line(1, false, "A Show (2011) https://kino.24-7.ro/tv?title=tv-1399")], onOpenTitle: () => {} });
     expect(has(plain, "chat-card-where")).toBe(false);
     expect(has(plain, "chat-card-score")).toBe(false);

@@ -18,7 +18,6 @@ afterEach(async () => {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** The accounts, the book that reads who watches what from them, and its routes on a bare server (the helpers made as the account routes make them). */
 async function start({ withBook = true }: { withBook?: boolean } = {}) {
   const clock = { now: Date.parse("2026-11-10T12:00:00Z") };
   const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => clock.now });
@@ -66,7 +65,6 @@ async function start({ withBook = true }: { withBook?: boolean } = {}) {
     };
     return { id: profile.id, sessionId: session.session.id, url, call };
   };
-  /** A card of "Continue watching", as a screen sends it. */
   const watches = (profileId: string, link: string, more: object = {}) =>
     store.sync(profileId, { since: 0, progress: [{ key: `url:${link}`, at: clock.now, title: "A Show", url: link, position: 100, duration: 1000, ...more }] });
   return { app, store, book, hub, clock, shows, sent, person, watches };
@@ -80,13 +78,12 @@ describe("who watches what, as the accounts have it", () => {
     clock.now += 1000;
     watches(ana.id, "https://filmpire.sc/watch/603");
     clock.now += 1000;
-    watches(ana.id, "https://somewhere.example/video.mp4"); // (a pasted link: nobody knows what it is a part of)
+    watches(ana.id, "https://somewhere.example/video.mp4");
     store.sync(ana.id, { since: 0, ratings: [{ key: "rate:x", at: clock.now, title: "Rated", url: "https://filmpire.sc/watch/9?s=1&e=1", score: 8, ratedAt: clock.now }] });
-    store.sync(ana.id, { since: 0, list: [{ key: "url:https://filmpire.sc/watch/55", at: clock.now, id: "x", title: "Saved", url: "https://filmpire.sc/watch/55" }] }); // (saved, never played)
+    store.sync(ana.id, { since: 0, list: [{ key: "url:https://filmpire.sc/watch/55", at: clock.now, id: "x", title: "Saved", url: "https://filmpire.sc/watch/55" }] });
 
     expect(followersOf(store)).toEqual([{ profile: ana.id, on: true, child: false, titles: [{ key: "tv-9", title: "Rated" }, { key: "movie-603", title: "A Show" }, { key: "tv-7", title: "A Show" }] }]);
 
-    // A card taken off is no longer watched; the switch and a child's profile are said.
     clock.now += 1000;
     store.sync(ana.id, { since: 0, progress: [{ key: "url:https://filmpire.sc/watch/603", at: clock.now, deleted: true }], settings: [{ key: "titleNotices", at: clock.now, value: false }, { key: "child", at: clock.now, value: true }] });
     expect(followersOf(store)).toMatchObject([{ on: false, child: true, titles: [{ key: "tv-9" }, { key: "tv-7" }] }]);
@@ -108,7 +105,6 @@ describe("the notices, asked for by a screen", () => {
     shows.set(7, { name: "The Show", ended: false, last: { season: 1, episode: 6, day: "2026-11-09" } });
     await book.look();
     expect((await ana.call("GET")).items).toMatchObject([{ id: "tv-7", what: "episode", title: "The Show", season: 1, episode: 6, read: false }]);
-    // Its phone is told that there is something, and nothing of what: no name, no title.
     await hub.settled();
     expect(sent).toEqual([{ token: "ana-phone-token-0000000000", data: { kind: "title", name: "", friend: "", profile: ana.id }, collapseKey: "title", ttlSeconds: 86_400 }]);
 
@@ -132,7 +128,6 @@ describe("the notices, asked for by a screen", () => {
   });
 });
 
-/** Another account's sign-in, for a request to a profile that is not its own. */
 async function bobCookie(store: AccountStore, login: string) {
   const account = store.createAccount(login, "x");
   if (!account.ok) throw new Error("could not make the account");

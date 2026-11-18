@@ -1,20 +1,11 @@
-// One line per screen size and look from the walk's live-DOM scans: does anything scroll sideways, how small is the smallest text, how many controls are
-// under 44 px (phone) or 24 px, how much text has too little contrast or is cut, and how much text runs past the right edge. The same numbers for both
-// looks side by side, so "the refined look at 360x800 and the classic look at 360x800" is a measurement. (drift.mjs adds everything up per look; this
-// splits it per size.)
-//
-//   node scripts/ui-walk/responsive.mjs [--looks=classic,polish] [--scan=.ui-polish/scan]
-//
-// Needs the scans of the walk (run.mjs --scan, once per look and size). A size that was not walked for a look shows "-".
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
-const looks = option("looks", "polish").split(","); // (one look now; "classic,polish" still compares with old scans, if they are still on the disk)
+const looks = option("looks", "polish").split(",");
 const scanRoot = option("scan", ".ui-polish/scan");
 
-/** phone-390-signed-in and phone-390 are one size (two accounts); tv-1280-keys is the same screen again with the remote somewhere else. */
 const sizeOf = (dir) => dir.replace(/-signed-in$/, "").replace(/-keys$/, "");
 const area = (size) => {
   const m = /(\d+)x?(\d+)?$/.exec(size);
@@ -46,7 +37,6 @@ function measure(look, size) {
           if (e.contrast < (large ? 3 : 4.5)) row.contrast++;
         }
         if (text && ((e.clipped && !e.ellipsis) || e.clippedTall)) row.cut++;
-        // (a row of pictures that scrolls past the edge on purpose is not text running off)
         if (text && e.x + e.w > width + 1 && !/scroller|lib-card|tile|row/.test(`${e.cls ?? ""} ${e.in ?? ""}`)) row.past++;
         if (control) {
           const side = Math.min(...(e.hit ?? [e.w, e.h]));

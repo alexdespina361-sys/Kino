@@ -3,7 +3,6 @@ import { CrashGuard, type Kept } from "./guard";
 
 const DAY = 24 * 3600 * 1000;
 
-/** A page's storage, and a clock that only moves when the test says so. */
 function setup() {
   const store = new Map<string, string>();
   const kept: Kept = {
@@ -16,7 +15,6 @@ function setup() {
   return {
     guard,
     store,
-    /** The next page starts (a new guard over the same storage). */
     reopen: () => new CrashGuard(kept, () => time),
     later: (ms: number) => void (time += ms),
   };
@@ -31,7 +29,7 @@ describe("CrashGuard", () => {
   it("forgets a device's earlier falls once the recogniser has listened to a window", () => {
     const { guard, reopen, later } = setup();
     for (let fall = 0; fall < 2; fall++) {
-      expect(reopen().begin()).toBe(true); // (the page is closed by the system each time: no proved(), no interrupted())
+      expect(reopen().begin()).toBe(true);
       later(1000);
     }
     reopen().proved();
@@ -39,26 +37,26 @@ describe("CrashGuard", () => {
       expect(reopen().begin()).toBe(true);
       later(1000);
     }
-    expect(guard.begin()).toBe(true); // (still not three in a row)
+    expect(guard.begin()).toBe(true);
   });
 
   it("lets a device alone after three falls in a row, and tries again after three days", () => {
     const { reopen, later } = setup();
     expect(reopen().begin()).toBe(true);
     later(1000);
-    expect(reopen().begin()).toBe(true); // (the first fall)
+    expect(reopen().begin()).toBe(true);
     later(1000);
-    expect(reopen().begin()).toBe(true); // (the second)
+    expect(reopen().begin()).toBe(true);
     later(1000);
-    expect(reopen().begin()).toBe(false); // (the third)
+    expect(reopen().begin()).toBe(false);
     later(DAY);
     expect(reopen().begin()).toBe(false);
     later(2 * DAY - 3000);
-    expect(reopen().begin()).toBe(false); // (a moment short of three days since the last start)
+    expect(reopen().begin()).toBe(false);
     later(5000);
     expect(reopen().begin()).toBe(true);
     later(1000);
-    expect(reopen().begin()).toBe(true); // (a clean slate: one fall is not three)
+    expect(reopen().begin()).toBe(true);
   });
 
   it("does not count a page that was closed on purpose, or a load that failed with an error, as a fall", () => {

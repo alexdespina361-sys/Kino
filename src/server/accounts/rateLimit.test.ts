@@ -13,7 +13,6 @@ describe("taking back an attempt", () => {
 
     limiter.undo("a");
     expect(limiter.wait("a")).toBe(0);
-    // (The one at 500 went, not the first: when the first is out of the window nothing is left to count.)
     clock.now = 1001;
     limiter.hit("a");
     expect(limiter.wait("a")).toBe(0);

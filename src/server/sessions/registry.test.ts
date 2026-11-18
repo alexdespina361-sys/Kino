@@ -79,7 +79,7 @@ describe("Registry: pairing", () => {
     expect(registry.deviceForController(controller)).toBe(device);
 
     expect(registry.pair(registry.controllerHello(), code)).toBeNull();
-    expect(registry.ensureCode(device)).toBeNull(); // paired devices show no code
+    expect(registry.ensureCode(device)).toBeNull();
   });
 
   it("rejects wrong codes", () => {
@@ -119,12 +119,11 @@ describe("Registry: pairing", () => {
     const controller = registry.controllerHello();
     expect(registry.getController(controller.id)).toBe(controller);
     expect(registry.getController("ctl_gone")).toBeUndefined();
-    expect(registry.getController("ctl_gone")).toBeUndefined(); // (asking makes none)
+    expect(registry.getController("ctl_gone")).toBeUndefined();
   });
 });
 
 describe("Registry: a second phone", () => {
-  /** A TV with one phone connected. */
   function paired() {
     const { registry, advance } = setup({ generateCode: counter(["111111", "222222", "333333"]) });
     const device = registry.tvHello();
@@ -166,7 +165,6 @@ describe("Registry: a second phone", () => {
   });
 
   describe("when the TV has all the phones it can keep", () => {
-    /** A TV with `MAX_PHONES_PER_TV` phones, the first one included, and the control code they joined with. */
     function crowded() {
       const { registry, advance, device, first } = paired();
       const code = registry.ensureControlCode(device).code;
@@ -186,7 +184,7 @@ describe("Registry: a second phone", () => {
       const late = registry.controllerHello();
       expect(registry.isFullControlCode(late, code)).toBe(true);
       expect(registry.joinController(late, code, () => true)).toBeNull();
-      expect(registry.joinController(late, code)).toBeNull(); // (no word of who is connected: nobody is let go)
+      expect(registry.joinController(late, code)).toBeNull();
       expect(device.controllerIds).toEqual(phones.map((phone) => phone.id));
       expect(device.controllerIds).not.toContain(late.id);
       expect(late.deviceId).toBeNull();
@@ -196,14 +194,13 @@ describe("Registry: a second phone", () => {
     it("lets one more in by letting go of the phone seen least recently, and of no other", () => {
       const { registry, advance, device, phones } = crowded();
       advance(3 * DAY);
-      phones.forEach((phone, n) => n !== 6 && registry.markSeen(phone.id)); // (all but the seventh came by since)
+      phones.forEach((phone, n) => n !== 6 && registry.markSeen(phone.id));
       const late = registry.controllerHello();
-      const code = registry.ensureControlCode(device).code; // (the code they joined with ran out)
+      const code = registry.ensureControlCode(device).code;
       expect(registry.joinController(late, code, () => false)).toBe(device);
       expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 6).map((phone) => phone.id), late.id]);
       expect(device.controllerId).toBe(phones[0]!.id);
       expect(late.deviceId).toBe(device.id);
-      // The one let go is no longer a remote of this TV and pairs again with a code, as a phone that was never here.
       expect(phones[6]!.deviceId).toBeNull();
       expect(phones[6]!.deviceIds).toEqual([]);
       expect(registry.deviceForController(phones[6]!)).toBeUndefined();
@@ -212,7 +209,7 @@ describe("Registry: a second phone", () => {
     it("lets go of a phone only as a remote of this TV: the other TVs of its list stay", () => {
       const { registry, advance, device, phones } = crowded();
       const other = registry.tvHello();
-      registry.pair(phones[6]!, registry.ensureCode(other)!.code); // (the seventh moved on to another TV, and is not seen again)
+      registry.pair(phones[6]!, registry.ensureCode(other)!.code);
       advance(DAY);
       phones.forEach((phone, n) => n !== 6 && registry.markSeen(phone.id));
       expect(registry.joinController(registry.controllerHello(), registry.ensureControlCode(device).code, () => false)).toBe(device);
@@ -227,14 +224,14 @@ describe("Registry: a second phone", () => {
       const late = registry.controllerHello();
       expect(registry.joinController(late, code, () => false)).toBe(device);
       expect(device.controllerIds).toEqual([...phones.slice(1).map((phone) => phone.id), late.id]);
-      expect(device.controllerId).toBe(phones[1]!.id); // (the first phone was the one the TV went with: the next takes its place)
-      expect(registry.ensureCode(device)).toBeNull(); // (still paired: it shows no pairing code)
+      expect(device.controllerId).toBe(phones[1]!.id);
+      expect(registry.ensureCode(device)).toBeNull();
     });
 
     it("never lets go of a phone that is connected, however long ago it was seen", () => {
       const { registry, advance, device, phones } = crowded();
       advance(2 * DAY);
-      registry.markSeen(phones[31]!.id); // (the only one that is not connected is the one seen most recently)
+      registry.markSeen(phones[31]!.id);
       const late = registry.controllerHello();
       const connected = (id: string) => id !== phones[31]!.id;
       expect(registry.joinController(late, registry.ensureControlCode(device).code, connected)).toBe(device);
@@ -250,7 +247,7 @@ describe("Registry: a second phone", () => {
       expect(registry.isFullControlCode(away!, code)).toBe(false);
       expect(registry.joinController(away!, code, () => false)).toBe(device);
       expect(away!.deviceId).toBe(device.id);
-      expect(device.controllerIds).toEqual(phones.map((phone) => phone.id)); // (not listed twice, and none was let go)
+      expect(device.controllerIds).toEqual(phones.map((phone) => phone.id));
     });
 
     it("has room again for the next phone when one lets go of the TV", () => {
@@ -278,7 +275,7 @@ describe("Registry: a second phone", () => {
     const code = registry.ensureControlCode(device).code;
     const second = registry.controllerHello();
     expect(registry.isFullControlCode(second, code)).toBe(false);
-    expect(registry.joinController(second, code, () => false)).toBe(device); // (room enough: nobody is let go, connected or not)
+    expect(registry.joinController(second, code, () => false)).toBe(device);
     expect(device.controllerIds).toHaveLength(2);
   });
 });
@@ -298,7 +295,7 @@ describe("Registry: unpair", () => {
     expect(device.media).toBeNull();
     expect(device.state.state).toBe("idle");
     expect(registry.ensureCode(device)?.code).toBe("222222");
-    expect(registry.pair(registry.controllerHello(), "111111")).toBeNull(); // the old code died with the pairing
+    expect(registry.pair(registry.controllerHello(), "111111")).toBeNull();
   });
 
   it("does nothing for a controller that has no TV", () => {
@@ -319,12 +316,11 @@ describe("Registry: unpair", () => {
     expect(device.controllerId).toBeNull();
     expect(device.media).toBeNull();
     expect(registry.ensureCode(device)?.code).toBe("222222");
-    expect(registry.unpairDevice(device)).toBeNull(); // nothing left to let go of
+    expect(registry.unpairDevice(device)).toBeNull();
   });
 });
 
 describe("Registry: a phone with several TVs", () => {
-  /** A phone that has connected to `count` TVs one after the other: the last is the one it controls. */
   function withTvs(count = 2) {
     const { registry, advance } = setup();
     const phone = registry.controllerHello();
@@ -351,8 +347,8 @@ describe("Registry: a phone with several TVs", () => {
     expect(registry.tvsOf(phone)).toEqual([first, second]);
     expect(first!.controllerId).toBe(phone.id);
     expect(registry.ensureCode(first!)).toBeNull();
-    expect(registry.controllersOf(first!)).toEqual([]); // nobody is controlling it now ...
-    expect(registry.phonesOf(first!)).toEqual([phone]); // ... but it is still this phone's
+    expect(registry.controllersOf(first!)).toEqual([]);
+    expect(registry.phonesOf(first!)).toEqual([phone]);
   });
 
   it("goes back to a TV of the list by the id the list gave it, and to no other", () => {
@@ -365,9 +361,9 @@ describe("Registry: a phone with several TVs", () => {
     expect(phone.deviceId).toBe(first!.id);
     expect(registry.controllersOf(first!)).toEqual([phone]);
     expect(registry.controllersOf(second!)).toEqual([]);
-    expect(registry.tvsOf(phone)).toEqual([first, second]); // the order of the list is the order they were connected in, whichever is in use
+    expect(registry.tvsOf(phone)).toEqual([first, second]);
 
-    expect(registry.switchTo(phone, stranger(registry).publicId)).toBeNull(); // someone else's TV
+    expect(registry.switchTo(phone, stranger(registry).publicId)).toBeNull();
     expect(registry.switchTo(phone, "nothing")).toBeNull();
     expect(phone.deviceId).toBe(first!.id);
   });
@@ -382,9 +378,9 @@ describe("Registry: a phone with several TVs", () => {
     expect(registry.unpair(phone, first!.publicId)).toBe(first);
     expect(first!.media).toBeNull();
     expect(first!.controllerIds).toEqual([]);
-    expect(registry.ensureCode(first!)).not.toBeNull(); // it asks for a pairing again
+    expect(registry.ensureCode(first!)).not.toBeNull();
     expect(registry.tvsOf(phone)).toEqual([second]);
-    expect(phone.deviceId).toBe(second!.id); // the one it controls is not the one it forgot
+    expect(phone.deviceId).toBe(second!.id);
   });
 
   it("lets go of the TV it controls, and the list keeps the rest", () => {
@@ -396,7 +392,7 @@ describe("Registry: a phone with several TVs", () => {
     expect(registry.unpair(phone)).toBe(second);
     expect(phone.deviceId).toBeNull();
     expect(registry.tvsOf(phone)).toEqual([first]);
-    expect(registry.ensureCode(first!)).toBeNull(); // (still paired: it was not forgotten)
+    expect(registry.ensureCode(first!)).toBeNull();
     expect(registry.switchTo(phone, first!.publicId)).toBe(first);
   });
 
@@ -419,7 +415,7 @@ describe("Registry: a phone with several TVs", () => {
     } = withTvs();
     registry.unpairDevice(first!);
     expect(registry.tvsOf(phone)).toEqual([second]);
-    expect(phone.deviceId).toBe(second!.id); // it was not the one in use
+    expect(phone.deviceId).toBe(second!.id);
     registry.unpairDevice(second!);
     expect(registry.tvsOf(phone)).toEqual([]);
     expect(phone.deviceId).toBeNull();
@@ -449,7 +445,6 @@ describe("Registry: a phone with several TVs", () => {
 });
 
 describe("Registry: watching together", () => {
-  /** A phone paired to a leader TV, and a second TV waiting with its own code. */
   function party() {
     const { registry } = setup({ generateCode: counter(["111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888"]) });
     const leader = registry.tvHello();
@@ -472,7 +467,7 @@ describe("Registry: watching together", () => {
     expect(leader.followerIds).toEqual([tv.id]);
     expect(registry.followersOf(leader)).toEqual([tv]);
     expect(registry.leaderOf(tv)).toBe(leader);
-    expect(registry.ensureCode(tv)).toBeNull(); // it has a party now, so it shows no pairing code
+    expect(registry.ensureCode(tv)).toBeNull();
   });
 
   it("burns the code it used", () => {
@@ -497,16 +492,16 @@ describe("Registry: watching together", () => {
     const guest = registry.tvHello();
     registry.joinParty(guest, partyCode);
     expect(registry.addFollower(controller, pairingCode)).toEqual({ ok: false, reason: "TV_HOSTING" });
-    expect([host.leaderId, host.code?.value, guest.leaderId]).toEqual([null, pairingCode, host.id]); // nothing moved, nothing burnt
+    expect([host.leaderId, host.code?.value, guest.leaderId]).toEqual([null, pairingCode, host.id]);
     registry.closeParty(host);
-    expect(registry.addFollower(controller, pairingCode).ok).toBe(true); // the same code works once that party is over
+    expect(registry.addFollower(controller, pairingCode).ok).toBe(true);
 
-    const lonely = registry.tvHello(); // a party was opened here but nobody came: it is left for this one
+    const lonely = registry.tvHello();
     const lonelyPairing = registry.ensureCode(lonely)!.code;
     const lonelyParty = registry.ensurePartyCode(lonely)!.code;
     expect(registry.addFollower(controller, lonelyPairing).ok).toBe(true);
     expect(registry.partyCodeOf(lonely)).toBeNull();
-    expect(registry.joinParty(registry.tvHello(), lonelyParty)).toEqual({ ok: false, reason: "INVALID_CODE" }); // no party hangs off a guest
+    expect(registry.joinParty(registry.tvHello(), lonelyParty)).toEqual({ ok: false, reason: "INVALID_CODE" });
   });
 
   it("lets the phone send a TV away by its public id, which is not the TV's secret", () => {
@@ -517,7 +512,7 @@ describe("Registry: watching together", () => {
     expect(registry.removeFollower(controller, tv.publicId)).toEqual({ leader, follower: tv });
     expect(leader.followerIds).toEqual([]);
     expect(tv.leaderId).toBeNull();
-    expect(registry.ensureCode(tv)?.code).toMatch(/^\d{6}$/); // free again, with a code of its own
+    expect(registry.ensureCode(tv)?.code).toMatch(/^\d{6}$/);
   });
 
   it("lets a TV leave the party from its side, and leaves the others be", () => {
@@ -546,7 +541,6 @@ describe("Registry: watching together", () => {
 
 describe("Registry: a party started on a TV", () => {
   const codes = ["111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888", "999999"];
-  /** A TV that has opened a party (no phone anywhere), and a way to bring more TVs. */
   function hosted() {
     const { registry, advance } = setup({ generateCode: counter(codes) });
     const host = registry.tvHello();
@@ -575,12 +569,12 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.isPartyCode(code)).toBe(true);
     expect(registry.isPartyCode("000000")).toBe(false);
     registry.closeParty(host);
-    expect(registry.isPartyCode(code)).toBe(false); // it went with the party
+    expect(registry.isPartyCode(code)).toBe(false);
 
     const reopened = registry.ensurePartyCode(host)!.code;
     expect(registry.isPartyCode(reopened)).toBe(true);
     advance(10 * 60 * 1000);
-    expect(registry.isPartyCode(reopened)).toBe(false); // it ran out
+    expect(registry.isPartyCode(reopened)).toBe(false);
   });
 
   it("finds the screen a code is open on, and keeps a party with guests joinable after its code ran out (until it is over), for the friends invited to it", () => {
@@ -590,13 +584,11 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.deviceByPublicId(host.publicId)).toBe(host);
     expect(registry.deviceByPublicId("nobody")).toBeUndefined();
 
-    // Nobody came: the code is the party, and when it runs out the party is over.
     expect(registry.runningParty(host)?.code).toBe(code);
     advance(10 * 60 * 1000);
     expect(registry.hostOfPartyCode(code)).toBeUndefined();
     expect(registry.runningParty(host)).toBeNull();
 
-    // Somebody came: the party goes on without its code, and is given a new one when a friend who was invited asks.
     const again = registry.ensurePartyCode(host)!.code;
     expect(registry.joinParty(arrive(), again).ok).toBe(true);
     advance(10 * 60 * 1000);
@@ -604,9 +596,8 @@ describe("Registry: a party started on a TV", () => {
     const renewed = registry.runningParty(host)!;
     expect(renewed.code).not.toBe(again);
     expect(registry.hostOfPartyCode(renewed.code)).toBe(host);
-    expect(registry.runningParty(host)?.code).toBe(renewed.code); // (the same one, until it runs out)
+    expect(registry.runningParty(host)?.code).toBe(renewed.code);
 
-    // A guest has no party of its own, and a party that was ended is over.
     expect(registry.runningParty(registry.followersOf(host)[0]!)).toBeNull();
     registry.closeParty(host);
     expect(registry.runningParty(host)).toBeNull();
@@ -619,8 +610,8 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.joinParty(second!, code)).toEqual({ ok: true, host });
     expect(host.followerIds).toEqual([first!.id, second!.id]);
     expect(first!.leaderId).toBe(host.id);
-    expect(registry.ensureCode(first!)).toBeNull(); // it has a party now, so it shows no pairing code
-    expect(registry.joinParty(first!, code)).toEqual({ ok: true, host }); // typing it again changes nothing
+    expect(registry.ensureCode(first!)).toBeNull();
+    expect(registry.joinParty(first!, code)).toEqual({ ok: true, host });
     expect(host.followerIds).toHaveLength(2);
   });
 
@@ -632,7 +623,7 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "PARTY_FULL" });
     advance(10 * 60 * 1000);
     expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "INVALID_CODE" });
-    expect(host.followerIds).toHaveLength(5); // the guests already there stay
+    expect(host.followerIds).toHaveLength(5);
   });
 
   it("asks a TV that has a phone, guests or another party to let go of that first, and takes an empty party of its own along", () => {
@@ -652,7 +643,7 @@ describe("Registry: a party started on a TV", () => {
     const lonely = registry.tvHello();
     const lonelyCode = registry.ensurePartyCode(lonely)!.code;
     expect(registry.joinParty(lonely, code)).toEqual({ ok: true, host });
-    expect(registry.joinParty(arrive(), lonelyCode)).toEqual({ ok: false, reason: "INVALID_CODE" }); // its own code went with it
+    expect(registry.joinParty(arrive(), lonelyCode)).toEqual({ ok: false, reason: "INVALID_CODE" });
   });
 
   it("lets the host send a guest away by its public id, or end the party for all of them", () => {
@@ -676,7 +667,6 @@ describe("Registry: a party started on a TV", () => {
     const first = registry.partyOfCode(code)!;
     expect(first).toEqual({ host: host.publicId, party: expect.stringMatching(/^party_[0-9a-f]{24}$/) });
     expect(registry.partyOfCode("000000")).toBeUndefined();
-    // The same party while its code stays good, and when the code ran out with a guest in it and the party got a new one...
     expect(registry.ensurePartyCode(host)?.code).toBe(code);
     expect(registry.partyOfCode(code)).toEqual(first);
     expect(registry.joinParty(arrive(), code).ok).toBe(true);
@@ -684,7 +674,6 @@ describe("Registry: a party started on a TV", () => {
     const renewed = registry.runningParty(host)!;
     expect(renewed.code).not.toBe(code);
     expect(registry.partyOfCode(renewed.code)).toEqual(first);
-    // ...and another once it was ended, or was left with nobody in it and no code.
     registry.closeParty(host);
     const second = registry.partyOfCode(registry.ensurePartyCode(host)!.code)!;
     expect(second.host).toBe(host.publicId);
@@ -701,23 +690,20 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.invitedParty(host.publicId, party, "pro_bob")?.code).toBe(code);
     expect(registry.invitedParty("nobody", party, "pro_bob")).toBeNull();
     expect(registry.invitedParty(host.publicId, "party_other", "pro_bob")).toBeNull();
-    // With a guest in it the party outlives its code, and the invitation is given the new one.
     registry.joinParty(arrive(), code);
     advance(10 * 60 * 1000);
     expect(registry.invitedParty(host.publicId, party, "pro_bob")?.code).not.toBe(code);
-    // Ended, and begun again: the invitation was to the party that ended.
     registry.closeParty(host);
     expect(registry.invitedParty(host.publicId, party, "pro_bob")).toBeNull();
     registry.ensurePartyCode(host);
     expect(registry.invitedParty(host.publicId, party, "pro_bob")).toBeNull();
 
-    // So it is for a party that ran out with nobody in it, and a new one is begun on the same screen.
     const next = registry.partyOfCode(registry.ensurePartyCode(host)!.code)!;
     expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).not.toBeNull();
     advance(10 * 60 * 1000);
-    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).toBeNull(); // (over)
+    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).toBeNull();
     registry.ensurePartyCode(host);
-    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).toBeNull(); // (and not back with the next party)
+    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).toBeNull();
   });
 
   it("does not let a screen that was sent away back with any code, nor the profile signed in on it with another screen or from its bell", () => {
@@ -728,25 +714,21 @@ describe("Registry: a party started on a TV", () => {
     registry.joinParty(stays, code);
     expect(registry.removeGuest(host, kicked.publicId)).toBe(kicked);
 
-    // The code it knew is changed, so it is no good to anyone...
     const fresh = registry.partyCodeOf(host)!.code;
     expect(fresh).not.toBe(code);
     expect(registry.hostOfPartyCode(code)).toBeUndefined();
     expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "INVALID_CODE" });
-    // ...and the new one is no good to the screen that was sent away, nor to a profile that was signed in on it, on any other screen.
     expect(registry.joinParty(kicked, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
     const elsewhere = arrive();
     registry.setProfile(elsewhere, "pro_bob");
     expect(registry.joinParty(elsewhere, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
     expect(registry.joinParty(arrive(), fresh).ok).toBe(true);
-    expect(host.followerIds).toHaveLength(2); // (the guest that stayed, and the one that came)
-    // A screen that nobody is signed in on is kept out by the screen itself.
+    expect(host.followerIds).toHaveLength(2);
     const plain = arrive();
     expect(registry.joinParty(plain, fresh).ok).toBe(true);
     registry.removeGuest(host, plain.publicId);
     expect(registry.joinParty(plain, registry.partyCodeOf(host)!.code)).toEqual({ ok: false, reason: "INVALID_CODE" });
-    // The bell of that profile is not given the code of the party it was sent away from.
-    const latest = registry.partyCodeOf(host)!.code; // (changed again when the plain one was sent away)
+    const latest = registry.partyCodeOf(host)!.code;
     const { party } = registry.partyOfCode(latest)!;
     expect(registry.invitedParty(host.publicId, party, "pro_bob")).toBeNull();
     expect(registry.invitedParty(host.publicId, party, "pro_sam")?.code).toBe(latest);
@@ -772,18 +754,18 @@ describe("Registry: a party started on a TV", () => {
     const [kicked, leaver, other] = [arrive(), arrive(), arrive()];
     for (const guest of [kicked, leaver, other]) registry.joinParty(guest, code);
     registry.detachFollower(leaver);
-    expect(registry.partyCodeOf(host)?.code).toBe(code); // (a guest that leaves changes nothing for the others)
-    expect(registry.joinParty(leaver, code).ok).toBe(true); // (and comes back with the code, as it did)
+    expect(registry.partyCodeOf(host)?.code).toBe(code);
+    expect(registry.joinParty(leaver, code).ok).toBe(true);
 
-    advance(10 * 60 * 1000); // the code ran out; the party did not
+    advance(10 * 60 * 1000);
     registry.removeGuest(host, other.publicId);
-    expect(registry.partyCodeOf(host)).toBeNull(); // (none is made: none was being shown)
+    expect(registry.partyCodeOf(host)).toBeNull();
     const renewed = registry.runningParty(host)!.code;
     expect(registry.joinParty(other, renewed)).toEqual({ ok: false, reason: "INVALID_CODE" });
 
     registry.closeParty(host);
     const next = registry.ensurePartyCode(host)!.code;
-    expect(registry.joinParty(other, next).ok).toBe(true); // a new party: nobody was sent away from it
+    expect(registry.joinParty(other, next).ok).toBe(true);
     expect(registry.joinParty(kicked, next).ok).toBe(true);
   });
 
@@ -793,10 +775,10 @@ describe("Registry: a party started on a TV", () => {
     registry.joinParty(guest, code);
     const before = registry.partyOfCode(code)!;
 
-    const restarted = new Registry({ now: () => 1_000_000, generateCode: counter(codes) }); // (the clock `setup` starts with: a restart is a moment later)
+    const restarted = new Registry({ now: () => 1_000_000, generateCode: counter(codes) });
     restarted.restore(registry.records());
     const hostAgain = restarted.tvHello(host.id);
-    expect(hostAgain.followerIds).toEqual([guest.id]); // (the party is there, with no code and no id)
+    expect(hostAgain.followerIds).toEqual([guest.id]);
     expect(restarted.invitedParty(host.publicId, before.party, "pro_bob")).toBeNull();
     const renewed = restarted.runningParty(hostAgain)!;
     const now = restarted.partyOfCode(renewed.code)!;
@@ -819,10 +801,9 @@ describe("Registry: a party started on a TV", () => {
       if (end !== "ran out") expect([host.partyId, host.barred.size], end).toEqual([null, 0]);
       else {
         registry.detachFollower(stays);
-        advance(10 * 60 * 1000); // (the code ran out, and nobody is in the party: it is over, and the next one is a new party)
+        advance(10 * 60 * 1000);
         expect(registry.runningParty(host)).toBeNull();
       }
-      // A party that begins now is a new one: nobody was sent away from it.
       const next = registry.ensurePartyCode(host)!.code;
       expect(host.barred.size, end).toBe(0);
       expect(registry.joinParty(kicked, next).ok, end).toBe(true);
@@ -836,16 +817,15 @@ describe("Registry: a party started on a TV", () => {
     registry.joinParty(second!, code);
     expect([first!.admin, second!.admin, host.admin]).toEqual([false, false, false]);
 
-    expect(registry.setAdmin(host, "nobody", true)).toBeNull(); // no such guest
-    expect(registry.setAdmin(host, host.publicId, true)).toBeNull(); // the host is not its own guest
-    expect(registry.setAdmin(arrive(), first!.publicId, true)).toBeNull(); // a screen with no guests has none to make one
+    expect(registry.setAdmin(host, "nobody", true)).toBeNull();
+    expect(registry.setAdmin(host, host.publicId, true)).toBeNull();
+    expect(registry.setAdmin(arrive(), first!.publicId, true)).toBeNull();
     expect(registry.setAdmin(host, first!.publicId, true)).toBe(first);
     expect([first!.admin, second!.admin]).toEqual([true, false]);
-    expect(registry.setAdmin(host, first!.publicId, true)).toBeNull(); // already one: nothing changed
+    expect(registry.setAdmin(host, first!.publicId, true)).toBeNull();
     expect(registry.setAdmin(host, first!.publicId, false)).toBe(first);
     expect(first!.admin).toBe(false);
 
-    // Leaving, being sent away, or the end of the party: a guest is no admin any more, and one that comes back (one that left) comes back as an ordinary one.
     registry.setAdmin(host, first!.publicId, true);
     registry.setAdmin(host, second!.publicId, true);
     registry.detachFollower(first!);
@@ -866,7 +846,6 @@ describe("Registry: a party started on a TV", () => {
     registry.unpairDevice(host);
     expect([guest.leaderId, registry.partyCodeOf(host)]).toEqual([null, null]);
 
-    // codes of every kind share one space: a new party code is never one that is live as a pairing code
     const clash = setup({ generateCode: counter(["123456", "123456", "654321"]) });
     const a = clash.registry.tvHello();
     const b = clash.registry.tvHello();
@@ -883,7 +862,7 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.displayName(host)).toHaveLength(40);
     registry.setLabel(host, "   ");
     expect(registry.displayName(host)).toMatch(/^TV /);
-    expect(cleanLabel("\u0000‮")).toBeNull(); // nothing but control and direction marks
+    expect(cleanLabel("\u0000‮")).toBeNull();
   });
 });
 
@@ -892,7 +871,6 @@ describe("Registry: what a TV was playing", () => {
   const at = (currentTime: number, state: "playing" | "paused" = "playing") => ({ state, currentTime, duration: 7200 });
   const DAY = 24 * 3600 * 1000;
 
-  /** A TV with a phone, and the video on (the way the hub puts one on). */
   function playing(registry: Registry, media: typeof film | Omit<typeof film, "page"> = film, startAt = 0) {
     const tv = registry.tvHello();
     registry.pair(registry.controllerHello(), registry.ensureCode(tv)!.code);
@@ -914,7 +892,7 @@ describe("Registry: what a TV was playing", () => {
     const alone = registry.tvHello();
     alone.media = film;
     registry.startedPlaying(alone, film, 300);
-    expect(registry.resumeOf(alone)).toBeUndefined(); // it has its own Continue watching
+    expect(registry.resumeOf(alone)).toBeUndefined();
 
     const host = playing(registry);
     const guest = registry.tvHello();
@@ -941,7 +919,7 @@ describe("Registry: what a TV was playing", () => {
     expect(registry.resumeOf(tv)).toBeUndefined();
 
     registry.startedPlaying(tv, next, 0);
-    registry.noteProgress(tv, at(7190)); // the last minute: as good as seen
+    registry.noteProgress(tv, at(7190));
     expect(registry.resumeOf(tv)).toBeUndefined();
     registry.startedPlaying(tv, next, 0);
     registry.noteProgress(tv, { ...at(100), state: "paused", ended: true });
@@ -959,7 +937,6 @@ describe("Registry: what a TV was playing", () => {
     for (const state of ["loading", "idle", "error"] as const) registry.noteProgress(tv, { ...at(0), state });
     expect(registry.resumeOf(tv)?.time).toBe(500);
 
-    // A server that was restarted while this played: the TV tells it what is on, and the next report is the first it hears of the place.
     const { registry: fresh } = setup();
     const tv2 = fresh.tvHello();
     fresh.pair(fresh.controllerHello(), fresh.ensureCode(tv2)!.code);
@@ -987,29 +964,29 @@ describe("Registry: what a TV was playing", () => {
     registry.noteProgress(tv, at(45));
     expect(changes).toBe(base + 1);
     expect(saved()).toBe(31);
-    expect(registry.resumeOf(tv)?.time).toBe(45); // memory is always as far as the TV said
+    expect(registry.resumeOf(tv)?.time).toBe(45);
 
     registry.checkpoint(tv);
     expect(changes).toBe(base + 2);
     expect(saved()).toBe(45);
     registry.checkpoint(tv);
-    expect(changes).toBe(base + 2); // nothing new to write
+    expect(changes).toBe(base + 2);
   });
 
   it("does not take what a picture reports on its way to the place it was put back at for the place", () => {
     const { registry, advance } = setup();
     const tv = playing(registry);
     registry.startedPlaying(tv, film, 600, true);
-    registry.noteProgress(tv, at(0, "paused")); // the picture starts at the beginning before it has found its place
+    registry.noteProgress(tv, at(0, "paused"));
     registry.noteProgress(tv, at(2, "paused"));
     expect(registry.resumeOf(tv)?.time).toBe(600);
 
-    registry.noteProgress(tv, at(601, "paused")); // got there: from now on a seek back is a real place
+    registry.noteProgress(tv, at(601, "paused"));
     registry.noteProgress(tv, at(10, "paused"));
     expect(registry.resumeOf(tv)?.time).toBe(10);
 
     registry.startedPlaying(tv, film, 600, true);
-    advance(46_000); // a picture that never gets there is believed after a while
+    advance(46_000);
     registry.noteProgress(tv, at(3, "paused"));
     expect(registry.resumeOf(tv)?.time).toBe(3);
   });
@@ -1039,13 +1016,12 @@ describe("Registry: what a TV was playing", () => {
     const later = new Registry({ now: () => clock.now + (KEEP_RESUME_DAYS + 2) * DAY });
     later.restore(records);
     const tvAgain = later.tvHello(tv.id);
-    expect(tvAgain.controllerId).not.toBeNull(); // the pair is still there
+    expect(tvAgain.controllerId).not.toBeNull();
     expect(later.resumeOf(tvAgain)).toBeUndefined();
   });
 });
 
 describe("Registry: TVs and phones that nobody has paired", () => {
-  /** What the registry holds for an id besides the TV or phone itself (the day it was last heard from): there is no other way to see that it is gone. */
   const seenDays = (registry: Registry) => (registry as unknown as { seenDays: Map<string, number> }).seenDays;
 
   it("lists the free TVs, the one that came first first, and leaves out a TV that has a phone, a party or a leader", () => {
@@ -1057,7 +1033,7 @@ describe("Registry: TVs and phones that nobody has paired", () => {
     const guest = registry.tvHello();
     registry.pair(registry.controllerHello(), registry.ensureCode(withPhone)!.code);
     registry.ensurePartyCode(host);
-    expect(registry.freeTvs()).toEqual([first.id, second.id, host.id, guest.id]); // (a party nobody came to is nothing yet: a restart forgets it)
+    expect(registry.freeTvs()).toEqual([first.id, second.id, host.id, guest.id]);
     registry.joinParty(guest, registry.partyCodeOf(host)!.code);
     expect(registry.freeTvs()).toEqual([first.id, second.id]);
   });
@@ -1105,7 +1081,7 @@ describe("Registry: TVs and phones that nobody has paired", () => {
       const gone = registry.tvHello();
       expect(asked(registry, gone)?.code, what).toBe("111111");
       expect(registry.forgetFree(gone.id), what).toBe(true);
-      expect(asked(registry, registry.tvHello())?.code, what).toBe("111111"); // (not passed over as taken: that would give "333333")
+      expect(asked(registry, registry.tvHello())?.code, what).toBe("111111");
     }
   });
 

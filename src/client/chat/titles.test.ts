@@ -11,7 +11,7 @@ describe("a title in a chat message", () => {
 
   it("leaves the end of a sentence out of the address", () => {
     expect(titleIn("Watch this: https://kino4tv.com/tv?title=movie-603!")).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "Watch this:", extras: {} });
-    expect(titleIn("(https://kino4tv.com/tv?title=movie-603).")).toMatchObject({ id: "filmpire-movie-603", rest: "" }); // (no "(" left over the card: the judge, 16 Nov)
+    expect(titleIn("(https://kino4tv.com/tv?title=movie-603).")).toMatchObject({ id: "filmpire-movie-603", rest: "" });
     expect(titleIn("Tonight (https://kino4tv.com/tv?title=movie-603)")).toMatchObject({ rest: "Tonight" });
   });
 
@@ -39,7 +39,7 @@ describe("sending a title", () => {
     const text = titleMessage({ id: "filmpire-movie-603", title: "The Matrix", year: 1999, url: "/fixtures/a.mp4" }, "https://kino4tv.com")!;
     expect(text).toBe("The Matrix (1999) https://kino4tv.com/tv?title=movie-603");
     const kept = checkChatText(text);
-    expect(kept).toEqual({ ok: true, text }); // (the server keeps it as it is: the address still names the title)
+    expect(kept).toEqual({ ok: true, text });
     expect(titleIn(text)).toEqual({ id: "filmpire-movie-603", link: "https://kino4tv.com/tv?title=movie-603", rest: "The Matrix (1999)", extras: {} });
   });
 
@@ -55,8 +55,8 @@ describe("sending a title", () => {
       { key: "p-pasted", at: 90, title: "Pasted", url: "https://example.com/film.mp4" },
     ];
     const saved = [
-      { id: "filmpire-movie-603", at: 70, title: "The Matrix", url: "https://films.example/watch/603", year: 1999 }, // (watched and saved: once, by the newer)
-      { id: "filmpire-tv-1399", at: 10, title: "A Show", url: "https://films.example/watch/1399" }, // (a show watched is the same title saved)
+      { id: "filmpire-movie-603", at: 70, title: "The Matrix", url: "https://films.example/watch/603", year: 1999 },
+      { id: "filmpire-tv-1399", at: 10, title: "A Show", url: "https://films.example/watch/1399" },
       { id: "filmpire-movie-7", at: 40, title: "Seven", url: "/x" },
     ];
     expect(sendableTitles(progress, saved)).toEqual([
@@ -73,19 +73,18 @@ describe("sending a title", () => {
     expect(text).toBe("A Show (2011) https://kino4tv.com/tv?title=tv-1399&s=2&e=5&t=754&r=8");
     expect(checkChatText(text)).toEqual({ ok: true, text });
     expect(titleIn(text)).toEqual({ id: "filmpire-tv-1399", link: "https://kino4tv.com/tv?title=tv-1399&s=2&e=5&t=754&r=8", rest: "A Show (2011)", extras: { season: 2, episode: 5, at: 754, score: 8 } });
-    expect(onlyNames(titleIn(text)!.rest, { title: "A Show", year: 2011 })).toBe(true); // (the card says the name: not twice)
-    // (a film: a time and a rating; anything odd in a hand-typed one is as if it were not there)
+    expect(onlyNames(titleIn(text)!.rest, { title: "A Show", year: 2011 })).toBe(true);
     expect(titleIn("https://kino4tv.com/tv?title=movie-603&t=95&r=10!")?.extras).toEqual({ at: 95, score: 10 });
     expect(titleIn("https://kino4tv.com/tv?title=movie-603&t=-1&r=99&s=1&e=1")?.extras).toEqual({});
   });
 
   it("sends only what the send step chose: an episode of a show, a time in a film or an episode, a rating given", () => {
     const episode = { season: 2, episode: 5 };
-    expect(chosenExtras({ show: false, episode: null, at: 0, score: undefined })).toEqual({}); // (nothing chosen: what a plain press sends)
+    expect(chosenExtras({ show: false, episode: null, at: 0, score: undefined })).toEqual({});
     expect(chosenExtras({ show: true, episode, at: 754.6, score: 8 })).toEqual({ season: 2, episode: 5, at: 754, score: 8 });
-    expect(chosenExtras({ show: true, episode: null, at: 754, score: undefined })).toEqual({}); // (a whole show has no time to start at)
-    expect(chosenExtras({ show: false, episode, at: 90, score: undefined })).toEqual({ at: 90 }); // (a film has no episodes)
-    expect(chosenExtras({ show: false, episode: null, at: 90_000, score: 3 })).toEqual({ score: 3 }); // (past what an address may say)
+    expect(chosenExtras({ show: true, episode: null, at: 754, score: undefined })).toEqual({});
+    expect(chosenExtras({ show: false, episode, at: 90, score: undefined })).toEqual({ at: 90 });
+    expect(chosenExtras({ show: false, episode: null, at: 90_000, score: 3 })).toEqual({ score: 3 });
   });
 
   it("reads a time typed by hand, and moves one by minutes between the beginning and the end", () => {
@@ -95,7 +94,7 @@ describe("sending a title", () => {
     expect(typedTime("0")).toBe(0);
     expect(typedTime("0:00")).toBe(0);
     for (const odd of ["", "abc", "1:60", "1:02:60", "1:2", "-5", "1.5", "12:34:56:7", "99999"]) expect(typedTime(odd), odd).toBeUndefined();
-    expect(typedTime("2:00:00", 3600)).toBeUndefined(); // (past the end of what is sent)
+    expect(typedTime("2:00:00", 3600)).toBeUndefined();
     expect(typedTime("24:00:00")).toBe(86_400);
     expect(typedTime("24:00:01")).toBeUndefined();
     expect(movedTime(0, -10, 3600)).toBe(0);

@@ -10,7 +10,7 @@ describe("what the rows say of their titles, for a child's profile", () => {
   it("names each title by its address, and a title one row shows as a cartoon for children is one, whatever another row says", () => {
     const kid = item("filmpire-movie-10", { kids: true });
     const known = childTitlesOfRows([
-      row("popular", [kid, item("filmpire-movie-11")]), // (a row that does not say its section: the item alone does not)
+      row("popular", [kid, item("filmpire-movie-11")]),
       row("cartoons", [kid, item("filmpire-movie-12", { kids: true }), item("filmpire-tv-13")], "cartoon"),
       row("anime", [item("filmpire-tv-14", { kids: true })], "anime"),
     ]);

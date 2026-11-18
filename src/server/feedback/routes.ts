@@ -26,16 +26,12 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** The shortest token the team's side takes: a short one can be guessed, so a server with one is as good as without the team's side. */
 export const FEEDBACK_TOKEN_MIN = 24;
 
 export interface FeedbackRoutesOptions {
   store: FeedbackStore;
-  /** The team's token (`FEEDBACK_ADMIN_TOKEN`). Without it, or with one that is too short, there is no team's side: reports are kept and nobody reads them. */
   adminToken?: string | undefined;
-  /** The account that is signed in with this request, when one is (a report sent from an account is on all of its devices). */
   accountOf?: (request: FastifyRequest) => string | undefined;
-  /** How many reports one address may send in ten minutes (6 unless set; a household or a school behind one address, or a suite of tests, may want more). */
   sendsPer10Min?: number | undefined;
 }
 
@@ -47,7 +43,6 @@ const ReplyBodySchema = WhoSchema.extend({
 });
 const TeamReplySchema = z.object({
   text: z.string().min(1).max(FEEDBACK_LIMITS.text * 2),
-  /** The report waits for the answer (the sender is told there is a question). */
   ask: z.boolean().optional(),
   status: z.enum(FEEDBACK_STATUSES).optional(),
 });
@@ -56,8 +51,6 @@ const TeamPatchSchema = z.object({
   tags: z.array(z.string().max(30)).max(12).optional(),
   note: z.string().max(2000).optional(),
 });
-
-/* ------------------------------ what is shown ------------------------------ */
 
 export const summaryOf = (record: FeedbackRecord): FeedbackSummary => ({
   id: record.id,
@@ -86,7 +79,6 @@ const attachmentView = (file: FeedbackRecord["files"][number]): FeedbackAttachme
   ...(file.note ? { note: file.note } : {}),
 });
 
-/** What the sender sees of their own report: everything but what the team keeps for itself. */
 export const threadOf = (record: FeedbackRecord): FeedbackThread => ({
   ...summaryOf(record),
   message: record.message,
@@ -97,7 +89,6 @@ export const threadOf = (record: FeedbackRecord): FeedbackThread => ({
   messages: record.messages.map(messageView),
 });
 
-/** What the team sees in a list. */
 const adminSummary = (record: FeedbackRecord) => ({
   id: record.id,
   kind: record.kind,
@@ -106,7 +97,6 @@ const adminSummary = (record: FeedbackRecord) => ({
   status: record.status,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
-  /** Nobody on the team has answered the last thing the sender said (or nothing has been answered yet). */
   waiting: waitingOn(record),
   lines: record.messages.length,
   files: record.files.filter((file) => !file.gone).length,
@@ -129,18 +119,15 @@ const adminFull = (record: FeedbackRecord) => ({
   note: record.note,
 });
 
-/** Whether a body brings more files than any page sends (it is turned away at once: each of them would be read to be turned away). */
 const tooManyFiles = (body: unknown): boolean => {
   const sent = (body as { attachments?: unknown } | null | undefined)?.attachments;
   return Array.isArray(sent) && sent.length > FEEDBACK_LIMITS.attachments * 4;
 };
 
-/** Whether a body brings answers to more questions than there are (it is turned away at once as well: a body can hold hundreds of thousands, each to be read and left out). */
 const tooManyAnswers = (body: unknown): boolean => {
   const sent = (body as { details?: unknown } | null | undefined)?.details;
   if (!sent || typeof sent !== "object" || Array.isArray(sent)) return false;
   let count = 0;
-  // (Counted up to the limit only: how many there are past it is not worth finding out.)
   for (const _name in sent) if (++count > FEEDBACK_DETAIL_KEYS.length * 4) return true;
   return false;
 };
@@ -152,26 +139,13 @@ const tooMany = (reply: FastifyReply, waitMs: number) => {
   return reply.header("Retry-After", seconds).code(429).send({ error: "rate_limited", retryAfter: seconds });
 };
 
-/**
- * Every report the store keeps is still open, so a new one would have to take the place of one of them (see `FeedbackFull`). That is not the sender's
- * doing, so it is not a 429: it is the site that cannot take it now, until the team has closed some, and the page may try again later.
- */
 const full = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(503).send({ error: "full" });
 
-/**
- * The sender has as many reports open as one address may (see `TooManyOpen`). That is the sender's doing, so it is a 429, but waiting a few minutes will not
- * change it: it changes when the team has dealt with some of the reports, so the page is told to try again later.
- */
 const tooManyOpen = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(429).send({ error: "too_many_open" });
 
-/**
- * The check for the team's side of the site (the feedback below, and the owner's stats): true when the request brings the team's token
- * (`FEEDBACK_ADMIN_TOKEN`) as a Bearer; otherwise the answer is sent. Without a token that is long enough there is no team's side, and the answer is a
- * 404 (there is nothing to find). Wrong tries are slowed per address.
- */
 export function teamGuard(adminToken: string | undefined, kept?: string): (request: FastifyRequest, reply: FastifyReply) => boolean {
   const tokenDigest = typeof adminToken === "string" && adminToken.length >= FEEDBACK_TOKEN_MIN ? digest(adminToken) : undefined;
-  const triedToken = new RateLimiter(10, 15 * MINUTE, undefined, kept); // (`kept`: the name the wrong tries are kept under over a restart, rateLimit.ts)
+  const triedToken = new RateLimiter(10, 15 * MINUTE, undefined, kept);
   return (request, reply) => {
     if (!tokenDigest) {
       void reply.code(404).send({ error: "NOT_FOUND" });
@@ -192,23 +166,13 @@ export function teamGuard(adminToken: string | undefined, kept?: string): (reque
   };
 }
 
-/**
- * Feedback from the people who use the site (see `shared/reports.ts`), under /api/feedback; and the team's side of it under /api/admin/feedback,
- * which takes the team's token and nothing else. The sender's side has no sign-in: a report is the one who has its key (made on the page and
- * kept there; the server keeps only a hash of it), and a signed-in account sees its reports on all of its devices.
- */
 export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (app, { store, adminToken, accountOf, sendsPer10Min = 6 }) => {
   const perAddress = new RateLimiter(sendsPer10Min, 10 * MINUTE, undefined, "feedback.perAddress");
   const perAddressDay = new RateLimiter(Math.max(40, sendsPer10Min * 7), DAY, undefined, "feedback.perAddressDay");
   const everyone = new RateLimiter(Math.max(200, sendsPer10Min * 30), HOUR, undefined, "feedback.everyone");
   const replies = new RateLimiter(30, 10 * MINUTE, undefined, "feedback.replies");
   const reads = new RateLimiter(120, MINUTE);
-  /** Every try to send, whatever comes of it, counted before the body is read: a request that is turned away has cost what it cost to read. */
   const tries = new RateLimiter(Math.max(30, sendsPer10Min * 5), 10 * MINUTE, undefined, "feedback.tries");
-  /**
-   * The most reports one address may have open at once (see `TooManyOpen`): as many as it may send in ten minutes. A person has a few things to say
-   * before anybody has looked at the first, so this is far above what one needs, and an address cannot fill the room with reports nobody has dealt with.
-   */
   const maxOpen = Math.max(6, sendsPer10Min);
   const counted = async (request: FastifyRequest, reply: FastifyReply) => {
     const wait = tries.wait(request.ip);
@@ -221,7 +185,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     reply.header("Cache-Control", "no-store");
   });
 
-  /** The report this request is about: the one whose key it brings, or one of the signed-in account's. */
   function reportOf(request: FastifyRequest, who: { key?: string | undefined; id?: string | undefined }): FeedbackRecord | undefined {
     if (who.key) {
       const record = store.byKey(who.key);
@@ -232,14 +195,11 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     return account && record && record.accountId === account ? record : undefined;
   }
 
-  /* ------------------------------ the sender's side ------------------------------ */
-
   app.post("/api/feedback", { bodyLimit: FEEDBACK_LIMITS.bodyBytes, onRequest: counted }, async (request, reply) => {
     if (tooManyFiles(request.body) || tooManyAnswers(request.body)) return invalid(reply);
     const parsed = FeedbackInputSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply);
     const input = parsed.data;
-    // A key that is already a report is a page that sends it again (it did not hear the answer): that is not a new report, so it costs nothing.
     const again = store.byKey(input.key);
     if (again) return reply.send({ id: again.id, status: again.status, createdAt: again.createdAt, rejected: [], again: true });
     const wait = Math.max(perAddress.wait(request.ip), perAddressDay.wait(request.ip), everyone.wait("all"));
@@ -256,7 +216,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     everyone.hit("all");
     let made: Awaited<ReturnType<FeedbackStore["create"]>>;
     try {
-      // (The words of a report are kept before its pictures: what does not fit the room for files is left out, and said, as what is too big is.)
       made = await store.create(
         {
           key: input.key,
@@ -278,7 +237,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
       );
     } catch (error) {
       if (error instanceof FeedbackFull || error instanceof TooManyOpen) {
-        // (A report the store did not take is not one this address sent: what it cost the allowances comes back, so a full store does not use them up.)
         perAddress.undo(request.ip);
         perAddressDay.undo(request.ip);
         everyone.undo("all");
@@ -290,7 +248,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     return reply.code(201).send({ id: record.id, status: record.status, createdAt: record.createdAt, rejected: [...rejected, ...refused.map((id) => ({ id, reason: "too_big" as const }))] });
   });
 
-  /** The state of the reports whose keys a page holds (a page asks for these when it opens: is there an answer?). */
   app.post("/api/feedback/check", async (request, reply) => {
     const parsed = KeysSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply);
@@ -304,7 +261,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     return reply.send({ items });
   });
 
-  /** The reports of the account that is signed in. */
   app.get("/api/feedback/mine", async (request, reply) => {
     const account = accountOf?.(request);
     if (!account) return reply.code(401).send({ error: "signed_out" });
@@ -314,7 +270,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     return reply.send({ items: store.forAccount(account).map(summaryOf) });
   });
 
-  /** One report, with its thread; the lines from the team are marked as read. */
   app.post("/api/feedback/open", async (request, reply) => {
     const parsed = WhoSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply);
@@ -328,7 +283,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     return reply.send(threadOf(opened ?? found));
   });
 
-  /** An answer to a question of the team's, or something more to say; the report is the team's to look at again. */
   app.post("/api/feedback/reply", { bodyLimit: FEEDBACK_LIMITS.bodyBytes, onRequest: counted }, async (request, reply) => {
     if (tooManyFiles(request.body)) return invalid(reply);
     const parsed = ReplyBodySchema.safeParse(request.body);
@@ -342,11 +296,9 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     const { files, rejected } = readFiles(parsed.data.attachments, new Set(found.files.map((file) => file.id)), kept);
     if (!text && files.length === 0) return reply.code(400).send({ error: "empty", rejected });
     replies.hit(request.ip);
-    // (A report that was waiting for this answer, or was closed, is the team's to look at again.)
     const status: FeedbackStatus | undefined = found.status === "needs_info" || found.status === "done" || found.status === "declined" || found.status === "duplicate" ? "in_review" : undefined;
     let added: Awaited<ReturnType<FeedbackStore["addMessage"]>>;
     try {
-      // (As for a report, the words are kept before the pictures: what does not fit the room for files is left out, and said, as what is too big is.)
       added = await store.addMessage(found.id, { from: "user", text, files, ...(status ? { status } : {}) });
     } catch (error) {
       if (error instanceof FeedbackFull) return full(reply);
@@ -356,8 +308,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     if (!added) return reply.code(404).send({ error: "not_found" });
     return reply.code(201).send({ message: messageView(added.message), rejected: [...rejected, ...added.refused.map((id) => ({ id, reason: "too_big" as const }))] });
   });
-
-  /* ------------------------------ the team's side ------------------------------ */
 
   const team = teamGuard(adminToken, "team.feedback");
 
@@ -375,7 +325,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     return reply.send({ rev: store.rev, total: found.length, items: found.slice(0, limit).map(adminSummary) });
   });
 
-  /** Waits (up to `wait` seconds, 25 by default) for something to change after the revision the team knows, then answers with the list of what is open. */
   app.get<{ Querystring: { since?: string; wait?: string } }>("/api/admin/feedback/changes", async (request, reply) => {
     if (!team(request, reply)) return;
     const since = Number(request.query.since);
@@ -397,7 +346,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     if (!team(request, reply)) return;
     const found = await store.file(request.params.id, request.params.file);
     if (!found) return reply.code(404).send({ error: "not_found" });
-    // (Whatever it was called, it is a download of what it is, never a page: a file from a stranger is not to run in the team's browser.)
     return reply.header("Content-Type", found.meta.mime).header("Content-Disposition", "attachment").header("X-Content-Type-Options", "nosniff").send(found.data);
   });
 
@@ -407,7 +355,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     if (!parsed.success) return invalid(reply);
     const record = store.get(request.params.id);
     if (!record) return reply.code(404).send({ error: "not_found" });
-    // An answer is for the sender to read: a report that was sent not to be answered has nobody to read it.
     if (!record.answer) return reply.code(409).send({ error: "not_answerable" });
     const status: FeedbackStatus = parsed.data.status ?? (parsed.data.ask ? "needs_info" : record.status === "new" ? "in_review" : record.status);
     const added = await store.addMessage(record.id, { from: "team", text: cleanText(parsed.data.text, FEEDBACK_LIMITS.text * 2), asks: Boolean(parsed.data.ask), status });

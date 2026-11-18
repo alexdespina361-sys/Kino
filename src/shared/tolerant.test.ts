@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FriendsStateSchema, MeSchema, NewProfileSchema, PartyProfileSchema, PersonSchema } from "./index";
 
-/**
- * A screen whose page was loaded before a release is told of things that release added (a new picture, a new kind of item in the inbox): it shows
- * what it can of them rather than refuse the whole answer - which signed it out, or emptied its Friends page, until it was reloaded.
- */
 describe("a screen older than the server", () => {
   it("shows a picture it does not know as the first one, for its own profiles, a friend and somebody in a party", () => {
     const me = MeSchema.safeParse({ account: { id: "a1", email: "sam" }, profiles: [{ id: "p1", name: "Sam", avatar: "popcorn-of-tomorrow" }] });

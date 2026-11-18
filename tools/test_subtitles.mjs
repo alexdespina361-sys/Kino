@@ -3,11 +3,6 @@ import { RomanianSubtitleManager } from "../src/server/subtitles/romanian.ts";
 async function testSubtitles() {
   console.log("--- Testing Subtitle Backends ---");
 
-  // Test cases:
-  // 1. Movie: The Matrix (tt0133093 / TMDB 603)
-  // 2. Movie: Inception (tt1375666 / TMDB 27205)
-  // 3. Series: Breaking Bad S1E1 (tt0903747 / TMDB 1396)
-  // 4. Series: Doctor Who S1E1 (tt0436992 / TMDB 57243)
   const testCases = [
     { imdbId: "tt0133093", tmdbId: 603, title: "The Matrix", year: 1999 },
     { imdbId: "tt1375666", tmdbId: 27205, title: "Inception", year: 2010 },

@@ -2,12 +2,6 @@ import { expect } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { FIRST_VISIT, NEW_PHONE, openDevice, openTv, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
-/*
- * A phone or a tablet opens on the library (it is the screen, and plays where it is held); "Play on TV" on a title's page sends that title to a TV,
- * with the phone as its remote. A phone that has been the remote here before stays the remote: it is somebody's, paired with their TV.
- * None of these phones is told it is a remote (as the other tests' are, see `PHONE`): what they open on is the page's own guess.
- */
-
 const films = [
   { id: "filmpire-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "/fixtures/sample.mp4?n=1" },
   { id: "filmpire-movie-604", title: "The Matrix Reloaded", year: 2003, kind: "movie", url: "/fixtures/sample.mp4?n=2" },
@@ -25,7 +19,6 @@ test.describe("a phone that comes here", () => {
     await expect(phone.getByTestId("tv-detail")).toBeVisible();
     await expect(phone.getByTestId("tv-detail-play")).toBeVisible();
     await expect(phone.getByTestId("tv-detail-tv")).toHaveText(en["tv.playOnTv"]);
-    // (and a screen without touch has no Play on TV: it is the TV)
     const computer = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, withFilms);
     await computer.goto("/");
     await computer.getByTestId("tv-browse-tile").first().click();
@@ -38,7 +31,7 @@ test.describe("a phone that comes here", () => {
     await phone.goto("/");
     await expect(phone.getByTestId("code-input")).toHaveCount(0);
     const welcome = phone.getByTestId("welcome-enter");
-    if (await welcome.isVisible().catch(() => false)) await welcome.tap(); // (a browser that has a full screen to give asks for it with the first press)
+    if (await welcome.isVisible().catch(() => false)) await welcome.tap();
     await expect(phone.getByTestId("tv-browse-tile").first()).toBeVisible();
   });
 
@@ -71,12 +64,10 @@ test.describe("a phone that comes here", () => {
     await phone.goto("/");
     await phone.getByTestId("tv-browse-tile").first().tap();
     await phone.getByTestId("tv-detail-tv").tap();
-    // No TV yet: the remote asks for one, and plays the title on it as soon as it has it.
     await phone.getByTestId("code-input").fill(code);
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
-    expect(await tv.locator("video").first().evaluate((video: HTMLVideoElement) => video.currentSrc)).toContain("/fixtures/sample.mp4?n=1"); // (the title that was chosen)
-    // It was a trip: the next visit opens on the library, as before it.
+    expect(await tv.locator("video").first().evaluate((video: HTMLVideoElement) => video.currentSrc)).toContain("/fixtures/sample.mp4?n=1");
     await phone.goto("/");
     await expect(phone.getByTestId("tv-browse-tile").first()).toBeVisible();
     await expect(phone.getByTestId("code-input")).toHaveCount(0);

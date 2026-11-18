@@ -3,16 +3,10 @@ import path from "node:path";
 import { isStickerId } from "../../shared";
 import { PostgresPersistence, type Persistence, type SqlClient } from "./persistence";
 
-/**
- * Where the pictures of personal stickers are kept (shared/stickers.ts): apart from the accounts' documents, which are all read into memory at start. What is
- * said of each sticker (whose, how big, who has it) is one of those documents (stickers.ts); its picture is here, by its name, and read when it is asked for.
- * Postgres keeps them in a table of their own; a file server in a folder; tests in memory.
- */
 export interface StickerFiles {
   get(id: string): Promise<Buffer | undefined>;
   put(id: string, data: Buffer): Promise<void>;
   remove(id: string): Promise<void>;
-  /** The names of every picture there is (for what start-up tidies: see `StickerBook.reconcile`). */
   ids(): Promise<string[]>;
 }
 
@@ -33,10 +27,6 @@ export class MemoryStickerFiles implements StickerFiles {
   }
 }
 
-/**
- * A folder with a file for each picture. Only a sticker's name ever names a file (nothing a request says can name another place). Each is `<name>.png`, one
- * that moves too (an animated WebP): what kind of picture it is, is read from its first bytes when it is sent (stickerImage.ts `pictureType`).
- */
 export class FileStickerFiles implements StickerFiles {
   constructor(private readonly dir: string) {}
 
@@ -64,7 +54,6 @@ export class FileStickerFiles implements StickerFiles {
   }
 }
 
-/** A table of their own in the accounts' Postgres (never the accounts' documents, which are read whole into memory). */
 export class PostgresStickerFiles implements StickerFiles {
   private ready: Promise<unknown> | undefined;
 
@@ -72,7 +61,7 @@ export class PostgresStickerFiles implements StickerFiles {
 
   private table(): Promise<unknown> {
     this.ready ??= this.db.query("create table if not exists kino_stickers (id text primary key, data bytea not null)").catch((error: unknown) => {
-      this.ready = undefined; // (asked again next time)
+      this.ready = undefined;
       throw error;
     });
     return this.ready;
@@ -101,20 +90,16 @@ export class PostgresStickerFiles implements StickerFiles {
   }
 }
 
-/** The home of the pictures, next to the accounts': their Postgres, a `stickers` folder beside their file, or memory. */
 export function stickerFilesFor(persistence: Persistence, kind: "postgres" | "file" | "memory", env: NodeJS.ProcessEnv = process.env): StickerFiles {
   if (kind === "postgres" && persistence instanceof PostgresPersistence) return new PostgresStickerFiles(persistence.db);
   if (kind === "file") return new FileStickerFiles(path.resolve(env.DATA_DIR ?? "data", "stickers"));
   return new MemoryStickerFiles();
 }
 
-/** Whether the host turned personal stickers on (env PERSONAL_STICKERS=on); off unless it did. */
 export const personalStickersOn = (env: NodeJS.ProcessEnv = process.env): boolean => /^(1|on|true|yes)$/i.test(env.PERSONAL_STICKERS ?? "");
 
-/** Whether the host turned stickers that move on as well (env MOVING_STICKERS=on: shared/stickers.ts `MOVING_STICKER`); off unless it did. */
 export const movingStickersOn = (env: NodeJS.ProcessEnv = process.env): boolean => /^(1|on|true|yes)$/i.test(env.MOVING_STICKERS ?? "");
 
-/** How many megabytes the site keeps of them (env PERSONAL_STICKERS_MB), or nothing when it is not set to a number above zero. */
 export function personalStickersMaxBytes(env: NodeJS.ProcessEnv = process.env): number | undefined {
   const megabytes = Number(env.PERSONAL_STICKERS_MB);
   return Number.isFinite(megabytes) && megabytes > 0 ? Math.round(megabytes * 1024 * 1024) : undefined;

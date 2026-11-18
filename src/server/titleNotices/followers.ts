@@ -2,11 +2,6 @@ import { nameIdOf } from "../../shared";
 import type { AccountStore } from "../accounts/store";
 import { FOLLOWED_MAX, type Followed, type Follower } from "./book";
 
-/**
- * Who watches what, for the notices of new episodes and films (book.ts): the titles a profile has a card of ("Continue watching" and what it
- * finished: a card is kept for both) and the ones it rated, the newest first. Only a title with a number in the movie database counts, which the
- * library's own links have (shared/names.ts `nameIdOf`); what was saved to a list and never played is not watched.
- */
 export function followersOf(store: AccountStore): Follower[] {
   return store.profileIds().map((profile) => {
     const settings = store.settingsOf(profile);

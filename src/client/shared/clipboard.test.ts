@@ -3,7 +3,6 @@ import { copyText } from "./clipboard";
 
 afterEach(() => vi.unstubAllGlobals());
 
-/** A page with just enough of a document for the hidden field: what was made, and where the focus went. */
 function fakeDocument(copied: boolean | "throws") {
   const field = { value: "", style: {} as Record<string, string>, setAttribute: vi.fn(), select: vi.fn(), setSelectionRange: vi.fn(), remove: vi.fn() };
   const button = { focus: vi.fn() };

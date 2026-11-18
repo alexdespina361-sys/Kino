@@ -74,7 +74,7 @@ describe("episode lists", () => {
     expect(playingEpisodeName(media(1, 4, { episodes }).series)).toBeUndefined();
     expect(playingEpisodeName(media(1, 5).series, "Episodio 5")).toBeUndefined();
     expect(playingEpisodeName(media(1, 5).series, "S1 E5")).toBeUndefined();
-    expect(playingEpisodeName(media(1, 5).series, "Finale")).toBe("Finale"); // (the list may be missing: the library's word is enough)
+    expect(playingEpisodeName(media(1, 5).series, "Finale")).toBe("Finale");
   });
 
   it("labels an episode by its title, or by its numbers when it has none", () => {
@@ -131,7 +131,7 @@ describe("normalizeLang", () => {
 });
 
 describe("previousEpisode", () => {
-  const list = [ep(2, 1), ep(1, 2), ep(1, 1), ep(2, 2)]; // any order the source used
+  const list = [ep(2, 1), ep(1, 2), ep(1, 1), ep(2, 2)];
 
   it("is the episode before the current one, across a season boundary", () => {
     expect(previousEpisode(media(1, 2, { episodes: list }).series)).toMatchObject({ season: 1, episode: 1 });
@@ -156,7 +156,7 @@ describe("seriesKeyOf and stateIsFor", () => {
     const named = (title: string, season: number, episode: number): NormalizedMedia => ({ ...media(season, episode), title });
     const playing = named("The Long Night · S1 E1", 1, 1);
     expect(isSameEpisode(playing, named("The Long Night · S1 E1", 1, 1))).toBe(true);
-    expect(isSameEpisode(playing, named("Another Show · S1 E1", 1, 1))).toBe(false); // both are S1 E1: the show decides
+    expect(isSameEpisode(playing, named("Another Show · S1 E1", 1, 1))).toBe(false);
     expect(isSameEpisode(playing, named("The Long Night · S1 E2", 1, 2))).toBe(false);
     expect(isSameEpisode(null, playing)).toBe(false);
     expect(isSameEpisode(playing, { title: "A Movie", stream: { url: "https://cdn.example/m.mp4", type: "mp4" } })).toBe(false);
@@ -188,8 +188,8 @@ describe("sourcesOf", () => {
       ],
     });
     expect(list.map((source) => source.label)).toEqual([undefined, undefined, "Server B"]);
-    expect(list[1]?.subtitles).toBe(subs); // an alternate without subtitles of its own uses the main ones
-    expect(list[2]?.subtitles).toEqual([]); // one that says it has none keeps none
+    expect(list[1]?.subtitles).toBe(subs);
+    expect(list[2]?.subtitles).toEqual([]);
   });
 
   it("is limited in how many alternates a media may carry", () => {

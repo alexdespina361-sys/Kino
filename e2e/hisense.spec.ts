@@ -1,7 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { FIRST_VISIT, openDevice, openLibrary, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
-/** What a Hisense set's browser (VIDAA) says it is: the page knows it by the "VIDAA" in it. */
 const VIDAA = "Mozilla/5.0 (Linux; U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.31 Safari/537.36 VIDAA/6.0";
 const TV_SIZE = { width: 1280, height: 720 };
 
@@ -10,7 +9,6 @@ const filmsOf = (baseURL: string) => ({
   rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: `${baseURL}/fixtures/sample.mp4` }] }],
 });
 
-/** Counts what the page asks of the browser for a full screen (and grants it, without the window really changing). */
 const countFullscreenRequests = () => {
   (window as unknown as { __asked: number }).__asked = 0;
   Element.prototype.requestFullscreen = function () {
@@ -53,12 +51,12 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
 
     const browserLink = await tv.context().newCDPSession(tv);
     const ok = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
-    await browserLink.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...ok }); // (a typed Enter would be a "keyDown", which also sends the character)
+    await browserLink.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...ok });
     await browserLink.send("Input.dispatchKeyEvent", { type: "keyUp", ...ok });
-    await expect(tv.getByTestId("tv-detail-play")).toBeFocused(); // the title's own page is open
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
     expect(await clicks()).toBe(1);
 
-    await tv.keyboard.press("Enter"); // a typed one is the browser's own press, and only that
+    await tv.keyboard.press("Enter");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", /loading|playing/);
     await tv.waitForTimeout(300);
     expect(await clicks()).toBe(2);
@@ -69,9 +67,9 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
     await tv.addInitScript(countFullscreenRequests);
     await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
-    await expect(tv.getByTestId("fullscreen-toggle")).toHaveCount(0); // (the library's corner button)
-    await expect(tv.getByTestId("welcome-enter")).toHaveCount(0); // the welcome has nothing to ask
-    await tv.keyboard.press("Shift"); // a first press: anywhere else it takes the page full screen
+    await expect(tv.getByTestId("fullscreen-toggle")).toHaveCount(0);
+    await expect(tv.getByTestId("welcome-enter")).toHaveCount(0);
+    await tv.keyboard.press("Shift");
     await tv.waitForTimeout(400);
     expect(await asked(tv)).toBe(0);
 
@@ -80,20 +78,19 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
     phone.playUrl(`${baseURL}/fixtures/sample.mp4`);
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
-    await tv.keyboard.press("ArrowDown"); // brings the controls up
+    await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-stop-btn")).toBeVisible();
-    await expect(tv.getByTestId("tv-fullscreen-btn")).toHaveCount(0); // the bar is there, without a button for a full screen
+    await expect(tv.getByTestId("tv-fullscreen-btn")).toHaveCount(0);
 
     await tv.keyboard.press("f");
-    phone.cmd({ type: "TOGGLE_FULLSCREEN" }); // what the phone's button sends
+    phone.cmd({ type: "TOGGLE_FULLSCREEN" });
     await tv.waitForTimeout(500);
     expect(await asked(tv)).toBe(0);
-    await expect(tv.getByTestId("fs-prompt")).toHaveCount(0); // nor is the viewer asked to press OK for it
+    await expect(tv.getByTestId("fs-prompt")).toHaveCount(0);
     phone.close();
   });
 
   test("?fullscreen=off keeps any browser from being asked, on this visit and the next ones, until ?fullscreen=on", async ({ browser, baseURL }) => {
-    // (told it is watched from the couch: the project's browser is a computer's, and a computer's welcome never asks)
     const couch = { cookies: [], origins: [{ origin: new URL(baseURL!).origin, localStorage: [{ name: "kino.fit", value: "couch" }] }] };
     const tv = await openDevice(browser, { viewport: TV_SIZE, storageState: couch }, {}, withLibrary(filmsOf(baseURL!)));
     await tv.goto("/tv?fullscreen=off");
@@ -101,7 +98,7 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
     await expect(tv.getByTestId("fullscreen-toggle")).toHaveCount(0);
     await expect(tv.getByTestId("welcome-enter")).toHaveCount(0);
 
-    await tv.goto("/tv"); // remembered
+    await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tv.getByTestId("fullscreen-toggle")).toHaveCount(0);
     await expect(tv.getByTestId("welcome-enter")).toHaveCount(0);
@@ -117,21 +114,20 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
     await tv.goto("/tv?debug=1");
     const panel = tv.locator("#kino-debug");
     await expect(panel).toContainText("KINO DEBUG");
-    await expect(panel).toHaveAttribute("data-feedback-skip", ""); // (a report's picture of the screen leaves it out)
+    await expect(panel).toHaveAttribute("data-feedback-skip", "");
     await expect(panel).toContainText("VIDAA/6.0");
     await expect(panel).toContainText("hisense true");
     await expect(panel).toContainText("focus-visible:Y");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
-    // Where the TV's id is kept, as the last four characters of it: the same after the browser was closed means it was not wiped.
     const id = await tv.evaluate(() => localStorage.getItem("tv.deviceId") ?? "");
     expect(id).toMatch(/^tv_/);
     await expect(panel).toContainText(`tv.deviceId storage ${id.slice(-4)} cookie ${id.slice(-4)}`);
 
     await tv.keyboard.press("ArrowRight");
     await expect(panel).toContainText(/v ArrowRight ArrowRight #39 on/);
-    await expect(panel).toContainText(/\^ ArrowRight/); // (and the release)
+    await expect(panel).toContainText(/\^ ArrowRight/);
 
-    await tv.goto("/tv"); // kept
+    await tv.goto("/tv");
     await expect(tv.locator("#kino-debug")).toBeVisible();
     await tv.goto("/tv?debug=0");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();

@@ -10,7 +10,7 @@ describe("lastStartAt", () => {
       expect(reachedEnd({ currentTime: last, duration }), `${duration}`).toBe(false);
       expect(reachedEnd({ currentTime: last + 2, duration }), `${duration}`).toBe(true);
     }
-    expect(lastStartAt(5_700)).toBe(5_639); // (a 95-minute film: up to its last minute)
+    expect(lastStartAt(5_700)).toBe(5_639);
     expect(lastStartAt(0)).toBe(0);
   });
 });
@@ -68,7 +68,6 @@ describe("progressFor", () => {
     const up = progressFor(episode(1, 2), 7, { currentTime: 45 * MIN - 20, duration: 45 * MIN })!;
     expect(up).toMatchObject({ key: "show:Show", episode: 2, url: "https://site.example/show?e=2", position: 0, duration: 0 });
     expect(up.done).toBeUndefined();
-    // the credits rolling on do not change it
     expect(progressFor(episode(1, 2), 8, { currentTime: 45 * MIN - 5, duration: 45 * MIN }, up)).toBe(up);
 
     const last = progressFor(episode(8), 9, { currentTime: 45 * MIN - 20, duration: 45 * MIN })!;

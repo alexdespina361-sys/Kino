@@ -2,13 +2,53 @@ import type { SyncStarter } from "../tv/engine";
 import { assetUrl } from "./assets";
 import { WorkerBackend } from "./backend";
 import { livePcm } from "./capture";
-import { canDecode, decodeToMono16k } from "./decode";
 import { CrashGuard, type Kept } from "./guard";
 import { SyncSession, type HlsLike, type VideoLike } from "./session";
 import { httpShared } from "./share";
 import { startWhistle, Unsupported, type Recogniser } from "./whistle";
+import { SAMPLE_RATE } from "./signals";
 
-/** The page's own storage, if it lets itself be used (a private window may not). */
+type OfflineContext = OfflineAudioContext;
+let context: OfflineContext | undefined;
+const contextClass = (): (new (channels: number, length: number, sampleRate: number) => OfflineContext) | undefined => {
+  const scope = globalThis as unknown as { OfflineAudioContext?: new (c: number, l: number, r: number) => OfflineContext; webkitOfflineAudioContext?: new (c: number, l: number, r: number) => OfflineContext };
+  return scope.OfflineAudioContext ?? scope.webkitOfflineAudioContext;
+};
+const canDecode = (): boolean => contextClass() !== undefined;
+async function decodeToMono16k(bytes: Uint8Array): Promise<Float32Array> {
+  const Context = contextClass();
+  if (!Context) throw new Error("No audio decoding");
+  context ??= new Context(1, 1, SAMPLE_RATE);
+  const owned = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const decoder = context;
+  const buffer = await new Promise<AudioBuffer>((resolve, reject) => {
+    const result = decoder.decodeAudioData(owned as ArrayBuffer, resolve, reject) as Promise<AudioBuffer> | undefined;
+    if (result && typeof result.then === "function") result.then(resolve, reject);
+  });
+  return resample(mix(buffer), buffer.sampleRate);
+}
+function mix(buffer: AudioBuffer): Float32Array {
+  if (buffer.numberOfChannels === 1) return buffer.getChannelData(0).slice();
+  const out = new Float32Array(buffer.length);
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const channel = buffer.getChannelData(c);
+    for (let i = 0; i < out.length; i++) out[i]! += (channel[i] as number) / buffer.numberOfChannels;
+  }
+  return out;
+}
+function resample(samples: Float32Array, rate: number): Float32Array {
+  if (rate === SAMPLE_RATE) return samples;
+  const out = new Float32Array(Math.floor((samples.length * SAMPLE_RATE) / rate));
+  for (let i = 0; i < out.length; i++) {
+    const at = (i * rate) / SAMPLE_RATE;
+    const k = Math.floor(at);
+    const a = samples[k] as number;
+    const b = samples[Math.min(samples.length - 1, k + 1)] as number;
+    out[i] = a + (b - a) * (at - k);
+  }
+  return out;
+}
+
 const kept: Kept = {
   get: (key) => {
     try {
@@ -21,35 +61,25 @@ const kept: Kept = {
     try {
       localStorage.setItem(key, value);
     } catch {
-      // (Nothing can be kept; the guard does not get in the way.)
     }
   },
   remove: (key) => {
     try {
       localStorage.removeItem(key);
     } catch {
-      // (As above.)
     }
   },
 };
 
-/** In place of hls.js, for a film the browser plays by itself. */
 const STILL: HlsLike = { on: () => undefined, off: () => undefined };
 
-/**
- * The subtitle aligner for a film that plays through hls.js, with the real worker, decoder and recogniser. This module is fetched
- * by the TV page when a film starts (the page does not carry it before), and everything it needs from the browser is checked here:
- * a device that cannot do it gets no aligner, and the picture is not affected.
- */
 export const startSync: SyncStarter = (film) => {
   if (!canDecode() || typeof Worker === "undefined") return undefined;
   const guard = new CrashGuard(kept);
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
 
   const session = new SyncSession({
-    // (The cues of a subtitle track are VTTCues, which carry the text the library's cue type asks for.)
     video: film.video as unknown as VideoLike,
-    // (A film the browser plays by itself has no hls.js: nothing to say of sound tracks, and no subtitles in the stream.)
     hls: (film.hls ?? STILL) as unknown as HlsLike,
     events: film.events ?? { audioSwitching: "none" },
     tap: film.tap,
@@ -59,15 +89,12 @@ export const startSync: SyncStarter = (film) => {
     ...(film.delay ? { delay: film.delay } : {}),
     backend: () => WorkerBackend.start(assetUrl("silero-vad-16k.bin")),
     decode: film.live ? livePcm : decodeToMono16k,
-    // (What other screens left of this film's subtitles, and a way to leave what this one finds: see share.ts.)
     shared: httpShared(),
-    // (A file timed well enough is offered for a Kino Official subtitle: see official.ts.)
     ...(film.offer ? { offer: film.offer } : {}),
     cores: navigator.hardwareConcurrency || 4,
     ...(film.light ? { light: film.light } : {}),
     log: (message) => console.debug("[Kino subtitle sync]", message),
     recogniser: async (): Promise<Recogniser> => {
-      // The model is 17 MB and needs a good deal of memory: a device that is short of it, or has fallen over on it before, does without.
       if (memory !== undefined && memory < 2) throw new Unsupported("Not enough memory for the recogniser");
       if (!guard.begin()) throw new Unsupported("The recogniser has taken this page down before");
       let recogniser: Recogniser;
@@ -92,7 +119,7 @@ export const startSync: SyncStarter = (film) => {
     },
   });
   const leaving = () => {
-    session.flush(); // (what was found and not yet left goes to the server while the page can still send it)
+    session.flush();
     guard.interrupted();
   };
   addEventListener("pagehide", leaving);

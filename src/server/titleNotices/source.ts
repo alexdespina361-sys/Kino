@@ -2,23 +2,16 @@ import { z } from "zod";
 import { FILMPIRE_TMDB_API_KEY } from "../library/filmpire";
 import { providerFetch } from "../resolvers/providerFetch";
 
-/**
- * What the movie database says is out of a title, for the notices of new episodes and films (book.ts). Each answer is null for a title it does not
- * know, and throws when it cannot be asked (the book asks again later, and keeps what it knew).
- */
-
 const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
 const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
 const TIMEOUT_MS = 8_000;
-/** A digital, a physical or a TV release: a film that can be watched at home (as the library's own rule has it). */
 const HOME_RELEASES = new Set([4, 5, 6]);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface AiredEpisode {
   season: number;
   episode: number;
-  /** The day it aired (YYYY-MM-DD), where the movie database says. */
   day?: string;
 }
 
@@ -27,17 +20,13 @@ export interface ShowNow {
   image?: string;
   backdrop?: string;
   year?: number;
-  /** Over, or cancelled: nothing more is expected of it. */
   ended: boolean;
-  /** The last episode that aired (never a special); null when none has. */
   last: AiredEpisode | null;
-  /** The day the next one airs, when it is known. */
   nextDay?: string;
 }
 
 export interface FilmNow {
   name: string;
-  /** The series of films it is one of (the movie database's "collection"). */
   collection?: number;
 }
 
@@ -47,7 +36,6 @@ export interface FilmPart {
   image?: string;
   backdrop?: string;
   year?: number;
-  /** The day it came out in cinemas, when it is known. */
   day?: string;
 }
 
@@ -55,7 +43,6 @@ export interface TitleSource {
   show(id: number): Promise<ShowNow | null>;
   film(id: number): Promise<FilmNow | null>;
   parts(collection: number): Promise<FilmPart[] | null>;
-  /** Whether a film can be watched at home by now. */
   outAtHome(id: number, now: number): Promise<boolean>;
 }
 
@@ -86,7 +73,6 @@ const pictures = (doc: { poster_path?: string | null | undefined; backdrop_path?
   ...(doc.backdrop_path ? { backdrop: `${BACKDROP_BASE}${doc.backdrop_path}` } : {}),
 });
 
-/** What the movie database's answer about a show says is out of it. */
 export function showNowOf(raw: unknown): ShowNow {
   const doc = ShowSchema.parse(raw);
   const last = doc.last_episode_to_air;
@@ -98,7 +84,6 @@ export function showNowOf(raw: unknown): ShowNow {
     ...pictures(doc),
     ...(year ? { year } : {}),
     ended: doc.status === "Ended" || doc.status === "Canceled",
-    // (Season 0 is the specials: one of them is not an episode of the show's seasons.)
     last: last && last.season_number >= 1 && last.season_number <= 200 && last.episode_number >= 1 && last.episode_number <= 5000 ? { season: last.season_number, episode: last.episode_number, ...(day ? { day } : {}) } : null,
     ...(nextDay ? { nextDay } : {}),
   };
@@ -107,7 +92,6 @@ export function showNowOf(raw: unknown): ShowNow {
 export function tmdbTitleSource(options: { fetch?: typeof fetch; apiKey?: string } = {}): TitleSource {
   const get = options.fetch ?? providerFetch();
   const apiKey = options.apiKey ?? FILMPIRE_TMDB_API_KEY;
-  /** One question: null for what it does not know, and it throws for an answer that is none. */
   const ask = async (path: string): Promise<unknown | null> => {
     const res = await get(`${BASE_URL}/${path}${path.includes("?") ? "&" : "?"}api_key=${apiKey}`, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: "application/json" } });
     if (res.status === 404) return null;

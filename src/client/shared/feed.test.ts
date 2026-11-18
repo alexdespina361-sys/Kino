@@ -22,7 +22,6 @@ const ids = (n: number, prefix: string) => Array.from({ length: n }, (_, at) => 
 const row = (id: string, titles: readonly string[]): LibraryRow => ({ id, title: id, source: "Test", items: titles.map(item) });
 const idsOf = (r: LibraryRow) => r.items.map((i) => i.id);
 
-/** A server for a test: it answers what was asked from `answer`, an Error being a failed question. */
 function server(answer: (url: string) => unknown) {
   const asked: string[] = [];
   const fake = vi.fn(async (input: RequestInfo | URL) => {
@@ -35,7 +34,6 @@ function server(answer: (url: string) => unknown) {
   return { fetch: fake as unknown as typeof fetch, asked };
 }
 
-/** Let the answers on their way arrive. */
 const settle = async () => {
   for (let at = 0; at < 40; at++) await Promise.resolve();
 };
@@ -71,7 +69,6 @@ describe("freshShelves", () => {
     const out = freshShelves(shown, shelves);
     expect(out.map((r) => r.id)).toEqual(["mostly", "fresh"]);
     expect(idsOf(out[0]!)).toEqual(ids(MIN_SHELF, "new"));
-    // a row nothing was taken from is the same row
     expect(out[1]).toBe(shelves[2]);
   });
 
@@ -149,12 +146,10 @@ describe("the feed", () => {
     await settle();
     expect(wire.asked).toEqual(["/api/library/rows?cursor=0", "/api/library/rows?cursor=5"]);
     expect(feed.getSnapshot().data.shelves.all.rows.map((r) => r.id)).toEqual(["s1", "s2"]);
-    // that was the last: nothing more is asked
     expect(hasMoreShelves(feed.getSnapshot(), undefined)).toBe(false);
     feed.loadShelves();
     await settle();
     expect(wire.asked).toHaveLength(2);
-    // the titles went into the index
     expect(feed.index.size).toBe(40);
   });
 
@@ -166,7 +161,6 @@ describe("the feed", () => {
     expect(wire.asked).toEqual(["/api/library/rows?cursor=0&section=movie"]);
     expect(feed.getSnapshot().data.shelves.movie.cursor).toBe(1);
     for (const other of ["all", "series", "cartoon", "anime"] as const) expect(feed.getSnapshot().data.shelves[other].cursor, other).toBe(0);
-    // the cartoons and the anime are asked for by their own names, from their own start
     feed.loadShelves("cartoon");
     feed.loadShelves("anime");
     await settle();
@@ -185,7 +179,6 @@ describe("the feed", () => {
     feed.loadShelves();
     await settle();
     expect(wire.asked).toHaveLength(1);
-    // s1 is a first row already and "dup" has no titles
     expect(feed.getSnapshot().data.shelves.all.rows).toEqual([]);
   });
 
@@ -223,7 +216,6 @@ describe("the feed", () => {
     await settle();
     expect(feed.getSnapshot().status.failed["shelves:all"]).toBe(true);
     expect(loadingShelves(feed.getSnapshot(), undefined)).toBe(false);
-    // asking while it is marked does nothing
     feed.loadShelves();
     await settle();
     expect(wire.asked).toHaveLength(1);
@@ -231,7 +223,6 @@ describe("the feed", () => {
     expect(feed.getSnapshot().status.failed["shelves:all"]).toBe(true);
     await vi.advanceTimersByTimeAsync(1);
     expect(feed.getSnapshot().status.failed["shelves:all"]).toBeUndefined();
-    // the second failure waits twice as long
     feed.loadShelves();
     await settle();
     expect(wire.asked).toHaveLength(2);
@@ -293,7 +284,6 @@ describe("the feed", () => {
     feed.loadMore("a", 30);
     await settle();
     expect(wire.asked).toHaveLength(1);
-    // 20 + 20 titles are more than the cap of 30
     feed.loadMore("a", 30);
     await settle();
     expect(wire.asked).toHaveLength(1);
@@ -350,7 +340,6 @@ describe("the feed", () => {
     expect(feed.getSnapshot().data.shelves.all.rows).toEqual([]);
     expect(feed.getSnapshot().status.busy).toEqual({});
     expect(feed.index.size).toBe(0);
-    // and it can be asked again
     feed.loadShelves();
     await settle();
     expect(feed.getSnapshot().data.shelves.all.rows.map((r) => r.id)).toEqual(["late"]);
@@ -362,17 +351,14 @@ describe("the feed", () => {
     feed.learn([{ id: "stale", title: "Stale Dragon Ball", url: "/stale" }]);
     expect(feed.index.find("dragon")).toHaveLength(1);
 
-    // forget specific item
     feed.forget?.("stale");
     expect(feed.index.find("dragon")).toHaveLength(0);
 
-    // prune by predicate
     feed.learn([{ id: "broken", title: "Broken Anime", url: "/broken" }]);
     expect(feed.index.find("broken")).toHaveLength(1);
     feed.prune?.((i) => i.title.includes("Broken"));
     expect(feed.index.find("broken")).toHaveLength(0);
 
-    // setBase with new rows replaces index
     feed.learn([{ id: "extra", title: "Extra Item", url: "/extra" }]);
     expect(feed.index.find("extra")).toHaveLength(1);
     feed.setBase([row("b", ["3", "4"])]);

@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Follower, leaderNow, syncStep, type HostReport, type SyncLocal, type SyncStep } from "./sync";
 
-/*
- * A guest that follows a host over a link that is not perfect, in virtual time (ten minutes in a few milliseconds), with the guest's own
- * code (`Follower`) doing the following. The host reports once a second and at every change; each report goes host -> server -> guest,
- * each leg delayed by half the round trip plus jitter, now and then held up for a long while (a burst), in order like a TCP connection.
- * The server says how long a report takes (`lag`, from the round trips as they are with nothing in the way), as the real one does.
- *
- * What it measures is what a person sees of "lag" on the guest's screen: how often the picture jumps (and how often back), how often
- * its speed changes (a nudge), how much of the time the "catching up" line is up, how far from the host it is, and how soon it follows
- * what the host does. The seeds are fixed, so the numbers are the same every run.
- */
-
 function rng(seed: number) {
   let a = seed >>> 0;
   return () => {
@@ -24,12 +13,9 @@ function rng(seed: number) {
 }
 
 interface Link {
-  /** The two ends' round trips to the server when nothing is in the way (seconds). */
   hostRtt: number;
   guestRtt: number;
-  /** The average of the extra wait of each leg (exponential), in seconds. */
   jitter: number;
-  /** The chance that a message is held up for a long while, and for how long at most. */
   burstP: number;
   burstS: number;
 }
@@ -37,21 +23,17 @@ interface Link {
 const LINKS = {
   good: { hostRtt: 0.03, guestRtt: 0.04, jitter: 0.005, burstP: 0, burstS: 0 },
   ordinary: { hostRtt: 0.04, guestRtt: 0.07, jitter: 0.02, burstP: 0, burstS: 0 },
-  jittery: { hostRtt: 0.04, guestRtt: 0.12, jitter: 0.06, burstP: 0.01, burstS: 1.5 }, // (a phone on a mobile network)
-  bad: { hostRtt: 0.05, guestRtt: 0.2, jitter: 0.12, burstP: 0.03, burstS: 3 }, // (a crowded cell)
+  jittery: { hostRtt: 0.04, guestRtt: 0.12, jitter: 0.06, burstP: 0.01, burstS: 1.5 },
+  bad: { hostRtt: 0.05, guestRtt: 0.2, jitter: 0.12, burstP: 0.03, burstS: 3 },
 } satisfies Record<string, Link>;
 
 interface Event {
   at: number;
-  /** The host's picture waits for data for this long. */
   stall?: number;
-  /** The host's own jump in the film, in seconds (negative: back). */
   jump?: number;
-  /** The host is paused (by anybody) for this long. */
   pause?: number;
 }
 
-/** How a guest answers a report: the guest's own code, or (for comparison) the way it was, which went by the last report alone. */
 type Answer = (report: HostReport, local: Omit<SyncLocal, "targetBuffered">, now: number) => SyncStep;
 
 const production = (): Answer => {
@@ -71,22 +53,15 @@ const lastReportOnly = (): Answer => {
 interface Outcome {
   jumps: number;
   jumpsBack: number;
-  /** How many seconds of the film the guest was sent back over, all told. */
   rewound: number;
   speedChanges: number;
   catchingShare: number;
   frozenShare: number;
   driftP95: number;
-  /** How far from the host the guest's picture was, on average, while both were moving and nothing had happened for a few seconds (the host's doings, the guest's own jump): what a jump leaves it at. */
   settledGap: number;
-  /** How long after each jump of the host's the guest was within a second of it (seconds), by the size of the jump. */
   follow: Record<string, number>;
 }
 
-/**
- * How long a picture takes to start moving once it is told to play (seconds): the host's after a pause, and the guest's after it is told to play
- * or to jump. Screens differ in it. And how long the guest's picture takes to land once it is sent to another place while it plays.
- */
 interface Start {
   host: number;
   guest: number;
@@ -95,7 +70,7 @@ interface Start {
 
 function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 600, start: Start = { host: 0, guest: 0 }): Outcome {
   const random = rng(seed);
-  const landing = rng(seed + 1000); // (the landing times have a stream of their own, so that the links' are the same whatever they are)
+  const landing = rng(seed + 1000);
   const exponential = (mean: number) => -mean * Math.log(1 - random());
   const leg = (rtt: number) => rtt / 2 + exponential(link.jitter) + (random() < link.burstP ? 0.5 + random() * link.burstS : 0);
   const STEP = 0.01;
@@ -111,7 +86,7 @@ function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 
   const count = { jumps: 0, jumpsBack: 0, rewound: 0, speedChanges: 0, catching: 0, frozen: 0, samples: 0 };
   const drifts: number[] = [];
   const settled: number[] = [];
-  let quietFrom = 0; // (the host has done nothing since)
+  let quietFrom = 0;
   const watching: Array<{ at: number; label: string }> = [];
   const follow: Record<string, number> = {};
   let catching = false;
@@ -120,7 +95,7 @@ function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 
 
   const emit = (now: number, force: boolean, waiting: boolean, paused: boolean) => {
     const key = `${waiting}|${paused}|${host.time.toFixed(3)}`;
-    if (!force && key === lastSent) return; // (the real engine says nothing when nothing changed)
+    if (!force && key === lastSent) return;
     lastSent = key;
     const report: HostReport = { playing: !waiting && !paused, time: host.time, rate: 1, lag, ...(waiting ? { waiting: true } : {}) };
     hubAt = Math.max(hubAt, now + leg(link.hostRtt));
@@ -143,7 +118,7 @@ function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 
     }
     const waiting = now < host.stalledUntil;
     const paused = now < host.pausedUntil;
-    if (wasPaused && !paused) host.movesAt = now + start.host; // (told to play: the report goes out at once, the picture moves a moment later)
+    if (wasPaused && !paused) host.movesAt = now + start.host;
     wasPaused = paused;
     const before = lastSent.split("|");
     if (!waiting && !paused && now >= host.movesAt) host.time += STEP;
@@ -209,12 +184,9 @@ const every = (period: number, make: (at: number) => Event, total = 600): Event[
   for (let at = period; at < total; at += period) out.push(make(at));
   return out;
 };
-/** The host's picture runs dry now and then: a hiccup of a third of a second every 40 s, a stall of two seconds every 90 s. */
 const STALLS = [...every(40, (at) => ({ at, stall: 0.3 })), ...every(90, (at) => ({ at, stall: 2 }))];
-/** Somebody at the host's end steers: back 30 s, a pause of ten, forward a minute, a pause of three, forward 4 s, back 5 s. */
 const STEERING: Event[] = [{ at: 100, jump: -30 }, { at: 200, pause: 10 }, { at: 300, jump: 60 }, { at: 400, pause: 3 }, { at: 450, jump: 4 }, { at: 500, jump: -5 }];
 
-/** Somebody at the host's end pauses now and then, for a few seconds at a time: eleven pauses in ten minutes. */
 const PAUSES: Event[] = [
   [10, 10],
   [30, 3],
@@ -281,7 +253,7 @@ describe("a guest following a host over a link that is not perfect", () => {
         for (const seed of SEEDS) {
           const result = watch(link, STALLS, production(), seed);
           expect(result.jumpsBack).toBe(0);
-          expect(result.driftP95).toBeLessThan(0.3); // (a mobile link has it at 0.19-0.26, with the jumps aimed on or not: the link's own unevenness)
+          expect(result.driftP95).toBeLessThan(0.3);
         }
       }
     });
@@ -298,8 +270,6 @@ describe("a guest following a host over a link that is not perfect", () => {
   });
 
   describe("when the screens take a moment to start moving after they are told to play", () => {
-    // The host's report goes out the moment it is told to play, but its picture moves a little later, and how much later depends on the screen (a TV is slower than a phone).
-    // The report said where the host starts from, which is not where its clock is: read as if it were, every guest was ahead of the host by that moment, and slowed down for it.
     const STARTS: Array<[string, Start]> = [
       ["a slow host and a quick guest", { host: 0.3, guest: 0.1 }],
       ["two screens that take the same", { host: 0.12, guest: 0.12 }],
@@ -316,9 +286,6 @@ describe("a guest following a host over a link that is not perfect", () => {
   });
 
   describe("when the guest's jumps take a moment to land", () => {
-    // A picture sent to where the host is lands a moment later, when the host has gone on: it stayed behind by that moment after every jump (inside
-    // what is not worth a nudge nothing puts it right, and the less a guest nudges the longer it stays). The guest looks at how far from the host
-    // each jump leaves it, and aims that much further on at the next one.
     const HOPS = every(40, (at) => ({ at, jump: Math.round(at / 40) % 2 ? -20 : 20 }));
     const SCREENS: Array<[string, Start]> = [
       ["a computer", { host: 0.07, guest: 0.07, seek: 0.07 }],
@@ -331,7 +298,7 @@ describe("a guest following a host over a link that is not perfect", () => {
         for (const [name, start] of SCREENS) {
           for (const seed of SEEDS) {
             const { settledGap } = watch(link, HOPS, production(), seed, 600, start);
-            expect(settledGap, `${name}, seed ${seed}`).toBeLessThan(start.seek! * 0.6); // (without it, the moment itself and a little more)
+            expect(settledGap, `${name}, seed ${seed}`).toBeLessThan(start.seek! * 0.6);
           }
         }
       }
@@ -367,7 +334,7 @@ describe("a guest following a host over a link that is not perfect", () => {
 
     it("stops with the host at its frame when the host pauses, and does not go back over the film for it", () => {
       const result = watch(LINKS.jittery, [{ at: 100, pause: 10 }, { at: 200, pause: 3 }], production());
-      expect(result.rewound).toBeLessThan(1); // (a few tenths of a second, to show the frame the host stopped on)
+      expect(result.rewound).toBeLessThan(1);
     });
   });
 });

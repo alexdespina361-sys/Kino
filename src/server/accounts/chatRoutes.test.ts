@@ -15,11 +15,10 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-/** The routes on a bare server: the helpers the account routes give them are made here from the store, the way those make them. */
 async function start({ report = true, feedback }: { report?: boolean; feedback?: FeedbackStore } = {}) {
   const clock = { now: 1_700_000_000_000 };
   const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => clock.now });
-  const quiet = new Set<string>(); // (profiles that turned "Friends can message me" off)
+  const quiet = new Set<string>();
   const on = (id: string) => friendChoices(store.settingsOf(id)).friends;
   const chat = new ChatBook({
     now: () => clock.now,
@@ -30,9 +29,9 @@ async function start({ report = true, feedback }: { report?: boolean; feedback?:
     takes: (id) => on(id) && !quiet.has(id),
   });
   const reports: ChatReport[] = [];
-  const teamSide = { full: false, tooMany: false }; // (while one is, the team's side takes no report: it is full, or the account has as many open as it may)
+  const teamSide = { full: false, tooMany: false };
   const stub: ChatReporter = async (made) => (teamSide.full ? "full" : teamSide.tooMany ? "too_many_open" : void reports.push(made));
-  const reporter = feedback ? chatReporter(feedback) : stub; // (the team's side itself, or what stands in for it)
+  const reporter = feedback ? chatReporter(feedback) : stub;
   const app = Fastify();
   apps.push(app);
   chatRoutes(
@@ -61,7 +60,6 @@ interface Person {
   accountId: string;
   cookie: string;
   call(method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: unknown): Promise<LightMyRequestResponse & { data: any }>;
-  /** The routes of the chat with this friend. */
   chatWith(friend: Person, path?: string): string;
 }
 
@@ -69,9 +67,9 @@ function person(world: World, login: string, { friends = true }: { friends?: boo
   const account = world.store.createAccount(login, "x");
   if (!account.ok) throw new Error("could not make the account");
   const profile = account.value.profiles[0]!;
-  world.store.updateProfile(account.value.id, profile.id, { name: login.charAt(0).toUpperCase() + login.slice(1) }); // (as its owner names it at setup)
+  world.store.updateProfile(account.value.id, profile.id, { name: login.charAt(0).toUpperCase() + login.slice(1) });
   const { token } = world.store.createSession(account.value.id, "browser", "test");
-  world.store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: world.clock.now, value: !friends }] }); // (friends are on for everybody: only `friendsOff` turns them off)
+  world.store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: world.clock.now, value: !friends }] });
   const me: Person = {
     id: profile.id,
     accountId: account.value.id,
@@ -96,7 +94,6 @@ function befriend(world: World, a: Person, b: Person) {
   expect(world.store.friends.redeem(b.id, code).ok).toBe(true);
 }
 
-/** Alex and Sam, friends with friends on. */
 async function friends(options?: { report?: boolean; feedback?: FeedbackStore }) {
   const world = await start(options);
   const alex = person(world, "alex");
@@ -116,12 +113,10 @@ describe("who is asking", () => {
 
     const signedOut = await world.app.inject({ method: "GET", url: alex.chatWith(sam) });
     expect(signedOut.statusCode).toBe(401);
-    // (a profile that is not theirs)
     expect((await stranger.call("GET", alex.chatWith(sam))).statusCode).toBe(404);
     expect((await stranger.call("POST", alex.chatWith(sam), { text: "hi" })).statusCode).toBe(404);
     expect((await off.call("GET", off.chatWith(alex))).data).toEqual({ error: "friends_off" });
     expect((await off.call("POST", off.chatWith(alex), { text: "hi" })).statusCode).toBe(403);
-    // (somebody who is not a friend)
     expect((await stranger.call("GET", stranger.chatWith(alex))).data).toEqual({ error: "not_friends" });
     expect((await write(stranger, alex, "hi")).statusCode).toBe(404);
     expect((await alex.call("GET", alex.chatWith(sam))).statusCode).toBe(200);
@@ -150,7 +145,6 @@ describe("writing and reading", () => {
     const news = await sam.call("GET", `${sam.chatWith(alex)}?since=${first.rev}`);
     expect(news.data.lines.map((line: { text: string }) => line.text)).toEqual(["one", "two"]);
     expect(news.data.rev).toBeGreaterThan(first.rev);
-    // (a revision it makes up, or one that is not a number, is not believed)
     expect((await sam.call("GET", `${sam.chatWith(alex)}?since=5`)).data.lines).toHaveLength(2);
     expect((await sam.call("GET", `${sam.chatWith(alex)}?since=abc`)).data.lines).toHaveLength(2);
     expect((await sam.call("GET", `${sam.chatWith(alex)}?since=`)).data.lines).toHaveLength(2);
@@ -232,7 +226,7 @@ describe("what has been looked at", () => {
     clock.now += 10;
     await write(alex, sam, "three");
     expect(chat.unread(sam.id)).toHaveLength(1);
-    expect(chat.unread(alex.id)).toEqual([]); // (what you wrote yourself does not wait)
+    expect(chat.unread(alex.id)).toEqual([]);
   });
 });
 
@@ -247,7 +241,6 @@ describe("taking a message back", () => {
     expect(taken.data.lines.map((line: { text: string }) => line.text)).toEqual(["fine"]);
     expect((await sam.call("GET", sam.chatWith(alex))).data.lines.map((line: { text: string }) => line.text)).toEqual(["fine"]);
     expect((await alex.call("DELETE", alex.chatWith(sam, `/${id}`))).data).toEqual({ error: "gone" });
-    // (the friend's message is not Alex's to take back)
     const theirs = taken.data.lines[0].id;
     expect((await alex.call("DELETE", alex.chatWith(sam, `/${theirs}`))).statusCode).toBe(404);
     expect((await alex.call("DELETE", alex.chatWith(sam, "/abc"))).statusCode).toBe(404);
@@ -304,13 +297,11 @@ describe("reactions", () => {
     const seen = (await sam.call("GET", sam.chatWith(alex))).data as ChatThread;
     expect(seen.lines![0]).toMatchObject({ theirReaction: HEART });
     expect(seen.lines![0]!.myReaction).toBeUndefined();
-    // (Sam puts one on his own message too; Alex changes hers; then takes it away)
     expect((await react(sam, alex, id, FIRE)).data.lines[0]).toMatchObject({ myReaction: FIRE, theirReaction: HEART });
     expect((await react(alex, sam, id, FIRE)).data.lines[0]).toMatchObject({ myReaction: FIRE, theirReaction: FIRE });
     const gone = (await react(alex, sam, id, null)).data.lines[0];
     expect(gone.myReaction).toBeUndefined();
     expect(gone.theirReaction).toBe(FIRE);
-    // (the same one again changes nothing)
     const again = await react(sam, alex, id, FIRE);
     expect(again.statusCode).toBe(200);
   });
@@ -337,7 +328,6 @@ describe("reactions", () => {
     const id = ((await write(sam, alex, "hi")).data as ChatThread).lines![0]!.id;
     expect((await react(alex, sam, id, "\u{1F680}")).statusCode).toBe(400);
     expect((await react(alex, sam, id, "<b>x</b>")).statusCode).toBe(400);
-    // (one of the sixteen behind the +)
     expect((await react(alex, sam, id, "\u{1F37F}")).data.lines[0]).toMatchObject({ myReaction: "\u{1F37F}" });
     expect((await alex.call("PUT", alex.chatWith(sam, `/${id}/reaction`), {})).statusCode).toBe(400);
     expect((await react(alex, sam, id + 999, HEART)).data).toEqual({ error: "gone" });
@@ -346,7 +336,6 @@ describe("reactions", () => {
     quiet.add(sam.id);
     expect((await react(alex, sam, id, FIRE)).data).toEqual({ error: "chat_off" });
     expect((await react(alex, sam, id, null)).statusCode).toBe(200);
-    // (somebody who is not Sam's friend has no chat with him to react in)
     const robin = person(world, "robin");
     expect((await react(robin, sam, id, HEART)).statusCode).toBe(404);
   });
@@ -396,7 +385,6 @@ describe("reporting a chat", () => {
         { from: "reporter", text: "stop it" },
       ],
     });
-    // (the chat is as it was: the friend is not told, and nothing was muted or ended)
     expect((await sam.call("GET", sam.chatWith(alex))).data).toMatchObject({ open: true, muted: false });
     expect(chat.unread(sam.id)).toEqual([]);
   });
@@ -405,12 +393,11 @@ describe("reporting a chat", () => {
     const { alex, sam, reports, clock } = await friends();
     const shown = (await write(sam, alex, "one")).data as ChatThread;
     clock.now += 10;
-    await write(sam, alex, "two"); // (arrived while the reporter was looking)
+    await write(sam, alex, "two");
     const refused = await alex.call("POST", alex.chatWith(sam, "/report"), { rev: shown.rev });
     expect(refused.statusCode).toBe(409);
     expect(refused.data).toEqual({ error: "changed" });
     expect(reports).toEqual([]);
-    // (a message taken back in the meantime is a change too)
     const fresh = (await alex.call("GET", alex.chatWith(sam, "/report"))).data;
     expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: fresh.rev })).statusCode).toBe(204);
   });
@@ -459,12 +446,10 @@ describe("reporting a chat", () => {
     const { alex, sam, reports, teamSide } = await friends();
     const sent = (await write(sam, alex, "hello")).data as ChatThread;
     teamSide.full = true;
-    // (More tries than the hour allows.)
     for (let i = 0; i < 8; i++) {
       const refused = await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev });
       expect([refused.statusCode, refused.data]).toEqual([503, { error: "full" }]);
     }
-    // Once there is room all of the few are there still.
     teamSide.full = false;
     for (let i = 0; i < 5; i++) expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(204);
     expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(429);
@@ -487,7 +472,7 @@ describe("reporting a chat", () => {
 
   it("is a number an hour for the whole site, whoever sends them, so that accounts cannot send faster than the team reads; the hour is an hour", async () => {
     let now = 1_700_000_000_000;
-    const spy = vi.spyOn(Date, "now").mockImplementation(() => now); // (before the routes are made: their limits keep the time of the call that makes them)
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
     try {
       const world = await start();
       const sam = person(world, "sam");
@@ -498,10 +483,8 @@ describe("reporting a chat", () => {
         revs.push(((await write(each, sam, "hi")).data as ChatThread).rev);
       }
       const report = (i: number) => reporters[i]!.call("POST", reporters[i]!.chatWith(sam, "/report"), { rev: revs[i] });
-      // Twelve accounts send all of their five, which is all of the site's sixty.
       for (let i = 0; i < 12; i++) for (let n = 0; n < 5; n++) expect((await report(i)).statusCode, `account ${i}, report ${n}`).toBe(204);
       expect(world.reports).toHaveLength(60);
-      // The thirteenth has sent none and is turned away all the same.
       const turned = await report(12);
       expect([turned.statusCode, turned.data.error]).toEqual([429, "rate_limited"]);
       now += 30 * 60_000;
@@ -524,13 +507,11 @@ describe("reporting a chat", () => {
       revs.push(((await write(each, sam, "hi")).data as ChatThread).rev);
     }
     const report = (i: number) => reporters[i]!.call("POST", reporters[i]!.chatWith(sam, "/report"), { rev: revs[i] });
-    // Reports that the team's side turns away, from twelve accounts and from the full store, many times over...
     for (const refusal of ["full", "tooMany"] as const) {
       world.teamSide[refusal] = true;
       for (let i = 0; i < 12; i++) for (let n = 0; n < 5; n++) expect((await report(i)).statusCode).toBe(refusal === "full" ? 503 : 429);
       world.teamSide[refusal] = false;
     }
-    // ...leave all of the sixty to the ones that are kept.
     for (let i = 0; i < 12; i++) for (let n = 0; n < 5; n++) expect((await report(i)).statusCode, `account ${i}, report ${n}`).toBe(204);
     expect(world.reports).toHaveLength(60);
     expect((await report(12)).statusCode).toBe(429);

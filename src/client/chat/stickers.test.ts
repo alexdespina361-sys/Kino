@@ -9,18 +9,17 @@ describe("the chat's stickers", () => {
     expect(stickerOf("\u{1F37F}")?.id).toBe("popcorn");
     expect(stickerOf("  \u{1F37F} ")?.id).toBe("popcorn");
     expect(stickerOf("\u{2764}\u{FE0F}")?.id).toBe("heart");
-    expect(stickerOf("\u{2764}")?.id).toBe("heart"); // (a heart typed without the mark is the same heart)
-    expect(stickerOf("\u{1F37F}\u{FE0F}")?.id).toBe("popcorn"); // (a keyboard that puts the mark after it)
+    expect(stickerOf("\u{2764}")?.id).toBe("heart");
+    expect(stickerOf("\u{1F37F}\u{FE0F}")?.id).toBe("popcorn");
     expect(stickerOf("\u{1F39F}")?.id).toBe("tickets");
-    // (the mark anywhere else, or twice, is not one of them: the judge, 17 Nov)
     expect(stickerOf("\u{FE0F}\u{2764}\u{FE0F}\u{FE0F}")).toBeNull();
     expect(stickerOf("\u{FE0F}\u{2764}")).toBeNull();
     expect(stickerOf("\u{2764}\u{FE0F}\u{FE0F}")).toBeNull();
-    expect(stickerOf("\u{2764}\u{FE0E}")).toBeNull(); // (the heart asked to be drawn as text)
-    expect(stickerOf("\u{1F44D}\u{1F3FD}")).toBeNull(); // (a skin tone: an emoji of its own)
-    expect(stickerOf("\u{1F37F}\u{1F37F}")).toBeNull(); // (two of them are text)
+    expect(stickerOf("\u{2764}\u{FE0E}")).toBeNull();
+    expect(stickerOf("\u{1F44D}\u{1F3FD}")).toBeNull();
+    expect(stickerOf("\u{1F37F}\u{1F37F}")).toBeNull();
     expect(stickerOf("popcorn \u{1F37F}")).toBeNull();
-    expect(stickerOf("\u{1F680}")).toBeNull(); // (an emoji that is not one of them)
+    expect(stickerOf("\u{1F680}")).toBeNull();
     expect(stickerOf("")).toBeNull();
     expect(stickerOf("hi")).toBeNull();
   });

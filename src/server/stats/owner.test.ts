@@ -16,7 +16,6 @@ const DAY = 24 * 3600 * 1000;
 const at = Date.parse("2026-11-18T10:00:00Z");
 const PHONE = "Mozilla/5.0 (Linux; Android 10; K) Chrome/156.0 Mobile Safari/537.36";
 
-/** Reports as the feedback keeps them, as far as the owner's page reads them. */
 const reports = (list: Array<{ id: string; createdAt: number; status: string; title: string; kind?: string; area?: string; email?: string; text?: string }>) =>
   ({ list: () => list.map((each) => ({ kind: "bug", area: "tv", ...each })) }) as unknown as FeedbackStore;
 
@@ -49,7 +48,6 @@ describe("the owner's page: its answer", () => {
     const server = await site();
     expect((await server.inject({ url: OWNER_STATS })).statusCode).toBe(401);
     for (let i = 0; i < 9; i++) expect((await server.inject({ url: OWNER_STATS, headers: { authorization: `Bearer ${TOKEN}${i}` } })).statusCode).toBe(401);
-    // (whoever keeps trying is told to wait, as with the team's key)
     expect((await server.inject({ url: OWNER_STATS, headers: auth })).statusCode).toBe(429);
   });
 
@@ -79,7 +77,6 @@ describe("the owner's page: its answer", () => {
       ["2026-11-17", 0],
       ["2026-11-18", 30],
     ]);
-    // Not an address of anybody, not the words of a report, not the address the server was asked from.
     expect(response.body).not.toContain("example.com");
     expect(response.body).not.toContain("the words of the report");
     for (const heading of ["Old and closed", "The newest", "xxx"]) expect(response.body).not.toContain(heading);
@@ -101,13 +98,12 @@ describe("the owner's page: in the site", () => {
     await off.close();
     const on = await buildApp({ ownerStatsToken: TOKEN, ownerStatsOrigin: PAGE });
     await on.inject({ url: "/api/health", headers: { "user-agent": PHONE } });
-    // (a page of another site: the site's own guard against other sites' requests does not turn this one away)
     const response = await on.inject({ url: OWNER_STATS, headers: { ...auth, origin: PAGE, "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" } });
     expect(response.statusCode).toBe(200);
     expect(response.headers["access-control-allow-origin"]).toBe(PAGE);
     const view = response.json<OwnerStatsView>();
     expect(view.now).toEqual({ people: 1, signedIn: 0, guests: 1, tvs: 0, phones: 0 });
-    expect(view.answers!.at(-1)!.requests).toBe(1); // (the owner's own look is not one of them)
+    expect(view.answers!.at(-1)!.requests).toBe(1);
     const asked = await on.inject({ method: "OPTIONS", url: OWNER_STATS, headers: { origin: PAGE, "access-control-request-method": "GET", "access-control-request-headers": "authorization", "sec-fetch-site": "cross-site" } });
     expect(asked.statusCode).toBe(204);
     await on.close();
@@ -121,7 +117,7 @@ describe("the owner's page: read from another site's page", () => {
     expect(named.headers["access-control-allow-origin"]).toBe(PAGE);
     expect(named.headers.vary).toContain("Origin");
     const other = await server.inject({ url: OWNER_STATS, headers: { ...auth, origin: "https://other.example" } });
-    expect(other.statusCode).toBe(200); // (the key is what keeps the numbers; the browser is what keeps another page from reading them)
+    expect(other.statusCode).toBe(200);
     expect(other.headers["access-control-allow-origin"]).toBeUndefined();
     expect((await server.inject({ url: OWNER_STATS, headers: auth })).headers["access-control-allow-origin"]).toBeUndefined();
   });
@@ -166,7 +162,6 @@ describe("the owner's page: who is counted as here", () => {
     await server.inject({ url: "/api/library", headers: { "user-agent": PHONE, cookie: `${COOKIE}=abc` }, remoteAddress: "203.0.113.8" });
     await server.inject({ url: "/api/refuses", headers: { "user-agent": PHONE }, remoteAddress: "203.0.113.7" });
     expect(live.now()).toEqual({ people: 2, signedIn: 1, guests: 1 });
-    // (a scanner with a browser's name fetches the page and runs nothing; another site's page asks the api)
     await server.inject({ url: "/tv/", headers: { "user-agent": PHONE }, remoteAddress: "203.0.113.50" });
     await server.inject({ url: "/api/library", headers: { "user-agent": PHONE, "sec-fetch-site": "cross-site" }, remoteAddress: "203.0.113.51" });
     expect(live.now()).toEqual({ people: 2, signedIn: 1, guests: 1 });
@@ -184,7 +179,7 @@ describe("the owner's page: who is counted as here", () => {
     await server.inject({ url: "/api/library", headers: { "user-agent": PHONE, dnt: "1" } });
     await server.inject({ url: "/api/library", headers: { "user-agent": PHONE, "sec-gpc": "1" } });
     expect(live.now().people).toBe(0);
-    expect(live.answers(1)[0]!.requests).toBe(5); // (the answers are counted: they name nobody)
+    expect(live.answers(1)[0]!.requests).toBe(5);
   });
 });
 
@@ -193,11 +188,11 @@ describe("minutes watched", () => {
 
   it("is what a film's card moved on by between two writings of it, when that is no more than the time between them", () => {
     expect(playedBetween(card(100, 1000), card(130, 31_000))).toBe(30);
-    expect(playedBetween(card(100, 1000), card(160, 31_000))).toBe(60); // (half a minute of slack: the clocks of two screens)
-    expect(playedBetween(card(100, 1000), card(900, 31_000))).toBe(0); // (a jump ahead is no watching)
-    expect(playedBetween(card(100, 1000), card(40, 31_000))).toBe(0); // (nor is going back)
+    expect(playedBetween(card(100, 1000), card(160, 31_000))).toBe(60);
+    expect(playedBetween(card(100, 1000), card(900, 31_000))).toBe(0);
+    expect(playedBetween(card(100, 1000), card(40, 31_000))).toBe(0);
     expect(playedBetween(card(100, 31_000), card(130, 1000))).toBe(0);
-    expect(playedBetween(card(100, 1000), card(130, 31_000, { url: "https://x/other" }))).toBe(0); // (another episode: it begins at its own start)
+    expect(playedBetween(card(100, 1000), card(130, 31_000, { url: "https://x/other" }))).toBe(0);
     expect(playedBetween(card(100, 1000), { key: "url:https://x/film", at: 31_000, deleted: true })).toBe(0);
     expect(playedBetween({ key: "k", at: 1 }, { key: "k", at: 2 })).toBe(0);
   });
@@ -215,17 +210,14 @@ describe("minutes watched", () => {
     clock += 30_000;
     store.sync(profile.id, { since: 0, progress: [card(30, clock)] });
     expect(told).toEqual([30]);
-    // A screen that says it played an hour in the next ten seconds is not believed at all (a jump ahead is no watching)...
     clock += 10_000;
     store.sync(profile.id, { since: 0, progress: [card(3630, clock)] });
     expect(told).toEqual([30]);
-    // ...and one whose clock is set as far ahead as the server lets a card be, to pass for more, is believed for the time that went by here and a minute's slack.
     const other = (position: number, when: number) => ({ ...card(position, when), key: "url:https://x/other", url: "https://x/other" });
     store.sync(profile.id, { since: 0, progress: [other(0, clock - 40_000)] });
     clock += 10_000;
     store.sync(profile.id, { since: 0, progress: [other(100, clock + 60_000)] });
     expect(told).toEqual([30, 80]);
-    // The same card again adds nothing.
     store.sync(profile.id, { since: 0, progress: [other(100, clock + 60_000)] });
     expect(told).toHaveLength(2);
   });

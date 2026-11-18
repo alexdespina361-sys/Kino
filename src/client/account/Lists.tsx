@@ -8,29 +8,22 @@ import { NameKeys } from "../tv/NameKeys";
 import { listName } from "./cards";
 
 interface EditorProps {
-  /** Absent: a new list. */
   list?: ListInfo | undefined;
-  /** The names of the account's other lists: two lists with one name can't be told apart in a row of buttons. */
   taken?: readonly string[];
   onSave: (name: string) => void;
   onCancel: () => void;
-  /** Absent for a new list and for the first one, which can't be removed. */
   onDelete?: (() => void) | undefined;
-  /** Put the list one place earlier or later among the others. Absent for a new list, for the first one (which stays first) and when there is no other to change places with. */
   onMove?: ((by: -1 | 1) => void) | undefined;
-  /** Whether there is a place that way. The buttons stay when there is not (dimmed), so that the remote does not lose its place when the list reaches an end. */
   canMoveEarlier?: boolean;
   canMoveLater?: boolean;
-  /** On the TV every control is reached with the remote's arrow keys (`data-nav`), the buttons look like the TV's, and the name can be typed on keys of the page. */
   tv?: boolean;
 }
 
-/** The name of one list, where it stands among the others, and the way to remove it. The same on the phone (in a sheet) and on the TV (on a page of its own). */
 export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, onMove, canMoveEarlier = true, canMoveLater = true, tv = false }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(list ? listName(list) : "");
   const [confirming, setConfirming] = useState(false);
-  useBackFirst(tv && confirming ? () => setConfirming(false) : undefined); // (the remote's Back says no to the question, and leaves the page only the next time)
+  useBackFirst(tv && confirming ? () => setConfirming(false) : undefined);
   const [clash, setClash] = useState(false);
   const nav = tv ? { "data-nav": true } : {};
   const buttonClass = (kind: "main" | "plain" | "danger") =>
@@ -46,7 +39,6 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, onMov
     const next = name.trim();
     if (!next) return;
     if (taken.some((other) => other.trim().toLowerCase() === next.toLowerCase())) return setClash(true);
-    // The same name is nothing to save (and the first list keeps following the language of the screen until somebody really names it).
     if (list && next === listName(list)) onCancel();
     else onSave(next);
   };
@@ -112,7 +104,6 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, onMov
               <button type="button" className={buttonClass("danger")} onClick={onDelete} data-testid="list-delete-confirm" {...nav}>
                 <TrashIcon /> {t("common.delete")}
               </button>
-              {/* The button that was pressed is gone: on the TV the remote lands on the safe answer. */}
               <button type="button" className={buttonClass("plain")} onClick={() => setConfirming(false)} data-testid="list-delete-cancel" autoFocus={tv} {...nav}>
                 {t("common.cancel")}
               </button>

@@ -4,36 +4,23 @@ import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { openDevice, openLibrary, openProfilePlace, openTv, openTvSignIn, PHONE, place, readPairingCode, test, showProfilePage, nameFirstProfile, PICTURE_NAMED } from "./helpers";
 
-/**
- * The bell: a button beside the profile's picture, on the phone and on the TV. A number on it is what waits for an answer from this profile
- * (a request to be friends, an invitation, a title sent); a quiet dot is only that friends watched something. It opens a short list that
- * answers (or opens) what is in it. Each test makes its own accounts and screens.
- */
-
-test.use({ actionTimeout: 15_000 }); // (a wrong id fails in seconds, not when the test runs out of time)
+test.use({ actionTimeout: 15_000 });
 
 let counter = 0;
-/** A name short enough to be a profile's name as it is (a profile is named after the username, 16 letters at most). */
-const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" }); // (a password that is not asked about)
+const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" });
 type Account = ReturnType<typeof fresh>;
 const nameOf = (account: Account) => account.email.charAt(0).toUpperCase() + account.email.slice(1);
-/** The tag the first profile of a name has (the names here are made new for every test). */
 const tagOf = (name: string) => `${name}#1`;
 
-/** A line of the words of a language with its blanks filled in: `{name}` and the like. */
 const say = (text: string, params: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? "");
 
-/** The page looks at its friends now, as it does when it comes back to the front (and every half minute). */
 const look = (page: Page) => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 
 const WORDS = { en, ro, it: italian };
 type Language = keyof typeof WORDS;
 
-/* ------------------------------ what the server is told ------------------------------ */
-
 const profileOf = (page: Page) => page.evaluate(() => localStorage.getItem("kino.profile"));
 
-/** `page`'s profile asks the one with this tag to be friends, as its Add button does. */
 async function askBy(page: Page, tag: string) {
   const response = await page.request.post(`/api/profiles/${await profileOf(page)}/friends/requests`, { data: { tag } });
   expect(response.ok()).toBe(true);
@@ -41,7 +28,6 @@ async function askBy(page: Page, tag: string) {
 }
 
 const FILM = "https://films.example/watch/17";
-/** `page`'s profile is part way through a film, put on the server the way a screen does it. */
 async function startsFilm(page: Page) {
   const at = Date.now();
   const card = { key: "alpha", at, title: "Alpha Film", url: FILM, year: 1931, position: 600, duration: 5400 };
@@ -49,7 +35,6 @@ async function startsFilm(page: Page) {
   expect(response.ok()).toBe(true);
 }
 
-/** Held until the server tells `page`'s profile what a friend watches (the switches that allow it reach the server a moment after they are turned). */
 const hearsActivity = (page: Page) =>
   expect
     .poll(async () => {
@@ -57,8 +42,6 @@ const hearsActivity = (page: Page) =>
       return state.activity.length;
     })
     .toBeGreaterThan(0);
-
-/* ------------------------------ a phone ------------------------------ */
 
 async function signUp(page: Page, account: Account) {
   await page.getByTestId("account-button").click();
@@ -73,19 +56,16 @@ async function signUp(page: Page, account: Account) {
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
-/** The account page is open: it has Friends (they are on for everybody since 15 Nov 2026: there is no switch to turn on). */
 async function turnOnFriends(page: Page) {
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
 
-/** The account page is shut: the phone is at its home screen. (A phone that has a TV has the account as a place of its bar, You, and Home is another place of it.) */
 async function home(page: Page) {
   await page.keyboard.press("Escape");
   if ((await page.getByTestId("tab-home").count()) > 0) await place(page, "home");
   await expect(page.getByTestId("account-screen")).toHaveCount(0);
 }
 
-/** A switch of the settings, from the home screen: the account page is opened, the switch put right, and the phone is back at the home screen. */
 async function setting(page: Page, id: string, on: boolean) {
   await page.getByTestId("account-button").click();
   await page.getByTestId("menu-settings").click();
@@ -96,7 +76,6 @@ async function setting(page: Page, id: string, on: boolean) {
   await home(page);
 }
 
-/** A new phone, signed up, with friends on, and at its home screen. */
 async function phoneWithFriends(browser: Browser, name: string, locale = "en-US") {
   const account = fresh(name);
   const page = await openDevice(browser, { ...PHONE, locale });
@@ -111,8 +90,6 @@ const bell = (page: Page) => page.getByTestId("bell-button");
 const badge = (page: Page) => page.getByTestId("bell-badge");
 const dot = (page: Page) => page.getByTestId("bell-dot");
 
-/* ------------------------------ a TV ------------------------------ */
-
 const HD = { width: 1280, height: 720 };
 const SMALL = { width: 390, height: 844 };
 
@@ -121,18 +98,16 @@ interface Screen {
   name: string;
 }
 
-/** A new screen, signed up with the email form and with friends on, left on the profile's page. */
 async function screenWithFriends(browser: Browser, name: string, options: { language?: Language; touch?: boolean } = {}): Promise<Screen> {
   const account = fresh(name);
   const seed: Record<string, string> = options.language ? { "kino.lang": options.language } : {};
-  // (`touch`: a screen a finger can touch, as a phone that is the screen or a tablet; it starts as wide as the others, to sign in the same way.)
   const page = options.touch ? await openDevice(browser, { viewport: HD, hasTouch: true }, seed) : await openLibrary(browser, undefined, HD, seed);
   if (options.touch) {
     await page.goto("/tv");
     await expect(page.getByTestId("tv-browse")).toBeVisible();
   }
   await openTvSignIn(page);
-  if (!options.touch) await page.getByTestId("tv-signin-email").click(); // (a screen that can be touched has the form at once: it is typed on)
+  if (!options.touch) await page.getByTestId("tv-signin-email").click();
   await page.getByTestId("auth-switch").click();
   await expect(page.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
   await page.getByTestId("auth-email").fill(account.email);
@@ -141,15 +116,11 @@ async function screenWithFriends(browser: Browser, name: string, options: { lang
   await expect(page.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
   await nameFirstProfile(page, nameOf(account));
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
-  await showProfilePage(page); // (friends are on for everybody: the profile's page has them at once)
-  await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible(); // (back on the profile's page, which has its friends now)
+  await showProfilePage(page);
+  await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible();
   return { page, name: nameOf(account) };
 }
 
-/**
- * A finger (or, with `pointerType` "mouse", a mouse) pressed on the middle of `target`, moved `by` pixels to the side in four steps and let go, as pointer
- * events. With `hold`, it is not let go: what this gives back lets it go there.
- */
 async function swipe(target: Locator, by: number, pointerType: "touch" | "mouse" = "touch", hold = false): Promise<() => Promise<void>> {
   const box = await target.boundingBox();
   if (!box) throw new Error("nothing to swipe");
@@ -163,21 +134,15 @@ async function swipe(target: Locator, by: number, pointerType: "touch" | "mouse"
   return lift;
 }
 
-/** The remote walks up from the titles to the bell, the first of the corner's buttons. */
 async function upToBell(page: Page) {
   const button = page.getByTestId("tv-bell");
   for (let step = 0; step < 4 && !(await button.evaluate((element) => element === document.activeElement)); step++) {
-    // (Up reaches the corner; on a page that has the way back there, that is its first button, and the bell is the next along.)
     const inCorner = await page.evaluate(() => document.activeElement?.getAttribute("data-zone") === "top");
     await page.keyboard.press(inCorner ? "ArrowRight" : "ArrowUp");
   }
   await expect(button).toBeFocused();
 }
 
-/**
- * What is out of place in the library's corner: a button that leaves the screen, two that cover each other, or one that covers the logo.
- * (A name of the longest length makes the account button as wide as it gets, and the profile's pages have the way back there as well.)
- */
 const cornerProblems = (page: Page) =>
   page.evaluate(() => {
     const problems: string[] = [];
@@ -196,10 +161,6 @@ const cornerProblems = (page: Page) =>
     return problems;
   });
 
-/**
- * What of the rows under `rows` is out of place: a part (`parts`) that leaves its row, two that cover each other, a row that leaves the
- * screen's sides. The row may be taller than a line (the buttons go under the words where they do not fit beside them).
- */
 const rowProblems = (page: Page, rows: string, parts: string) =>
   page.evaluate(
     ([rowSelector, partSelector]) => {
@@ -225,8 +186,6 @@ const rowProblems = (page: Page, rows: string, parts: string) =>
     [rows, parts] as const,
   );
 
-/* ------------------------------ on a phone ------------------------------ */
-
 test.describe("the bell on the phone", () => {
   test("it is there once signed in (friends are on for everybody), a request is a number on it that the list answers, and what a friend watches is only a quiet dot", async ({ browser }) => {
     test.setTimeout(180_000);
@@ -234,14 +193,13 @@ test.describe("the bell on the phone", () => {
     const ann = await openDevice(browser, { ...PHONE, locale: "en-US" });
     await ann.goto("/");
     await expect(ann.getByTestId("account-button")).toBeVisible();
-    await expect(bell(ann)).toHaveCount(0); // signed out
+    await expect(bell(ann)).toHaveCount(0);
     await signUp(ann, annAccount);
     await home(ann);
-    await expect(bell(ann)).toBeVisible(); // signed in: friends are on for everybody since 15 Nov 2026
+    await expect(bell(ann)).toBeVisible();
     await expect(badge(ann)).toHaveCount(0);
     await expect(dot(ann)).toHaveCount(0);
 
-    // Bob asks to be her friend: a number on her bell, and the list has him with the buttons that answer. Looking does not answer.
     const bob = await phoneWithFriends(browser, "Bob");
     const annName = nameOf(annAccount);
     expect(await askBy(bob.page, tagOf(annName))).toMatchObject({ status: "sent" });
@@ -260,7 +218,6 @@ test.describe("the bell on the phone", () => {
     await ann.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
 
-    // Ann shares what she watches and Bob shares his too, which is how he hears it: his bell gets a dot, never a number; the list says what and by whom, and opening it puts the dot out.
     await setting(ann, "friends-give", true);
     await setting(bob.page, "friends-give", true);
     await startsFilm(ann);
@@ -275,7 +232,6 @@ test.describe("the bell on the phone", () => {
     await expect(lately).toContainText(annName);
     await expect(dot(bob.page)).toHaveCount(0);
 
-    // A finger takes the line off the list: a short pull lets it come back, a pull to the side clears it. That is this phone's own fact, kept when the bell is opened again.
     const pull = async (by: number) => {
       const box = (await lately.boundingBox())!;
       const at = { pointerId: 7, pointerType: "touch", isPrimary: true, bubbles: true, clientY: box.y + box.height / 2 };
@@ -288,14 +244,12 @@ test.describe("the bell on the phone", () => {
     await expect(lately).toHaveCount(1);
     await pull(180);
     await expect(lately).toHaveCount(0);
-    // (Bob asked and Ann said yes on her phone: news to his, said once, under the line that is cleared)
     await expect(bob.page.getByTestId("bell-joined-item")).toContainText(annName);
     await bob.page.keyboard.press("Escape");
     await bell(bob.page).click();
     await expect(bob.page.getByTestId("bell-empty")).toBeVisible();
     await expect(bob.page.getByTestId("bell-joined-item")).toHaveCount(0);
 
-    // The list's last button goes on to the Friends page, and Back from there is straight home.
     await bob.page.getByTestId("bell-open-friends").click();
     await expect(bob.page.getByTestId("friends-page")).toBeVisible();
     await expect(bob.page.getByTestId("friend-row")).toHaveCount(1);
@@ -316,7 +270,7 @@ test.describe("the bell on the phone", () => {
     await turnOnFriends(page);
     await home(page);
     await expect(bell(page)).toBeVisible();
-    await bell(page).evaluate((button) => button.insertAdjacentHTML("beforeend", '<b class="bell-badge">9+</b>')); // (the widest number it can show: it hangs off the button, and must not push anything)
+    await bell(page).evaluate((button) => button.insertAdjacentHTML("beforeend", '<b class="bell-badge">9+</b>'));
 
     const problems = () =>
       page.evaluate(() => {
@@ -324,7 +278,6 @@ test.describe("the bell on the phone", () => {
         const header = document.querySelector("header.top")!;
         const around = header.getBoundingClientRect();
         if (document.documentElement.scrollWidth > innerWidth) problems.push("the page sticks out sideways");
-        // (The TV's name and the button that opens its menu are one chip now: docs/phone-layout. The bell and the account button are the other two.)
         const boxes = [".top-tv", '[data-testid="bell-button"]', '[data-testid="account-button"]'].map((selector) => ({ selector, box: header.querySelector(selector)!.getBoundingClientRect() }));
         boxes.forEach(({ selector, box }, at) => {
           if (box.left < around.left - 0.5 || box.right > around.right + 0.5) problems.push(`${selector} leaves the header`);
@@ -342,8 +295,6 @@ test.describe("the bell on the phone", () => {
   });
 });
 
-/* ------------------------------ on a TV ------------------------------ */
-
 test.describe("the bell on the TV", () => {
   test("the remote reaches it first in the corner, the list answers a request, tells what a friend watches, and Back shuts it", async ({ browser }) => {
     test.setTimeout(240_000);
@@ -356,7 +307,6 @@ test.describe("the bell on the TV", () => {
     await expect(button).toBeVisible();
     await expect(tv.getByTestId("tv-bell-badge")).toHaveCount(0);
 
-    // A request is a number on the bell. Up from the titles reaches the bell, then the profile's picture, and back.
     expect(await askBy(bob.page, tagOf(cy.name))).toMatchObject({ status: "sent" });
     await look(tv);
     await expect(tv.getByTestId("tv-bell-badge")).toHaveText("1");
@@ -366,7 +316,6 @@ test.describe("the bell on the TV", () => {
     await tv.keyboard.press("ArrowLeft");
     await expect(button).toBeFocused();
 
-    // OK opens the list with the remote on its first line; Back shuts it and the remote is on the bell again.
     await tv.keyboard.press("Enter");
     await expect(list).toBeVisible();
     await expect(lines).toHaveCount(1);
@@ -376,7 +325,6 @@ test.describe("the bell on the TV", () => {
     await expect(list).toHaveCount(0);
     await expect(button).toBeFocused();
 
-    // The line is the question of the friends page: Back from it keeps the request waiting (and the remote is on the bell), OK on Accept answers it.
     await tv.keyboard.press("Enter");
     await expect(lines).toBeFocused();
     await tv.keyboard.press("Enter");
@@ -394,7 +342,6 @@ test.describe("the bell on the TV", () => {
     await expect(tv.getByTestId("tv-bell-badge")).toHaveCount(0);
     await expect(button).toBeFocused();
 
-    // Bob shares what he watches and Cy does too, which is how he hears it: a dot on the bell, a line in the list that opens the title.
     await setting(bob.page, "friends-give", true);
     await openProfilePlace(tv, "friends");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");
@@ -417,8 +364,6 @@ test.describe("the bell on the TV", () => {
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
 
-    // With nothing left to answer, Down from the line is the list's own button. Right of the line is its cross: OK on it clears the line, the list says
-    // there is nothing new, and the remote is on the button that is left. Opening the bell again does not bring the line back.
     await tv.getByTestId("tv-bell").click();
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-bell-friends")).toBeFocused();
@@ -435,7 +380,6 @@ test.describe("the bell on the TV", () => {
     await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
     await expect(tv.getByTestId("tv-bell-friends")).toBeFocused();
 
-    // The list's own button goes on to the friends' page.
     await tv.keyboard.press("Enter");
     await expect(list).toHaveCount(0);
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");
@@ -447,7 +391,7 @@ test.describe("the bell on the TV", () => {
     const bob = await phoneWithFriends(browser, "Bob");
     for (const language of ["en", "ro", "it"] as const) {
       const words = WORDS[language];
-      const cy = await screenWithFriends(browser, "Maximilia", { language }); // (fifteen letters or so: as wide as the account button gets)
+      const cy = await screenWithFriends(browser, "Maximilia", { language });
       await askBy(bob.page, tagOf(cy.name));
       await look(cy.page);
       await expect(cy.page.getByTestId("tv-bell-badge")).toHaveText("1");
@@ -479,7 +423,6 @@ test.describe("the bell on the TV", () => {
       const words = WORDS[language];
       const cy = await screenWithFriends(browser, "Maximilia", { language });
       const cyProfile = await profileOf(cy.page);
-      // (Bob asks to be Cy's friend and Cy says yes, as the buttons do; then Bob plans a watch together with a few words)
       await askBy(bob.page, tagOf(cy.name));
       const accepted = await cy.page.request.post(`/api/profiles/${cyProfile}/friends/requests/${bobProfile}/accept`);
       expect(accepted.ok()).toBe(true);
@@ -509,9 +452,6 @@ test.describe("the bell on the TV", () => {
   });
 });
 
-/* ------------------------------ clearing a line: the cross, a finger ------------------------------ */
-
-/** `from` (a phone's profile, a friend of `to`) sends `to` these titles, as its Send button does. */
 async function sends(from: Page, to: Page, titles: string[]) {
   const toId = await profileOf(to);
   for (const title of titles) {
@@ -520,16 +460,13 @@ async function sends(from: Page, to: Page, titles: string[]) {
   }
 }
 
-/** `a` (a phone) and `b` are made friends, as a request answered. */
 async function befriend(a: Page, b: { page: Page; name: string }) {
   await askBy(a, tagOf(b.name));
   expect((await b.page.request.post(`/api/profiles/${await profileOf(b.page)}/friends/requests/${await profileOf(a)}/accept`)).ok()).toBe(true);
 }
 
-/** Where a part is drawn across, as its transform says: 0 where it is not moved. */
 const shiftOf = (part: Locator) => part.evaluate((element) => new DOMMatrix(getComputedStyle(element).transform === "none" ? undefined : getComputedStyle(element).transform).m41);
 
-/** A real finger on a touch screen, as the browser's own touch events: put on the middle of `target`, moved `by` pixels (to the side, or down) and lifted. */
 async function finger(page: Page, target: Locator, by: number, direction: "side" | "down" = "side") {
   const box = await target.boundingBox();
   if (!box) throw new Error("nothing to touch");
@@ -558,19 +495,16 @@ test.describe("clearing a line of the bell", () => {
     await expect(lines).toHaveCount(2);
     const card = tv.locator(".tv-bell-row").first();
 
-    // The card is under the finger while it is held (not pinned where it came in), and goes back when let go short of where it would go.
     const letGo = await swipe(lines.first(), -60, "touch", true);
     await expect.poll(() => shiftOf(card)).toBeLessThan(-50);
     await letGo();
     await expect.poll(() => shiftOf(card)).toBe(0);
     await expect(lines).toHaveCount(2);
-    // A mouse held and moved across it does not move it (its way is the cross).
     const mouseUp = await swipe(lines.first(), -400, "mouse", true);
     expect(await shiftOf(card)).toBe(0);
     await mouseUp();
     await tv.waitForTimeout(500);
     await expect(lines).toHaveCount(2);
-    // A finger past a third of it: it flies off, the list closes up, and it is gone from the server too (the bell opened again does not bring it back).
     const other = (await lines.first().innerText()).includes("Alpha") ? "Beta Film" : "Alpha Film";
     await swipe(lines.first(), -400);
     await expect(lines).toHaveCount(1);
@@ -580,7 +514,6 @@ test.describe("clearing a line of the bell", () => {
     await expect(lines).toHaveCount(1);
     await expect(lines).toContainText(other);
 
-    // The cross, clicked with a mouse, clears the last one: the list says there is nothing new.
     await tv.getByTestId("tv-bell-clear").click();
     await expect(lines).toHaveCount(0);
     await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
@@ -602,13 +535,13 @@ test.describe("clearing a line of the bell", () => {
 
     await finger(tv, lines.first(), 120, "down");
     await finger(tv, lines.first(), -40);
-    await tv.waitForTimeout(800); // (what a swipe would have set going has had its time)
+    await tv.waitForTimeout(800);
     await expect(lines).toHaveCount(2);
-    await expect(tv.getByTestId("tv-friend-request")).toHaveCount(0); // (and nothing was opened by it)
+    await expect(tv.getByTestId("tv-friend-request")).toHaveCount(0);
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
 
     const other = (await lines.first().innerText()).includes("Alpha") ? "Beta Film" : "Alpha Film";
-    await finger(tv, lines.first(), 150); // (past the 110 pixels that are far enough, and still on the screen)
+    await finger(tv, lines.first(), 150);
     await expect(lines).toHaveCount(1);
     await expect(lines).toContainText(other);
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
@@ -621,7 +554,6 @@ test.describe("clearing a line of the bell", () => {
     await befriend(bob.page, cy);
     await sends(bob.page, cy.page, ["Alpha Film", "Beta Film", "Gamma Film"]);
     const tv = cy.page;
-    // (The server takes its time to answer, as a slow one does: the line is gone from the screen before it is gone from the list.)
     let dismissed = 0;
     await tv.route("**/api/profiles/*/friends/inbox/*", async (route) => {
       if (route.request().method() !== "DELETE") return route.fallback();
@@ -641,13 +573,11 @@ test.describe("clearing a line of the bell", () => {
     const second = await lines.nth(1).getAttribute("data-entry");
     await tv.keyboard.press("Enter");
     await tv.keyboard.press("Enter");
-    // The remote is on the cross of the line that took its place before the server has answered, and only one line was sent away.
     await expect.poll(() => tv.evaluate(() => document.activeElement?.closest(".tv-bell-row")?.querySelector("[data-entry]")?.getAttribute("data-entry"))).toBe(second);
     await expect(tv.locator('.tv-bell-row[data-leaving="true"]')).toHaveCount(1);
     await expect(lines).toHaveCount(2);
     expect(dismissed).toBe(1);
 
-    // OK on the next cross and Back at once: the list is shut, the remote is on the bell, and the line is cleared all the same.
     await tv.keyboard.press("Enter");
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-bell-page")).toHaveCount(0);
@@ -676,7 +606,6 @@ test.describe("clearing a line of the bell", () => {
     const line = phone.getByTestId("bell-sheet").getByTestId("inbox-recommendation");
     await expect(line).toHaveCount(1);
     await finger(phone, line, 150);
-    // (Looked at every tenth of a second until it is gone: never back on the screen in the meantime.)
     const seen: number[] = [];
     for (let at = 0; at < 30 && (await line.count()) > 0; at++) {
       seen.push(await line.evaluate((element) => Number(getComputedStyle(element).opacity)).catch(() => 0));

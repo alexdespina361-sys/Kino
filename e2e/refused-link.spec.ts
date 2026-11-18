@@ -1,16 +1,8 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { openLibrary, pressMenuLine, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 
-/**
- * A film whose link the place it comes from refuses (an HTTP 502 for its playlist, which is also what a token that has run out can be answered with): the TV is
- * not what failed, so the card does not say so; the title is asked for again by itself, once, because a new look finds a new link; and when that does not help
- * either, the card says that the source did not answer and its Try again asks for the title once more.
- */
-
-/** The film's playlist, which the place it comes from refuses. */
 const REFUSED = "/fixtures/hls/refused.m3u8";
 
-/** The page refuses the playlist, and keeps what it sends to the server, to count the times the title is asked for. */
 const refuse = async (context: BrowserContext) => {
   await context.route(`**${REFUSED}`, (route) => route.fulfill({ status: 502, contentType: "text/plain", body: "Bad Gateway" }));
   await context.addInitScript(() => {
@@ -24,11 +16,9 @@ const refuse = async (context: BrowserContext) => {
   });
 };
 
-/** How many times this page has asked the server to play something (`TV_PLAY_URL`). */
 const lookups = (tv: Page) =>
   tv.evaluate(() => (window as unknown as { __sent: string[] }).__sent.filter((each) => each.includes('"TV_PLAY_URL"')).length);
 
-/** A TV that is shown a film whose link is refused, by a phone that says which page it came from. */
 async function refusedFilm(browser: Browser, baseURL: string, page: string) {
   const tv = await openLibrary(browser, refuse);
   await pressMenuLine(tv, "rail-connect");
@@ -48,7 +38,6 @@ test.describe("a film whose link the source refuses", () => {
   test("a film file through a proxy of ours that is refused before it begins is the same: looked up again by itself, and the film that comes plays", async ({ browser, baseURL }) => {
     const tv = await openLibrary(browser, async (context) => {
       await refuse(context);
-      // (The relay passes on what the film's host says: here the "ERROR: ACCESS DENIED" some hosts answer an old link with. A video element sees only "will not open".)
       await context.route("**/api/proxy?*", (route) => route.fulfill({ status: 403, contentType: "text/plain", body: "ERROR: ACCESS DENIED" }));
     });
     await pressMenuLine(tv, "rail-connect");
@@ -88,9 +77,7 @@ test.describe("a film whose link the source refuses", () => {
     await expect(card).toBeVisible({ timeout: 25_000 });
     await expect(card).toContainText("source isn't answering");
     await expect(tvRoot(tv)).toHaveAttribute("data-error", "SOURCE_UNAVAILABLE");
-    // (every quality was tried: none of them is left out because the one before it was refused)
     for (const name of ["1080", "720", "480"]) expect(asked).toContain(`https://cdn.test/${name}.mp4`);
-    // One look of its own after the last of them, and the card stays: not one look for each quality, and not a loop.
     await tv.waitForTimeout(2000);
     expect(await lookups(tv)).toBe(1);
   });
@@ -102,7 +89,6 @@ test.describe("a film whose link the source refuses", () => {
     await expect(card).toContainText("source isn't answering");
     await expect(card).not.toContainText("can't be played on the TV");
     await expect(tvRoot(tv)).toHaveAttribute("data-error", "SOURCE_UNAVAILABLE");
-    // The one look that was made by itself is all there is: a card that stays is not asked for again and again.
     await tv.waitForTimeout(1500);
     expect(await lookups(tv)).toBe(1);
 

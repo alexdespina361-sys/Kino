@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type RefObject } from "react";
 import {
   describeChange,
   episodeLabel,
@@ -41,10 +41,8 @@ import { readPartyCode } from "../shared/launch";
 import { useProfileHold } from "../shared/profileHold";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
-import { useSlow } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
-import { Captions } from "./Captions";
 import { EdgeScrollHint } from "./EdgeScrollHint";
 import { PlayerEngine, PlayerError } from "./engine";
 import { useEnhance } from "../enhance/useEnhance";
@@ -57,8 +55,6 @@ import { STARTING_FADE_MS, StartingFilm, startingFrom, UNHEARD_MS, type Starting
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, pageBefore, TvMenu, type MenuKind } from "./Menu";
-import { keepNativePlayerOut } from "./nativePlayer";
-import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
 import { nearTheEnd } from "./preloadNext";
 import { AUTO_SKIP_SECONDS, FRESH_MS, nextButtonFrom, useSkipSegment, useSkipTimes, type SkipControl } from "./skip";
@@ -75,29 +71,183 @@ import {
   thisDevice,
   type Prefs,
 } from "./prefs";
-import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
-import "../polish/tv.css"; // (the refined layer sits on top of the older ones, and is all under :root[data-ui="polish"])
-import "../polish/tv-posters.css"; // (a title is its poster; before the phone's sheet, which has its own sizes for it)
-import "../polish/tv-phone.css"; // (last of this chunk's sheets: the same page on a phone held upright, which says more than the one before it for a screen that narrow)
+import "../polish/tv.css";
+import "../polish/tv-posters.css";
+import "../polish/tv-phone.css";
+import { captionBottom, captionTextStyle } from "../shared/captionCss";
+import { isHeld } from "../subsync/hold";
+
+function CueText({ cue }: { cue: TextTrackCue }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const vtt = cue as Partial<VTTCue>;
+    node.replaceChildren(vtt.getCueAsHTML ? vtt.getCueAsHTML() : document.createTextNode(vtt.text ?? ""));
+  }, [cue]);
+  return <span ref={ref} className="tv-caption-text" />;
+}
+const isCaptionTrack = (track: TextTrack) => track.kind === "subtitles";
+const sameCues = (a: TextTrackCue[], b: TextTrackCue[]) => a.length === b.length && a.every((cue, i) => cue === b[i]);
+function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<HTMLVideoElement | null>; style: CaptionStyle; delay?: number }) {
+  const [cues, setCues] = useState<TextTrackCue[]>([]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const refresh = () => {
+      const now = video.currentTime;
+      const matchTime = now - delay;
+      const active: TextTrackCue[] = [];
+      for (const track of Array.from(video.textTracks)) {
+        if (track.mode === "disabled" || !isCaptionTrack(track) || isHeld(track)) continue;
+        for (const cue of Array.from(track.cues ?? [])) if (cue.startTime <= matchTime && matchTime < cue.endTime) active.push(cue);
+      }
+      setCues((current) => (sameCues(current, active) ? current : active));
+    };
+
+    const events = ["timeupdate", "seeked", "play", "pause"] as const;
+    events.forEach((name) => video.addEventListener(name, refresh));
+    video.textTracks.addEventListener("change", refresh);
+    video.textTracks.addEventListener("addtrack", refresh);
+    video.textTracks.addEventListener("removetrack", refresh);
+    const timer = setInterval(refresh, 250);
+    refresh();
+    return () => {
+      events.forEach((name) => video.removeEventListener(name, refresh));
+      video.textTracks.removeEventListener("change", refresh);
+      video.textTracks.removeEventListener("addtrack", refresh);
+      video.textTracks.removeEventListener("removetrack", refresh);
+      clearInterval(timer);
+    };
+  }, [videoRef, delay]);
+
+  return (
+    <div className="tv-captions" data-testid="captions" style={{ "--caption-bottom": captionBottom(style) } as CSSProperties}>
+      {cues.map((cue) => (
+        <div className="tv-caption" data-testid="caption" key={`${cue.startTime}-${cue.id}`} style={captionTextStyle(style)}>
+          <CueText cue={cue} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const KEEP_IN_THE_PAGE: Record<string, string> = {
+  controlslist: "nodownload nofullscreen noremoteplayback",
+  "webkit-playsinline": "",
+  "x5-playsinline": "",
+  "x5-video-player-type": "h5-page",
+  "t7-video-player-type": "inline",
+  "x-webkit-airplay": "deny",
+};
+type WebKitVideo = HTMLVideoElement & { webkitDisplayingFullscreen?: boolean; webkitExitFullscreen?: () => void };
+function keepNativePlayerOut(video: HTMLVideoElement): () => void {
+  for (const [name, value] of Object.entries(KEEP_IN_THE_PAGE)) video.setAttribute(name, value);
+  video.playsInline = true;
+  video.disablePictureInPicture = true;
+  video.disableRemotePlayback = true;
+  video.controls = false;
+
+  const noControls = new MutationObserver(() => {
+    if (video.controls) video.controls = false;
+  });
+  noControls.observe(video, { attributes: true, attributeFilter: ["controls"] });
+  const leaveVideoFullscreen = () => {
+    if (document.fullscreenElement === video) document.exitFullscreen().catch(() => {});
+    const legacy = video as WebKitVideo;
+    if (legacy.webkitDisplayingFullscreen) legacy.webkitExitFullscreen?.();
+  };
+  const noMenu = (event: Event) => event.preventDefault();
+  video.addEventListener("webkitbeginfullscreen", leaveVideoFullscreen);
+  video.addEventListener("contextmenu", noMenu);
+  document.addEventListener("fullscreenchange", leaveVideoFullscreen);
+
+  return () => {
+    noControls.disconnect();
+    video.removeEventListener("webkitbeginfullscreen", leaveVideoFullscreen);
+    video.removeEventListener("contextmenu", noMenu);
+    document.removeEventListener("fullscreenchange", leaveVideoFullscreen);
+  };
+}
+
+function pressWhatOkPresses(): () => void {
+  let down: KeyboardEvent | null = null;
+  const onDown = (event: KeyboardEvent) => {
+    const target = event.target;
+    down = !event.repeat && actionForKey(event) === "select" && target instanceof HTMLElement && target.matches("button, a[href]") ? event : null;
+  };
+  const onTyped = () => {
+    down = null;
+  };
+  const onUp = () => {
+    const pressed = down;
+    down = null;
+    const target = pressed?.target;
+    if (!pressed || pressed.defaultPrevented || !(target instanceof HTMLElement)) return;
+    if (target.isConnected && document.activeElement === target) target.click();
+  };
+  window.addEventListener("keydown", onDown, true);
+  window.addEventListener("keypress", onTyped, true);
+  window.addEventListener("keyup", onUp, true);
+  return () => {
+    window.removeEventListener("keydown", onDown, true);
+    window.removeEventListener("keypress", onTyped, true);
+    window.removeEventListener("keyup", onUp, true);
+  };
+}
+
+function useWakeLock(active: boolean): void {
+  useEffect(() => {
+    if (!active || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+
+    const acquire = async () => {
+      try {
+        const granted = await navigator.wakeLock.request("screen");
+        if (cancelled) void granted.release();
+        else lock = granted;
+      } catch {
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && (!lock || lock.released)) void acquire();
+    };
+
+    void acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      void lock?.release().catch(() => {});
+    };
+  }, [active]);
+}
+
+const SLOW_AFTER_MS = 10_000;
+function useSlow(waiting: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!waiting) return;
+    const timer = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
+  return slow;
+}
 
 const DEVICE_KEY = "tv.deviceId";
-/** The overlay fades out this long after the last key press, but only while a video is actually playing. */
 const HUD_HIDE_MS = 2500;
-/** ...and this much longer while the remote rests on one of its buttons. */
 const HUD_HOLD_MS = 5000;
-/** A lookup that never reports back (lost message, dead server) must not leave the TV spinning forever. */
 const RESOLVING_TIMEOUT_MS = 45_000;
-/** The video follows the end of a lookup straight away; if none has by then, the lookup failed. */
 const NO_VIDEO_AFTER_LOOKUP_MS = 1500;
-/** The end of a lookup and the video it found are two messages; the library is not shown again between them, so this long is waited for the second. */
 const LOOKUP_END_GRACE_MS = 250;
-/** Skips pressed within this long of each other count as one run in the "+30s" flash. */
 const SKIP_RUN_MS = 1200;
-/** A click that puts the controls away is not undone by the mouse settling for this long. */
 const PUT_AWAY_QUIET_MS = 600;
 
-/** The page a menu's Back goes to: a page of the audio and subtitles menu goes back up it, the friends to invite go back to the party's menu. */
 const menuBack = (menu: MenuKind | "party" | "partyInvite"): MenuKind | "party" | null =>
   menu === "partyInvite" ? "party" : menu === "party" ? null : pageBefore(menu);
 
@@ -107,77 +257,46 @@ export function Tv() {
   const engineRef = useRef<PlayerEngine | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
-  /** The follower's way out of the party, which Back points at (see the key handler). */
   const leaveRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  /** The link of a watch party (its QR code) was opened on this screen: its code is tried once the page is unlocked, then taken out of the address. */
   const [linkCode] = useState(() => readPartyCode(location.search));
-  /**
-   * A screen opens straight on the library; the first thing pressed there is the press the browser wants before it lets a page play
-   * video with sound. Only a screen opened by a party's link starts locked: the host's video plays on it without anyone choosing
-   * anything, so it asks for that press first.
-   */
   const [unlocked, setUnlocked] = useState(!linkCode);
-  /** The welcome over the library while it fills in, until it has faded. A party's link brings a guest straight to the party, not to a welcome. */
   const [welcoming, setWelcoming] = useState(!linkCode);
-  /** The welcome waits for a press, with a button that goes full screen, when the first press would (a screen opened by a party's link was pressed already). */
   const [asksToEnter] = useState(() => !linkCode && entersAtFirstPress());
-  /** Shown when the phone asked for full screen but the browser wants a press on the TV itself. */
   const [fsPrompt, setFsPrompt] = useState(false);
-  /** Whether the page is full screen right now (a button says which way it goes). */
   const [fullscreen, setFullscreen] = useState(() => Boolean(document.fullscreenElement));
-  /** This screen's own sound, off or on: nobody else's business, so it is not in the state the phone sees, nor is it kept for next time. */
   const [muted, setMuted] = useState(false);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   const [paired, setPaired] = useState(false);
   const pairedRef = useRef(false);
   pairedRef.current = paired;
-  /** The name of the TV this one watches along with. Such a TV plays what that one plays and has no controls of its own. */
   const [following, setFollowing] = useState<string | null>(null);
   const followingRef = useRef<string | null>(null);
   followingRef.current = following;
-  /** The watch party this TV is in, as host or as guest, and when the code that lets others in stops working. */
   const [party, setParty] = useState<PartyView | null>(null);
   const partyRef = useRef<PartyView | null>(null);
   partyRef.current = party;
-  /** Whose doing it is that the film is held (the host's report, or an admin's pause that was asked of this host), and whether this screen is still catching up with the host's picture. */
   const [hold, setHold] = useState<Hold | null>(null);
   const holdRef = useRef<Hold | null>(null);
   const [catchingUp, setCatchingUp] = useState(false);
-  /** The host made this screen an admin: the film's playback is its to steer too (the host's screen carries it out for everyone, see TV_PARTY_CMD). */
   const admin = party?.role === "guest" && party.guests.some((guest) => guest.id === party.you && guest.admin === true);
   const [partyEnds, setPartyEnds] = useState<number | null>(null);
-  /** Why the code just typed on the party page was refused. `id` changes with each refusal. */
   const [partyError, setPartyError] = useState<{ id: number; text: string } | null>(null);
-  /** The code of a party a friend invited this TV to, which the party page opens on joining. */
   const [partyJoinWith, setPartyJoinWith] = useState<string | null>(null);
-  /** The code an invitation or a link sent this TV to join with: if that is refused it is not a mistyped code but a party that is over. */
   const invitedWithRef = useRef<string | null>(null);
-  /** A friend who asked to watch together: they are invited once the party this TV starts has a code. */
   const [together, setTogether] = useState<string | null>(null);
-  /** This TV is leaving a party by choice, so being taken out of it a moment later is not news. */
   const leavingRef = useRef(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
-  /** Once a phone is connected: the code that lets another one in, while the page that shows it is open. */
   const [control, setControl] = useState<Pairing | null>(null);
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [currentMedia, setCurrentMedia] = useState<NormalizedMedia | null>(null);
   const [resolving, setResolving] = useState(false);
-  /** A lookup is under way (or has just ended), so its end with no video after it means it failed. */
   const wasResolvingRef = useRef(false);
-  /** The wait (see `LOOKUP_END_GRACE_MS`) after the server said a lookup ended. */
   const lookupEndTimerRef = useRef(0);
-  /** What was on when that lookup began: a lookup that ends with the same video still on has failed. */
   const mediaBeforeLookupRef = useRef<NormalizedMedia | null>(null);
-  /** The next episode that was put on at once, from what was loaded ahead: its own lookup only confirms it, so that one failing says nothing. */
   const putOnAtOnceRef = useRef<NormalizedMedia | null>(null);
-  /** Waiting for a picture (a lookup, loading, filling up) for too long: a way out is offered. */
   const stuck = useSlow(isBusy(player, resolving));
-  /**
-   * A film on its way from the library (or a phone) to its first moving picture: the TV shows the film's own screen for the whole wait (see Starting.tsx).
-   * Not for a film that takes the place of one that is on (the next episode, one picked from the player), nor on a screen that watches along.
-   */
   const [starting, setStartingNow] = useState<Starting | null>(null);
   const startingRef = useRef<Starting | null>(null);
   const setStarting = (next: Starting | null | ((before: Starting | null) => Starting | null)) => {
@@ -185,22 +304,12 @@ export function Tv() {
     startingRef.current = value;
     setStartingNow(value);
   };
-  /** The server has not answered for a while: say why that can be, instead of "Reconnecting…" alone. */
-  // (A connection that is away for a moment is not said at all: a server that restarts, a phone that comes back to the page. One away for long is, in a
-  // word. The owner, 17 Nov: the note that "a free server is waking up" came up over a chat when the server restarted; the site left its free host on 7 Nov.)
   const away = useSlow(connection === "connecting" || connection === "reconnecting");
 
-  // Netflix Up Next Countdown & Preload State
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [upNextDismissed, setUpNextDismissed] = useState(false);
-  /**
-   * The Next episode button came as the credits started (see `nextButtonFrom`), and waits there without a count (its fill, with the profile's "Skip intros and
-   * credits", is a count of `AUTO_SKIP_SECONDS`): it counts down as always once the last `UP_NEXT_SECONDS` come. Never set for the last seconds' button.
-   */
   const [upNextHeld, setUpNextHeld] = useState(false);
-  /** How long the count is (it fills up over it): `UP_NEXT_SECONDS` at the end, `AUTO_SKIP_SECONDS` for the credits' fill. */
   const [upNextTotal, setUpNextTotal] = useState(UP_NEXT_SECONDS);
-  /** The early button just came (played into, not jumped to): it is bright, and the remote's OK and Back are its, for `FRESH_MS`. */
   const [upNextFresh, setUpNextFresh] = useState(false);
   useEffect(() => {
     if (!upNextFresh) return;
@@ -213,29 +322,21 @@ export function Tv() {
     setUpNextFresh(false);
   };
   const preloadedNextMediaRef = useRef<NormalizedMedia | null>(null);
-  /** The video played to its end (anything that moves the picture on clears it). With nothing following by itself, the end card is shown. */
   const [ended, setEnded] = useState(false);
 
-  // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film (with its page for choosing the friends to invite)
   const [menu, setMenu] = useState<MenuKind | "party" | "partyInvite" | null>(null);
-  /** The subtitle look is shown over the picture as it really is: the player's own subtitles and controls step aside. */
   const lookMenu = menu === "captions" || menu === "captionsMore";
-  /** The control that opened the menu, which gets the focus back when it closes, so Back never leaves the remote with nothing selected. */
   const openerRef = useRef<HTMLElement | null>(null);
   const openMenu = (kind: MenuKind | "party") => {
     const focused = document.activeElement;
     if (focused instanceof HTMLElement && controlsRef.current?.contains(focused)) openerRef.current = focused;
     setMenu(kind);
   };
-  /** What the TV shows while nothing plays: the library, the page for connecting a phone, or the watch party. */
   const [screen, setScreen] = useState<"library" | "connect" | "party">("library");
   const screenRef = useRef(screen);
   screenRef.current = screen;
-  /** Said on the library when a title that was just chosen would not play. */
   const [notice, setNotice] = useState<string | null>(null);
-  /** The host whose party this screen was let go from as its page opened, until the library says so (see TV_WELCOME `leftParty`). */
   const [leftParty, setLeftParty] = useState<string | null>(null);
-  /** A line said over the library for a moment ("A phone is connected."). */
   const [flash, setFlash] = useState<{ id: number; text: string } | null>(null);
   const flashIdRef = useRef(0);
   useEffect(() => {
@@ -244,7 +345,6 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [flash]);
 
-  // How the viewer likes to watch (subtitle language, audio language, text size), remembered on this TV.
   const [initialPrefs] = useState(() => parsePrefs(readStorage(PREFS_KEY)));
   const prefsRef = useRef<Prefs>(initialPrefs);
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(() => resolveCaptionStyle(initialPrefs.captionStyle));
@@ -254,51 +354,36 @@ export function Tv() {
   const subtitleDelayRef = useRef(subtitleDelay);
   subtitleDelayRef.current = subtitleDelay;
   const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? true);
-  // (What the viewer picked; else Light on a weaker screen and Thorough on the others: see `defaultSyncMode`.)
   const subtitleSyncModeRef = useRef<SubtitleSyncMode>(initialPrefs.subtitleSyncMode ?? defaultSyncMode(thisDevice()));
-  /** Sends the TV's current state to the phone again (set once the player exists). */
   const republishRef = useRef<() => void>(() => {});
-  /** The ✦ choices of this film and the one that is on, for the state (see `useEnhance` below). */
   const enhanceRef = useRef<PlayerState["enhance"]>(undefined);
-  // Whether the remembered choice has been applied to the video that is loaded now (once per video).
   const appliedRef = useRef({ subtitles: false, audio: false });
   const playerRef = useRef<PlayerState>(IDLE_STATE);
 
-  // Who is watching: the account page (sign in, profiles, settings) takes the place of the start screens, never of a video.
   const account = useAccount();
   const syncNowRef = useRef(account.syncNow);
-  syncNowRef.current = account.syncNow; // (the phone can ask for it: devices of the account were signed out)
+  syncNowRef.current = account.syncNow;
   const friends = useFriends();
   const friendsRef = useRef(friends);
   friendsRef.current = friends;
   const [accountView, setAccountView] = useState<AccountView | null>(null);
-  /** Signed in, and nobody has been picked on this TV yet: that question comes first. */
   const choosing = account.status === "ready" && account.choosing;
-  // (A profile that is still to be set up - the first of a new account, or one just added - has its pages before anything else: account/ProfileSetup.tsx.)
   const settingUp = account.status === "ready" && !choosing && Boolean(account.profile?.setup);
   const accountPage: AccountView | null = player.state === "idle" ? (choosing ? "profiles" : settingUp ? "setup" : accountView) : null;
 
-  // What the profile in use has watched: it marks the episode list, and every few seconds of playback is added to it.
   const { watched, settings } = useProfileData();
-  /** Whether the next episode follows by itself (the profile's choice); off, the Up Next card waits for OK. */
   const autoplay = settings.autoplayNext ?? true;
-  /** Whether a tap or click on the picture pauses it (the profile's choice); off, it only shows or hides the controls. */
   const tapToPause = settings.tapToPause ?? false;
-  /** Whether the picture's quality follows the connection (the profile's choice; see `PlayerEngine.setAdaptive`). */
   const adaptiveQuality = settings.adaptiveQuality ?? true;
-  /** A child's profile has no watch party (see Browse's `child`): it joins none, and one it is in ends for it when the profile becomes a child's. */
   const child = settings.child === true;
   const childRef = useRef(child);
   childRef.current = child;
-  /** (A party's link waits until the profile's settings are known: see `useProfileHold`.) */
   const holding = useProfileHold();
   useEffect(() => {
-    // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
     if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
     profileStore.playbackAt(currentMedia, player);
   }, [player, currentMedia, following]);
 
-  // Brief "+10s" flash after a skip, from the remote or the phone
   const [toast, setToast] = useState<{ id: number; text: string; notice?: boolean; side?: "back" | "forward" } | null>(null);
   const toastIdRef = useRef(0);
   const skipRunRef = useRef({ total: 0, at: 0 });
@@ -307,10 +392,6 @@ export function Tv() {
 
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
-  /**
-   * Puts a video on (or takes it off), in the ref at once: the render that refreshes the ref comes later, and a message that follows within the same
-   * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
-   */
   const putMedia = (media: NormalizedMedia | null) => {
     currentMediaRef.current = media;
     setCurrentMedia(media);
@@ -318,12 +399,8 @@ export function Tv() {
   playerRef.current = player;
   const upNextDismissedRef = useRef(false);
   upNextDismissedRef.current = upNextDismissed;
-  /** What the phone is told about the end of the picture: that it came, and whether the next episode starts by itself (and in how long). */
-  const endingRef = useRef<Ending>({ ended: false }); // (filled in under "skipping", below)
+  const endingRef = useRef<Ending>({ ended: false });
 
-  /* ------------------------------ sources ------------------------------ */
-
-  // Which of the video's sources is playing, and which have been tried since the last pick (a failing one is skipped).
   const [sourceIndex, setSourceIndex] = useState(0);
   const sourceIndexRef = useRef(0);
   const triedSourcesRef = useRef(new Set([0]));
@@ -332,14 +409,11 @@ export function Tv() {
     triedSourcesRef.current = new Set([initialIndex]);
     setSourceIndex(initialIndex);
   };
-  /** Play the video from one of its sources, carrying on from where it was. `manual`: someone picked it, so the others are fair game again. */
   const loadSource = (index: number, manual: boolean) => {
     const media = currentMediaRef.current;
     const source = media ? sourcesOf(media)[index] : undefined;
     const engine = engineRef.current;
     if (!media || !source || (manual && index === sourceIndexRef.current)) return;
-    // (Read before `load` wipes the element: where it was, or where it was told to start when the source that failed never got going, and whether
-    // it was meant to play: a video put back after a restart is held, and a source that takes over from a failing one does not start it.)
     const at = engine?.resumePoint() ?? playerRef.current.currentTime;
     const play = manual || (engine?.wantsPlay() ?? true);
     triedSourcesRef.current = manual ? new Set([index]) : triedSourcesRef.current.add(index);
@@ -350,18 +424,15 @@ export function Tv() {
     if (play) engine?.play();
   };
 
-  // If the user's preferred anime audio changes in settings while playing, switch to that source if available.
   useEffect(() => {
     const media = currentMediaRef.current;
     if (!media) return;
-    // (Only an anime with that audio among its sources: anything else stays on the source it plays, a film's Romanian dub or the second source it fell back to.)
     const targetIdx = preferredSourceIndex(media, settings.animeAudio);
     if (targetIdx !== undefined && targetIdx !== sourceIndexRef.current) {
       loadSource(targetIdx, true);
     }
   }, [settings.animeAudio]);
 
-  // A source that fails hands over to the next one that hasn't been tried, so the first one that works plays.
   useEffect(() => {
     if (player.state !== "error") return;
     const media = currentMediaRef.current;
@@ -374,7 +445,6 @@ export function Tv() {
     loadSource(next, false);
   }, [player.state]);
 
-  // Watchdog: If playback is stuck in loading or buffering for 45s without starting, advance to the next untried source.
   useEffect(() => {
     if (player.state !== "loading") return;
     const media = currentMediaRef.current;
@@ -395,20 +465,13 @@ export function Tv() {
     return () => window.clearTimeout(timer);
   }, [player.state]);
 
-  /* ------------------------------ skipping an opening, a "previously on", credits ------------------------------ */
-
-  // (See skip.ts. Here: what the profile chose, where the parts are, and when the Next episode button comes.)
-  /** Whether the Skip button fills up and skips by itself (the profile's "Skip intros and credits"; off until it is turned on). */
   const autoSkip = settings.autoSkip ?? false;
   const skips = useSkipTimes(currentMedia, player.duration, sourceIndex, !following);
   const hasNext = Boolean(currentMedia?.series?.next);
-  /** When the Next episode button comes (seconds into the episode): as the credits start, when they run to the end, else in the last `UP_NEXT_SECONDS`. */
   const nextFrom = nextButtonFrom(skips, player.duration, UP_NEXT_SECONDS);
   const nextFromRef = useRef(nextFrom);
   nextFromRef.current = nextFrom;
 
-  // Preload the next episode (looked up, its first pieces fetched) once this one is nearly over: at its start that was a lookup and a few
-  // megabytes of film for every episode that is not watched to its end. (And a little before its button comes, if the credits are long.)
   const nextEpisodeUrl = currentMedia?.series?.next?.url;
   const nearEnd = nearTheEnd(player.currentTime, player.duration) || (player.duration > 30 && player.currentTime >= nextFrom - 30);
   useEffect(() => {
@@ -421,16 +484,13 @@ export function Tv() {
     let active = true;
     preloadedNextMediaRef.current = null;
 
-    // 1. Resolve next episode via /api/resolve
     fetch(`/api/resolve?url=${encodeURIComponent(nextUrl)}`)
       .then((res) => res.json())
       .then(async (data: { status: string; media?: NormalizedMedia }) => {
         if (!active || data.status !== "success" || !data.media) return;
         preloadedNextMediaRef.current = data.media;
-        // (Only a playlist is read as one: a plain file would be taken in whole, as text.)
         if (data.media.stream.type !== "hls") return;
 
-        // 2. Prefetch the master playlist and initial media chunks into browser HTTP cache
         try {
           const playlistRes = await fetch(data.media.stream.url);
           const playlistText = await playlistRes.text();
@@ -442,12 +502,10 @@ export function Tv() {
             const subLines = subText.split(/\r?\n/);
             const firstSegmentUrl = subLines.find((l) => l.startsWith("/api/proxy"));
             if (firstSegmentUrl) {
-              // Prefetch first segment so playback begins instantaneously
               fetch(firstSegmentUrl).catch(() => {});
             }
           }
         } catch {
-          // Preloading is best-effort
         }
       })
       .catch(() => {});
@@ -457,7 +515,6 @@ export function Tv() {
     };
   }, [nextEpisodeUrl, following, nearEnd]);
 
-  /** The Skip button of the part being played (none while the Next episode button is up, nor on a screen that watches along). */
   const skipper = useSkipSegment({
     video: currentMedia ? `${currentMedia.stream.url}#${sourceIndex}` : undefined,
     skips,
@@ -471,9 +528,7 @@ export function Tv() {
   });
   const skipRef = useRef<SkipControl>(skipper);
   skipRef.current = skipper;
-  /** Whether the remote's OK and Back are the Next episode button's: in the last seconds, or while the early one is new. */
   const upNextOwnsKeys = upNextCountdown !== null && (!upNextHeld || upNextFresh);
-  /** The count the Next episode button shows and the phone is told (none while it waits to be asked for, or for the credits to end). */
   const upNextSeconds = upNextCountdown !== null && autoplay && !upNextHeld ? upNextCountdown : null;
   endingRef.current = {
     ended,
@@ -482,7 +537,7 @@ export function Tv() {
   };
 
   const triggerNextEpisode = () => {
-    if (followingRef.current) return; // the TV being followed picks what comes next
+    if (followingRef.current) return;
     clearUpNext();
     setUpNextDismissed(false);
     setEnded(false);
@@ -505,33 +560,26 @@ export function Tv() {
     }
   };
 
-  /* ---------------------------- overlay visibility ---------------------------- */
-
   const [controlsVisible, setControlsVisible] = useState(true);
   const visibleRef = useRef(true);
   visibleRef.current = controlsVisible;
-  /** Whether the controls are up or on their way up or down: what a tap should take them to be, a moment after the change (`visibleRef` is what has been drawn). */
   const upRef = useRef(true);
   const setUp = (up: boolean) => {
     upRef.current = up;
     setControlsVisible(up);
   };
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Paused, loading, failed, or a menu open: the overlay stays put.
   const stickyRef = useRef(false);
   stickyRef.current = player.state !== "playing" || menu !== null;
 
-  /** When a tap last put the controls away: a mouse that is only settling after the click does not bring them straight back. */
   const putAwayAtRef = useRef(0);
 
-  /** Show the overlay and start the countdown to hiding it again. */
   const wake = () => {
     setUp(true);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
       if (stickyRef.current) return;
       if (controlsRef.current?.contains(document.activeElement)) {
-        // The remote is resting on a button: whoever is choosing gets a little longer than whoever is just watching.
         hideTimerRef.current = setTimeout(() => {
           if (!stickyRef.current) setUp(false);
         }, HUD_HOLD_MS);
@@ -541,7 +589,6 @@ export function Tv() {
     }, HUD_HIDE_MS);
   };
 
-  /** Put the overlay away now (a tap on the picture), unless something needs it: a menu is open, or the picture is neither playing nor held. */
   const hideControls = () => {
     if (menu !== null || (player.state !== "playing" && player.state !== "paused")) return;
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -558,10 +605,7 @@ export function Tv() {
     }
   }, [player.state, menu]);
 
-  // A hidden overlay must not keep keyboard focus, or OK would press a button nobody can see.
-  // Down on a hidden one wakes it and lands on its first button, which can only be focused once it shows (see `focusControls`).
   const focusPendingRef = useRef(false);
-  /** The last step the arrows made between rows of the controls, so a step back lands where it came from. */
   const lastStepRef = useRef<{ from: HTMLElement; to: HTMLElement; action: "up" | "down" } | null>(null);
   useEffect(() => {
     if (!controlsVisible && controlsRef.current?.contains(document.activeElement)) {
@@ -577,7 +621,6 @@ export function Tv() {
     else focusPendingRef.current = true;
   };
 
-  // A closed menu hands the focus back to the button that opened it (if that is still there to take it).
   useEffect(() => {
     if (menu !== null) return;
     const opener = openerRef.current;
@@ -585,9 +628,6 @@ export function Tv() {
     if (opener?.isConnected && controlsRef.current?.contains(opener)) opener.focus();
   }, [menu]);
 
-  // A control that a hand pressed (a mouse, a finger) does not keep the focus: the focus on the controls is the remote's, and it changes what the keys do
-  // (the arrows walk the buttons instead of skipping, OK presses that button again instead of pausing). A key that clicks a button has no click count.
-  // Before the button's own handler (capture), so a menu it opens has no focused opener to hand the focus back to, and while its icon is still there to be found.
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       if (event.detail === 0 || !(event.target instanceof Element)) return;
@@ -598,7 +638,6 @@ export function Tv() {
     return () => window.removeEventListener("click", onClick, true);
   }, []);
 
-  // OK presses the button that has the focus even where the browser does not (see okPress.ts).
   useEffect(() => pressWhatOkPresses(), []);
 
   useEffect(
@@ -608,8 +647,6 @@ export function Tv() {
     [],
   );
 
-  /* ------------------------- remembered track choices ------------------------- */
-
   const remember = (patch: Partial<Prefs>) => {
     prefsRef.current = { ...prefsRef.current, ...patch };
     writeStorage(PREFS_KEY, serializePrefs(prefsRef.current));
@@ -618,7 +655,6 @@ export function Tv() {
     appliedRef.current = { subtitles: false, audio: false };
   }
 
-  // Every way of changing a track (remote key, TV menu, the phone) goes through these, so the choice is always remembered.
   const chooseSubtitle = (track: number) => {
     appliedRef.current.subtitles = true;
     engineRef.current?.setSubtitle(track);
@@ -631,7 +667,6 @@ export function Tv() {
     const picked = playerRef.current.audio?.tracks.find((candidate) => candidate.id === track);
     if (picked) remember({ audio: describeTrack(picked) });
   };
-  /** From the TV's menu or the phone's style sheet: change some of the caption look, keep the rest, remember it. */
   const changeCaptions = (changes: Partial<CaptionStyle>) => {
     const next = resolveCaptionStyle({ ...captionStyleRef.current, ...changes });
     captionStyleRef.current = next;
@@ -646,7 +681,6 @@ export function Tv() {
     toastIdRef.current += 1;
     setToast({ id: toastIdRef.current, text: t("notice.delay", { value: formatDelay(clamped) }) });
   };
-  /** The switch for timing the subtitles to the sound by itself (the engine reports whether it is on, and what it is doing, in the state). */
   const chooseSubtitleSync = (on: boolean) => {
     subtitleSyncRef.current = on;
     remember({ subtitleSync: on });
@@ -654,7 +688,6 @@ export function Tv() {
     toastIdRef.current += 1;
     setToast({ id: toastIdRef.current, text: t(on ? "notice.syncOn" : "notice.syncOff"), notice: true });
   };
-  /** The way the aligner times them: every stretch of the sound, or (light) one in three once the timing is sure. */
   const chooseSubtitleSyncMode = (mode: SubtitleSyncMode) => {
     subtitleSyncModeRef.current = mode;
     remember({ subtitleSyncMode: mode });
@@ -662,9 +695,8 @@ export function Tv() {
     toastIdRef.current += 1;
     setToast({ id: toastIdRef.current, text: t(mode === "light" ? "notice.syncLight" : "notice.syncFull"), notice: true });
   };
-  useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
+  useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]);
   const streamUrl = currentMedia?.stream.url;
-  // The ✦ choices of the Quality list: the picture redrawn at 2K by this screen's own graphics chip, over the video (enhance/). The video plays as always under it.
   const [enhanceHost, setEnhanceHost] = useState<HTMLDivElement | null>(null);
   const enhance = useEnhance({
     video: videoRef.current,
@@ -681,16 +713,15 @@ export function Tv() {
   const chooseEnhanceRef = useRef(enhance.choose);
   chooseEnhanceRef.current = enhance.choose;
   const enhanceKey = JSON.stringify(enhance.state ?? null);
-  useEffect(() => republishRef.current(), [enhanceKey]); // (the phone's list shows the ✦ choices this screen has, and the one that is on)
-  useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
-  useEffect(() => republishRef.current(), [ended, upNextCountdown, upNextHeld, autoplay, following, skipper.view?.kind]); // the phone follows the end of the picture, the countdown to the next episode and the Skip button
+  useEffect(() => republishRef.current(), [enhanceKey]);
+  useEffect(() => republishRef.current(), [streamUrl, sourceIndex]);
+  useEffect(() => republishRef.current(), [ended, upNextCountdown, upNextHeld, autoplay, following, skipper.view?.kind]);
 
   useEffect(() => {
     if (player.state === "idle") resetApplied();
-    if (player.state !== "paused") setEnded(false); // the end card lasts as long as the picture stays on the last frame
+    if (player.state !== "paused") setEnded(false);
   }, [player.state]);
 
-  // When a video's tracks show up, switch to the language the viewer picked last time, else to the first of the profile's own languages the film has, else to English (see `pickBaseSubtitleTrack`). Once per video, and never over a manual pick.
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
@@ -712,11 +743,8 @@ export function Tv() {
     if (id !== undefined && id !== audio.current) engine.setAudio(id);
   }, [player.audio]);
 
-  /* ------------------------------ skipping ------------------------------ */
-
   const skip = (seconds: number) => {
     engineRef.current?.skip(seconds);
-    // Quick presses in the same direction add up ("+30s"), so you can see how far you have gone.
     const run = skipRunRef.current;
     const now = Date.now();
     run.total = now - run.at < SKIP_RUN_MS && Math.sign(run.total) === Math.sign(seconds) ? run.total + seconds : seconds;
@@ -730,19 +758,16 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  /** Say something on screen for a moment. */
   const notify = (text: string) => {
     toastIdRef.current += 1;
     setToast({ id: toastIdRef.current, text, notice: true });
   };
 
-  // A film that goes on is held by nobody: what a screen that watches along was told of its host is the host's report to make (see TV_SYNC), but a host's own is cleared here.
   useEffect(() => {
     if (player.state !== "playing" || followingRef.current) return;
     holdRef.current = null;
     setHold(null);
   }, [player.state]);
-  // A picture that is not being brought to the host's has nothing to say for itself once it stops following.
   useEffect(() => {
     if (following) return;
     holdRef.current = null;
@@ -750,16 +775,12 @@ export function Tv() {
     setCatchingUp(false);
   }, [following]);
 
-  // A new speed, subtitle, audio track or quality is said on screen, whether it came from the menu, a key or the phone.
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   useEffect(() => {
     const change = describeChange(lastPlayerRef.current, player, noticeText);
     lastPlayerRef.current = player;
-    // (A follower is nudged in speed all the time; that is not news. Nor is a subtitle track that the aligner put on screen itself.)
     if (change && !followingRef.current && !engineRef.current?.quiet()) notify(change);
   }, [player]);
-
-  /* ------------------------------ wiring ------------------------------ */
 
   useEffect(() => {
     const video = videoRef.current!;
@@ -767,26 +788,23 @@ export function Tv() {
     const publish = (state: PlayerState) => {
       const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, enhanceRef.current);
       setPlayer(full);
-      if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
+      if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full });
     };
-    // What this screen does about the host's reports (see TV_SYNC): where the host is read to be, and when this picture last jumped.
     const follower = new Follower();
     const engine = new PlayerEngine(
       video,
       publish,
       () => {
-        // The next episode follows (the Up Next card counts down), or there is nothing after this and the end card says so.
-        if (followingRef.current) return; // a screen that watches along waits for what the host does
+        if (followingRef.current) return;
         if (currentMediaRef.current?.series?.next && !upNextDismissedRef.current) {
           setUpNextCountdown((prev) => (prev !== null && prev <= 5 ? prev : 5));
-          setUpNextHeld(false); // (an early button that waited counts now: the credits are over)
+          setUpNextHeld(false);
         }
         setMenu(null);
         setEnded(true);
       },
     );
     engineRef.current = engine;
-    // The subtitle aligner is fetched when a film starts (not before), unless the viewer turned it off.
     engine.useSubtitleSync(
       () => import("../subsync/start").then((module) => module.startSync),
       () => subtitleDelayRef.current,
@@ -795,7 +813,6 @@ export function Tv() {
     engine.setSubtitleSyncMode(subtitleSyncModeRef.current);
     republishRef.current = () => publish(engine.getState());
 
-    // Only the first hello of this page says it has just been opened: a socket that reconnects, or says hello again when the page comes back to the front, belongs to a page that has been on.
     let justOpened = true;
     const socket = connectSocket({
       hello: () => {
@@ -813,13 +830,11 @@ export function Tv() {
             setFollowing(message.following ?? null);
             setPairing(toPairing(message.pairing));
             setControl(null);
-            setParty(null); // a party this TV is in is sent right after
+            setParty(null);
             setPartyEnds(null);
-            // (Opened again after the host's page had been closed a while: the library, not that party, and a line that says why, once the welcome is gone. See hub.ts `tvHello`.)
             if (message.leftParty) setLeftParty(message.leftParty);
             if (!message.following) {
               const media = currentMediaRef.current;
-              // (What it has on goes along, for a server that has forgotten: see `TV_STATE.media`.)
               socketRef.current?.send({
                 type: "TV_STATE",
                 state: withTvState(engine.getState(), captionStyleRef.current, media, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, enhanceRef.current),
@@ -832,13 +847,11 @@ export function Tv() {
             else setPairing(toPairing(message.pairing));
             break;
           case "TV_PAIRED":
-            // The first phone changes the page by itself; one that joins later (or any, over the library) is told in a line.
             if (pairedRef.current || screenRef.current === "library") setFlash({ id: ++flashIdRef.current, text: t("tv.phoneJoined") });
             setPaired(true);
             setPairing(null);
             break;
           case "TV_FOLLOWING":
-            // A party took this TV in (a phone added it, or its code was typed here): what this TV was doing stops, and the video comes from the host.
             followingRef.current = message.leader;
             invitedWithRef.current = null;
             setPaired(true);
@@ -850,7 +863,7 @@ export function Tv() {
             setStarting(null);
             setMenu(null);
             if (currentMediaRef.current) {
-              putMedia(null); // (in the ref at once: the host's LOAD follows within the same moment, and a screen that had this very video on must load it again)
+              putMedia(null);
               engine.stop();
             }
             break;
@@ -859,10 +872,7 @@ export function Tv() {
             setPartyEnds(message.party?.code ? Date.now() + message.party.code.expiresInMs : null);
             break;
           case "ERROR": {
-            if (startingRef.current && !startingRef.current.heard) setStarting(null); // (a press of Play that was refused: too many asked for, say. Said over the library.)
-            // Mostly a party code that would not do (wrong, out of date, a full party): said on the party page, or over the library.
-            // (One that an invitation or a link brought was good when the friend made it: that it is refused now means the party is over. That is said over the friends' page,
-            // which is looked at again: the invitation is a question there now, whether to ask for another.)
+            if (startingRef.current && !startingRef.current.heard) setStarting(null);
             const over = message.code === "INVALID_CODE" && invitedWithRef.current !== null;
             invitedWithRef.current = null;
             if (over) {
@@ -879,7 +889,7 @@ export function Tv() {
           }
           case "TV_SYNC": {
             const media = currentMediaRef.current;
-            if (!media || (message.stream && message.stream !== media.stream.url)) break; // not the same video (yet)
+            if (!media || (message.stream && message.stream !== media.stream.url)) break;
             const local = engine.getState();
             if (local.state !== "playing" && local.state !== "paused") break;
             const rate = local.playbackRate ?? 1;
@@ -901,7 +911,6 @@ export function Tv() {
               if (step.play) engine.play();
               else engine.pause();
             }
-            // Who held the film, for the pause card, and who set it going again, for a line; and whether this picture is being brought to the host's.
             const held: Hold | null = message.playing ? null : { by: message.by ?? null, waiting: message.waiting === true, ...(message.ended ? { ended: true } : {}) };
             if (!held && holdRef.current && !holdRef.current.waiting) {
               const line = resumeLine(message.by, partyRef.current);
@@ -913,13 +922,12 @@ export function Tv() {
             break;
           }
           case "TV_UNPAIRED":
-            // The phone forgot this TV (it already told us to STOP), or the party ended or sent it away: back to showing a fresh code.
             if (followingRef.current && !leavingRef.current) setFlash({ id: ++flashIdRef.current, text: t("party.ended") });
             leavingRef.current = false;
             setPaired(false);
             setFollowing(null);
             setPairing(toPairing(message.pairing));
-            wasResolvingRef.current = false; // a lookup cut short by this is not a failed one
+            wasResolvingRef.current = false;
             setResolving(false);
             setStarting(null);
             setMenu(null);
@@ -927,11 +935,9 @@ export function Tv() {
           case "TV_RESOLVING":
             window.clearTimeout(lookupEndTimerRef.current);
             if (message.active) {
-              // (Noted here, as the messages come, and not by the effect below once the page has drawn it: the film can be there by then, and it is not what was on before the look-up.)
               if (!wasResolvingRef.current) mediaBeforeLookupRef.current = currentMediaRef.current;
               wasResolvingRef.current = true;
               setResolving(true);
-              // Nothing on: the film's own screen, from the press here (which knew the title) or from what the phone that asked knew.
               if (!followingRef.current && (playerRef.current.state === "idle" || startingRef.current)) {
                 const hint = message.hint;
                 setStarting((before) =>
@@ -946,19 +952,17 @@ export function Tv() {
             const { command } = message;
             if (command.type === "LOAD") {
               window.clearTimeout(lookupEndTimerRef.current);
-              wasResolvingRef.current = false; // a video followed the lookup, so it did not fail (and stopping it a moment later is not that)
+              wasResolvingRef.current = false;
               setResolving(false);
-              keepPageFor(command.media.page); // the library comes back to a show's page only if it is that show that plays
+              keepPageFor(command.media.page);
               const current = currentMediaRef.current;
               const isSameStream = current?.stream.url === command.media.stream.url;
 
-              // (A film that has failed and is asked for again is a new try, from someone who may have just put right what failed: it starts over, like any other. Only one that is still going is left as it is.)
               if (playerRef.current.state !== "error" && (isSameEpisode(current, command.media) || isSameStream)) {
                 putMedia(command.media);
                 return;
               }
 
-              // From here it is the picture that is waited for, on the same screen (whose picture stays: the source's own would be a jump).
               if (!followingRef.current && (startingRef.current || playerRef.current.state === "idle")) {
                 const before = startingRef.current;
                 setStarting({
@@ -971,8 +975,8 @@ export function Tv() {
                 });
               }
               putMedia(command.media);
-              follower.reset(); // (where the host was in the film before says nothing about this one)
-              if (!followingRef.current) profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once (not for a screen that watches along)
+              follower.reset();
+              if (!followingRef.current) profileStore.playbackStarted(command.media);
               clearUpNext();
               setUpNextDismissed(false);
               resetApplied();
@@ -983,7 +987,6 @@ export function Tv() {
             } else if (command.type === "PLAY") {
               engine.play();
               if (message.by) {
-                // A guest that steers set the film going: said once, and the film is held by nobody any more.
                 holdRef.current = null;
                 setHold(null);
                 const line = resumeLine(message.by, partyRef.current);
@@ -992,7 +995,7 @@ export function Tv() {
             } else if (command.type === "PAUSE") {
               engine.pause();
               if (message.by) {
-                holdRef.current = { by: message.by, waiting: false }; // (a guest that steers paused it: the pause card says who)
+                holdRef.current = { by: message.by, waiting: false };
                 setHold(holdRef.current);
               }
             } else if (command.type === "SEEK") engine.seek(command.time);
@@ -1009,7 +1012,6 @@ export function Tv() {
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
             else if (command.type === "SET_SUBTITLE_DELAY") chooseSubtitleDelay(command.delay);
             else if (command.type === "SET_SUBTITLE_SYNC") {
-              // (With a way of timing: the phone chose that, and turns the aligner on with it when it was off.)
               if (command.mode) chooseSubtitleSyncMode(command.mode);
               if (!command.mode || command.on !== subtitleSyncRef.current) chooseSubtitleSync(command.on);
             }
@@ -1022,7 +1024,6 @@ export function Tv() {
             else if (command.type === "DISMISS_UP_NEXT") dismissUpNext();
             else if (command.type === "SKIP_SEGMENT") skipRef.current.skip();
             else if (command.type === "REFRESH_ACCOUNT") syncNowRef.current();
-            // Anything the phone does should be visible on the TV for a moment.
             if (command.type !== "LOAD" && command.type !== "STOP" && command.type !== "REFRESH_ACCOUNT") wake();
             break;
           }
@@ -1031,7 +1032,6 @@ export function Tv() {
     });
     socketRef.current = socket;
 
-    // The phone shows whether the TV is full screen, so tell it whenever that changes (Esc, the HUD button, the OK prompt).
     const onFullscreenChange = () => {
       republishRef.current();
       setFullscreen(Boolean(document.fullscreenElement));
@@ -1048,7 +1048,6 @@ export function Tv() {
     };
   }, []);
 
-  // A screen in a party downloads no further ahead than the proxy can hold for the others (see `bufferPolicy`).
   const inParty = party !== null;
   useEffect(() => {
     engineRef.current?.setInParty(inParty);
@@ -1057,14 +1056,12 @@ export function Tv() {
     engineRef.current?.setAdaptive(adaptiveQuality);
   }, [adaptiveQuality]);
 
-  // Safety net for TV_RESOLVING { active: true } without a matching end.
   useEffect(() => {
     if (!resolving) return;
     const timer = setTimeout(() => setResolving(false), RESOLVING_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [resolving]);
 
-  // The server only tells a phone when a lookup fails; here the end of the lookup with no video following it is the tell.
   useEffect(() => {
     if (resolving) {
       setNotice(null);
@@ -1074,13 +1071,12 @@ export function Tv() {
     wasResolvingRef.current = false;
     const before = mediaBeforeLookupRef.current;
     const timer = setTimeout(() => {
-      if (startingRef.current?.loadedAt === null) setStarting(null); // (the film's screen stayed up till now: it gives way to the line that says why nothing came)
-      if (currentMediaRef.current !== before || (before && before === putOnAtOnceRef.current)) return; // a video followed (or was on already)
+      if (startingRef.current?.loadedAt === null) setStarting(null);
+      if (currentMediaRef.current !== before || (before && before === putOnAtOnceRef.current)) return;
       if (!before) return setNotice(t("notice.wouldntPlay"));
-      // Something was on when the pick was made (an episode chosen from the player, the next one): it carries on, or if it had ended its end card comes back, and a line says why nothing changed.
       if (videoRef.current?.ended) {
         setEnded(true);
-        setFlash({ id: ++flashIdRef.current, text: t("notice.wouldntPlay") }); // (the controls, and their lines, give way to the end card)
+        setFlash({ id: ++flashIdRef.current, text: t("notice.wouldntPlay") });
       } else notify(t("notice.wouldntPlay"));
     }, NO_VIDEO_AFTER_LOOKUP_MS);
     return () => clearTimeout(timer);
@@ -1090,15 +1086,12 @@ export function Tv() {
     const timer = setTimeout(() => setNotice(null), 8000);
     return () => clearTimeout(timer);
   }, [notice]);
-  // The party this screen was let go from as it opened (TV_WELCOME `leftParty`) is said once the welcome is off the library: a TV's welcome can wait a while for its first press.
   useEffect(() => {
     if (!leftParty || !unlocked || welcoming) return;
     setNotice(t("party.leftGone", { name: leftParty }));
     setLeftParty(null);
   }, [leftParty, unlocked, welcoming]);
 
-  // The film's screen gives way once the picture moves (or is there, held where it was left, for a film put back): it fades, and the TV says how long
-  // the wait was. A film that was stopped, would not play, or wants a press first has its own card (or the page it was chosen on) at once.
   useEffect(() => {
     const now = startingRef.current;
     if (!now || now.leaving || now.loadedAt === null) return;
@@ -1106,7 +1099,6 @@ export function Tv() {
     if (player.state === "playing" || player.state === "paused") {
       if (player.state === "playing" && !followingRef.current) {
         const ms = (from: number) => Math.min(600_000, Math.round(Math.max(0, from)));
-        // (With where the load's own time went, as the player saw it: see `StartupNote`.)
         socketRef.current?.send({ type: "TV_STARTED", ...(now.since !== null ? { lookupMs: ms(now.loadedAt - now.since) } : {}), loadMs: ms(performance.now() - now.loadedAt), ...engineRef.current?.startup() });
       }
       setStarting({ ...now, leaving: true });
@@ -1118,7 +1110,6 @@ export function Tv() {
     const timer = setTimeout(() => setStarting((now) => (now?.leaving ? null : now)), STARTING_FADE_MS);
     return () => clearTimeout(timer);
   }, [startingLeaves]);
-  // A press the server says nothing about (it never got it, or the socket went) is not waited for. One it refused is let go of as the refusal comes (ERROR).
   const unheard = starting !== null && !starting.heard;
   useEffect(() => {
     if (!unheard) return;
@@ -1137,15 +1128,10 @@ export function Tv() {
     notify(t(video.muted ? "notice.muted" : "notice.unmuted"));
   };
 
-  /** Phones in some browsers (iPhone's) have no full screen to offer a page, and then no button for it either. (The first press on a screen takes it full screen by itself: see `setUpFullscreen`.) */
   const canFullscreen = offersFullscreen();
-  /**
-   * From the phone. Leaving is always allowed; going in is refused unless the TV page just got a click or key press,
-   * so then the TV asks for one (OK on its remote) instead of failing without a word.
-   */
   const fullscreenFromPhone = () => {
     if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
-    if (!canFullscreen) return; // (a browser that is never asked: see fullscreen.ts)
+    if (!canFullscreen) return;
     document.documentElement.requestFullscreen?.().catch(() => setFsPrompt(true));
   };
   const acceptFullscreenPrompt = () => {
@@ -1158,10 +1144,6 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [fsPrompt]);
 
-  // The Next episode button's count. A profile that plays the next episode only on request gets the button without one, and so does a button that came early
-  // (as the credits started) until the last seconds come, unless the profile skips credits: then it fills up over `AUTO_SKIP_SECONDS`, and plays the next
-  // one. The count waits while the picture is paused or filling, and goes at the picture's speed: it is the end of the episode (or of the credits) that it
-  // counts down to, in the episode's seconds (at half speed the last 15 s of an episode are 30 real ones).
   const countingDown = (player.state === "playing" && !player.buffering) || ended;
   const countSpeed = ended ? 1 : Math.min(4, Math.max(0.25, player.playbackRate || 1));
   useEffect(() => {
@@ -1177,15 +1159,13 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [upNextCountdown, autoplay, countingDown, upNextHeld, countSpeed]);
 
-  // The Next episode button comes: as the credits start when they run to the end (see `nextFrom`), else in the last seconds. One that came early and
-  // waits counts down as always once the last seconds come.
   const upNextLastTimeRef = useRef(0);
   useEffect(() => {
     const last = upNextLastTimeRef.current;
     upNextLastTimeRef.current = player.currentTime;
     if (player.state !== "playing" || !(player.duration > 30) || !currentMedia?.series?.next || following || upNextDismissed) return;
     const left = player.duration - player.currentTime;
-    const lastSeconds = Math.min(UP_NEXT_SECONDS, Math.max(1, Math.ceil(left))); // never more than is left
+    const lastSeconds = Math.min(UP_NEXT_SECONDS, Math.max(1, Math.ceil(left)));
     if (upNextCountdown === null) {
       if (player.currentTime < nextFrom) return;
       if (left <= UP_NEXT_SECONDS) {
@@ -1194,8 +1174,6 @@ export function Tv() {
         setUpNextCountdown(lastSeconds);
         return;
       }
-      // The credits started. Played into (not jumped to), the button is new; and with the profile's "Skip intros and credits" (and the next episode
-      // following by itself) it fills up.
       const playedInto = player.currentTime >= last && player.currentTime - last < 3 && player.currentTime - nextFrom < 4;
       const fills = playedInto && autoSkip && autoplay;
       setUpNextFresh(playedInto);
@@ -1209,15 +1187,12 @@ export function Tv() {
     }
   }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, following, upNextDismissed, upNextCountdown, upNextHeld, nextFrom, autoSkip, autoplay]);
 
-  // Winding back to before its time takes the button away (it comes again on the way to the end), and turning it down is for this pass
-  // only: wind back to well before its time (or watch again) and it comes again.
   useEffect(() => {
     if (player.duration <= 0 || ended) return;
     if (upNextCountdown !== null && player.currentTime < nextFrom - 1) clearUpNext();
     if (upNextDismissed && player.currentTime < nextFrom - 5) setUpNextDismissed(false);
   }, [player.currentTime, player.duration, upNextDismissed, upNextCountdown, ended, nextFrom]);
 
-  // Ask for a fresh code when the displayed one expires
   useEffect(() => {
     if (!pairing) return;
     const timer = setTimeout(
@@ -1227,8 +1202,6 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [pairing]);
 
-  // The page of a TV with a phone shows the code that lets another phone in. Asking for it is what keeps it good, so it is asked for
-  // while that page is open and again well before it runs out; when the page closes the code is forgotten.
   const showsControl = unlocked && paired && !following && !resolving && !accountPage && screen === "connect" && player.state === "idle";
   useEffect(() => {
     if (!showsControl) return setControl(null);
@@ -1237,17 +1210,11 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [showsControl, connection, control]);
 
-  /* ----------------------------- watch party ----------------------------- */
-
-  // What this screen is called on a party's list: the profile in use, else the TV's own name (the empty name).
   const profileName = account.me && account.profile ? account.profile.name : "";
   useEffect(() => {
     if (connection === "open") socketRef.current?.send({ type: "TV_NAME", name: profileName });
   }, [connection, profileName]);
 
-  // And who it is: a party shows the picture, name and tag of the profile that is signed in here (when it has friends on), so that the others
-  // can ask it to be friends. The party cannot see the cookie, so the server gives this screen a proof, once, and the party asks the server
-  // about it. Said again with every connection and every change of profile; with nobody signed in, or friends off, the message is empty.
   const profileId = account.me && account.profile ? account.profile.id : undefined;
   const friendsOn = friendChoices(settings).friends;
   useEffect(() => {
@@ -1267,7 +1234,7 @@ export function Tv() {
   useEffect(() => {
     if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current || holding) return;
     linkTriedRef.current = true;
-    history.replaceState(history.state, "", location.pathname); // (the entry keeps what the back button put on it)
+    history.replaceState(history.state, "", location.pathname);
     if (childRef.current) {
       setFlash({ id: ++flashIdRef.current, text: t("notice.childNoParty") });
       return;
@@ -1276,9 +1243,7 @@ export function Tv() {
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
   }, [linkCode, unlocked, connection, holding]);
 
-  // The code that lets others into a party lasts ten minutes. While it is on screen it is renewed; a party nobody came to goes away with it.
   const partyShown = menu === "party" || menu === "partyInvite" || (screen === "party" && player.state === "idle");
-  // The page for choosing friends belongs to a party this screen hosts, with a code to tell them: without that (the party ended) it is the panel again.
   useEffect(() => {
     if (menu === "partyInvite" && !(party?.role === "host" && party.code)) setMenu("party");
   }, [menu, party]);
@@ -1295,7 +1260,6 @@ export function Tv() {
   }, [party, partyEnds, partyShown]);
 
   const startParty = () => void socketRef.current?.send({ type: "TV_PARTY_OPEN" });
-  /** A friend asked to watch together: a party is started (the one that is on carries on) and they are invited to it as soon as it has a code. */
   const startTogether = (friend: string) => {
     setPartyError(null);
     setPartyJoinWith(null);
@@ -1305,7 +1269,6 @@ export function Tv() {
     startParty();
   };
   useEffect(() => {
-    // (A code this screen still shows but that has run out is not used: the renewal that is on its way brings a new one, and this looks again.)
     if (!together || party?.role !== "host" || !party.code || (partyEnds ?? 0) <= Date.now()) return;
     setTogether(null);
     const code = party.code;
@@ -1314,13 +1277,13 @@ export function Tv() {
     void current.send([together], { kind: "party", code: code.code, endsAt: partyEnds ?? Date.now() + code.expiresInMs }).then(
       async (answer) => {
         account.say(answer.sent.length > 0 ? t("friends.inviteSent", { names: name }) : t("friends.declined", { names: name }));
-        await friendsRef.current.refresh(); // (the server takes the request away once they are invited)
+        await friendsRef.current.refresh();
       },
       (error: unknown) => account.say(describeError(error)),
     );
   }, [together, party, partyEnds]);
   const joinParty = (code: string) => {
-    setPartyJoinWith(null); // (an invitation's code is used once: the next time the page asks for a code it starts empty)
+    setPartyJoinWith(null);
     if (childRef.current) {
       setPartyError({ id: ++flashIdRef.current, text: t("notice.childNoParty") });
       return;
@@ -1330,42 +1293,31 @@ export function Tv() {
   const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
   const setAdmin = (id: string, on: boolean) => void socketRef.current?.send({ type: "TV_PARTY_ADMIN", id, admin: on });
   const steer = (command: PartyCommand) => void socketRef.current?.send({ type: "TV_PARTY_CMD", command });
-  /** Play or pause: this screen's own picture, or, on one that watches along, what an admin asks of the host's screen (a guest that only watches asks for nothing). */
   const playOrPause = () => {
     if (!following) togglePlay();
     else if (admin) steer({ type: player.state === "playing" ? "PAUSE" : "PLAY" });
   };
-  /** The same for a skip. */
   const skipHere = (seconds: number) => {
     if (!following) skip(seconds);
     else if (admin) steer({ type: "SKIP", seconds });
   };
   const endParty = () => void socketRef.current?.send({ type: "TV_PARTY_CLOSE" });
-  // Being made an admin shows the buttons that come with it.
   useEffect(() => {
     if (admin) wake();
   }, [admin]);
-
-  /* --------------------------- remote control --------------------------- */
 
   const togglePlay = () => (player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play());
   const dismissUpNext = () => {
     clearUpNext();
     setUpNextDismissed(true);
   };
-  /**
-   * Pick an episode from the list, or a title from the library: the server looks it up like any link, the TV shows the spinner
-   * meanwhile. `startAt` resumes a title left unfinished; `hint` carries the picture and year the library already knows.
-   */
   const playEpisode = (url: string, options: PlayOptions = {}) => {
     setMenu(null);
     clearUpNext();
     setUpNextDismissed(false);
-    // Nothing on: the film's screen comes up with the press, not when the server answers it.
     if (playerRef.current.state === "idle" && !followingRef.current && connection === "open") setStarting(startingFrom(options.hint, { from: options.startAt }));
     socketRef.current?.send({ type: "TV_PLAY_URL", url, ...(options.startAt ? { startAt: options.startAt } : {}), ...(options.hint ? { hint: options.hint } : {}) });
   };
-  /** A TV that watches along stops, and goes back to being on its own. */
   const leaveParty = () => {
     leavingRef.current = true;
     setMenu(null);
@@ -1373,8 +1325,6 @@ export function Tv() {
     putMedia(null);
     socketRef.current?.send({ type: "TV_UNPAIR" });
   };
-  // A child's profile is in no party: one this screen joined before the profile's settings came (a link opened on a TV new to it, a phone that added it), or before the
-  // profile became a child's, is left (a guest) or ended (the host), and the screen says why.
   useEffect(() => {
     if (!child || (!following && party?.role !== "host")) return;
     if (following) leaveParty();
@@ -1382,19 +1332,15 @@ export function Tv() {
     if (screenRef.current === "party") setScreen("library");
     setFlash({ id: ++flashIdRef.current, text: t("notice.childNoParty") });
   }, [child, following, party?.role]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** Stop what plays and go back to the library. A host that does takes the video from its guests too (the server tells them). */
   const stopPlayback = () => {
     putMedia(null);
     clearUpNext();
     engineRef.current?.stop();
   };
-  /** ...and the library shows, on the page the film was chosen from (see `keepPageFor`). */
   const leaveFilm = () => {
     stopPlayback();
     setScreen("library");
   };
-  /** The next subtitle track, and off after the last. Works for a TV that watches along too: what is read is its own choice. */
-  /** A quality was picked. A film whose qualities are files of their own (see `sourceMenus`) plays the file of that quality from where it was; any other leaves it to the player. */
   const chooseQuality = (level: number) => {
     const media = currentMediaRef.current;
     const all = media ? sourcesOf(media) : [];
@@ -1403,7 +1349,6 @@ export function Tv() {
     const auto = qualities.find((index) => isAutoQuality(all[index]!.quality));
     loadSource(level >= FILE_QUALITY ? level - FILE_QUALITY : (auto ?? qualities[0]!), true);
   };
-  /** A source was picked, by its place in the list the pickers show. The main one is whichever of its qualities was playing. */
   const chooseSource = (place: number) => {
     const media = currentMediaRef.current;
     const menus = sourceMenus(media ? sourcesOf(media) : []);
@@ -1415,13 +1360,8 @@ export function Tv() {
     const subtitles = playerRef.current.subtitles;
     if (subtitles && subtitles.tracks.length > 0) chooseSubtitle(subtitles.current + 1 >= subtitles.tracks.length ? -1 : subtitles.current + 1);
   };
-  /**
-   * Whoever is at the TV stopped waiting for a video that will not start (a lookup that never answers, a stream that never loads):
-   * it is forgotten, the TV is back where it was, and the server drops a late answer instead of starting the film after all.
-   * A TV that watches along only stops looking at the wait; what plays is up to the TV it follows.
-   */
   const cancelLoad = () => {
-    wasResolvingRef.current = false; // giving up is not a lookup that failed: no "wouldn't play" notice
+    wasResolvingRef.current = false;
     setResolving(false);
     setStarting(null);
     putMedia(null);
@@ -1436,26 +1376,18 @@ export function Tv() {
     if (previous) playEpisode(previous.url);
   };
 
-  /** The video is over and nothing follows it by itself: the end card is up. */
   const finished = ended && !following && !resolving && upNextCountdown === null && player.state === "paused" && player.duration > 0 && player.currentTime >= player.duration - 1.5;
-  /** Once more from the start. */
   const watchAgain = () => {
     setEnded(false);
     engineRef.current?.seek(0);
     engineRef.current?.play();
   };
 
-  /** Every source of the video has failed (a failing one hands over to the next, which is not yet a failure): the controls are of no use, so a card with a way on takes their place. */
   const untriedSource = currentMedia ? sourcesOf(currentMedia).some((_, index) => !triedSourcesRef.current.has(index)) : false;
   const failed = player.state === "error" && !isBlocked(player) && !following && !resolving && !untriedSource;
   useEffect(() => {
     if (failed) setMenu(null);
   }, [failed]);
-  /**
-   * From the first source again, as the first time: a failure is sometimes only a bad moment. Where it stopped is where it carries on from, not the start.
-   * When the place the video comes from said no, it is the link that failed (a token that ran out, a server that was busy when it was handed out): the title is
-   * looked up again, which the server does afresh for a link that did not play, and what comes carries on from the same place.
-   */
   const retryPlayback = () => {
     const engine = engineRef.current;
     if (!currentMedia || !engine) return;
@@ -1475,9 +1407,6 @@ export function Tv() {
     engine.play();
   };
 
-  // A video that stopped because the connection went (a server that was away for minutes outlasts what was downloaded) is tried again by itself: at once when
-  // this page is connected again, and a moment after it stopped when it was connected all along (the picture's own tries may have outlasted the outage). A few
-  // times, not for ever: past that the card's Try again is the way, and it carries on from the same place.
   const lostConnection = failed && player.error === PlayerError.ConnectionLost;
   const retryRef = useRef(retryPlayback);
   retryRef.current = retryPlayback;
@@ -1499,8 +1428,6 @@ export function Tv() {
   useEffect(() => {
     if (player.state === "playing") connectionRetriesRef.current = 0;
   }, [player.state]);
-  // A link that the place it comes from refuses (a token that ran out while the result of the look-up was kept) is asked for again by itself, once, before the card says
-  // so: it takes a moment, and the film often just plays. A title that has had its second look is left to the card's Try again until something plays.
   const refused = failed && player.error === PlayerError.SourceUnavailable;
   const lookedAgainRef = useRef<string | null>(null);
   useEffect(() => {
@@ -1512,12 +1439,10 @@ export function Tv() {
   useEffect(() => {
     if (player.state === "playing") lookedAgainRef.current = null;
   }, [player.state]);
-  // A page that another page of this TV has taken the place of is steered by nobody (the phone talks to the new one): its film stops, or both would play.
   useEffect(() => {
     if (connection === "replaced") engineRef.current?.pause();
   }, [connection]);
 
-  // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
   useEffect(() => {
     if (!unlocked) return;
     const onKey = (event: KeyboardEvent) => {
@@ -1528,7 +1453,7 @@ export function Tv() {
       const overlayWasVisible = visibleRef.current;
       wake();
 
-      if (accountPage) return; // the account pages walk and close themselves (Account.tsx)
+      if (accountPage) return;
 
       if (action === "browse") {
         if (!following && !resolving && player.state === "idle") setScreen("library");
@@ -1544,21 +1469,18 @@ export function Tv() {
       }
 
       if (finished || failed) {
-        // The end card and the error card walk their own buttons and leave on Back (see EndCard, ErrorCard); full screen is still the page's.
         if (action === "fullscreen") toggleFullscreen();
         return;
       }
 
       if (menu) {
-        // The picker owns the keys; OK presses the focused option itself.
-        if (action === "back") setMenu(menuBack(menu)); // the caption style is a page of the audio and subtitles menu, the friends to invite a page of the party's
+        if (action === "back") setMenu(menuBack(menu));
         else if (action === "up" || action === "down" || action === "left" || action === "right") moveInMenu(menuRef.current, action);
         else return;
         event.preventDefault();
         return;
       }
 
-      // Back turns down the Next episode button, or a Skip button, while it is the one the remote is on (see `upNextOwnsKeys`, skip.ts).
       if (action === "back" && upNextOwnsKeys) {
         dismissUpNext();
         event.preventDefault();
@@ -1569,10 +1491,8 @@ export function Tv() {
         return;
       }
 
-      // Waiting for a video: the library and the other pages walk their own buttons (see Browse.tsx, Idle.tsx).
       if (!engine || player.state === "idle") return;
 
-      // A video that will not start: OK or Back gives up on it, whether or not the controls are up.
       if (stuck && !following && (action === "select" || action === "back")) {
         cancelLoad();
         event.preventDefault();
@@ -1581,11 +1501,9 @@ export function Tv() {
 
       const row = controlsRef.current;
       const focused = document.activeElement as HTMLElement | null;
-      // The Skip or Next episode button, when the remote is on it (Up from the picture or from the controls): OK presses what it is on, Left and
-      // Right go between it and its cross, Down to the controls, Back or Up off it.
       const pill = document.querySelector<HTMLElement>(".tv .hud-skip");
       if (pill && focused && pill.contains(focused)) {
-        if (action === "select") return; // press the focused button
+        if (action === "select") return;
         const buttons = [...pill.querySelectorAll<HTMLElement>("button")];
         if (action === "left" || action === "right") buttons[buttons.indexOf(focused) + (action === "right" ? 1 : -1)]?.focus();
         else if (action === "down") focusControls();
@@ -1597,18 +1515,14 @@ export function Tv() {
       }
       if (row && focused && row.contains(focused)) {
         if (action === "left" || action === "right" || action === "up" || action === "down") {
-          // The arrows walk the controls the way they are laid out: along a row, and between rows. Past the edge nothing moves,
-          // except out of the controls, which is the way the bar lies (up from it, on any screen).
           const buttons = [...row.querySelectorAll<HTMLElement>("button:not(:disabled)")];
           let next = buttons[pickInRows(buttons.map((button) => button.getBoundingClientRect()), buttons.indexOf(focused), action)];
           const vertical = action === "up" || action === "down";
-          // Down and straight back Up (or the other way) returns to the button it left, not to the one nearest above it.
           const left = lastStepRef.current;
           if (next && vertical && left && left.to === focused && left.action !== action && buttons.includes(left.from)) next = left.from;
           lastStepRef.current = next && vertical ? { from: focused, to: next, action } : null;
           if (next) next.focus();
           else if (action === "up") {
-            // (Up out of the controls: to the Skip or Next episode button, if one is up.)
             const pillButton = pill?.querySelector<HTMLElement>("button");
             if (pillButton) pillButton.focus();
             else focused.blur();
@@ -1621,19 +1535,15 @@ export function Tv() {
           event.preventDefault();
           return;
         }
-        if (action === "select") return; // press the focused button
+        if (action === "select") return;
       }
 
       if (following) {
-        // Watching along: no playback keys (the host has them), just the buttons on the bar (Down, then OK), subtitles and full screen.
-        // The one exception is the press the browser wants before it plays: OK is that, and starts the video.
-        // An admin has the playback keys too: they ask the host's screen, which does it for everyone.
         const steering = admin ? partyCommandForKey(action, player.state === "playing", Boolean(currentMedia?.series?.next)) : null;
         if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
         else if (steering) steer(steering);
-        else if (action === "up" || action === "down") focusControls(); // wakes the bar too, and lands on its first button (an admin's play, which is the one to press)
+        else if (action === "up" || action === "down") focusControls();
         else if (action === "back") {
-          // A screen that watches along has nowhere to go back to: the first press brings the bar up, the next points at the way out, and leaving stays a press of OK (as on the page that waits for the host)
           if (overlayWasVisible) leaveRef.current?.focus();
         }
         else if (action === "captions") cycleSubtitles();
@@ -1647,7 +1557,7 @@ export function Tv() {
         case "select":
         case "playpause":
           if (upNextOwnsKeys) triggerNextEpisode();
-          else if (action === "select" && skipRef.current.press()) break; // (OK presses a Skip button that is new or filling; the play key stays play)
+          else if (action === "select" && skipRef.current.press()) break;
           else togglePlay();
           break;
         case "play":
@@ -1665,7 +1575,7 @@ export function Tv() {
           skip(SKIP_SECONDS);
           break;
         case "down":
-          focusControls(); // wakes the overlay too, and lands on its first button
+          focusControls();
           break;
         case "next":
           if (currentMedia?.series?.next) triggerNextEpisode();
@@ -1686,11 +1596,9 @@ export function Tv() {
           stopPlayback();
           break;
         case "back":
-          // Back leaves the video for the library: the first press shows the controls, a second one leaves.
           if (overlayWasVisible) stopPlayback();
           break;
         case "up":
-          // Up from the picture: onto the Skip or Next episode button, if one is up (so a quiet one is pressed with OK too); else it only shows the controls.
           pill?.querySelector<HTMLElement>("button")?.focus();
           break;
         default:
@@ -1703,25 +1611,16 @@ export function Tv() {
     return () => window.removeEventListener("keydown", onKey);
   }, [unlocked, player, upNextCountdown, upNextOwnsKeys, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, admin, accountPage, stuck, finished, failed]);
 
-  // The welcome belongs to the library: whatever takes the screen over (a phone sent something to play, a party, a page) ends it.
   const libraryShows = player.state === "idle" && !accountPage && !resolving && !following && screen === "library";
   useEffect(() => {
     if (!libraryShows) setWelcoming(false);
   }, [libraryShows]);
 
-  /* ------------------------------ the picture under a hand ------------------------------ */
-
   const showVideo = player.state !== "idle";
-  /** The film's own screen is up, from the press to the moving picture (see Starting.tsx); the pages are not, nor the player's controls until the picture moves. */
   const startingShown = unlocked && starting !== null && !following && !accountPage;
   const startingWaits = startingShown && !starting.leaving;
-  /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
   const filmIsOn = showVideo && !finished && !failed;
 
-  // A phone or a tablet that is the screen has no Back key: its own Back goes out of a film a step at a time, the way a remote's does (the menu over
-  // it, the countdown to the next episode), and then to where the film was chosen. A computer's browser Back does the same (it went back through the
-  // library's pages already, and would otherwise leave the site from a film). It does not ask first: the place it was left at is kept, and the
-  // next press of Play picks it up. A film that others are watching is the exception, a Back is too easy to make by mistake for that.
   const hosting = party?.role === "host" && party.guests.length > 0;
   useBackWhile(browserBack() && unlocked && showVideo, () => {
     if (menu) setMenu(menuBack(menu));
@@ -1733,13 +1632,12 @@ export function Tv() {
     else leaveFilm();
   });
 
-  /** A finger (or a mouse button) is held on the picture and it plays faster for as long as it stays. */
   const [boosting, setBoosting] = useState(false);
   const holdPicture = (): boolean => {
     const engine = engineRef.current;
-    if (!engine || playerRef.current.state !== "playing") return false; // (a hold means nothing to a picture that is not moving)
-    if (party?.role === "host" && party.guests.length > 0) return false; // (nor to one that others follow: they would be told the speed that was chosen, and fall behind)
-    if (followingRef.current) return false; // (nor to one that follows: its speed is the host's to say)
+    if (!engine || playerRef.current.state !== "playing") return false;
+    if (party?.role === "host" && party.guests.length > 0) return false;
+    if (followingRef.current) return false;
     engine.boost(HOLD_SPEED);
     setBoosting(true);
     return true;
@@ -1749,29 +1647,19 @@ export function Tv() {
     setBoosting(false);
   };
   useEffect(() => {
-    if (boosting && player.state !== "playing") releasePicture(); // the picture stopped, or ended, under the finger
+    if (boosting && player.state !== "playing") releasePicture();
   }, [boosting, player.state]);
 
-  /**
-   * One tap or click on the picture (acted on a moment late, once it is known not to be the first of two): it shows or hides the controls.
-   * (With the profile's choice it pauses and plays instead, as a click always did; then a finger on controls that are away only brings
-   * them up, so reaching for them does not pause the film.)
-   */
   const tapPicture = (kind: PointerKind, wasVisible: boolean) => {
     if (!tapToPause) return wasVisible ? hideControls() : wake();
     wake();
     if (kind === "mouse" || wasVisible) playOrPause();
   };
-  /** Two taps or clicks in a row: a side skips that way (and shows nothing of the controls, as the two buttons under it would), the middle goes full screen. */
   const doubleTapPicture = (side: Side) => {
     if (side !== "middle") skipHere(side === "back" ? -SKIP_SECONDS : SKIP_SECONDS);
     else if (canFullscreen) toggleFullscreen();
   };
 
-  /**
-   * Whether a hand's taps on the picture are the picture's: a video, with nobody's card or menu over it. (A screen that watches along has
-   * them too, to bring its bars up and put them away, but its playback is the host's: only an admin's taps move it, and then by asking.)
-   */
   const takesTaps = unlocked && showVideo && !finished && !failed && menu === null;
   const picture = usePictureGestures({
     enabled: takesTaps,
@@ -1781,18 +1669,14 @@ export function Tv() {
   });
   const touch = useTouchUi();
 
-  // Full screen on a phone is landscape for as long as a video is on, and the phone is let go of the moment it is not (nor is it held for the card at a film's end).
   useLandscapeWhile(fullscreen && showVideo && !finished);
 
-  // Series details
   const series = currentMedia?.series;
   const next = series?.next;
   const previous = previousEpisode(series);
   const rawTitle = currentMedia?.title || APP_NAME;
   const mainTitle = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
-  // (Named in the viewer's language over the picture, where the movie database has the name: shared/names.ts. What is kept of it stays as it was.)
   const shownMain = useShown(currentMedia?.page ? { url: currentMedia.page, title: mainTitle } : null).title || mainTitle;
-  // What the episode is called, asked of the library the way the Episodes list asks (by the first episode of its season), so the two share one answer.
   const seasonLink = useMemo(
     () => (series ? (groupBySeason(series.episodes ?? []).find((group) => group.season === series.season)?.episodes[0]?.url ?? currentMedia?.page) : undefined),
     [series, currentMedia?.page],
@@ -1810,34 +1694,29 @@ export function Tv() {
       data-hud={controlsVisible ? "visible" : "hidden"}
       data-touch={touch || undefined}
       onMouseMove={() => {
-        // (The browser's echo of a finger is no mouse, and nor is one that is only settling after the click that put the controls away.)
         if (picture.echoOfTouch() || Date.now() - putAwayAtRef.current < PUT_AWAY_QUIET_MS) return;
         wake();
       }}
       onClick={(event) => {
         const zone = takesTaps ? zoneOf(event.target) : null;
-        // (A click on the bars is no click on the picture: a mouse only wakes them. A finger's tap there is the picture's, as anywhere, and was dealt with.)
         if (!zone || (zone === "bar" && picture.kindRef.current === "mouse")) return wake();
-        if (typeof PointerEvent === "undefined") tapPicture("mouse", upRef.current); // (a browser from before pointer events sends the click and nothing else)
+        if (typeof PointerEvent === "undefined") tapPicture("mouse", upRef.current);
       }}
       onPointerDown={picture.onPointerDown}
       onDoubleClick={(event) => {
-        // (Pointer events tell a double click from two clicks themselves, and by the side of the picture it landed on: its sides skip, its middle goes full screen. A browser from before them has only this.)
         if (typeof PointerEvent === "undefined" && zoneOf(event.target) === "picture") toggleFullscreen();
       }}
       onContextMenu={(event) => {
-        if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
+        if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault();
       }}
     >
       <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
-      {/* (Where ✦ 2K draws the picture over the video, when it is on: it takes no taps, which go to the video under it.) */}
       <div ref={setEnhanceHost} className="tv-enhance-layer" style={{ display: showVideo ? "block" : "none" }} />
 
       {showVideo && !lookMenu && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
       {startingShown && <StartingFilm starting={starting} stuck={stuck} onCancel={cancelLoad} />}
 
-      {/* Only a party's link starts here. Pressing OK is also the first press, which takes the page full screen. */}
       {!unlocked && <TvLocked onUnlock={() => setUnlocked(true)} />}
 
       {unlocked && !showVideo && !accountPage && !startingShown && (resolving || (screen === "connect" && !following)) && (
@@ -1903,7 +1782,6 @@ export function Tv() {
 
       {unlocked && accountPage && <TvAccount view={accountPage} forced={choosing} onView={setAccountView} />}
 
-      {/* What friends are up to is kept off a film: an invitation shows in the corner, small, and the rest waits in the bell. What the viewer did, or the account says, is shown as ever. */}
       {unlocked && account.message && !(account.message.news === "info" && filmIsOn) && (
         <p
           className={account.message.news && filmIsOn ? "tv-note" : "tv-toast"}
@@ -1922,7 +1800,6 @@ export function Tv() {
         </p>
       )}
 
-      {/* A pointer that rests against the top or the bottom edge scrolls the page it is over, for a screen that can only move and click a mouse. */}
       <EdgeScrollHint />
 
       {unlocked && showVideo && following && <FollowStatus player={player} onPlay={() => engineRef.current?.play()} />}
@@ -2071,20 +1948,12 @@ export function Tv() {
   );
 }
 
-/** What a source is called on screen: the name it came with, or its place in the list. */
 const sourceName = (source: PlayableSource, index: number) => source.label ?? t("player.sourceN", { n: index + 1 });
 
-/** The numbers the Quality picker gives the qualities that are files of their own: past any the player has for the qualities inside one stream. */
 const FILE_QUALITY = 1000;
 const isAutoQuality = (quality: string | undefined) => /auto/i.test(quality ?? "");
-/** A quality as the Quality picker says it: "1080p" for "1080" or "1080p", anything else as it came. */
 const qualityLabel = (name: string): string => (/^\d{3,4}p?$/.test(name) ? `${parseInt(name, 10)}p` : name);
 
-/**
- * A source as the pickers name it, for what the screen says when one does not play: a quality that is a file of its own by its quality ("1080p"), any
- * other by its name or its place among the places to get the film from, as the Source picker numbers them (not its place in the whole list, which
- * counts the qualities too).
- */
 function nameIn(all: readonly PlayableSource[], index: number): string {
   const source = all[index]!;
   const menus = sourceMenus(all);
@@ -2093,10 +1962,6 @@ function nameIn(all: readonly PlayableSource[], index: number): string {
   return sourceName(source, place >= 0 ? place : index);
 }
 
-/**
- * What the Source and Quality pickers show for a film (shared/media.ts, `sourceMenus`): its sources, when there is more than one place to get it from, and its
- * qualities, when they are files of their own. (The qualities inside one stream are the player's to say, and stay as it said them.)
- */
 function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerState, "sources" | "quality"> {
   const all = sourcesOf(media);
   const menus = sourceMenus(all);
@@ -2105,7 +1970,6 @@ function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerStat
     .filter((index) => !isAutoQuality(all[index]!.quality))
     .map((index) => {
       const name = all[index]!.quality!;
-      // (A file called "2K" or "4K" says its size too: the Quality list puts it first, and ✦ 2K is not offered for a film that has it.)
       const height = /^\d{3,4}p?$/.test(name) ? parseInt(name, 10) : /^2k$/i.test(name) ? 1440 : /^4k$/i.test(name) ? 2160 : undefined;
       return { id: FILE_QUALITY + index, label: qualityLabel(name), ...(height ? { height } : {}) };
     });
@@ -2113,18 +1977,12 @@ function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerStat
     ...(menus.sources.length > 1
       ? { sources: { labels: menus.sources.map((index, place) => sourceName(all[index]!, place)), current: Math.max(0, menus.sources.indexOf(inQualities ? 0 : sourceIndex)) } }
       : {}),
-    // (Another place's film is another file: these qualities are not its own, so they are not offered while it plays.)
     ...(inQualities && levels.length > 0
       ? { quality: { levels, current: isAutoQuality(all[sourceIndex]!.quality) ? -1 : FILE_QUALITY + sourceIndex, ...(levels.length === menus.qualities.length ? { auto: false } : {}) } }
       : {}),
   };
 }
 
-/** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
-/**
- * The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for); and the Skip
- * button that is up, if one is.
- */
 interface Ending {
   ended: boolean;
   upNext?: { seconds: number | null } | undefined;

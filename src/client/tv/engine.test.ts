@@ -21,7 +21,6 @@ import {
   type SyncStarter,
 } from "./engine";
 
-/** hls.js stands in for itself: the engine's wiring to it is what is looked at, not the library. */
 const FakeHls = vi.hoisted(() => {
   type Handler = (event: string, data: unknown) => void;
   class FakeHls {
@@ -48,7 +47,6 @@ const FakeHls = vi.hoisted(() => {
     autoLevelCapping = -1;
     currentLevel = -1;
     manualLevel = -1;
-    /** What was written to `loadLevel`, which sets the level that is picked by hand, as in the library. */
     loadLevelWrites: number[] = [];
     set loadLevel(level: number) {
       this.loadLevelWrites.push(level);
@@ -77,7 +75,6 @@ const FakeHls = vi.hoisted(() => {
 });
 vi.mock("hls.js", () => ({ default: FakeHls }));
 
-/** What hls.js aims at: seconds of film downloaded ahead of the picture, `max(8 * maxBufferSize / bitrate, maxBufferLength)`, never more than `maxMaxBufferLength`. */
 function aheadSeconds(policy: ReturnType<typeof bufferPolicy>, bitsPerSecond: number): number {
   return Math.min(Math.max((8 * policy.maxBufferSize) / bitsPerSecond, policy.maxBufferLength), policy.maxMaxBufferLength);
 }
@@ -132,7 +129,6 @@ describe("proxiedQualityCap", () => {
   });
 });
 
-/** Just enough of a <video> for the engine to drive. */
 class FakeVideo extends EventTarget {
   src = "";
   currentTime = 0;
@@ -196,7 +192,7 @@ describe("a picture that comes through this server", () => {
     let now = 1000;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     const { engine } = newEngine();
-    await engine.load(PROXIED, "hls", undefined, 600); // (a resume)
+    await engine.load(PROXIED, "hls", undefined, 600);
     const hls = Object.assign(FakeHls.instances.at(-1)!, { levels });
     now = 1310;
     hls.emit("manifestParsed", { levels });
@@ -205,9 +201,9 @@ describe("a picture that comes through this server", () => {
     now = 2220;
     hls.emit("fragLoaded", { frag: { type: "main", duration: 6.02, level: 0, stats: { loaded: 860_160 } } });
     now = 3000;
-    hls.emit("fragLoaded", { frag: { type: "main", duration: 6, level: 2, stats: { loaded: 4_000_000 } } }); // (only the first one is it)
+    hls.emit("fragLoaded", { frag: { type: "main", duration: 6, level: 2, stats: { loaded: 4_000_000 } } });
     expect(engine.startup()).toEqual({ resumed: true, manifestMs: 310, pieceMs: 1220, pieceS: 6, pieceKB: 840, height: 360 });
-    await engine.load(PROXIED, "hls"); // a new film starts a new note
+    await engine.load(PROXIED, "hls");
     expect(engine.startup()).toEqual({});
     engine.destroy();
   });
@@ -223,7 +219,7 @@ describe("a picture that comes through this server", () => {
   it("is not the business of a profile that asked for the best quality there is", async () => {
     const hls = await parsed(PROXIED, (engine) => engine.setAdaptive(false));
     expect(hls.autoLevelCapping).toBe(-1);
-    expect(hls.currentLevel).toBe(2); // (no 480p to start in: see "the first piece of a film with Auto off")
+    expect(hls.currentLevel).toBe(2);
   });
 
   it.each(["https://cdn.example/a.m3u8", "https://relay.example/api/proxy?url=film"])("does not redirect a failed external stream through the website: %s", async (url) => {
@@ -254,7 +250,6 @@ describe("the first piece of a film with Auto off", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
-  /** A film whose pieces are `seconds` long (the last one may differ), from `start`. */
   const pieces = (...seconds: number[]) => {
     let start = 0;
     return seconds.map((duration) => ({ start: (start += duration) - duration, duration }));
@@ -268,21 +263,19 @@ describe("the first piece of a film with Auto off", () => {
     return { engine, hls };
   };
   const main = (level: number) => ({ frag: { type: "main", duration: 2, level, stats: { loaded: 400_000 } } });
-  /** The quality the menu says is chosen (what the state carries once the film plays). */
   const current = (engine: PlayerEngine) => (engine as unknown as { getQualityState(): { current: number } | undefined }).getQualityState()?.current;
 
-  /** hls.js has the highest's list (it asks for the first piece right after this). */
   const highestList = (hls: InstanceType<typeof FakeHls>, ...seconds: number[]) => hls.emit("levelUpdated", { level: 3, details: { fragments: pieces(...seconds) } });
 
   it("asks for the highest's list first, as before; the first piece then comes in 480p, and every piece after it in the highest", async () => {
     const { engine, hls } = await started();
-    expect(hls.currentLevel).toBe(3); // (the highest's list first, as it always was)
+    expect(hls.currentLevel).toBe(3);
     expect(hls.loadLevelWrites).toEqual([]);
     highestList(hls, 2, 2, 2);
-    expect(hls.loadLevelWrites).toEqual([1]); // (before hls.js asks for the first piece)
-    expect(current(engine)).toBe(3); // (the menu says the highest: that is the choice, 480p is only the start)
-    hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(2, 2, 2) } }); // (480p's own list is not it)
-    hls.emit("fragLoaded", { frag: { type: "audio", level: 1, duration: 2, stats: { loaded: 30_000 } } }); // (nor the sound's piece)
+    expect(hls.loadLevelWrites).toEqual([1]);
+    expect(current(engine)).toBe(3);
+    hls.emit("levelUpdated", { level: 1, details: { fragments: pieces(2, 2, 2) } });
+    hls.emit("fragLoaded", { frag: { type: "audio", level: 1, duration: 2, stats: { loaded: 30_000 } } });
     expect(hls.loadLevelWrites).toEqual([1]);
     hls.emit("fragLoaded", main(1));
     expect(hls.loadLevelWrites).toEqual([1, 3]);
@@ -304,7 +297,7 @@ describe("the first piece of a film with Auto off", () => {
       const long = await started();
       highestList(long.hls, seconds, seconds, seconds);
       long.hls.emit("fragLoaded", main(3));
-      highestList(long.hls, 2, 2); // (later lists of it are not the start)
+      highestList(long.hls, 2, 2);
       expect([seconds, long.hls.loadLevelWrites]).toEqual([seconds, []]);
       long.engine.destroy();
     }
@@ -349,13 +342,13 @@ describe("the first piece of a film with Auto off", () => {
   it("goes back to the highest at once when the 480p list or piece does not come, whatever hls.js would try next; an error elsewhere is not it", async () => {
     const list = await started();
     highestList(list.hls, 2, 2);
-    list.hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, frag: { type: "audio", level: 1 }, errorAction: { action: 5 } }); // (the sound's track 1)
+    list.hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, frag: { type: "audio", level: 1 }, errorAction: { action: 5 } });
     list.hls.emit("error", { type: "networkError", details: "audioTrackLoadError", fatal: false, context: { type: "audioTrack", level: 1 }, errorAction: { action: 5 } });
     list.hls.emit("error", { type: "networkError", details: "levelLoadError", fatal: false, context: { type: "level", level: 2 }, errorAction: { action: 5 } });
     expect(list.hls.loadLevelWrites).toEqual([1]);
     list.hls.emit("error", { type: "networkError", details: "levelLoadError", fatal: false, context: { type: "level", level: 1 }, errorAction: { action: 5 } });
     expect(list.hls.loadLevelWrites).toEqual([1, 3]);
-    list.hls.emit("fragLoaded", main(1)); // (a piece already on its way)
+    list.hls.emit("fragLoaded", main(1));
     expect(list.hls.loadLevelWrites).toEqual([1, 3]);
     list.engine.destroy();
     const piece = await started();
@@ -363,7 +356,7 @@ describe("the first piece of a film with Auto off", () => {
     piece.hls.emit("error", { type: "networkError", details: "fragLoadTimeOut", fatal: false, frag: { type: "main", level: 1 }, errorAction: { action: 5 } });
     expect(piece.hls.loadLevelWrites).toEqual([1, 3]);
     piece.engine.destroy();
-    const before = await started(); // (before 480p was asked for, an error on it is not this one's)
+    const before = await started();
     before.hls.emit("error", { type: "networkError", details: "levelLoadError", fatal: false, context: { type: "level", level: 1 }, errorAction: { action: 5 } });
     expect(before.hls.loadLevelWrites).toEqual([]);
     before.engine.destroy();
@@ -389,7 +382,7 @@ describe("lowFirstLevel", () => {
 
   it("is the 480p one, as the menu names it (by the film's shape too), the better of two", () => {
     expect(lowFirstLevel([size(1920, 1080), size(1280, 720), size(854, 480), size(640, 360)], 0)).toBe(2);
-    expect(lowFirstLevel([size(640, 360), size(854, 356), size(1280, 536)], 2)).toBe(1); // (a wide film: 854x356 is 480p, 1280x536 is 720p)
+    expect(lowFirstLevel([size(640, 360), size(854, 356), size(1280, 536)], 2)).toBe(1);
     expect(lowFirstLevel([size(854, 480, 900), size(854, 480, 1500), size(1280, 720)], 2)).toBe(1);
     expect(lowFirstLevel([{ height: 480 }, { height: 1080 }], 1)).toBe(0);
   });
@@ -432,10 +425,9 @@ describe("a quality picked by hand", () => {
     await engine.load("https://cdn.example/a.m3u8", "hls");
     const hls = FakeHls.instances.at(-1)!;
     hls.emit("manifestParsed", { levels });
-    hls.manualLevel = 2; // (1080p, from the menu)
+    hls.manualLevel = 2;
     return { engine, hls };
   };
-  /** hls.js says: this quality will not do (its tries are over, or a refusal such as a 404 is not tried again). `action` 2 is that; 5 is another try. */
   const leave = (hls: InstanceType<typeof FakeHls>, action = 2) => hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, errorAction: { action } });
 
   it("is asked of hls.js to be kept when a piece will not load, where it would go back to Auto at the first one", async () => {
@@ -498,7 +490,7 @@ describe("a direct address that the browser plays itself", () => {
   const PROXIED = "http://kino.test/api/proxy?url=https%3A%2F%2Fcdn.example%2Fa.m3u8";
   const DIRECT = "https://cdn.example/a.m3u8";
   beforeEach(() => {
-    FakeHls.supported = false; // (the browser has no hls.js to run, only its own player)
+    FakeHls.supported = false;
     vi.useFakeTimers();
     stubBrowser();
   });
@@ -623,7 +615,6 @@ describe("a start asked for past the end (a friend's message, a link typed by ha
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
-  /** The length is known: the browser has read the start of the film. */
   const known = (video: FakeVideo, duration: number) => {
     (video as unknown as { duration: number }).duration = duration;
     video.dispatchEvent(new Event("loadedmetadata"));
@@ -634,7 +625,7 @@ describe("a start asked for past the end (a friend's message, a link typed by ha
     await engine.load("https://cdn.example/a.mp4", "mp4", undefined, 86_400);
     known(video, 6_000);
     expect(video.currentTime).toBe(0);
-    await engine.load("https://cdn.example/b.mp4", "mp4", undefined, 5_950); // (in the last minute: the end, as `reachedEnd` counts it)
+    await engine.load("https://cdn.example/b.mp4", "mp4", undefined, 5_950);
     known(video, 6_000);
     expect(video.currentTime).toBe(0);
     await engine.load("https://cdn.example/c.mp4", "mp4", undefined, 754);
@@ -646,14 +637,14 @@ describe("a start asked for past the end (a friend's message, a link typed by ha
   it("takes hls.js back to the beginning when the start it was given is the end, and leaves one inside the film where hls.js put it", async () => {
     const { video, engine } = newEngine();
     await engine.load("https://cdn.example/a.m3u8", "hls", undefined, 86_400);
-    video.currentTime = 5_999; // (where hls.js went)
+    video.currentTime = 5_999;
     known(video, 6_000);
     expect(video.currentTime).toBe(0);
     await engine.load("https://cdn.example/b.m3u8", "hls", undefined, 754);
     video.currentTime = 754;
     known(video, 6_000);
     expect(video.currentTime).toBe(754);
-    video.currentTime = 4_000; // (later on, the length known again: nothing more is done)
+    video.currentTime = 4_000;
     known(video, 6_000);
     expect(video.currentTime).toBe(4_000);
     engine.destroy();
@@ -673,7 +664,6 @@ describe("the subtitle aligner", () => {
     vi.unstubAllGlobals();
   });
 
-  /** An aligner that does nothing but record how it was used. */
   const fakeAligner = () => {
     const films: SyncFilm[] = [];
     const handles: Array<{ close: ReturnType<typeof vi.fn> }> = [];
@@ -688,9 +678,7 @@ describe("the subtitle aligner", () => {
     const loader = vi.fn(() => Promise.resolve(starter));
     return { films, handles, addressWhenStarted, loader };
   };
-  /** The video knows the film now (until then the state says only that it is loading). */
   const known = (video: FakeVideo) => void video.dispatchEvent(new Event("loadedmetadata"));
-  /** The aligner's code has arrived (it is fetched along with the film, which does not wait for it) and has been started `count` times. */
   const started = (aligner: ReturnType<typeof fakeAligner>, count = 1) => vi.waitFor(() => expect(aligner.films).toHaveLength(count));
   const withTracks = (video: FakeVideo, tracks: Array<{ label: string; language: string; mode: string }>) => {
     (video as unknown as { textTracks: unknown }).textTracks = tracks;
@@ -722,7 +710,6 @@ describe("the subtitle aligner", () => {
     aligner.films[0]!.report("synced");
     expect(engine.getState().subtitleSync).toBe("synced");
     expect("subtitleShift" in engine.getState()).toBe(false);
-    // (How far the lines were moved, once the aligner is sure: only while they are in time.)
     aligner.films[0]!.report("synced", -2.4);
     expect(engine.getState()).toMatchObject({ subtitleSync: "synced", subtitleShift: -2.4 });
     aligner.films[0]!.report("syncing", -2.4);
@@ -739,7 +726,7 @@ describe("the subtitle aligner", () => {
     await engine.load(HLS, "hls");
     known(video);
     const hls = FakeHls.instances.at(-1)!;
-    expect(hls.url).toBe(HLS); // (the film did not wait for it)
+    expect(hls.url).toBe(HLS);
     expect(aligner.films).toHaveLength(0);
     const init = Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
     const media = Uint8Array.from([0, 0, 0, 16, 0x6d, 0x6f, 0x6f, 0x66, 1]);
@@ -763,7 +750,6 @@ describe("the subtitle aligner", () => {
     await engine.load(HLS, "hls");
     known(video);
     const hls = FakeHls.instances.at(-1)!;
-    // (The init segment comes once, at the start; the aligner was not there to hear it.)
     hls.emit("bufferAppending", { type: "audio", data: Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]), frag: { start: 0, duration: 4 } });
     engine.setSubtitleSync(true);
     await started(aligner);
@@ -797,12 +783,12 @@ describe("the subtitle aligner", () => {
     engine.setSubtitleSync(false);
     expect(aligner.handles[0]!.close).toHaveBeenCalledWith(true);
     expect(engine.getState().subtitleSync).toBe("off");
-    aligner.films[0]!.report("syncing"); // (a late word from the one that was closed)
+    aligner.films[0]!.report("syncing");
     expect(engine.getState().subtitleSync).toBe("off");
     engine.setSubtitleSync(true);
     await started(aligner, 2);
     expect(aligner.films[1]!.hls).toBe(aligner.films[0]!.hls);
-    expect(aligner.films[1]!.tap).toBe(aligner.films[0]!.tap); // (the player's own: it has listened all along)
+    expect(aligner.films[1]!.tap).toBe(aligner.films[0]!.tap);
     expect(engine.getState().subtitleSync).toBe("ready");
     engine.destroy();
   });
@@ -831,7 +817,7 @@ describe("the subtitle aligner", () => {
     const first = aligner.films[0]!;
     await engine.load("https://cdn.example/b.m3u8", "hls");
     known(video);
-    expect(aligner.handles[0]!.close).toHaveBeenCalledWith(); // (closed as it is: the lines of a film that is gone need no putting back)
+    expect(aligner.handles[0]!.close).toHaveBeenCalledWith();
     await started(aligner, 2);
     first.report("synced");
     first.show(0);
@@ -856,7 +842,7 @@ describe("the subtitle aligner", () => {
       known(video);
       expect(engine.getState().subtitleSync).toBe("unavailable");
       engine.setSubtitleSync(false);
-      engine.setSubtitleSync(true); // (nothing to start on: still "unavailable")
+      engine.setSubtitleSync(true);
       expect(engine.getState().subtitleSync).toBe("unavailable");
       engine.destroy();
     }
@@ -883,7 +869,7 @@ describe("the subtitle aligner", () => {
 
   it("does not hold the film back for an aligner that is slow to arrive", async () => {
     const { video, engine } = newEngine();
-    engine.useSubtitleSync(() => new Promise(() => {})); // (never arrives)
+    engine.useSubtitleSync(() => new Promise(() => {}));
     await engine.load(HLS, "hls");
     known(video);
     expect(FakeHls.instances.at(-1)!.url).toBe(HLS);
@@ -953,7 +939,7 @@ describe("the subtitle aligner", () => {
     const { video, engine } = newEngine();
     const tracks = withTracks(video, [
       { label: "English", language: "en", mode: "hidden" },
-      { label: "Română", language: "ro", mode: "hidden" }, // (loaded for the aligner)
+      { label: "Română", language: "ro", mode: "hidden" },
       { label: "Français", language: "fr", mode: "disabled" },
     ]);
     hold(tracks[1]!);
@@ -980,7 +966,6 @@ describe("the subtitle aligner", () => {
   });
 });
 
-/** A <video> whose sound a page may take (Chromium's `captureStream`), with the attribute that asks for a film so that it can be read. */
 class CapturingVideo extends FakeVideo {
   crossOrigin: string | null = null;
   play() {
@@ -999,7 +984,6 @@ class CapturingVideo extends FakeVideo {
   }
 }
 
-/** Just enough of the Web Audio API for the tap to be made (no sound goes through it here: what it does with sound is in capture.test.ts). */
 const stubAudio = () => {
   const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 }, onaudioprocess: null });
   class FakeAudioContext {
@@ -1055,11 +1039,10 @@ describe("a file the browser plays by itself, and the subtitle aligner", () => {
     expect(readableFrom("/fixtures/a.mp4", here)).toBe("same-origin");
     expect(readableFrom("https://kino4tv.com/api/proxy?url=x", here)).toBe("same-origin");
     expect(readableFrom(RELAY, here)).toBe("cors");
-    // (an address as the server makes them)
     const made = signedRelayUrl("https://kino-relay.example/api/proxy", { url: "https://cdn.example/a.mp4", referer: "https://cdn.example/", expires: Date.now() + 1000, hostToken: false }, "k".repeat(32));
     expect(readableFrom(made, here)).toBe("cors");
-    expect(readableFrom("https://cdn.example/a.mp4", here)).toBeUndefined(); // (a host that says nothing of it)
-    expect(readableFrom("https://other.example/api/proxy?url=x", here)).toBeUndefined(); // (not signed: not the relay)
+    expect(readableFrom("https://cdn.example/a.mp4", here)).toBeUndefined();
+    expect(readableFrom("https://other.example/api/proxy?url=x", here)).toBeUndefined();
   });
 
   it("listens to a film through the relay, which it asks for so that it can be read; the aligner is told the sound comes as it plays", async () => {
@@ -1074,7 +1057,6 @@ describe("a file the browser plays by itself, and the subtitle aligner", () => {
     expect(sync.films[0]!.hls).toBeUndefined();
     video.dispatchEvent(new Event("loadedmetadata"));
     expect(engine.getState().subtitleSync).toBe("ready");
-    // (the next film starts clean: one from a host that says nothing is asked for as before)
     await engine.load("https://cdn.example/b.mp4", "mp4");
     expect(video.crossOrigin).toBeNull();
     video.dispatchEvent(new Event("loadedmetadata"));
@@ -1115,7 +1097,7 @@ describe("a file the browser plays by itself, and the subtitle aligner", () => {
     const sync = aligner();
     engine.useSubtitleSync(sync.loader);
     await engine.load(RELAY, "mp4", undefined, 120);
-    engine.play(); // (wanted while it loads)
+    engine.play();
     let asked = 0;
     const src = Object.getOwnPropertyDescriptor(video, "src")!;
     Object.defineProperty(video, "src", { get: () => src.value as string, set: (value: string) => { asked++; src.value = value; }, configurable: true });
@@ -1124,7 +1106,6 @@ describe("a file the browser plays by itself, and the subtitle aligner", () => {
     expect(video.src).toBe(RELAY);
     expect(video.crossOrigin).toBeNull();
     expect(engine.getState().state).not.toBe("error");
-    // (it starts now: where it was asked to, and playing)
     const play = vi.spyOn(engine, "play");
     (video as unknown as { duration: number }).duration = 600;
     video.dispatchEvent(new Event("loadedmetadata"));
@@ -1159,10 +1140,10 @@ describe("a file the browser plays by itself, and the subtitle aligner", () => {
 
 describe("lostTheConnection", () => {
   it("is a network error that got no answer: refused, dropped or timed out", () => {
-    expect(lostTheConnection({ type: "networkError", details: "fragLoadError" })).toBe(true); // (no response at all)
-    expect(lostTheConnection({ type: "networkError", details: "fragLoadError", response: { code: 0 } })).toBe(true); // (what a failed request is called)
+    expect(lostTheConnection({ type: "networkError", details: "fragLoadError" })).toBe(true);
+    expect(lostTheConnection({ type: "networkError", details: "fragLoadError", response: { code: 0 } })).toBe(true);
     expect(lostTheConnection({ type: "networkError", details: "manifestLoadTimeOut" })).toBe(true);
-    expect(lostTheConnection({ type: "networkError", details: "fragLoadTimeOut", response: { code: 504 } })).toBe(true); // (a time-out is a time-out whatever came with it)
+    expect(lostTheConnection({ type: "networkError", details: "fragLoadTimeOut", response: { code: 504 } })).toBe(true);
   });
 
   it("is not an answer that says no, nor a picture that cannot be decoded: waiting does not change those", () => {
@@ -1185,7 +1166,6 @@ describe("a place the video comes from that says no", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
-  /** The state a film ends in when hls.js reports a fatal error like `data`, and the lines the console was given. */
   const endsWith = async (data: Record<string, unknown>, address = "https://cdn.example/a.m3u8") => {
     const lines: unknown[][] = [];
     vi.spyOn(console, "error").mockImplementation((...line: unknown[]) => void lines.push(line));

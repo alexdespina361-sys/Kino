@@ -1,13 +1,7 @@
-/**
- * English: the source of the words, and the list of keys that Romanian (ro.ts) and Italian (it.ts) must also have. A key with a
- * count has one form per plural category the language uses (`_one`, `_few`, `_other`): English needs two, Romanian three.
- */
 import { chatEn } from "./chat.en";
-import { catEn } from "./cat.en";
 import { shellEn } from "./shell.en";
 
 export const en = {
-  /* common */
   "common.back": "Back",
   "common.cancel": "Cancel",
   "common.close": "Close",
@@ -23,7 +17,6 @@ export const en = {
   "common.optional": "Optional",
   "common.clear": "Clear",
 
-  /* playing a link from the phone */
   "play.paste": "Paste a video or page link",
   "play.pasteLabel": "Video or page link",
   "play.pasteButton": "Paste",
@@ -31,7 +24,6 @@ export const en = {
   "play.finding": "Finding video…",
   "play.found": "Video found. Sending to {tv}…",
 
-  /* signing in */
   "auth.signIn": "Sign in",
   "auth.signUp": "Create account",
   "auth.signOut": "Sign out",
@@ -58,14 +50,12 @@ export const en = {
   "auth.google": "Continue with Google",
   "auth.or": "or",
 
-  /* how a round trip to Google ended (a sign-in that worked says nothing) */
   "google.denied": "Signing in with Google was cancelled.",
   "google.failed": "Signing in with Google didn't work. Please try again.",
   "google.taken": "That Google account is already connected to another account.",
   "google.unavailable": "Signing in with Google isn't available here.",
   "google.linked": "Google is connected. You can sign in with it now.",
 
-  /* things the server says no to */
   "error.generic": "Something went wrong. Please try again.",
   "error.offline": "Can't reach the server. Check your connection.",
   "error.invalid_credentials": "Wrong username or password.",
@@ -87,7 +77,6 @@ export const en = {
   "error.bad_response": "This server doesn't support accounts.",
   "error.reauth_required": "Confirm with Google first.",
 
-  /* profiles */
   "profiles.title": "Who's watching?",
   "profiles.manage": "Manage profiles",
   "profiles.add": "Add profile",
@@ -143,7 +132,6 @@ export const en = {
   "avatar.vampire": "Vampire",
   "avatar.dragon": "Dragon",
 
-  /* the account page on the phone */
   "account.title": "Account",
   "account.open": "Account and profiles",
   "account.signInPrompt": "Sign in",
@@ -169,7 +157,6 @@ export const en = {
   "account.deleted": "Your account was deleted.",
   "account.signOutFailed": "Couldn't sign out. Check your connection and try again.",
   "account.signedInGoogle": "Signed in with Google",
-  /* the Android app's notifications (client/app/kinoApp.ts): {name} is the friend */
   "app.push.chat": "{name} sent you a message",
   "app.push.recommend": "{name} sent you something to watch",
   "app.push.party": "{name} invites you to their watch party",
@@ -189,7 +176,6 @@ export const en = {
   "account.deleteWarnGoogle": "This deletes your account, profiles, history and lists for good. To confirm, sign in to Google again.",
   "account.deleteWithGoogle": "Confirm with Google",
 
-  /* signing another device in */
   "link.title": "Sign in with another device",
   "link.step1": "Open Kino on another device and sign in.",
   "link.step2": "Tap your picture, then “Sign in another device”.",
@@ -212,7 +198,6 @@ export const en = {
   "link.device.remote": "A phone",
   "link.device.browser": "A browser",
 
-  /* settings that follow a profile */
   "settings.title": "Settings",
   "settings.language": "Language",
   "settings.accent": "Colour",
@@ -244,7 +229,6 @@ export const en = {
   "accent.orange": "Orange",
   "accent.pink": "Pink",
 
-  /* rows and cards */
   "rows.continue": "Continue watching",
   "rows.myList": "My Lists",
   "rows.myListEmpty": "Hold a title, or tap + on its page, to save it here.",
@@ -272,7 +256,6 @@ export const en = {
   "library.resultsFor": "Results for “{query}”",
   "library.noMatches": "No matches for “{query}”",
   "library.credit": "From {sources}. What is listed, and the terms it comes with, is up to them.",
-  // (TMDB's own wording, which it asks to be shown as it is: it is not translated.)
   "library.tmdb": "This product uses the TMDB API but is not endorsed or certified by TMDB.",
   "library.addToList": "Add to {list}",
   "library.addToAList": "Add to a list",
@@ -288,7 +271,6 @@ export const en = {
   "library.aboutLess": "Show less",
   "library.kindSeries": "Series",
 
-  /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */
   "category.trending-movies": "Trending Movies",
   "category.trending-tv": "Trending Series",
   "category.popular-movies": "Popular Movies",
@@ -419,7 +401,6 @@ export const en = {
   "category.world-zh-movies": "Chinese Cinema",
   "category.world-ru-movies": "Russian Cinema",
   "category.world-tr-movies": "Turkish Cinema",
-  /* the rows of the Cartoons and Anime pages */
   "category.cartoon-tv": "Popular Cartoon Series",
   "category.cartoon-movies": "Popular Cartoon Movies",
   "category.cartoon-top-tv": "Top Rated Cartoon Series",
@@ -473,7 +454,6 @@ export const en = {
   "category.best-anime-tv": "Best Anime Series",
   "category.best-anime-movies": "Best Anime Movies",
 
-  /* the account pages: settings, devices, signing another device in */
   "settings.playback": "Playback",
   "settings.appearance": "Appearance",
   "settings.subtitleDefaults": "Shown first now: {languages}.",
@@ -489,7 +469,6 @@ export const en = {
   "link.scan": "Scan the other device's code",
   "link.codeOr": "or type the code",
   "link.codeLabel": "Code on the other device",
-  /* the TV's start screens and account pages */
   "tv.welcome": "Welcome",
   "tv.welcomeStart": "Start watching",
   "tv.welcomeAbout": "Films and series on this screen, with your phone as the remote if you like.",
@@ -517,7 +496,6 @@ export const en = {
   "role.asRemote": "Use this screen as a remote",
   "tv.notSignedIn": "Not signed in",
   "tv.approveHelp": "Type the code the other device is showing.",
-  /* the TV's library */
   "tv.library": "Library",
   "tv.menu": "Library menu",
   "tv.search": "Search",
@@ -554,7 +532,6 @@ export const en = {
   "tv.caretLeft": "Move the cursor left",
   "tv.caretRight": "Move the cursor right",
 
-  /* the player: menus, sheets and the controls over the picture */
   "player.audioSubtitles": "Audio & subtitles",
   "player.audio": "Audio",
   "player.subtitles": "Subtitles",
@@ -889,7 +866,6 @@ export const en = {
   "ws.HAS_PHONE": "Disconnect the phone from this TV before joining a party.",
   "ws.ALREADY_IN_PARTY": "Leave this party before joining another.",
 
-  /* a watch party on the TV: the menu line, the page, the panel over a film */
   "party.rail": "Watch party",
   "party.size_one": "{count} device",
   "party.size_other": "{count} devices",
@@ -932,10 +908,8 @@ export const en = {
   "resolve.unsupported": "Couldn't find a video that plays here.",
   "resolve.temporary": "Something went wrong while looking for the video. Try again in a moment.",
 
-  /* subtitle languages: the way out of a profile's own list */
   "player.showAll": "Show all languages",
 
-  /* the TV's library: its menu and the pages behind it */
   "tv.movies": "Movies",
   "tv.series": "Series",
   "tv.cartoons": "Cartoons",
@@ -1005,7 +979,6 @@ export const en = {
   "rows.moreLike": "More like {title}",
   "rows.moreFailed": "Couldn't load more titles. Trying again…",
 
-  /* ratings: a score out of ten, why, and what was watched */
   "rating.mine": "My ratings",
   "rating.mineHelp": "The titles and seasons you gave a score.",
   "rating.all": "See all",
@@ -1054,7 +1027,6 @@ export const en = {
   "rating.finishedOn": "Finished {date}",
   "rating.lastWatchedOn": "Last watched {date}",
 
-  /* friends: see each other's lists and ratings, send titles and watch-party invitations, hear what the other watches */
   "friends.title": "Friends",
   "friends.settings": "Friends",
   "friends.settingsHelp": "Friends see this profile's name, picture, lists and ratings and when it is online, and can send it titles, invitations and messages. What you watch is shared only if you choose, below.",
@@ -1240,7 +1212,6 @@ export const en = {
   "error.plan_full": "You already have as many plans waiting for an answer as you can. Wait for a reply first.",
   "error.plan_gone": "That plan isn't waiting for an answer any more.",
 
-  /* feedback: a form to tell the team what went wrong, what could be better or what is missing (client/feedback) */
   "feedback.title": "Send feedback",
   "feedback.entry": "Feedback",
   "feedback.report": "Report this problem",
@@ -1459,14 +1430,9 @@ export const en = {
   "feedback.leave.stay": "Keep editing",
   "feedback.leave.go": "Close anyway",
 
-  /* the chat between two friends (client/chat): kept in a file of its own, spread in here */
   ...chatEn,
 
-  /* the phone's shell, its bar of destinations and the screens in it (client/controller/shell): kept in a file of its own, spread in here */
   ...shellEn,
-
-  /* the cat companion (client/cat): kept in a file of its own, spread in here */
-  ...catEn,
 } as const;
 
 export type Dictionary = Record<keyof typeof en, string> & Record<string, string>;

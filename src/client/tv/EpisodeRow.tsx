@@ -6,19 +6,14 @@ import { comesIn, hueOf } from "../shared/Poster";
 export interface EpisodeCard {
   number: number;
   name: string;
-  /** A picture from the episode. Without one (or when it does not load) the tile is a colour made from the name. */
   still?: string | undefined;
   overview?: string | undefined;
-  /** At the end of the name's line: that it is playing, how much is left of it, or how long it runs. */
   meta?: string | undefined;
   state: "now" | "new" | "started" | "watched";
-  /** How far in you are (0 to 1), drawn along the foot of the picture. */
   fraction?: number | undefined;
-  /** No source had it the last times it was played: it says "Not available yet" (Play still looks again). */
   unavailable?: boolean | undefined;
 }
 
-/** What is inside one button of the episode list, the way a streaming app lists them: number, a still, the name and length, a line about it. */
 export function EpisodeRow({ number, name, still, overview, meta, state, fraction, unavailable }: EpisodeCard) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(name);

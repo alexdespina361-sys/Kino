@@ -1,12 +1,11 @@
 import type { PartyCommand } from "../../shared";
 
-/** What a press on the TV remote (or a keyboard, when testing on a PC) means. */
 export type RemoteAction =
   | "left"
   | "right"
   | "up"
   | "down"
-  | "select" // OK / Enter: plays or pauses, or presses whatever button has focus
+  | "select"
   | "back"
   | "playpause"
   | "play"
@@ -18,7 +17,7 @@ export type RemoteAction =
   | "previous"
   | "captions"
   | "fullscreen"
-  | "mute" // M: this screen's own sound off and on
+  | "mute"
   | "browse";
 
 const BY_KEY: Record<string, RemoteAction> = {
@@ -56,7 +55,6 @@ const BY_KEY: Record<string, RemoteAction> = {
   P: "previous",
   s: "stop",
   S: "stop",
-  // (The three keys under a hand on a keyboard, as the video sites have them: back, pause, on.)
   j: "rewind",
   J: "rewind",
   k: "playpause",
@@ -65,18 +63,17 @@ const BY_KEY: Record<string, RemoteAction> = {
   L: "forward",
 };
 
-/** TV key codes, for browsers that report no usable `key` for the remote's buttons: Android TV's, then Hisense's (VIDAA), webOS's and Tizen's. */
 const BY_KEY_CODE: Record<number, RemoteAction> = {
-  4: "back", // KEYCODE_BACK
+  4: "back",
   8: "back",
   13: "select",
-  19: "pause", // VIDAA
+  19: "pause",
   27: "back",
   37: "left",
   38: "up",
   39: "right",
   40: "down",
-  85: "playpause", // KEYCODE_MEDIA_PLAY_PAUSE
+  85: "playpause",
   86: "stop",
   87: "next",
   89: "rewind",
@@ -85,19 +82,17 @@ const BY_KEY_CODE: Record<number, RemoteAction> = {
   177: "previous",
   178: "stop",
   179: "playpause",
-  412: "rewind", // VIDAA
-  413: "stop", // VIDAA
-  415: "play", // VIDAA
-  417: "forward", // VIDAA
-  461: "back", // webOS
-  10009: "back", // Tizen
-  10252: "playpause", // Tizen
+  412: "rewind",
+  413: "stop",
+  415: "play",
+  417: "forward",
+  461: "back",
+  10009: "back",
+  10252: "playpause",
 };
 
-/** The input types that are pressed, not typed into. */
 const NOT_TEXT = new Set(["button", "checkbox", "radio", "range", "submit", "reset", "file", "image", "color"]);
 
-/** A text field has the keyboard: letters, Space, Backspace and the sideways arrows are for typing in it, not for the remote. */
 export function isEditable(target: { tagName?: string; type?: string; isContentEditable?: boolean } | EventTarget | null | undefined): boolean {
   const element = target as { tagName?: string; type?: string; isContentEditable?: boolean } | null | undefined;
   if (!element?.tagName) return false;
@@ -105,7 +100,6 @@ export function isEditable(target: { tagName?: string; type?: string; isContentE
   return element.tagName === "INPUT" && !NOT_TEXT.has((element.type ?? "text").toLowerCase());
 }
 
-/** What still works with the cursor in a text field: moving between fields, OK, and leaving (but not Backspace, which deletes). */
 const WHILE_TYPING = new Set<RemoteAction>(["up", "down", "select", "back"]);
 
 export function actionForKey(event: { key: string; keyCode?: number; target?: EventTarget | null }): RemoteAction | null {
@@ -114,13 +108,8 @@ export function actionForKey(event: { key: string; keyCode?: number; target?: Ev
   return action;
 }
 
-/** How far the arrow keys, rewind and fast-forward jump. */
 export const SKIP_SECONDS = 10;
 
-/**
- * What a press asks of the film from an admin of a watch party, whose host's screen does it for everyone: play and pause, a jump either
- * way, the next episode, stopping. Null for a key that is not about the playback.
- */
 export function partyCommandForKey(action: RemoteAction, playing: boolean, hasNext: boolean): PartyCommand | null {
   switch (action) {
     case "select":

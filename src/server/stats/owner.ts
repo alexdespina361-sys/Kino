@@ -8,67 +8,44 @@ import { oddHours, type HereNow, type HourAnswers, type LiveCount } from "./live
 import { statsView, type StatsView, type Windows } from "./summary";
 import { dayOf, type VisitCounter } from "./visits";
 
-/**
- * The owner's page (the owner, 18 Nov 2026: "a webpage that is hosted on github, where I can see: active users/guests, accounts created,
- * movies/content watched (minutes), feedback received", and "the base for future real time security"): one answer with all of it,
- * `GET /api/owner/stats`, for a page that is kept somewhere else (owner-stats/ in the repository; docs/stats.md says how it is put up).
- *
- * - It has a key of its own (`OWNER_STATS_TOKEN`, 24 characters at least), which reads this one answer and nothing else: not the reports' words, not
- *   the stickers, and it changes nothing. Without it the route is not there (404). A wrong key is slowed for each address, as the team's is.
- * - A page of another site may read it only when it is the one named (`OWNER_STATS_ORIGIN`, an origin, exactly): a browser is told so (CORS), and
- *   nothing else is. The key is what keeps the numbers: the origin only says which page's script a browser lets read the answer.
- * - Counts only. No name, no address, no title of a film; of a report its number, its kind, when, how it stands and its heading.
- */
-
 export const OWNER_STATS = "/api/owner/stats";
 const DAY_MS = 24 * 3600 * 1000;
-/** How many of the newest reports are listed (what sort each is and how it stands: never its heading or its words, which are a person's own). */
 const LATEST_REPORTS = 10;
 
-/** Programs that fetch pages and say so: not people who are here now. */
 const NOT_PEOPLE = /bot|crawl|spider|slurp|preview|monitor|uptime|curl|wget|python|node|go-http|java|headless|lighthouse|pingdom|facebookexternalhit|facebot|embedly|whatsapp|telegram|slack|discord|linkedin/i;
 
 export interface OwnerStatsView {
   at: number;
   zone: "UTC";
-  /** Right now: who asked the site something in the last five minutes, and what is connected. */
   now?: HereNow & { tvs?: number; phones?: number };
   accounts?: NonNullable<StatsView["accounts"]> & { pushDevices: number };
   visits?: NonNullable<StatsView["visits"]>;
-  /** Minutes of film the signed-in profiles played, all together. */
   watched?: { minutes: Windows };
   feedback?: {
     total: number;
-    /** Not closed yet (done, declined and duplicate are closed). */
     open: number;
-    /** Nobody of the team has touched it. */
     fresh: number;
     received: Windows;
     latest: Array<{ id: string; at: number; kind: string; area: string; status: string }>;
   };
-  /** How the server answered in each of the last 24 hours, the oldest first, and the hours that look unlike the others. */
   answers?: HourAnswers[];
   odd?: ReturnType<typeof oddHours>;
   days: Array<StatsView["days"][number] & { minutes?: number }>;
 }
 
 export interface OwnerStatsOptions {
-  /** The key of the owner's page (`OWNER_STATS_TOKEN`). Without one long enough, there is no such route. */
   token: string | undefined;
-  /** The one page of another site that may read the answer in a browser (`OWNER_STATS_ORIGIN`): an origin, as a browser writes it. */
   origin?: string | undefined;
   accounts?: AccountStore | undefined;
   visits?: VisitCounter | undefined;
   feedback?: FeedbackStore | undefined;
   live?: LiveCount | undefined;
-  /** How many screens and phones are connected now. */
   connected?: (() => { tvs: number; phones: number }) | undefined;
   registration?: Registration | undefined;
   maxAccounts?: number | undefined;
   now?: (() => number) | undefined;
 }
 
-/** An origin as a browser writes it (`https://name.example`, no path, no slash at the end); nothing for anything else. */
 export function originOf(text: string | undefined): string | undefined {
   const value = text?.trim();
   if (!value) return undefined;
@@ -80,18 +57,11 @@ export function originOf(text: string | undefined): string | undefined {
   }
 }
 
-/**
- * Counts who is here now and how the server answers (live.ts), as each answer goes out: the site's own api and its two pages. Never the owner's own
- * looks, a robot that says what it is, nor somebody whose browser asks not to be tracked (they are among the answers, which name nobody, and not
- * among the people).
- */
 export function countLive(app: FastifyInstance, live: LiveCount): void {
   app.addHook("onResponse", async (request, reply) => {
     const path = (request.url.split("?")[0] ?? "").replace(/\/+$/, "");
     if (path === OWNER_STATS || !(path.startsWith("/api/") || path === "" || path === "/tv")) return;
     live.answered(reply.statusCode);
-    // (Who is here asked the site something from its own page. A page's file that was only fetched, which is what a scanner with a browser's name does,
-    // is among the answers and is nobody; so is a question from another site.)
     if (!path.startsWith("/api/")) return;
     const from = request.headers["sec-fetch-site"];
     if (from && from !== "same-origin") return;
@@ -152,13 +122,11 @@ export function ownerView(options: Omit<OwnerStatsOptions, "token" | "origin">, 
 export const ownerStatsRoutes: FastifyPluginAsync<OwnerStatsOptions> = async (app, options) => {
   const allowed = originOf(options.origin);
   const keyed = teamGuard(options.token, "owner.stats");
-  /** Tells a browser that the named page may read the answer (and only that one). */
   const cors = (request: FastifyRequest, reply: Parameters<typeof keyed>[1]) => {
     reply.header("Cache-Control", "no-store");
     reply.header("Vary", "Origin");
     if (allowed && request.headers.origin === allowed) reply.header("Access-Control-Allow-Origin", allowed);
   };
-  // (What a browser asks before it sends the key from another site's page.)
   app.options(OWNER_STATS, async (request, reply) => {
     cors(request, reply);
     if (!allowed || request.headers.origin !== allowed) return reply.code(404).send({ error: "NOT_FOUND" });

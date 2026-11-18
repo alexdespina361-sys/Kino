@@ -25,7 +25,6 @@ describe("cookieText", () => {
   });
 });
 
-/** A page's storage and cookies, the two places an id is kept. */
 function browser() {
   const storage = new Map<string, string>();
   const jar = new Map<string, string>();

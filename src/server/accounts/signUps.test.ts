@@ -4,8 +4,6 @@ import { buildApp } from "../app";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
 
-/** The whole site's sign-ups a day (accounts/routes.ts `DEFAULT_SIGNUPS_PER_DAY`), besides an address's few an hour. */
-
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -28,7 +26,7 @@ describe("sign-ups for the whole site", () => {
     vi.spyOn(Date, "now").mockImplementation(() => now);
     const { register } = await site({ signUpsPerDay: 3 });
     expect((await register("ana")).statusCode).toBe(201);
-    expect((await register("ana")).statusCode).toBe(409); // (taken: the site's day keeps its place)
+    expect((await register("ana")).statusCode).toBe(409);
     expect((await register("bo")).statusCode).toBe(201);
     expect((await register("cy")).statusCode).toBe(201);
     const over = await register("dee");

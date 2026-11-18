@@ -6,11 +6,9 @@ import { buildApp, type AppOptions } from "./app";
 
 type Health = { ok: boolean; segments: { hits: number; misses: number; keptMB: number } };
 
-/** The team's token (see `teamGuard`): the counters of /api/health are asked with it. */
 const TOKEN = "health-test-team-token-0123456789";
 const team = { authorization: `Bearer ${TOKEN}` };
 const withTeam = (options: AppOptions = {}) => buildApp({ ...options, feedbackAdminToken: TOKEN });
-/** What the team is told: the short answer and the counters. */
 const counters = async (app: FastifyInstance) => (await app.inject({ url: "/api/health", headers: team })).json<Record<string, unknown>>();
 
 describe("/api/health", () => {
@@ -49,10 +47,8 @@ describe("/api/health", () => {
     const full = await counters(app);
     expect(full).toMatchObject({ ok: true, storage: "postgres" });
     for (const key of ["segments", "proxy", "subsync", "official", "feedback", "features"]) expect(full).toHaveProperty(key);
-    // A wrong token is told so, not handed the short answer (a mistyped token is noticed), and tries are slowed per address.
     const wrong = await app.inject({ url: "/api/health", headers: { authorization: "Bearer not-the-token-but-long-enough" } });
     expect([wrong.statusCode, wrong.json()]).toEqual([401, { error: "unauthorized" }]);
-    // (An answer the HEAD of an uptime monitor gets, too.)
     expect((await app.inject({ method: "HEAD", url: "/api/health" })).statusCode).toBe(200);
   });
 
@@ -73,7 +69,7 @@ describe("/api/health", () => {
     app = await withTeam({ allowPrivateNetwork: true });
     expect(((await counters(app)) as Health).segments).toEqual({ hits: 0, misses: 0, keptMB: 0 });
     for (let screen = 0; screen < 3; screen++) {
-      expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).body).toBe("BYTES"); // (three screens, one film)
+      expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).body).toBe("BYTES");
     }
     expect(((await counters(app)) as Health).segments).toEqual({ hits: 2, misses: 1, keptMB: 0 });
   });
@@ -88,7 +84,6 @@ describe("/api/health", () => {
     app = await withTeam({ allowPrivateNetwork: true });
     expect((await counters(app)).proxy).toEqual({ bytes: 0, requests: 0, refused: 0, video: "on" });
     for (let screen = 0; screen < 3; screen++) await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`);
-    // (Three screens each had the five bytes, although the film's own place was asked once.)
     expect((await counters(app)).proxy).toEqual({ bytes: 15, requests: 3, refused: 0, video: "on" });
   });
 
@@ -113,7 +108,6 @@ describe("/api/health", () => {
     const piece = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/seg-1.ts`;
     const before = process.env.PROXY_EXEMPT_HOSTS;
     try {
-      // (As a host sets it: the whole server, from the setting to the answer.)
       process.env.PROXY_EXEMPT_HOSTS = "elsewhere.example, 127.0.0.1";
       app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false });
       expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).body).toBe("BYTES");
@@ -122,7 +116,6 @@ describe("/api/health", () => {
       app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false });
       expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).statusCode).toBe(403);
       await app.close();
-      // (And as an option, which is what a test or another program gives.)
       app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false, proxyExemptHosts: ["127.0.0.1"] });
       expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).body).toBe("BYTES");
     } finally {

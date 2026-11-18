@@ -27,42 +27,31 @@ import { FriendPage, FriendsPage, YourTag } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
-/** The pages that are open, the one on top last: a title's page lies over the account's, and Escape goes back from that one only. */
 const pagesOpen: object[] = [];
 
-/**
- * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A `bare` page (a title's, with its picture at the top)
- * has no head: its way back is a round button over the picture, and its name is the page's own to write. (`backTestId`: the way back's test id, "page-back" if none.)
- */
 export function Page({ title, onBack, children, testId, backTestId, bare = false }: { title: string; onBack: () => void; children: ReactNode; testId?: string; backTestId?: string; bare?: boolean }) {
   const t = useT();
   const page = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const me = useRef({}).current;
   const back = useRef(onBack);
-  back.current = onBack; // (read when Escape is pressed: the key listener is not put on again at each render of the screen under it, which is once a second while a film plays)
-  useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
+  back.current = onBack;
+  useBackToClose(onBack);
   useEffect(() => {
     pagesOpen.push(me);
     return () => void pagesOpen.splice(pagesOpen.indexOf(me), 1);
   }, [me]);
-  // (one page is the next one in the same place: what was scrolled in the one before is not where the next begins)
   useLayoutEffect(() => {
     body.current?.scrollTo(0, 0);
   }, [title]);
-  // The keyboard goes into the page when it opens (not left on the button behind it), and Tab goes round it rather than out to the controls under it.
-  // (The pages of a view that changes are this one component with other words: each is "opened" as its title changes, the button that opened it gone.)
   useEffect(() => {
     if (page.current && !page.current.contains(document.activeElement)) page.current.focus({ preventScroll: true });
   }, [title, testId]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // (A sheet keeps Escape and Tab. A title's page opened from a sheet that is still open - the ratings' - lies over it, and Escape closes the sheet under it first;
-      // the phone's own Back, which goes by the history's layers, closes the one on top. Only a keyboard sees the difference.)
       if (sheetIsOpen()) return;
-      if (pagesOpen[pagesOpen.length - 1] !== me) return; // (so does a page over this one)
+      if (pagesOpen[pagesOpen.length - 1] !== me) return;
       if (event.key === "Escape") {
-        // (One Escape is one page back: the page under this one listens on the window too, and finds this one gone if it listens after it.)
         event.stopImmediatePropagation();
         back.current();
       } else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
@@ -94,7 +83,6 @@ export function Page({ title, onBack, children, testId, backTestId, bare = false
 
 type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "approve" | "friends" | "friend" | "news";
 
-/** What's new in Kino, its own page: opening it is seeing the newest version (the menu's row stops saying "New"). */
 function NewsPage({ onSeen }: { onSeen: () => void }) {
   useEffect(onSeen, [onSeen]);
   return <NewsList className="page-news" />;
@@ -111,11 +99,6 @@ function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; la
   );
 }
 
-/**
- * Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. `inline`: the front page of it is a
- * page of the phone's bar (the "You" tab), not a page laid over it; every page it leads to is still one laid over (with its own way back), and `onClose` is
- * where the phone goes when the account has no more to show (a profile was chosen, someone signed out).
- */
 export function AccountScreen({
   onClose,
   initial = "main",
@@ -130,13 +113,9 @@ export function AccountScreen({
   initial?: View;
   inline?: boolean;
   onSessionsChanged?: () => void;
-  /** Open the TVs this phone controls (the same sheet as the TV's menu has), from the Devices page. */
   onTvs?: () => void;
-  /** How many TVs this phone has: the Devices page has a row for them when there are any. */
   tvCount?: number;
-  /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
   onOpenTitle?: (entry: Entry) => void;
-  /** A friend's request to watch together was answered with "Start a party" (not given on a phone that has no TV to host one). */
   onStartParty?: (friendId: string) => void;
 }) {
   const t = useT();
@@ -144,28 +123,20 @@ export function AccountScreen({
   const friends = useFriends();
   const feedback = useFeedbackEntry();
   const news = useNews();
-  /** The Android app, on a phone's browser with Android (app/GetTheApp.tsx): a card on the front page, for a guest too. */
   const release = useAppRelease();
-  /** An account that has no Google account yet is offered to connect one, here on its profile and not only on the Security page. */
   const canConnectGoogle = useCanConnectGoogle();
   const { settings } = useProfileData();
-  // (A child's profile lists only the ratings of titles for children: see childGate.ts.)
   const { ratings } = useChildCards();
   const ratingsOn = ratingsShown(settings);
-  /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
   const [view, setView] = useState<View>(initial);
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
-  /** The friend whose page is open, and the page the friends were opened from (the settings, or the account's menu). */
   const [friendId, setFriendId] = useState<string | null>(null);
-  const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main"); // (opened on the friends from the bell: Back leaves the account)
+  const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main");
   const { me, profile } = account;
-  /** The page the settings were opened from (the account's menu, or the friends' page that says what to turn on): Back goes there. */
   const [settingsFrom, setSettingsFrom] = useState<View>("main");
   const back = () => setView("main");
-  // A child's profile is left with the PIN only (see `ChildLock`): the pages it could be left from ask for it first, and this page is the PIN's while it is asked (the one
-  // that asked: the account can be open twice, the "You" tab under the account opened over a page).
   const { asking, cancel, relock } = account.childLock;
   const self = useRef({}).current;
   const grownUp = (action: () => void) => {
@@ -173,7 +144,6 @@ export function AccountScreen({
     account.childLock.grownUp(action);
   };
   const guarded = (next: View) => () => grownUp(() => setView(next));
-  // The account closed (another tab of the phone, a film): a PIN given here counts no more, and nothing waits for one.
   useEffect(
     () => () => {
       cancel();
@@ -190,7 +160,6 @@ export function AccountScreen({
     setView("settings");
   };
 
-  // Signed in just now: the page for guests (the form) gives way to the page of the account.
   useEffect(() => {
     if (me && view === "main" && account.choosing) setView("picker");
   }, [me, view, account.choosing]);
@@ -215,7 +184,7 @@ export function AccountScreen({
         <SettingsPage
           grownUp={grownUp}
           onOpenFriends={() => {
-            setSettingsFrom("main"); // (the friends' page leads back here, and from here Back goes to the menu: not round again)
+            setSettingsFrom("main");
             openFriends("settings");
           }}
         />
@@ -244,7 +213,6 @@ export function AccountScreen({
       </Page>
     );
   }
-  // Every device in one place: the TVs this phone controls, signing another screen in with its code, and where the account is signed in.
   if (view === "devices") {
     return (
       <Page title={t("account.devices")} onBack={back}>
@@ -293,7 +261,6 @@ export function AccountScreen({
               account.choose(picked.id);
               onClose();
             };
-            // (opened with the PIN: asked again only if that was long ago)
             if (picked.id === profile?.id) go();
             else grownUp(go);
           }}
@@ -347,11 +314,8 @@ export function AccountScreen({
     );
   }
 
-  /** What this profile rated is there for a guest too: a guest rates, and keeps it, until it signs in. */
   const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
-  /** Next to Settings, for a guest too: anybody may say what is wrong (the number is how many answers from the team wait). */
   const feedbackRow = <MenuRow icon={<MessageIcon />} label={t("feedback.entry")} detail={feedback.unread > 0 ? String(feedback.unread) : undefined} onClick={feedback.open} testId="menu-feedback" />;
-  /** What's new in Kino, for a guest too: the newest version beside it, "New" until this phone opened it. */
   const newsRow = <MenuRow icon={<SparkleIcon />} label={t("news.title")} detail={news.fresh ? t("news.tileFresh", { version: LATEST.version }) : t("news.version", { version: LATEST.version })} onClick={() => setView("news")} testId="menu-news" />;
   const front = (
     <>
@@ -364,7 +328,6 @@ export function AccountScreen({
               <p className="muted">{signedInLine(me)}</p>
             </div>
           </section>
-          {/* (Who they are to their friends, to give out: people did not know their own name#tag. Only where friends are on: it is for nothing else.) */}
           {friends.on && profile.tag !== undefined && <YourTag label={tagLabel(profile.name, profile.tag)} testId="account-tag" help={false} />}
           {release && <GetTheApp release={release} />}
           <div className="menu-groups">
@@ -438,7 +401,6 @@ export function AccountScreen({
   );
 }
 
-/** Netflix's first question, full screen: signed in on a phone that doesn't know who is holding it. */
 export function ChooseProfile() {
   const t = useT();
   const account = useAccount();
@@ -469,7 +431,6 @@ export function ChooseProfile() {
   );
 }
 
-/** A profile that is still to be set up (account/ProfileSetup.tsx), full screen, as the question before it is: it is answered before anything else. */
 export function SetUpProfile() {
   const account = useAccount();
   const profile = account.profile;
@@ -489,7 +450,6 @@ export function SetUpProfile() {
   );
 }
 
-/** The corner button of the phone's pages: the picture of the profile in use, or a way in for someone not signed in. (What waits for the profile is on the bell beside it.) */
 export function AccountButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const { status, profile, me } = useAccount();

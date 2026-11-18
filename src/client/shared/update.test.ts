@@ -28,7 +28,6 @@ describe("a new Kino while a page is open", () => {
     expect(offered(updateNow())).toBe(true);
     putOff();
     expect(offered(updateNow())).toBe(false);
-    // (The same build, asked about again: still put off.)
     await checkForUpdate({ mine: "index-old", fetcher: first.fetcher, always: true, now: 1 });
     expect(offered(updateNow())).toBe(false);
     const second = answering({ build: "index-new2" });

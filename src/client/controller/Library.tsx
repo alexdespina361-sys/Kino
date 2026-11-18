@@ -1,67 +1,91 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ShownTitle } from "../shared/Shown";
 import { forChildren, isWanted, LibraryItemsSchema, LibrarySchema, sectionOf, wantedSections, type Library as LibraryData, type LibraryItem, type LibraryRow, type LibrarySection, type PlayHint } from "../../shared";
-import { listEntryOf } from "../account/cards";
+import { listEntryOf, hintOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
 import { useProfileData } from "../account/store";
 import { rowTitle, useT } from "../i18n";
 import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
-import { hueOf, Poster, posterSizes } from "../shared/Poster";
+import { hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { titleOfPersonal, useLikes } from "../shared/recommend";
 import { personalAfter, personalSlots, seenKeys, withoutSeen, type PersonalRow } from "../shared/taste";
 import { useWatching, WATCHING_AFTER, watchingRow } from "../shared/watching";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { landscapeRows } from "../shared/shapes";
 import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
-import { CATEGORIES_AFTER, CATEGORY_TILES, entryOfItem, type Entry } from "../tv/pages";
+import { CATEGORIES_AFTER, CATEGORY_TILES, entryOfItem, type Entry, resumable } from "../tv/pages";
 import { useHold } from "./hold";
 import { RowHead } from "./Rows";
 import { SavedMark, useListToggle, type ListToggle } from "./Round";
-import { Hero } from "./shell/Hero";
+import { CheckIcon, InfoIcon, PlayIcon, PlusIcon } from "../shared/icons";
 
-/** What the server last listed, so a visit to the home screen after the first shows it at once. (The rows are the feed's, which brings the rest as they are scrolled.) */
+function Hero({
+  item,
+  toggle,
+  onOpen,
+  onPlay,
+}: {
+  item: LibraryItem;
+  toggle: ListToggle;
+  onOpen: (entry: Entry) => void;
+  onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
+}) {
+  const t = useT();
+  const { progress, lists } = useProfileData();
+  const entry = resumable(entryOfItem(item), progress);
+  const kind = item.kind === "movie" ? t("library.kindMovie") : item.kind === "series" ? t("library.kindSeries") : undefined;
+  const meta = [item.year, kind].filter(Boolean).join(" · ");
+  const plays = onPlay !== undefined && item.kind === "movie" && entry.url !== "";
+  const label = plays ? t(entry.startAt !== undefined ? "rows.resume" : "rows.play") : item.kind === "series" ? t("player.episodes") : t("rows.open");
+  const open = () => onOpen(entryOfItem(item));
+  const play = () => onPlay?.(new URL(entry.resumeUrl ?? entry.url, location.href).href, entry.startAt, hintOf(entry));
+  return (
+    <section className="hero" data-testid="home-hero" aria-label={item.title}>
+      <button type="button" className="hero-open" onClick={open} aria-label={`${t("rows.open")} ${item.title}`} data-testid="hero-open">
+        <Poster className="lib-art hero-art" title={item.title} image={sharper(item.image) ?? item.backdrop} seed={item.id} />
+      </button>
+      <div className="hero-text">
+        <h2 className="hero-title">{item.title}</h2>
+        {meta && <p className="hero-meta">{meta}</p>}
+        <div className="hero-actions">
+          <button type="button" className="btn btn-red hero-play" onClick={plays ? play : open} data-testid="hero-play">
+            {plays ? <PlayIcon /> : <InfoIcon />} {label}
+          </button>
+          <button type="button" className="btn hero-list" onClick={toggle.onClick} aria-pressed={toggle.inList} aria-haspopup={toggle.asks ? "dialog" : undefined} aria-label={`${toggle.label}: ${item.title}`} data-testid="hero-list">
+            {toggle.inList ? <CheckIcon /> : <PlusIcon />} {toggle.asks ? t("rows.myList") : listName(lists[0]!)}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 let remembered: LibraryData | null = null;
-/** When it was listed. The browser keeps the list for five minutes without asking (src/server/app.ts), so a visit to Home or Search within that long would be told what it knows already:
-    it is not asked, and the index of the titles met so far (the shelves', the searches') is not made again from the first rows. */
 let rememberedAt = 0;
 const LIST_FRESH_MS = 5 * 60_000;
 
 type Status = "loading" | "ready" | "failed";
 type Filter = "all" | "movies" | "series" | "cartoons" | "anime";
-/** The section each of the filters (but All) is for. */
 const FILTER_SECTION: Readonly<Record<Exclude<Filter, "all">, LibrarySection>> = { movies: "movie", series: "series", cartoons: "cartoon", anime: "anime" };
 
-/** A search that could not be made is made again this long after. */
 const SEARCH_RETRY_MS = 5000;
 
-/** The rows that come next are asked for when the end of the library is within this many screens of the bottom of what can be seen. */
 const NEAR_END = 1.5;
-/** A row that can have more titles asks for them when its end is within this many widths of the row, and shows this many empty tiles there while they are on their way. */
 const ROW_NEAR_END = 1.5;
 const WAITING_TILES = 3;
 
-/** The sources whose titles are TMDB's, which asks for a notice wherever they are shown. */
 const TMDB_SOURCES = new Set(["Filmpire"]);
 
-/**
- * The search that was open when the search page went away (a video was started from it, and then stopped): the words, the filter, and what
- * the library answered. Coming back is coming back to the same list, not to an empty box. (How far down the page was scrolled is the shell's to
- * keep: shell/useTabs.ts.)
- */
 const kept: { query: string; filter: Filter; found: { query: string; answers: Answers } | null } = { query: "", filter: "all", found: null };
 
-/** The titles of the first row, listed under the empty search box: a list worth tapping before a word is typed. */
 const SUGGESTED = 10;
 
-/** The title Home opens with is the first of the first row that has a picture, looked for among this many. */
 const HERO_FROM = 6;
 
-/** What a section's page says when the library has nothing of it (the TV's words). */
 const SECTION_EMPTY = { movie: "tv.kindEmptyMovies", series: "tv.kindEmptySeries", cartoon: "tv.kindEmptyCartoons", anime: "tv.kindEmptyAnime" } as const satisfies Readonly<Record<LibrarySection, string>>;
 
-/** What a row is in: the section its place says, else what its name suggests ("Feature films", "Classic TV"). A row that says nothing and has none of those words is only in All. */
 const NAMES: Readonly<Record<LibrarySection, RegExp>> = {
   movie: /movie|film/i,
   series: /series|shows|docuseries|(^|[^a-z])tv([^a-z]|$)/i,
@@ -73,10 +97,8 @@ const isIn = (row: LibraryData["rows"][number], section: LibrarySection) => {
   return said ? said === section : NAMES[section].test(`${row.id} ${row.title}`);
 };
 
-/** What is typed, as it is looked for. */
 const wanted = (query: string) => query.trim().toLowerCase();
 
-/** Whether the end of the library is within `NEAR_END` screens of the bottom of what can be seen: the window, or the sheet the library is in. */
 function endIsNear(section: HTMLElement): boolean {
   const sheet = section.closest<HTMLElement>(".sheet-body");
   const view = sheet ? sheet.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
@@ -84,15 +106,8 @@ function endIsNear(section: HTMLElement): boolean {
   return height > 0 && section.getBoundingClientRect().bottom - view.bottom <= height * NEAR_END;
 }
 
-/** `browse`: the rows to scroll through (the Home tab). `search`: the box, what it finds, and a list to tap before anything is typed (the Search tab). */
 type LibraryMode = "browse" | "search";
 
-/**
- * Rows of titles from the server's library, to scroll through (sideways for more of a row, down for more rows: both go on for as long as the
- * library has any), rows of titles like the ones this profile watched or loved, and a search that lists what it finds one under another (the two
- * are two pages of the phone, `mode`). A tap on a title opens its page (`onOpen`), a hold puts it in a list, and so does the round button on it; with more than one list that asks which
- * (`onPick`). Absent when there is no library, unless there is something (`fallback`) to say instead.
- */
 export function Library({
   onOpen,
   onPlay,
@@ -103,10 +118,8 @@ export function Library({
   mode = "browse",
 }: {
   onOpen: (entry: Entry) => void;
-  /** Start a film from the title that opens Home (see `Hero`). Absent on a phone with no TV: that title only opens its page. */
   onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
   onPick: (entry: ListEntry) => void;
-  /** A row's heading ends with "See all", which opens the whole row (by its id) one title under the next. */
   onSeeAll?: (rowId: string) => void;
   failedLookups?: number;
   fallback?: ReactNode;
@@ -116,7 +129,6 @@ export function Library({
   const toggleFor = useListToggle(onPick);
   const scores = useScores();
   const searchPage = mode === "search";
-  /** What was typed on the search page (the rows page has no box, and what it is never looking for is not kept from it). */
   const startQuery = searchPage ? kept.query : "";
   const [library, setLibrary] = useState<LibraryData | null>(remembered);
   const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
@@ -132,18 +144,14 @@ export function Library({
   const [searchTry, setSearchTry] = useState(0);
   const root = useRef<HTMLElement>(null);
 
-  // The library as it has grown: its first rows, the ones brought after them as the page is scrolled, and more of each row (see the feed).
   const feeding = useFeed();
-  /** A child's profile (see the TV's Browse): the Cartoons for children are all it has, on Home and in the search, and it has no filters. */
   const { settings, progress: watchedCards, ratings: givenScores } = useProfileData();
   const child = settings.child === true;
   const holding = useProfileHold();
-  /** The sections the profile watches (its `sections` setting; null: all): the others have no filter and no rows, as on the TV. */
   const wantedKey = (settings.sections ?? []).join(",");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const mine = useMemo(() => (child ? null : wantedSections(settings)), [child, wantedKey]);
   const filters = useMemo(() => (["all", "movies", "series", "cartoons", "anime"] as const).filter((each) => each === "all" || !mine || mine.has(FILTER_SECTION[each])), [mine]);
-  // (The filter of a section the profile does not watch - kept from another profile - is All.)
   const shownFilter: Filter = filters.includes(filter) ? filter : "all";
   const pageSection = child ? "cartoon" : searchPage || shownFilter === "all" ? undefined : FILTER_SECTION[shownFilter];
   const displayedRows = useMemo(() => {
@@ -151,21 +159,15 @@ export function Library({
     const inSection = pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows.filter((row) => isWanted(mine, row));
     return child ? inSection.map((row) => ({ ...row, items: row.items.filter((item) => forChildren(item, row)) })).filter((row) => row.items.length > 0) : inSection;
   }, [feeding.data, pageSection, child, mine]);
-  // (Some rows are wide cards, by the same rule as on the TV: see shared/shapes.ts.)
   const wideRows = useMemo(() => landscapeRows(displayedRows), [displayedRows]);
-  // The profile's own rows ("Because you watched ...", "More like ...", "You might like"; shared/taste.ts), of the titles this page shows: among the
-  // library's rows, the first under the first of them and then one under every second row, as many as the page has a place for (more are asked for as it
-  // grows under the scrolling). A child's profile has them of the titles for children, without the row of what it might like.
   const keepLike = useMemo<((item: LibraryItem) => boolean) | undefined>(
     () => (child ? (item) => forChildren(item) : pageSection ? (item) => sectionOf(item) === pageSection : mine ? (item) => isWanted(mine, item) : undefined),
     [child, pageSection, mine],
   );
   const personal = useLikes({ want: searchPage ? 0 : personalSlots(displayedRows.length), keep: keepLike, picks: !child, page: pageSection ?? "home" });
-  // What people watch on Kino: a row of Home (All), not of the search, a section nor a child's profile, as on the TV (shared/watching.ts).
   const homeOnly = !child && !searchPage && pageSection === undefined;
   const watchedHere = useWatching(homeOnly);
   const watching = useMemo(() => (homeOnly ? watchingRow(watchedHere, mine) : []), [homeOnly, watchedHere, mine]);
-  // (What the profile has seen is left out of the library's rows after the first; not for a child's profile.)
   const seen = useMemo(() => (child ? new Set<string>() : seenKeys(watchedCards, givenScores)), [child, watchedCards, givenScores]);
   const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);
 
@@ -175,15 +177,13 @@ export function Library({
 
   const shown = Boolean(library && library.rows.length > 0);
 
-  // A video that would not play may have taken its title off the server's lists: ask for them again (the search with them).
   useEffect(() => {
     if (failedLookups > 0) setAttempt((n) => n + 1);
   }, [failedLookups]);
 
   useEffect(() => {
-    if (attempt === 0 && remembered && Date.now() - rememberedAt < LIST_FRESH_MS) return; // (this page was made from it: `library` and `status` start as it)
+    if (attempt === 0 && remembered && Date.now() - rememberedAt < LIST_FRESH_MS) return;
     let live = true;
-    // (Asked again, as after a try that failed or a press on Retry, it is asked past the browser's memory of the last answer.)
     fetch("/api/library", attempt > 0 ? { cache: "reload" } : undefined)
       .then((response) => (response.ok ? response.json() : null))
       .then((body: unknown) => {
@@ -192,8 +192,8 @@ export function Library({
         if (parsed.success) {
           remembered = parsed.data;
           rememberedAt = Date.now();
-          feed.setBase(parsed.data.rows.filter((row) => row.items.length > 0)); // (the rows that come after these, and more of each, are asked for as the page is scrolled: see the feed)
-          if (attempt > 0) kept.found = null; // what a search found is asked for again against the new list
+          feed.setBase(parsed.data.rows.filter((row) => row.items.length > 0));
+          if (attempt > 0) kept.found = null;
           setLibrary(parsed.data);
           setStatus("ready");
         } else setStatus((now) => (now === "ready" ? now : "failed"));
@@ -214,28 +214,25 @@ export function Library({
     }
     setSearchFailed(false);
 
-    // What the library answered to these very words before is still good.
     if (kept.found?.query === q) {
       setAnswers(kept.found.answers);
       setSearching(false);
       return;
     }
 
-    // 1. Instant local search among every title this phone has met, not only the ones on the page. (What the server found for the words a letter ago stays while it is asked again.)
     const local = matchLocal(feed.index, library?.rows ?? [], q);
     setAnswers((before) => (before && q.length >= 2 ? mergeAnswers(local, keepMatching(before, q), q) : local));
-    if (q.length < 2) return setSearching(false); // a letter is too little to ask the server about
+    if (q.length < 2) return setSearching(false);
     setSearching(true);
 
-    // 2. Debounced remote search
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      Promise.resolve() // (encodeURIComponent throws for a lone half of a pair: inside the chain it is a failed search)
+      Promise.resolve()
         .then(() => fetch(`/api/library/search?q=${encodeURIComponent(q)}`, { signal: controller.signal }))
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((body: unknown) => {
           const parsed = LibraryItemsSchema.parse(body);
-          feed.learn(parsed.items); // (found next time without asking)
+          feed.learn(parsed.items);
           const found = mergeAnswers(local, { items: parsed.items, exact: parsed.exact ?? parsed.items.length }, q);
           kept.found = { query: q, answers: found };
           setAnswers(found);
@@ -254,15 +251,12 @@ export function Library({
     };
   }, [query, library, searchTry]);
 
-  // A search that did not get an answer is asked again every few seconds for as long as it is on screen.
   useEffect(() => {
     if (!searchFailed) return;
     const timer = setTimeout(() => setSearchTry((n) => n + 1), SEARCH_RETRY_MS);
     return () => clearTimeout(timer);
   }, [searchFailed, searchTry]);
 
-  // The rows that come next are asked for when the page is scrolled near its end, whatever scrolled it (the window, or the sheet the library is in), and when the
-  // page does not fill the screen yet: an answer, or a question that failed and may be asked again, looks again. A search is a list of its own and is not paged.
   const paging = !searchPage && status === "ready" && shown && answers === null;
   const latest = useRef({ paging, pageSection });
   latest.current = { paging, pageSection };
@@ -272,7 +266,7 @@ export function Library({
       if (section && latest.current.paging && endIsNear(section)) feed.loadShelves(latest.current.pageSection);
     };
     const onScroll = (event: Event) => {
-      if (event.target instanceof Node && root.current && event.target.contains(root.current)) askRows(); // (a row scrolled sideways says nothing about the page)
+      if (event.target instanceof Node && root.current && event.target.contains(root.current)) askRows();
     };
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.addEventListener("resize", askRows);
@@ -285,7 +279,6 @@ export function Library({
     if (paging && root.current && endIsNear(root.current)) feed.loadShelves(pageSection);
   }, [feeding, paging, pageSection, displayedRows.length]);
 
-  // (While the profile's settings are not known yet, the library is still loading: see `useProfileHold`.)
   if (status === "loading" || holding) {
     return (
       <p className="muted small" data-testid="library-loading">
@@ -314,7 +307,6 @@ export function Library({
     );
   }
   if (!library || library.rows.length === 0) {
-    // (The search page is never blank: it says what is the matter, where the rows page has the box for pasting a link instead.)
     if (!searchPage) return <>{fallback}</>;
     return (
       <p className="muted" role="status" data-testid="library-empty">
@@ -325,7 +317,6 @@ export function Library({
 
   const toggleOf = (item: LibraryItem) => toggleFor(listEntryOf(item));
   const open = (item: LibraryItem) => () => onOpen(entryOfItem(item));
-  /** One of the profile's own rows (none: nothing). */
   const own = (row: PersonalRow | undefined) =>
     row && (
       <div className="lib-row" key={row.id} data-testid={row.why === "picks" ? "library-picks" : "library-because"} data-why={row.why}>
@@ -337,9 +328,7 @@ export function Library({
         </Scroller>
       </div>
     );
-  /** The first row that has titles: what the search page lists until something is typed. */
   const suggested = searchPage && answers === null ? displayedRows.find((row) => row.items.length > 0) : undefined;
-  /** What Home opens with (the rows page only; the filter's first row when a kind is chosen). */
   const heroItem = searchPage || answers !== null ? undefined : displayedRows[0]?.items.slice(0, HERO_FROM).find((item) => item.image ?? item.backdrop);
 
   return (
@@ -438,7 +427,6 @@ export function Library({
                   ))}
                 </Scroller>
               </div>
-              {/* (Under the first row and every second one after it, as on the TV: the next of the profile's own rows.) */}
               {own(personal[personalAfter(index) ?? -1])}
               {index === WATCHING_AFTER && watching.length > 0 && (
                 <div className="lib-row" data-testid="library-watching">
@@ -450,11 +438,9 @@ export function Library({
                   </Scroller>
                 </div>
               )}
-              {/* (After the third row, as on the TV: a row of the page's categories, each a card that opens the whole row.) */}
               {onSeeAll && index === CATEGORIES_AFTER - 1 && displayedRows.length > CATEGORIES_AFTER + 1 && <CategoryRow rows={displayedRows} onOpen={onSeeAll} />}
             </Fragment>
           ))}
-          {/* Under the last row: empty tiles while the rows that come next are on their way, and a line when they could not be had (they are asked for again in a moment). */}
           {pageSection && displayedRows.length === 0 && !loadingShelves(feeding, pageSection) && !failedShelves(feeding, pageSection) && !hasMoreShelves(feeding, pageSection) && (
             <p className="muted small" role="status" data-testid="library-section-empty">
               {t(SECTION_EMPTY[pageSection])}
@@ -487,10 +473,6 @@ export function Library({
   );
 }
 
-/**
- * A row's tiles, to scroll sideways. A row the library can add titles to (`onNearEnd`) asks for them as its end comes near, whoever scrolled it (a finger, or the
- * page growing under it), and asks again after each answer while the end is still near (so a row that does not fill the screen fills it). `loading` shows empty tiles at its end.
- */
 function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const wantsMore = useRef(onNearEnd);
@@ -499,7 +481,6 @@ function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNea
     const row = box.current;
     if (row && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * ROW_NEAR_END) wantsMore.current?.();
   };
-  // (The titles of a row come as the library fills in, and the window changes size: look again each time.)
   useEffect(measure);
   return (
     <div className="lib-scroller" ref={box} onScroll={measure}>
@@ -509,10 +490,6 @@ function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNea
   );
 }
 
-/**
- * The row of categories (the TV has it as well): a card for each row of the page, with its name and the posters of its first titles fanned at its end, that
- * opens the whole row. It is a third shape among the rows, with the posters and the wide cards (the owner, 15 Nov: "Mix the row shapes ... on the phone too").
- */
 function CategoryRow({ rows, onOpen }: { rows: readonly LibraryRow[]; onOpen: (rowId: string) => void }) {
   const t = useT();
   return (
@@ -537,16 +514,11 @@ function CategoryRow({ rows, onOpen }: { rows: readonly LibraryRow[]; onOpen: (r
   );
 }
 
-/**
- * A title in a row (or on the page of a whole row): its poster with its name under it, the score this profile gave it (top left) and a tick if it is in a list
- * (top right). There is no button on it for the lists: a hold does that (`toggle.onHold`), and so does the button of the title's page.
- */
 export function Tile({ item, score, toggle, onOpen, wide }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void; wide?: boolean }) {
   const hold = useHold(toggle.onHold);
   return (
     <div className="lib-tile" data-in-list={toggle.inList}>
       <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
-        {/* (A row of wide cards shows a still of each title: see shared/shapes.ts.) */}
         <Poster className="lib-art" title={item.title} image={wide ? (item.backdrop ?? item.image) : (item.image ?? item.backdrop)} seed={item.id}>
           {score !== undefined && <ScoreBadge score={score} />}
           {toggle.inList && <SavedMark />}
@@ -557,7 +529,6 @@ export function Tile({ item, score, toggle, onOpen, wide }: { item: LibraryItem;
   );
 }
 
-/** A title found by the search: a poster in the grid of what it found, with its name, and its year and kind under that (a search is where they tell titles apart). */
 function Result({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
   const t = useT();
   const hold = useHold(toggle.onHold);

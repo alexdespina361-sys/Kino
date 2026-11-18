@@ -2,17 +2,10 @@ import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { openDevice, openLibrary, openTvSettings, openTvSignIn, PHONE, test } from "./helpers";
 
-/*
- * The PIN of a child's profile (the owner, 16 Nov 2026): a child's profile is not left on this account's screens without a grown-up's PIN. Every way out asks for it
- * (another profile, the profiles' page, signing another screen in, signing out, Google, making it an ordinary profile again); Back drops what was waiting, the right PIN
- * does it, and the pages ask again once they were closed. A PIN that was forgotten is taken off with the account's password.
- */
-
 const PIN = "1234";
 const PASSWORD = "kino-test-pass-1";
 let counter = 0;
 
-/** An account with a child's profile (its first, named after the login) and a grown-up's one ("Grown"), and a PIN. Made on the server, from `context`: signed in there. */
 async function family(context: BrowserContext, device: "tv" | "remote", { child = true, pin = true } = {}): Promise<{ login: string; first: string }> {
   const login = `pin${Date.now().toString(36)}${++counter}`;
   const made = await context.request.post("/api/auth/register", { data: { email: login, password: PASSWORD, device } });
@@ -26,12 +19,10 @@ async function family(context: BrowserContext, device: "tv" | "remote", { child 
   return { login, first: first.name };
 }
 
-/** Whether the account has a PIN, as the server says. */
 const hasPin = async (page: Page) => (((await (await page.context().request.get("/api/me")).json()) as { me: { account: { childPin?: boolean } } }).me.account.childPin ?? false) === true;
 
 const viewport = { width: 1280, height: 720 };
 
-/** Typed on the TV's pad (the remote's way), one key at a time. */
 async function padPin(tv: Page, pin: string): Promise<void> {
   for (const digit of pin) await tv.getByTestId(`pin-key-${digit}`).click();
 }
@@ -42,13 +33,12 @@ test.describe("the PIN of a child's profile", () => {
     const tv = await openDevice(browser, { viewport });
     const { first } = await family(tv.context(), "tv");
     await tv.goto("/tv");
-    await tv.getByTestId(`profile-${first}`).click(); // ("Who's watching?": going in to a child's profile asks nothing)
+    await tv.getByTestId(`profile-${first}`).click();
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
-    await expect(tv.getByTestId("rail-movies")).toHaveCount(0); // (a child's)
+    await expect(tv.getByTestId("rail-movies")).toHaveCount(0);
 
     await openTvSettings(tv);
     await expect(tv.getByTestId("tv-pin-setting")).toContainText(en["common.on"]);
-    // Each way out: the PIN's page, and Back (or the pad's ✕) leaves everything as it was.
     for (const [way, how] of [["tv-switch-profile", "Escape"], ["tv-manage-profiles", "key"], ["tv-approve", "Escape"], ["tv-sign-out", "key"], ["tv-child", "Escape"]] as const) {
       await tv.getByTestId(way).click();
       await expect(tv.getByTestId("tv-pin-page"), way).toBeVisible();
@@ -60,34 +50,30 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "true");
     await expect(tv.getByTestId("tv-account-name")).toHaveText(first);
 
-    // A wrong PIN says so and starts over; Back takes a digit back before it leaves.
     await tv.getByTestId("tv-switch-profile").click();
     await tv.keyboard.type("1111");
     await expect(tv.getByTestId("tv-pin-error")).toHaveText(en["pin.wrong"]);
     await expect(tv.getByTestId("tv-pin-digits")).toHaveAttribute("data-count", "0");
     await tv.keyboard.type("12");
     await expect(tv.getByTestId("tv-pin-digits")).toHaveAttribute("data-count", "2");
-    await expect(tv.getByTestId("tv-pin-digits")).not.toContainText("1"); // (dots, not the digits)
+    await expect(tv.getByTestId("tv-pin-digits")).not.toContainText("1");
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-pin-digits")).toHaveAttribute("data-count", "1");
     await tv.keyboard.press("Escape");
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toBeVisible();
 
-    // The right one: the profiles' page it was asked for opens.
     await tv.getByTestId("tv-manage-profiles").click();
     await padPin(tv, PIN);
     await expect(tv.getByTestId("tv-profiles")).toBeVisible();
-    await expect(tv.getByTestId("tv-profiles-done")).toBeVisible(); // (managing)
+    await expect(tv.getByTestId("tv-profiles-done")).toBeVisible();
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toBeVisible();
-    // ...and while the settings stay open, the other ways out do not ask again.
     await tv.getByTestId("tv-approve").click();
     await expect(tv.getByTestId("tv-pin-page")).toHaveCount(0);
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toBeVisible();
 
-    // Closed and opened again: asked again.
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toHaveCount(0);
     await openTvSettings(tv);
@@ -95,7 +81,7 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("tv-pin-page")).toBeVisible();
     await tv.keyboard.type(PIN);
     await tv.getByTestId("profile-Grown").click();
-    await expect(tv.getByTestId("rail-movies")).toBeVisible(); // (a grown-up's profile: the sections are back)
+    await expect(tv.getByTestId("rail-movies")).toBeVisible();
   });
 
   test("a TV that has not heard of a PIN set since asks the server before a child's profile is left, and keeps it when the server cannot be asked", async ({ browser }) => {
@@ -105,13 +91,11 @@ test.describe("the PIN of a child's profile", () => {
     await tv.goto("/tv");
     await tv.getByTestId(`profile-${first}`).click();
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
-    // (No PIN to set from a child's profile: a child could lock the family's screens with one.)
     await openTvSettings(tv);
     await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "true");
     await expect(tv.getByTestId("tv-pin-setting")).toHaveCount(0);
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toHaveCount(0);
-    // A PIN is set on another screen; this one still has the account without one, and cannot reach the server.
     expect((await tv.context().request.post("/api/me/child-pin", { data: { next: PIN } })).ok()).toBe(true);
     await tv.route("**/api/me", (route) => route.abort("internetdisconnected"));
     await openTvSettings(tv);
@@ -119,7 +103,6 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("tv-account-toast")).toHaveText(en["pin.offline"]);
     await expect(tv.getByTestId("tv-account")).toBeVisible();
     await expect(tv.getByTestId("tv-profiles")).toHaveCount(0);
-    // The server answers again: it says there is a PIN, and the PIN is asked.
     await tv.unroute("**/api/me");
     await tv.getByTestId("tv-switch-profile").click();
     await expect(tv.getByTestId("tv-pin-page")).toBeVisible();
@@ -144,7 +127,7 @@ test.describe("the PIN of a child's profile", () => {
     await tv.keyboard.type("4321");
     await expect(tv.getByTestId("tv-account")).toBeVisible();
     await expect(tv.getByTestId("tv-pin-setting")).toContainText(en["common.on"]);
-    await expect(tv.getByTestId("tv-pin-setting")).toBeFocused(); // (Back from its page lands the remote on its row)
+    await expect(tv.getByTestId("tv-pin-setting")).toBeFocused();
     expect(await hasPin(tv)).toBe(true);
 
     await tv.getByTestId("tv-pin-setting").click();
@@ -171,7 +154,7 @@ test.describe("the PIN of a child's profile", () => {
     const phone = await openDevice(browser, PHONE);
     const { first } = await family(phone.context(), "remote");
     await phone.goto("/");
-    await phone.getByTestId(`profile-${first}`).click(); // ("Who's watching?")
+    await phone.getByTestId(`profile-${first}`).click();
     await phone.getByTestId("account-button").click();
     await expect(phone.getByTestId("account-screen")).toBeVisible();
 
@@ -181,7 +164,6 @@ test.describe("the PIN of a child's profile", () => {
       await phone.getByTestId("pin-cancel").click();
       await expect(phone.getByTestId("account-screen"), way).toBeVisible();
     }
-    // Made an ordinary profile again, from the settings: asked too, and the phone's own Back (Escape here) keeps it a child's.
     await phone.getByTestId("menu-settings").click();
     await phone.getByTestId("child-profile").click();
     await expect(phone.getByTestId("pin-page")).toBeVisible();
@@ -192,7 +174,6 @@ test.describe("the PIN of a child's profile", () => {
     await expect(phone.getByTestId("account-screen")).toBeVisible();
     await expect(phone.getByTestId("account-profile-name")).toHaveText(first);
 
-    // A wrong PIN says so; the password is asked for one that was forgotten, and takes it off: what was asked for is done.
     await phone.getByTestId("menu-switch").click();
     await phone.getByTestId("pin-input").fill("1111");
     await expect(phone.getByTestId("pin-error")).toHaveText(en["pin.wrong"]);
@@ -202,7 +183,7 @@ test.describe("the PIN of a child's profile", () => {
     await expect(phone.getByTestId("pin-error")).toHaveText(en["error.wrong_password"]);
     await phone.getByTestId("pin-password").fill(PASSWORD);
     await phone.getByTestId("pin-remove-password").click();
-    await expect(phone.getByTestId("profile-Grown")).toBeVisible(); // (the profiles to switch to)
+    await expect(phone.getByTestId("profile-Grown")).toBeVisible();
     expect(await hasPin(phone)).toBe(false);
     await phone.getByTestId("profile-Grown").click();
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Grown/);
@@ -221,10 +202,9 @@ test.describe("the PIN of a child's profile", () => {
     const code = tv.getByTestId("tv-link-code");
     await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     const shown = (await code.textContent())!.trim();
-    await phone.goto(`/?link=${shown.replace("-", "")}`); // (what the TV's QR code opens)
+    await phone.goto(`/?link=${shown.replace("-", "")}`);
     await expect(phone.getByTestId("link-code")).toHaveText(shown);
 
-    // The TV would choose its own profile once signed in: from a child's profile, that is a way out.
     await phone.getByTestId("link-approve-button").click();
     await expect(phone.getByTestId("pin-ask")).toBeVisible();
     await phone.getByTestId("pin-cancel").click();
@@ -232,7 +212,7 @@ test.describe("the PIN of a child's profile", () => {
     await phone.getByTestId("link-approve-button").click();
     await phone.getByTestId("pin-input").fill(PIN);
     await expect(phone.getByTestId("link-done")).toBeVisible();
-    await expect(tv.getByTestId("tv-profiles")).toBeVisible({ timeout: 15_000 }); // (signed in: "Who's watching?")
+    await expect(tv.getByTestId("tv-profiles")).toBeVisible({ timeout: 15_000 });
   });
 
   test("on the phone, the right PIN lets the child's profile go, and the settings set, change and take off the PIN", async ({ browser }) => {
@@ -263,7 +243,6 @@ test.describe("the PIN of a child's profile", () => {
     await phone.getByTestId("pin-setting-input").fill("2468");
     await expect(phone.getByTestId("pin-done")).toHaveText(en["pin.changed"]);
 
-    // Taken off with the password instead of the PIN.
     await setting.getByTestId("pin-remove").click();
     await phone.getByTestId("pin-use-password").click();
     await phone.getByTestId("pin-setting-password").fill(PASSWORD);

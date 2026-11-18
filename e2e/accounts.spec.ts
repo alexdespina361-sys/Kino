@@ -8,20 +8,11 @@ import { ro } from "../src/client/i18n/ro";
 import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, place, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, PICTURE_NAME, PICTURE_NAMED, loginName, nameFirstProfile } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
-/**
- * Accounts, profiles, saved progress and the three languages. The server these run against keeps accounts in memory only
- * (DATA_DIR=memory) and allows a few sign-ups an hour from one address, so a test makes at most one account, with its own address.
- */
-
 let counter = 0;
 const fresh = (base: { email: string; password: string } = TEST_ACCOUNT) => ({ ...base, email: base.email.replace("@", `+${Date.now().toString(36)}${++counter}@`) });
 
 const newPhone = (browser: Browser, seed: Record<string, string> = {}, locale = "en-US") => openDevice(browser, { ...PHONE, locale }, seed);
 
-/**
- * Makes the account on the phone, which leaves its page open. Its first profile is then named after the login, as Kino did before 18 Nov 2026, for the
- * tests that are about something else (`asMade`: left as it is made, named after its picture).
- */
 async function signUp(page: Page, account: { email: string; password: string }, options: { asMade?: boolean } = {}) {
   await page.getByTestId("account-button").click();
   await page.getByTestId("auth-switch").click();
@@ -29,7 +20,7 @@ async function signUp(page: Page, account: { email: string; password: string }, 
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
-  if (weakness(account.email, account.password)) await page.getByTestId("auth-agree").click(); // (a poor password is asked about first: this person agrees)
+  if (weakness(account.email, account.password)) await page.getByTestId("auth-agree").click();
   await expect(page.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
   if (options.asMade) return;
   await nameFirstProfile(page, loginName(account.email));
@@ -45,7 +36,6 @@ async function signIn(page: Page, account: { email: string; password: string }) 
   await page.getByTestId("auth-submit").click();
 }
 
-/** The server has everything this screen kept for the profile in use: nothing is left to send, and it has answered. */
 const savedToTheAccount = (page: Page) =>
   expect
     .poll(
@@ -83,7 +73,7 @@ test.describe("accounts and profiles", () => {
         }
         expect(where, `${page}, ${key}`).not.toContain(false);
       }
-      await phone.keyboard.press("Escape"); // back to the account page
+      await phone.keyboard.press("Escape");
       await expect(phone.getByTestId("account-screen")).toBeVisible();
     }
   });
@@ -116,7 +106,7 @@ test.describe("accounts and profiles", () => {
     const phone = await newPhone(browser);
     await phone.goto("/");
     await phone.getByTestId("account-button").click();
-    await expect(phone.getByTestId("auth-nickname")).toHaveCount(0); // (signing in: no nickname)
+    await expect(phone.getByTestId("auth-nickname")).toHaveCount(0);
     await phone.getByTestId("auth-switch").click();
     await expect(phone.getByTestId("auth-nickname")).toHaveAttribute("maxlength", "16");
     await phone.getByTestId("auth-email").fill(`nick-login-${Date.now().toString(36)}${++counter}`);
@@ -139,20 +129,18 @@ test.describe("accounts and profiles", () => {
 
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
     test.setTimeout(60_000);
-    // A name and a password of one character: what somebody who only wants to watch types.
     const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
     const phone = await newPhone(browser);
     await phone.goto("/");
     await signUp(phone, account, { asMade: true });
 
-    // The first profile is named after its picture (never after the login, which others could find it by); a single profile is simply used.
     await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
     const first = (await phone.getByTestId("account-profile-name").innerText()).trim();
 
     await phone.getByTestId("menu-profiles").click();
     for (const name of ["Maya", "Sam", "Noa", "Kim"]) {
       await phone.getByTestId("profile-add").click();
-      await expect(phone.locator('[data-testid^="avatar-"]')).toHaveCount(AVATAR_IDS.length); // every picture to choose from (24 since 18 Nov)
+      await expect(phone.locator('[data-testid^="avatar-"]')).toHaveCount(AVATAR_IDS.length);
       if (name === "Maya") {
         const picture = phone.getByTestId(`avatar-${AVATAR_IDS[7]}`);
         await picture.click();
@@ -162,16 +150,14 @@ test.describe("accounts and profiles", () => {
       await phone.getByTestId("profile-save").click();
       await expect(phone.getByTestId(`profile-${name}`)).toBeVisible();
     }
-    await expect(phone.getByTestId("profile-add")).toHaveCount(0); // five is the most
+    await expect(phone.getByTestId("profile-add")).toHaveCount(0);
 
-    // One removed makes room for another.
     await phone.getByTestId("profile-Kim").click();
     await phone.getByTestId("profile-delete").click();
     await phone.getByTestId("profile-delete-confirm").click();
     await expect(phone.getByTestId("profile-Kim")).toHaveCount(0);
     await expect(phone.getByTestId("profile-add")).toBeVisible();
 
-    // Signing out and in: nobody has been picked on this screen yet, so it asks who is watching.
     await phone.getByTestId("page-back").click();
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
@@ -192,16 +178,14 @@ test.describe("accounts and profiles", () => {
     await signUp(phone, account);
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
 
-    // The network is gone as the button is pressed: the server has not ended anything, so this screen must not look as if it had.
     await phone.route("**/api/auth/logout", (route) => route.abort());
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-toast")).toHaveText(en["account.signOutFailed"]);
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
     await phone.unroute("**/api/auth/logout");
-    await phone.reload(); // (what a guest page would not survive: the cookie is still good, and it is Robert's)
+    await phone.reload();
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
 
-    // With the network back, the same press ends the session for good.
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
@@ -217,13 +201,11 @@ test.describe("accounts and profiles", () => {
     await signUp(phone, account);
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
 
-    // The page is opened again while the server does not answer: still Robert, not a guest who has to sign in.
     await phone.route("**/api/me", (route) => route.abort());
     await phone.reload();
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
     await phone.unroute("**/api/me");
 
-    // And when it does answer, the cookie has a full term again (the session itself is kept sliding on the server).
     const answer = await phone.evaluate(async () => {
       const response = await fetch("/api/me", { cache: "no-store" });
       return { me: ((await response.json()) as { me: { account: { email: string } } | null }).me?.account.email };
@@ -232,7 +214,7 @@ test.describe("accounts and profiles", () => {
     const header = await phone.context().cookies();
     const cookie = header.find((entry) => entry.name === "kino_session");
     expect(cookie).toBeDefined();
-    expect(cookie!.expires - Date.now() / 1000).toBeGreaterThan(399 * 24 * 3600); // (the browser caps a cookie's life at 400 days)
+    expect(cookie!.expires - Date.now() / 1000).toBeGreaterThan(399 * 24 * 3600);
   });
 
   test("deleting the account: a wrong password is called a wrong password, and afterwards the page says the account is gone, not that the person was signed out", async ({ browser }) => {
@@ -241,7 +223,7 @@ test.describe("accounts and profiles", () => {
     const phone = await newPhone(browser);
     await phone.goto("/");
     await signUp(phone, account, { asMade: true });
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME); // (the account's page stays open after signing up)
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
     const turnedAway: string[] = [];
     phone.on("response", (response) => {
       if (response.status() === 401) turnedAway.push(new URL(response.url()).pathname);
@@ -251,14 +233,14 @@ test.describe("accounts and profiles", () => {
     await phone.getByTestId("delete-account").click();
     await phone.getByTestId("delete-password").fill("2");
     await phone.getByTestId("delete-confirm").click();
-    await expect(phone.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]); // (there is no user name on this page to be wrong)
+    await expect(phone.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]);
 
     await phone.getByTestId("delete-password").fill(account.password);
     await phone.getByTestId("delete-confirm").click();
     await expect(phone.getByTestId("account-toast")).toHaveText(en["account.deleted"]);
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
     await phone.waitForTimeout(800);
-    expect(turnedAway).toEqual(["/api/me/delete"]); // only the wrong try: nothing was sent to a session that had ended with the account
+    expect(turnedAway).toEqual(["/api/me/delete"]);
   });
 
   test("an account can have no password: the empty field says what that means, the sign-up says it again and asks, and signing in with nothing opens it", async ({ browser }) => {
@@ -275,7 +257,6 @@ test.describe("accounts and profiles", () => {
     await phone.getByTestId("auth-password").fill("");
     await phone.getByTestId("auth-submit").click();
 
-    // Not made yet: anyone who types the name could open it, and the person is told so before it is.
     const asking = phone.getByTestId("auth-warning");
     await expect(asking).toHaveAttribute("data-kind", "none");
     await expect(asking).toContainText(en["auth.warnNone"]);
@@ -301,7 +282,6 @@ test.describe("accounts and profiles", () => {
     await phone.getByTestId("auth-password").fill(account.password);
     await phone.getByTestId("auth-submit").click();
 
-    // A page of its own in the form's place, on the safe button; nothing has been made.
     const asking = phone.getByTestId("auth-warning");
     await expect(asking).toHaveAttribute("data-kind", "weak");
     await expect(asking).toContainText(en["auth.warnWeak"]);
@@ -309,14 +289,12 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("auth-change")).toBeFocused();
     expect(((await (await phone.request.get("/api/me")).json()) as { me: unknown }).me).toBeNull();
 
-    // "Change the password": the form as it was left, with the cursor on the password.
     await phone.getByTestId("auth-change").click();
     await expect(phone.getByTestId("auth-warning")).toHaveCount(0);
     await expect(phone.getByTestId("auth-email")).toHaveValue(account.email);
     await expect(phone.getByTestId("auth-password")).toHaveValue(account.password);
     await expect(phone.getByTestId("auth-password")).toBeFocused();
 
-    // One that is not quick to guess goes straight through.
     await phone.getByTestId("auth-password").fill("kino-test-pass-1");
     await phone.getByTestId("auth-submit").click();
     await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
@@ -336,7 +314,6 @@ test.describe("accounts and profiles", () => {
 test.describe("what was watched follows the person", () => {
   const night = { key: "url:https://films.example/night-train", at: Date.now() - 60_000, title: "Night Train", url: "https://films.example/night-train", position: 1500, duration: 6000 };
   const saved = { key: "url:https://films.example/saved", at: Date.now() - 120_000, id: "s1", title: "Saved For Later", url: "https://films.example/saved" };
-  // A list of its own, with a title in it.
   const weekend = { key: "lweekend", at: Date.now() - 110_000, name: "Weekend" };
   const picked = { key: "lweekend|url:https://films.example/picked", at: Date.now() - 100_000, list: "lweekend", id: "p1", title: "Weekend Pick", url: "https://films.example/picked" };
 
@@ -344,20 +321,17 @@ test.describe("what was watched follows the person", () => {
     test.setTimeout(60_000);
     const account = fresh();
 
-    // Device A has been used without an account.
     const first = await newPhone(browser, guestStorage({ progress: [night], list: [saved, picked], listNames: [weekend] }));
     await first.goto("/");
-    await signUp(first, account, { asMade: true }); // (the line that says so is shown once: the page is not opened again)
+    await signUp(first, account, { asMade: true });
     const named = (await first.getByTestId("account-profile-name").innerText()).trim();
     await expect(first.getByTestId("account-toast")).toContainText(named);
     await savedToTheAccount(first);
-    // It is the profile's now, not counted twice: the guest copy is empty.
     const left = await guestCopy(first);
     expect(left?.data.progress).toHaveLength(0);
     expect(left?.data.list).toHaveLength(0);
     expect(left?.data.listNames).toHaveLength(0);
 
-    // Device B, another browser, signs in; paired with a TV (that is where the rows are) it has the same history.
     const tv = await openTv(browser);
     const second = await newPhone(browser);
     await second.goto("/");
@@ -369,12 +343,11 @@ test.describe("what was watched follows the person", () => {
 
     const continuing = second.getByTestId("continue-row");
     await expect(continuing).toContainText("Night Train");
-    await expect(continuing).toContainText("1 h 15 min left"); // 6000 - 1500 seconds
-    await place(second, "list"); // (the lists are a place of the bar, My lists)
+    await expect(continuing).toContainText("1 h 15 min left");
+    await place(second, "list");
     await expect(second.getByRole("region", { name: "Favourites" })).toContainText("Saved For Later");
-    await expect(second.getByRole("region", { name: "Weekend" })).toContainText("Weekend Pick"); // the lists and their names come along too
+    await expect(second.getByRole("region", { name: "Weekend" })).toContainText("Weekend Pick");
 
-    // Signing every other device out: the first finds out the next time it talks to the server, and says why it is a guest again.
     await second.getByTestId("account-button").click();
     await second.getByTestId("menu-devices").click();
     await second.getByTestId("signout-others").click();
@@ -394,14 +367,12 @@ test.describe("what was watched follows the person", () => {
 
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
-    // Nobody is signed in: the screen holds only what a guest watched here, and the account's copy is gone from it.
     await expect.poll(() => phone.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("kino.data.")))).toEqual(["kino.data.guest"]);
     expect((await guestCopy(phone))?.data.progress).toHaveLength(0);
   });
 });
 
 test.describe("signing a TV in from the phone", () => {
-  /** A signed-in phone, and a TV showing the code that asks to be signed in. */
   async function askToSignIn(browser: Browser) {
     const phone = await newPhone(browser);
     await phone.goto("/");
@@ -409,12 +380,11 @@ test.describe("signing a TV in from the phone", () => {
     await expect(phone.getByTestId("account-profile-name")).toHaveText("Viewer");
 
     const tv = await openLibrary(browser);
-    await openTvSignIn(tv); // (nobody is signed in: the corner's button opens the profile's page, and the button there asks for the code)
+    await openTvSignIn(tv);
     const code = tv.getByTestId("tv-link-code");
-    await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/); // (until the TV has been given one it shows dots)
+    await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     const shown = (await code.textContent())!.trim();
 
-    // What the TV's QR code opens on the phone: a page that asks whether to sign that TV in.
     await phone.goto(`/?link=${shown.replace("-", "")}`);
     await expect(phone.getByTestId("link-code")).toHaveText(shown);
     return { phone, tv };
@@ -433,16 +403,15 @@ test.describe("signing a TV in from the phone", () => {
     await phone.getByTestId("link-approve-button").click();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
 
-    await tv.getByTestId("rail-connect").click(); // the same phone goes with this TV
+    await tv.getByTestId("rail-connect").click();
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
 
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-devices").click();
-    await expect(phone.getByTestId("device")).toHaveCount(2); // this phone, and the TV
+    await expect(phone.getByTestId("device")).toHaveCount(2);
 
-    // A device is called what its owner likes: its name opens a field, Enter keeps what was typed, Escape drops it (and is not the page's own Escape).
     const tvRow = phone.locator('[data-testid="device"][data-current="false"]');
     const name = tvRow.getByTestId("device-name-input");
     await tvRow.getByTestId("device-rename").click();
@@ -456,7 +425,6 @@ test.describe("signing a TV in from the phone", () => {
     await expect(phone.getByTestId("devices-page")).toBeVisible();
 
     await phone.getByTestId("signout-others").click();
-    // (The TV's own exchange is up to 45 seconds away: this is the phone telling it.)
     await expect(tv.getByTestId("tv-account-toast")).toHaveText(en["error.signed_out"], { timeout: 10_000 });
   });
 
@@ -466,7 +434,7 @@ test.describe("signing a TV in from the phone", () => {
     await phone.goto("/");
     await signUp(phone, fresh());
     await expect(phone.getByTestId("account-profile-name")).toHaveText("Viewer");
-    await expect(phone.getByTestId("menu-link")).toHaveCount(0); // one row for the devices, not two
+    await expect(phone.getByTestId("menu-link")).toHaveCount(0);
 
     const tv = await openLibrary(browser);
     await openTvSignIn(tv);
@@ -476,8 +444,8 @@ test.describe("signing a TV in from the phone", () => {
 
     await phone.getByTestId("menu-devices").click();
     await expect(phone.getByTestId("devices-page")).toBeVisible();
-    await expect(phone.getByTestId("device")).toHaveCount(1); // this phone
-    await expect(phone.getByTestId("devices-tvs")).toHaveCount(0); // (a phone with no TV has no row for them)
+    await expect(phone.getByTestId("device")).toHaveCount(1);
+    await expect(phone.getByTestId("devices-tvs")).toHaveCount(0);
     await phone.getByTestId("link-code-input").fill(shown);
     await expect(phone.getByTestId("approve-page")).toBeVisible();
     await expect(phone.getByTestId("link-code")).toHaveText(shown);
@@ -485,14 +453,14 @@ test.describe("signing a TV in from the phone", () => {
     await expect(phone.getByTestId("link-done")).toBeVisible();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
 
-    await phone.getByTestId("link-close").click(); // back on the Devices page, where the TV is now listed
+    await phone.getByTestId("link-close").click();
     await expect(phone.getByTestId("devices-page")).toBeVisible();
     await expect(phone.getByTestId("device")).toHaveCount(2);
     await phone.locator('[data-testid="device"][data-current="false"]').getByTestId("device-signout").click();
     await expect(phone.getByTestId("device")).toHaveCount(1);
-    await tv.reload(); // (the TV was signed out; it finds out at its next exchange with the server, or now)
+    await tv.reload();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"], { timeout: 15_000 });
-    await expect(phone.getByTestId("devices-page")).toBeVisible(); // (this phone stayed signed in)
+    await expect(phone.getByTestId("devices-page")).toBeVisible();
   });
 
   test("on a phone that controls a TV, the Devices page has a row for its TVs, which opens the same list as the TV's menu", async ({ browser }) => {
@@ -511,7 +479,7 @@ test.describe("signing a TV in from the phone", () => {
     await phone.getByTestId("devices-tvs").click();
     await expect(phone.getByTestId("tvs-sheet")).toBeVisible();
     await expect(phone.getByTestId("tv-row")).toHaveCount(1);
-    await phone.keyboard.press("Escape"); // the sheet closes, the Devices page is under it
+    await phone.keyboard.press("Escape");
     await expect(phone.getByTestId("tvs-sheet")).toHaveCount(0);
     await expect(phone.getByTestId("devices-page")).toBeVisible();
   });
@@ -527,16 +495,15 @@ test.describe("signing a TV in from the phone", () => {
 });
 
 test.describe("a TV that nobody is at", () => {
-  // Left on "Sign in with another device", a TV used to ask for a code and then whether it was approved every two seconds, for ever.
   test("asks for a second code, and then rests until the button is pressed", async ({ browser }) => {
     const FIVE_MINUTES = 5 * 60_000;
     let starts = 0;
     let polls = 0;
     const tv = await openLibrary(browser, async (context) => {
-      await context.clock.install(); // (the minutes are skipped with `fastForward`)
+      await context.clock.install();
       await context.route("**/api/link/start", async (route) => {
         starts += 1;
-        const now = await route.request().frame().evaluate(() => Date.now()); // (a code runs out five minutes after, by the page's clock)
+        const now = await route.request().frame().evaluate(() => Date.now());
         await route.fulfill({ status: 201, json: { code: `TEST000${starts}`, secret: "s", expiresAt: now + FIVE_MINUTES } });
       });
       await context.route("**/api/link/poll", (route) => {
@@ -548,20 +515,20 @@ test.describe("a TV that nobody is at", () => {
     await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
     await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
 
-    await tv.clock.fastForward(FIVE_MINUTES + 2500); // the first code runs out, and the TV that is still there asks for another
+    await tv.clock.fastForward(FIVE_MINUTES + 2500);
     await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0002");
     await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
 
-    await tv.clock.fastForward(FIVE_MINUTES + 2500); // ten minutes of nobody: it rests
+    await tv.clock.fastForward(FIVE_MINUTES + 2500);
     await expect(tv.getByTestId("tv-signin-status")).toHaveText(en["link.rested"]);
     await expect(tv.getByTestId("tv-signin-again")).toHaveText(en["link.newCode"]);
-    await expect(tv.getByTestId("tv-signin-again")).toBeFocused(); // (OK on the remote goes on)
-    await expect(tv.getByTestId("tv-link-code")).not.toHaveText("TEST-0002"); // the code that ran out is not left on the screen
+    await expect(tv.getByTestId("tv-signin-again")).toBeFocused();
+    await expect(tv.getByTestId("tv-link-code")).not.toHaveText("TEST-0002");
 
     const [startsThen, pollsThen] = [starts, polls];
-    await tv.clock.fastForward(60 * 60_000); // an hour
+    await tv.clock.fastForward(60 * 60_000);
     await tv.waitForTimeout(300);
-    expect([starts, polls]).toEqual([startsThen, pollsThen]); // nothing asked meanwhile
+    expect([starts, polls]).toEqual([startsThen, pollsThen]);
 
     await tv.getByTestId("tv-signin-again").click();
     await expect(tv.getByTestId("tv-link-code")).toHaveText(`TEST-000${startsThen + 1}`);
@@ -569,34 +536,31 @@ test.describe("a TV that nobody is at", () => {
     await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.waiting"]);
   });
 
-  // The server says when a code ends by its own clock; a TV whose clock is minutes ahead of it must not read that as "already over" and ask for a new code every other second.
   test("keeps the code it was given when its own clock is minutes ahead of the server's", async ({ browser }) => {
     let starts = 0;
     const tv = await openLibrary(browser, async (context) => {
       await context.route("**/api/link/start", async (route) => {
         starts += 1;
         const now = await route.request().frame().evaluate(() => Date.now());
-        // (By the server's clock this code lasts five minutes; the page's clock is ten ahead of it, so by the page's own the code ended five minutes ago.)
         await route.fulfill({ status: 201, json: { code: `TEST000${starts}`, secret: "s", expiresAt: now - 5 * 60_000 } });
       });
       await context.route("**/api/link/poll", (route) => route.fulfill({ json: { status: "waiting" } }));
     });
     await openTvSignIn(tv);
     await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
-    await tv.waitForTimeout(4500); // two polls, each of which used to throw the code away
+    await tv.waitForTimeout(4500);
     expect(starts).toBe(1);
     await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
     await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.waiting"]);
   });
 });
 
-/** A computer's screen page that has made an account with the email form, which is how a screen with a keyboard signs in. */
 async function signedInScreen(browser: Browser, account = fresh()) {
   const screen = await openLibrary(browser);
   await openTvSignIn(screen);
-  await screen.getByTestId("tv-signin-create").click(); // (one press from the page of the code: it was two more, behind the typed form - the judge, 16 Nov)
+  await screen.getByTestId("tv-signin-create").click();
   await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
-  await expect(screen.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form does, not "Sign in"
+  await expect(screen.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]);
   await screen.getByTestId("auth-email").fill(account.email);
   await screen.getByTestId("auth-password").fill(account.password);
   await screen.getByTestId("auth-submit").click();
@@ -607,7 +571,6 @@ async function signedInScreen(browser: Browser, account = fresh()) {
 }
 
 test.describe("signing a screen in from another screen", () => {
-  /** Another screen that is not signed in, showing the code that asks for it. */
   async function screenAskingToSignIn(browser: Browser) {
     const other = await openLibrary(browser);
     await openTvSignIn(other);
@@ -629,7 +592,6 @@ test.describe("signing a screen in from another screen", () => {
     await screen.getByTestId("tv-approve-input").pressSequentially(shown.replace("-", "").toLowerCase());
     await expect(screen.getByTestId("tv-approve-code")).toHaveText(shown);
 
-    // Nothing has the focus yet, so a stray OK only lands on the first button; the second press is the answer.
     await expect(screen.getByTestId("tv-approve-yes")).not.toBeFocused();
     await screen.keyboard.press("Enter");
     await expect(screen.getByTestId("tv-approve-yes")).toBeFocused();
@@ -639,7 +601,7 @@ test.describe("signing a screen in from another screen", () => {
     await expect(screen.getByTestId("tv-approve-done")).toContainText(en["link.approved"]);
     await expect(other.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
     await screen.getByTestId("tv-approve-close").click();
-    await expect(screen.getByTestId("tv-account")).toBeVisible(); // back on the settings page
+    await expect(screen.getByTestId("tv-account")).toBeVisible();
   });
 
   test("a code nobody is showing is refused in words, and a request turned down leaves the other screen signed out", async ({ browser }) => {
@@ -669,23 +631,20 @@ test.describe("a poor password on the TV's own form", () => {
     await tv.getByTestId("tv-signin-email").click();
     await expect(tv.locator(".tv-headline").first()).toHaveText(en["auth.signIn"]);
     await tv.getByTestId("auth-switch").click();
-    await expect(tv.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form now does, not "Sign in"
+    await expect(tv.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]);
     await tv.getByTestId("auth-email").fill(account.email);
     await tv.getByTestId("auth-password").fill(account.password);
     await tv.getByTestId("auth-submit").click();
 
-    // The question takes the form's place, with the remote on the safe button.
     await expect(tv.getByTestId("auth-warning")).toHaveAttribute("data-kind", "weak");
     await expect(tv.getByTestId("auth-change")).toBeFocused();
 
-    // Back is "change the password": the form again, as it was left, not the page before it.
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("auth-warning")).toHaveCount(0);
     await expect(tv.getByTestId("tv-signin")).toBeVisible();
     await expect(tv.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
     await expect(tv.getByTestId("auth-password")).toHaveValue(account.password);
 
-    // Asked again; Down to "I agree", OK.
     await tv.getByTestId("auth-submit").click();
     await expect(tv.getByTestId("auth-warning")).toBeVisible();
     await tv.keyboard.press("ArrowDown");
@@ -702,11 +661,9 @@ test.describe("profiles made and changed on the TV itself", () => {
     const tv = await signedInScreen(browser, account);
     const profiles = tv.getByTestId("tv-profiles");
 
-    // One profile: nobody to switch to, but profiles are managed from here all the same.
     await openTvSettings(tv);
     await expect(tv.getByTestId("tv-switch-profile")).toHaveCount(0);
 
-    // The page is three columns, and Up and Down keep to the one the remote is in: the top of the first goes up to the way out in the corner, not across to the next.
     const inColumn = (index: number) => tv.locator(".tv-set-col").nth(index).locator(":focus");
     await expect(inColumn(0)).toHaveCount(1);
     await tv.keyboard.press("ArrowUp");
@@ -716,7 +673,7 @@ test.describe("profiles made and changed on the TV itself", () => {
     await tv.keyboard.press("ArrowRight");
     await expect(inColumn(1)).toHaveCount(1);
     for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown");
-    await expect(inColumn(1)).toHaveAttribute("data-testid", /^tv-anime-audio-/); // the last of the middle column, and Down from it goes nowhere
+    await expect(inColumn(1)).toHaveAttribute("data-testid", /^tv-anime-audio-/);
     await tv.keyboard.press("ArrowLeft");
     await expect(inColumn(0)).toHaveCount(1);
 
@@ -724,7 +681,6 @@ test.describe("profiles made and changed on the TV itself", () => {
     await expect(profiles).toContainText("1 of 5 profiles");
     await expect(tv.getByTestId("profile-Viewer")).toBeFocused();
 
-    // A new one: a picture chosen, a name typed.
     await tv.getByTestId("profile-add").click();
     await expect(tv.getByTestId("tv-profile-edit")).toBeVisible();
     const picture = tv.getByTestId(`avatar-${AVATAR_IDS[7]}`);
@@ -735,7 +691,6 @@ test.describe("profiles made and changed on the TV itself", () => {
     await expect(tv.getByTestId("profile-Maya")).toBeVisible();
     await expect(profiles).toContainText("2 of 5 profiles");
 
-    // Changed: OK in the name field saves it.
     await tv.getByTestId("profile-Maya").click();
     await expect(tv.getByTestId("profile-name-input")).toHaveValue("Maya");
     await tv.getByTestId("profile-name-input").fill("Noa");
@@ -743,10 +698,9 @@ test.describe("profiles made and changed on the TV itself", () => {
     await expect(tv.getByTestId("profile-Noa")).toBeVisible();
     await expect(tv.getByTestId("profile-Maya")).toHaveCount(0);
 
-    // Removed: the question lands the remote on the answer that keeps it, and that answer is the way back.
     await tv.getByTestId("profile-Noa").click();
-    await tv.getByTestId(`avatar-${AVATAR_IDS[AVATAR_IDS.length - 1]}`).focus(); // (a picture of the last row)
-    await tv.keyboard.press("ArrowDown"); // from the pictures to Save or Cancel, not past them to the wide Delete
+    await tv.getByTestId(`avatar-${AVATAR_IDS[AVATAR_IDS.length - 1]}`).focus();
+    await tv.keyboard.press("ArrowDown");
     await expect(tv.locator('[data-testid="profile-save"]:focus, [data-testid="profile-cancel"]:focus')).toHaveCount(1);
     await tv.getByTestId("profile-delete").click();
     await expect(tv.getByTestId("profile-delete-cancel")).toBeFocused();
@@ -757,13 +711,11 @@ test.describe("profiles made and changed on the TV itself", () => {
     await expect(tv.getByTestId("profile-Noa")).toHaveCount(0);
     await expect(profiles).toContainText("1 of 5 profiles");
 
-    // The only profile left has no Delete: it can't be removed.
     await tv.getByTestId("profile-Viewer").click();
     await expect(tv.getByTestId("tv-profile-edit")).toBeVisible();
     await expect(tv.getByTestId("profile-delete")).toHaveCount(0);
     await tv.getByTestId("profile-cancel").click();
 
-    // Made again with the keys alone: Right to the new-profile tile, OK, the name, OK.
     await expect(tv.getByTestId("profile-Viewer")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("profile-add")).toBeFocused();
@@ -773,13 +725,11 @@ test.describe("profiles made and changed on the TV itself", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("profile-Kim")).toBeVisible();
 
-    // Done: back on the settings page, which can now switch to the other profile.
     await tv.getByTestId("tv-profiles-done").click();
     await tv.getByTestId("tv-switch-profile").click();
     await tv.getByTestId("profile-Kim").click();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Kim/);
 
-    // Signing in again asks who is watching, with a way to add or change profiles on that very page; there is no way round it.
     await openTvSettings(tv);
     await tv.getByTestId("tv-sign-out").click();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"]);
@@ -811,7 +761,7 @@ test.describe("English, Romanian and Italian", () => {
     await phone.getByTestId("switch-lang-ro").click();
     await expect(heading).toHaveText(ro["pair.title"]);
     await expect(phone.locator("html")).toHaveAttribute("lang", "ro");
-    await expect(phone.getByTestId("connect")).toHaveText(ro["pair.connect"]); // the rest of the screen too, not only the title
+    await expect(phone.getByTestId("connect")).toHaveText(ro["pair.connect"]);
 
     await phone.reload();
     await expect(heading).toHaveText(ro["pair.title"]);
@@ -854,7 +804,6 @@ test.describe("English, Romanian and Italian", () => {
     await phone.getByTestId("profile-save").click();
     await expect(phone.getByTestId("profile-Maya")).toBeVisible();
 
-    // The first profile chose Romanian on another screen: this one is told so by the server, and was never asked to remember it as its own.
     const origin = new URL(phone.url()).origin;
     const { me } = (await (await phone.context().request.get(`${origin}/api/me`)).json()) as { me: { profiles: Array<{ id: string; name: string }> } };
     const robert = me.profiles.find((profile) => profile.name === first)!.id;
@@ -862,14 +811,12 @@ test.describe("English, Romanian and Italian", () => {
     await phone.reload();
     await expect(phone.locator("html")).toHaveAttribute("lang", "ro");
 
-    // Maya chose nothing: the screen is as it was before anyone's language reached it.
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-switch").click();
     await phone.getByTestId("profile-Maya").click();
     await expect(phone.locator("html")).toHaveAttribute("lang", "en");
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Maya/);
 
-    // ...and so does a screen that nobody is signed in at any more.
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
@@ -878,11 +825,11 @@ test.describe("English, Romanian and Italian", () => {
 
   test("the TV's own account page changes it too, and the player speaks it", async ({ browser, baseURL }) => {
     const tv = await openLibrary(browser);
-    await openProfilePlace(tv, "settings"); // settings are on the profile's page, for a guest too
+    await openProfilePlace(tv, "settings");
     await expect(tv.getByTestId("tv-account-name")).toHaveText(en["tv.notSignedIn"]);
     await tv.getByTestId("tv-lang-it").click();
     await expect(tv.getByTestId("tv-account-name")).toHaveText(italian["tv.notSignedIn"]);
-    await tv.keyboard.press("Escape"); // Back
+    await tv.keyboard.press("Escape");
     await tv.getByTestId("rail-connect").click();
 
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -892,8 +839,6 @@ test.describe("English, Romanian and Italian", () => {
     phone.close();
   });
 
-  // (A phone used as the screen is 360 to 412 pixels wide: the third language used to wrap onto a line of its own there. The page's unit is 9px on
-  // such a screen, and 12 or 14 stands for one whose text is set larger, which is how it was seen: the buttons were 115px wide each, in 413.)
   for (const [width, unit] of [[320, 9], [360, 9], [390, 9], [412, 9], [320, 12], [360, 12], [412, 12], [412, 14], [600, 9], [899, 9], [1280, 9]] as const) {
     test(`the three languages share one line on the TV's settings page, ${width}px wide, text ${unit}px`, async ({ browser }) => {
       const tv = await openLibrary(browser, undefined, { width, height: 800 });
@@ -901,15 +846,14 @@ test.describe("English, Romanian and Italian", () => {
       await openProfilePlace(tv, "settings");
       await expect(tv.getByTestId("tv-account")).toBeVisible();
       const boxes = await Promise.all(["en", "ro", "it"].map(async (code) => (await tv.getByTestId(`tv-lang-${code}`).boundingBox())!));
-      for (const box of boxes) expect(Math.abs(box.y - boxes[0]!.y)).toBeLessThan(1); // the same line
+      for (const box of boxes) expect(Math.abs(box.y - boxes[0]!.y)).toBeLessThan(1);
       expect(boxes[0]!.x).toBeGreaterThanOrEqual(0);
-      expect(boxes[2]!.x + boxes[2]!.width).toBeLessThanOrEqual(width); // and all of it on the screen
+      expect(boxes[2]!.x + boxes[2]!.width).toBeLessThanOrEqual(width);
       expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
   }
 });
 
-/** A video with subtitles in four languages, for the lists a profile arranges. */
 const subtitled = (): NormalizedMedia => ({
   title: "Four Tongues",
   stream: { url: "/fixtures/sample.mp4", type: "mp4" },
@@ -924,7 +868,6 @@ const subtitled = (): NormalizedMedia => ({
 test.describe("the subtitle languages a profile chose", () => {
   const optionsOf = async (tv: Page) => (await tv.getByRole("listbox", { name: "Subtitles" }).getByRole("option").allTextContents()).map((text) => text.trim());
 
-  /** The TV has the video loaded and its audio and subtitles menu open. */
   async function openMenu(tv: Page, baseURL: string) {
     const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: subtitled() });
@@ -956,26 +899,25 @@ test.describe("the subtitle languages a profile chose", () => {
   });
 
   test("chosen on the TV's own settings with the remote, they come first in the order they were pressed; pressed again, one is taken out", async ({ browser, baseURL }) => {
-    // (The owner, 15 Nov 2026: "allow subtitle picking on tv/pc too not just phone as it says". A guest's are kept on the TV.)
     const tv = await openLibrary(browser);
     await openTvSettings(tv);
     const line = tv.getByTestId("tv-subtitle-languages");
-    await expect(line.locator(".tv-line-value")).toHaveCount(0); // (nothing chosen yet: the defaults)
+    await expect(line.locator(".tv-line-value")).toHaveCount(0);
     await line.focus();
     await tv.keyboard.press("Enter");
     const page = tv.getByTestId("tv-subtitle-settings");
     await expect(page).toBeVisible();
     await expect(page.getByTestId("tv-subtitle-order")).toHaveText("Shown first now: English, Romanian, Italian.");
     const lang = (code: string) => page.getByTestId(`tv-subtitle-lang-${code}`);
-    await expect(lang("en")).toBeFocused(); // (the remote starts on the first language)
+    await expect(lang("en")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(lang("en")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("tv-subtitle-order")).toHaveText("1. English");
-    await tv.keyboard.press("Enter"); // (pressed again, it is taken out, and the remote is still on it)
+    await tv.keyboard.press("Enter");
     await expect(lang("en")).toHaveAttribute("aria-pressed", "false");
     await expect(lang("en")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
-    await tv.keyboard.press("ArrowDown"); // (the third row starts with Dutch: English Romanian Italian Spanish French German / Portuguese ... / Dutch ...)
+    await tv.keyboard.press("ArrowDown");
     await expect(lang("nl")).toBeFocused();
     await tv.keyboard.press("Enter");
     await tv.keyboard.press("ArrowUp");
@@ -987,7 +929,7 @@ test.describe("the subtitle languages a profile chose", () => {
     await expect(lang("nl").locator(".tv-lang-rank")).toHaveText("1");
     await expect(lang("fr").locator(".tv-lang-rank")).toHaveText("2");
 
-    await tv.keyboard.press("Escape"); // (back on the settings, on the row it came from, which says how it stands)
+    await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toBeVisible();
     await expect(line).toBeFocused();
     await expect(line).toContainText("Dutch +1");
@@ -1008,13 +950,13 @@ test.describe("the subtitle languages a profile chose", () => {
     await tv.getByTestId("tv-subtitle-languages").click();
     const lang = (code: string) => tv.getByTestId(`tv-subtitle-lang-${code}`);
     await expect(lang("nl")).toHaveAttribute("aria-disabled", "true");
-    await lang("nl").click({ force: true }); // (Playwright waits for an aria-disabled button to be enabled: a press is made anyway, as a hand or a remote can)
-    await expect(lang("nl")).toHaveAttribute("aria-pressed", "false"); // (not taken)
+    await lang("nl").click({ force: true });
+    await expect(lang("nl")).toHaveAttribute("aria-pressed", "false");
     await lang("it").click();
     await expect(lang("nl")).not.toHaveAttribute("aria-disabled", "true");
     await lang("nl").click();
     await expect(lang("nl").locator(".tv-lang-rank")).toHaveText("12");
-    await expect(lang("hu").locator(".tv-lang-rank")).toHaveText("7"); // (those after the one taken out moved up a place)
+    await expect(lang("hu").locator(".tv-lang-rank")).toHaveText("7");
   });
 
   test("someone who chose nothing gets the languages of the site first", async ({ browser, baseURL }) => {
@@ -1026,7 +968,6 @@ test.describe("the subtitle languages a profile chose", () => {
 });
 
 test.describe("playing the next episode", () => {
-  /** An episode that ends in a few seconds and has one after it. */
   const twoParts = (baseURL: string): NormalizedMedia => ({
     title: "Two Parts · S1 E1",
     stream: { url: "/fixtures/sample.mp4", type: "mp4" },
@@ -1041,7 +982,6 @@ test.describe("playing the next episode", () => {
     },
   });
 
-  /** Let the episode play its last second or so. */
   async function playToTheEnd(tv: Page, baseURL: string) {
     const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: twoParts(baseURL) });
@@ -1061,7 +1001,7 @@ test.describe("playing the next episode", () => {
     await expect(card).toBeVisible({ timeout: 15_000 });
     await expect(card).toHaveAttribute("data-counting", "true");
     await expect(card).toContainText(/\ds/);
-    await expect(tv.getByTestId("tv-end")).toHaveCount(0); // the countdown is the card at this moment, not the end card
+    await expect(tv.getByTestId("tv-end")).toHaveCount(0);
     phone.close();
   });
 
@@ -1074,9 +1014,9 @@ test.describe("playing the next episode", () => {
     await expect(card).toHaveAttribute("data-counting", "false");
     await expect(card).not.toContainText(/\ds/);
 
-    await tv.waitForTimeout(6_500); // longer than the five seconds the countdown would have taken
-    await expect(card).toBeVisible(); // still waiting to be asked
-    await tv.getByTestId("upnext-play-btn").click(); // and it plays when asked
+    await tv.waitForTimeout(6_500);
+    await expect(card).toBeVisible();
+    await tv.getByTestId("upnext-play-btn").click();
     await expect(card).toHaveCount(0);
     phone.close();
   });

@@ -10,12 +10,6 @@ import { MemoryPersistence } from "./persistence";
 import { MemoryStickerFiles } from "./stickerFiles";
 import { AccountStore } from "./store";
 
-/**
- * Personal stickers as the server puts them together: made in a collection, sent in a chat, seen by the two of it, saved from it, let go, sent to the team
- * with a report, taken down by the team, and kept over a restart. (The picture check and the book's own rules are in stickers.test.ts; who may reach what, for
- * every route, in authorization.test.ts.)
- */
-
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
@@ -30,7 +24,6 @@ function picture(n: number, text?: string): string {
   for (let at = 0; at < png.data.length; at += 4) png.data.set([n & 255, 90, 200, 255], at);
   let file = PNG.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, bitDepth: 8, deflateLevel: 9 });
   if (text) {
-    // (words put in the file the way an editor does, before its end: they are not kept)
     const end = file.length - 12;
     const body = Buffer.from(`tEXtComment\0${text}`, "latin1");
     const length = Buffer.alloc(4);
@@ -161,7 +154,6 @@ describe("a personal sticker", () => {
     const seen = (await sam.client.call("GET", sam.chat(alex))).data.lines.at(-1);
     expect(seen).toMatchObject({ mine: false, text: PERSONAL_STICKER_TEXT, sticker: sid });
 
-    // the picture, to each of the two, as a PNG nothing guesses at, runs or embeds elsewhere
     for (const [who, other] of [[sam, alex], [alex, sam]] as const) {
       const shown = await who.client.call("GET", who.chat(other, `/stickers/${sid}`));
       expect(shown.statusCode).toBe(200);
@@ -174,31 +166,26 @@ describe("a personal sticker", () => {
         "cache-control": "private, max-age=300",
       });
     }
-    // not in Sam's collection until he saves it; then it is, and not his own
     expect((await sam.own(sid)).statusCode).toBe(404);
     const saved = await sam.client.call("POST", sam.chat(alex, `/stickers/${sid}/save`));
     expect([saved.statusCode, saved.data.stickers]).toEqual([200, [{ id: sid, mine: false }]]);
     expect((await sam.own(sid)).rawPayload).toEqual(own.rawPayload);
-    // and he may send it on: it is one he has
     expect((await sendIt(sam, alex, sid)).statusCode).toBe(201);
   });
 
   it("is only one's own to send, and only the chat's two see it there", async () => {
     const { app, alex, sam } = await friends();
     const sid = await madeOne(alex, 1);
-    // (a name typed by hand: Sam does not have it)
     expect([(await sendIt(sam, alex, sid)).statusCode, (await sendIt(sam, alex, sid)).data]).toEqual([404, { error: "gone" }]);
     expect((await sam.client.call("GET", sam.chat(alex, `/stickers/${sid}`))).statusCode).toBe(404);
     expect((await sam.client.call("POST", sam.chat(alex, `/stickers/${sid}/save`))).statusCode).toBe(404);
     await sendIt(alex, sam, sid);
-    // somebody else, friends with Alex, is not of that chat
     const kim = await person(app, "kim");
     const code = (await alex.client.call("POST", `/api/profiles/${alex.id}/friends/invites`, {})).data.code;
     await kim.client.call("POST", `/api/profiles/${kim.id}/friends/accept`, { code });
     expect((await kim.client.call("GET", kim.chat(alex, `/stickers/${sid}`))).statusCode).toBe(404);
-    expect((await kim.client.call("GET", kim.chat(sam, `/stickers/${sid}`))).statusCode).toBe(404); // (not friends: the same answer as for a sticker not sent there)
+    expect((await kim.client.call("GET", kim.chat(sam, `/stickers/${sid}`))).statusCode).toBe(404);
     expect((await kim.own(sid)).statusCode).toBe(404);
-    // once they are not friends, the chat shows Sam nothing more of it; what he saved is still his
     await sam.client.call("POST", sam.chat(alex, `/stickers/${sid}/save`));
     expect((await sam.client.call("DELETE", `/api/profiles/${sam.id}/friends/${alex.id}`)).statusCode).toBe(204);
     expect((await sam.client.call("GET", sam.chat(alex, `/stickers/${sid}`))).statusCode).toBe(404);
@@ -211,7 +198,7 @@ describe("a personal sticker", () => {
     await sendIt(alex, sam, sid);
     await sam.client.call("POST", sam.chat(alex, `/stickers/${sid}/save`));
     expect((await alex.letGo(sid)).data.stickers).toEqual([]);
-    expect((await sam.client.call("GET", sam.chat(alex, `/stickers/${sid}`))).statusCode).toBe(200); // (Sam still has it)
+    expect((await sam.client.call("GET", sam.chat(alex, `/stickers/${sid}`))).statusCode).toBe(200);
     expect((await sam.letGo(sid)).statusCode).toBe(200);
     await new Promise((resolve) => setTimeout(resolve, 0));
     for (const [who, other] of [[sam, alex], [alex, sam]] as const) {
@@ -231,7 +218,6 @@ describe("a personal sticker", () => {
     const preview = await sam.client.call("GET", sam.chat(alex, "/report"));
     expect(preview.data.lines.map((line: { sticker?: string }) => line.sticker)).toEqual([sid, undefined]);
     expect((await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev })).statusCode).toBe(204);
-    // (Alex letting it go after the report does not take it from the team)
     await alex.letGo(sid);
     const record = feedback.list()[0]!;
     expect(record.files.map((file) => [file.id, file.name, file.mime])).toEqual([
@@ -317,20 +303,17 @@ describe("a personal sticker", () => {
   it("lets a picture in before its body is read: only from the profile's own account, one at a time for it, and so many at once for the site", async () => {
     const files = new MemoryStickerFiles();
     const { app, alex, sam, store } = await friends({ files });
-    // (what is not even read as a body is turned away for who sent it, not for what it is)
     const raw = (client: Client, id: string) =>
       app.inject({ method: "POST", url: `/api/profiles/${id}/stickers`, headers: { "content-type": "application/json", ...(client.cookie ? { cookie: client.cookie } : {}) }, payload: "{ not json" });
     expect((await raw(new Client(app), alex.id)).statusCode).toBe(401);
     expect((await raw(sam.client, alex.id)).statusCode).toBe(404);
     expect((await raw(alex.client, alex.id)).statusCode).toBe(400);
-    // (and a body that is JSON, and not exactly what the page sends, is not unpacked to be looked at: a bad request too, the judge, 17 Nov)
     const junk = (payload: string) =>
       app.inject({ method: "POST", url: `/api/profiles/${alex.id}/stickers`, headers: { "content-type": "application/json", cookie: alex.client.cookie! }, payload });
     expect((await junk(`{"data":"","delays":[20,20],"junk":[${"{},".repeat(1000)}{}]}`)).statusCode).toBe(400);
     expect((await junk(`{ "data": "${picture(9)}" }`)).statusCode, "spaces are not what the page sends").toBe(400);
     expect((await junk(`{"data":"${picture(9)}"}`)).statusCode, "what the page sends").toBe(201);
 
-    // (pictures held on their way in: a second of Alex's waits, as does a fifth of the site's)
     const put = files.put.bind(files);
     const held: Array<() => void> = [];
     files.put = (id, data) => new Promise<void>((resolve) => held.push(() => void put(id, data).then(resolve)));
@@ -343,11 +326,8 @@ describe("a personal sticker", () => {
     held.forEach((go) => go());
     expect((await Promise.all(waiting)).map((reply) => reply.statusCode)).toEqual([201, 201, 201, 201]);
     files.put = put;
-    // (and each is let go when its answer has gone)
     expect((await alex.make(picture(22))).statusCode).toBe(201);
     expect((await sam.make(picture(23))).statusCode).toBe(201);
-    // (what reading a body took is the site's time too: its arriving is counted as it is let in, at the most a body may be; then one refused as it is read is
-    // counted, and one made is counted as it is read and as it is unpacked)
     const worked = vi.spyOn(store.stickers, "worked");
     const arrived = (Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096) / 1_000_000 * 2;
     expect((await junk(`{"data":"${"A".repeat(4000)}","junk":1}`)).statusCode).toBe(400);
@@ -357,12 +337,10 @@ describe("a personal sticker", () => {
     expect((await junk(`{"data":"${picture(25)}"}`)).statusCode).toBe(201);
     expect(worked.mock.calls.map(([ms]) => ms > 0), "let in, read, then unpacked").toEqual([true, true, true]);
     worked.mockClear();
-    // (a body that reaches no reader of the site's own, not JSON at all, is counted as it is let in all the same)
     const plain = await app.inject({ method: "POST", url: `/api/profiles/${alex.id}/stickers`, headers: { "content-type": "text/plain", cookie: alex.client.cookie! }, payload: "A".repeat(4000) });
     expect(plain.statusCode).toBeGreaterThanOrEqual(400);
     expect(worked.mock.calls[0]?.[0], "a body no reader of the site's takes is counted too").toBeCloseTo(arrived, 6);
     worked.mockRestore();
-    // (and the whole site's allowance, whoever sends: when the book says to wait, the picture is not let in, and is told for how long)
     const arriving = store.stickers.arriving.bind(store.stickers);
     store.stickers.arriving = () => 90_000;
     const full = await alex.make(picture(24));
@@ -378,7 +356,6 @@ describe("a personal sticker", () => {
     const path = `/api/profiles/${alex.id}/stickers`;
     const body = JSON.stringify({ data: picture(30) });
 
-    // the picture came whole, and its asker went while it was being kept: the account's next is let in once it has been kept, not before
     const put = files.put.bind(files);
     let release: (() => void) | undefined;
     files.put = (id, data) => new Promise<void>((resolve) => (release = () => void put(id, data).then(resolve)));
@@ -387,7 +364,6 @@ describe("a personal sticker", () => {
     await vi.waitFor(() => expect(release).toBeDefined());
     gone.abort();
     expect(await asked).toBe("gone");
-    // (its place is kept while what it sent is still being made: an asker who leaves does not make room for the next, the judge, 17 Nov)
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect((await alex.make(picture(31))).statusCode, "still being made").toBe(503);
     release!();
@@ -395,7 +371,6 @@ describe("a personal sticker", () => {
     await vi.waitFor(async () => expect(await alex.collection()).toHaveLength(1));
     expect((await alex.make(picture(31))).statusCode).toBe(201);
 
-    // one sent a little at a time keeps the account's next out only until its time is up, then it is ended
     const socket = connect(Number(new URL(address).port), "127.0.0.1");
     await once(socket, "connect");
     const ended = once(socket, "close");
@@ -417,7 +392,6 @@ describe("a personal sticker", () => {
     for (let n = 2; n < PERSONAL_STICKER.picturesPerMinute; n++) store.stickers.pictureReads.hit(alex.account);
     expect((await alex.own(sid)).statusCode).toBe(429);
     expect((await alex.client.call("GET", alex.chat(sam, `/stickers/${sid}`))).statusCode).toBe(429);
-    // (Sam's are his own)
     expect((await sam.client.call("GET", sam.chat(alex, `/stickers/${sid}`))).statusCode).toBe(200);
   });
 });

@@ -26,7 +26,6 @@ describe("the chat on the TV", () => {
     expect(tagOf(html, "tv-chat-more")).toContain('aria-expanded="false"');
     expect(tagOf(html, "tv-chat-more")).toContain("data-nav");
     expect(tagOf(html, "tv-chat-menu")).toContain("hidden");
-    // (what is in it is inside it, not a row of buttons beside the box)
     const menu = html.slice(html.indexOf('data-testid="tv-chat-menu"'));
     for (const id of ["tv-chat-takeback", "tv-chat-mute", "tv-chat-report"]) expect(has(menu, id), id).toBe(true);
     expect(read({ session: fakeSession({ state: { lines, muted: true } }) })).toContain("Muted");
@@ -36,12 +35,10 @@ describe("the chat on the TV", () => {
     const menuOf = (html: string) => html.slice(html.indexOf('data-testid="tv-chat-menu"'));
     const pointer = menuOf(read({ desk: true, onMedia: () => {} }));
     for (const id of ["tv-chat-search-open", "tv-chat-media-open"]) expect(has(pointer, id), id).toBe(true);
-    // (in its order: after taking back, before muting)
     expect(pointer.indexOf("tv-chat-takeback")).toBeLessThan(pointer.indexOf("tv-chat-search-open"));
     expect(pointer.indexOf("tv-chat-media-open")).toBeLessThan(pointer.indexOf("tv-chat-mute"));
     const remote = menuOf(read());
     for (const id of ["tv-chat-search-open", "tv-chat-media-open"]) expect(has(remote, id), id).toBe(false);
-    // (the TV page as a whole: the gallery and the search come only with a pointer)
     const tv = (desk: boolean) => renderToStaticMarkup(createElement(ChatTv, { name: "Sam", session: fakeSession({ state: { lines } }), report: fakeReport(), desk, onClose: () => {}, now: NOW }));
     expect(has(tv(true), "tv-chat-media-open")).toBe(true);
     expect(has(tv(false), "tv-chat-media-open")).toBe(false);
@@ -89,12 +86,10 @@ describe("the chat on the TV", () => {
         expect(count(html, "tv-chat-panel-btn"), what).toBe(1);
         expect(tagOf(html, "tv-chat-panel-btn"), what).toContain("data-nav");
         expect(tagOf(html, "tv-chat-panel-btn"), what).toContain('aria-expanded="false"');
-        // (Typed words change nothing: there is no + to fold into, and none of the three buttons it was.)
         for (const id of ["tv-chat-title-btn", "tv-chat-gif-btn", "tv-chat-sticker-btn", "tv-chat-tools", "tv-chat-panel"]) expect(has(html, id), `${what} ${id}`).toBe(false);
       }
     }
     expect(has(read(), "tv-chat-panel-btn")).toBe(false);
-    // (a friend who takes no messages: nothing to send, no button)
     expect(has(read({ withPanel: true, session: fakeSession({ state: { lines, open: false } }) }), "tv-chat-panel-btn")).toBe(false);
   });
 
@@ -124,7 +119,6 @@ describe("the chat on the TV", () => {
     expect(tagOf(html, "tv-chat-box-send")).toContain("disabled");
     expect(tagOf(read({ desk: true, draft: "Hello" }), "tv-chat-box-send")).not.toContain("disabled");
     expect(tagOf(read({ desk: true, draft: "Hello", session: fakeSession({ sending: true, state: { lines } }) }), "tv-chat-box-send")).toContain("disabled");
-    // (a friend who takes no messages: no box, as no Write)
     expect(has(read({ desk: true, session: fakeSession({ state: { lines, open: false } }) }), "tv-chat-box")).toBe(false);
   });
 
@@ -142,7 +136,6 @@ describe("the chat on the TV", () => {
     const form = html.slice(html.indexOf('data-testid="tv-chat-box-form"'));
     expect(form.slice(0, form.indexOf("</form>"))).not.toMatch(/<(input|textarea)\b/);
     expect(tagOf(read({ narrow: true, draft: "Hello" }), "tv-chat-box-send")).not.toContain("disabled");
-    // (a computer keeps its plain box)
     expect(tagOf(read({ desk: true }), "tv-chat-box")).toMatch(/^<input/);
   });
 

@@ -28,7 +28,6 @@ async function start(options: { registration?: "open" | "closed"; maxAccounts?: 
   return { app, store };
 }
 
-/** One browser: it keeps its cookie, and sends it back. */
 class Client {
   cookie = "";
   constructor(
@@ -81,7 +80,7 @@ describe("signing up and in", () => {
     const registered = await client.post("/api/auth/register", { email: " Alex@Example.com ", password: credentials.password });
     expect(registered.statusCode).toBe(201);
     expect(registered.data.account.email).toBe("alex@example.com");
-    expect(registered.data.profiles).toMatchObject([{ name: "Fox", avatar: "fox" }]); // (named after its picture until it is set up: never after the login, which others could look it up by)
+    expect(registered.data.profiles).toMatchObject([{ name: "Fox", avatar: "fox" }]);
     const cookie = String(registered.headers["set-cookie"]);
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/SameSite=Lax/);
@@ -90,7 +89,6 @@ describe("signing up and in", () => {
 
     expect((await client.get("/api/me")).data.me.account.email).toBe("alex@example.com");
 
-    // A nickname chosen on the form is the first profile's name (and one that is no name is refused, with no account made).
     const other = new Client(app);
     const named = await other.post("/api/auth/register", { email: "sam-login", password: credentials.password, name: "  Sammy " });
     expect(named.statusCode).toBe(201);
@@ -108,7 +106,7 @@ describe("signing up and in", () => {
     const me = await client.get("/api/me");
     expect(String(me.headers["set-cookie"])).toContain(`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
     expect(String(me.headers["set-cookie"])).toMatch(/HttpOnly/);
-    expect(client.cookie).toBe(before); // the same sign-in, with its term started again
+    expect(client.cookie).toBe(before);
     expect((await new Client(app).get("/api/me")).headers["set-cookie"]).toBeUndefined();
   });
 
@@ -145,7 +143,6 @@ describe("signing up and in", () => {
     expect(again.statusCode).toBe(409);
     expect(again.data).toEqual({ error: "email_taken" });
 
-    // A name that is no address and a password of one character make an account, and the name is the same whatever its capitals.
     const robert = await client.post("/api/auth/register", { email: " Robert ", password: "1" });
     expect(robert.statusCode).toBe(201);
     expect(robert.data.account.email).toBe("robert");
@@ -217,7 +214,6 @@ describe("signing up and in", () => {
   it("never slows somebody who knows the password, however many devices they sign in, and a right one forgives the wrong ones before it", async () => {
     const { app } = await start();
     await signedUp(app);
-    // (A try is counted before the check: a right one must give it back, or a family signing in its phones and TVs would be told to wait.)
     for (let i = 0; i < 12; i++) expect((await new Client(app).post("/api/auth/login", credentials)).statusCode).toBe(200);
     for (let round = 0; round < 2; round++) {
       for (let i = 0; i < 9; i++) expect((await new Client(app).post("/api/auth/login", { email: credentials.email, password: `typo ${i}` })).statusCode).toBe(401);
@@ -257,11 +253,11 @@ describe("the PIN of a child's profile", () => {
     expect(set.data.account.childPin).toBe(true);
     expect(JSON.stringify(set.data)).not.toMatch(/2580|scrypt/);
     expect((await client.get("/api/me")).data.me.account.childPin).toBe(true);
-    expect(store.getAccount(me.account.id)?.childPin).toMatch(/^scrypt\$/); // (kept as a hash, as a password is)
+    expect(store.getAccount(me.account.id)?.childPin).toMatch(/^scrypt\$/);
 
     expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204);
     expect((await client.post("/api/me/child-pin/check", { pin: "0000" })).data).toEqual({ error: "wrong_pin" });
-    expect((await new Client(app).post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(401); // (signed out)
+    expect((await new Client(app).post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(401);
   });
 
   it("is slowed after five wrong tries, the right one too, and a right one forgives the wrong ones before it", async () => {
@@ -269,16 +265,14 @@ describe("the PIN of a child's profile", () => {
     const { client } = await signedUp(app);
     await client.post("/api/me/child-pin", { next: "2580" });
     for (const wrong of ["0000", "1111", "2222", "3333"]) expect((await client.post("/api/me/child-pin/check", { pin: wrong })).statusCode).toBe(401);
-    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204); // (four wrong, then right: forgiven)
+    expect((await client.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(204);
     for (const wrong of ["0000", "1111", "2222", "3333", "4444"]) expect((await client.post("/api/me/child-pin/check", { pin: wrong })).statusCode).toBe(401);
     const slowed = await client.post("/api/me/child-pin/check", { pin: "2580" });
     expect(slowed.statusCode).toBe(429);
     expect(slowed.headers["retry-after"]).toBeDefined();
-    // (Another device of the same account is slowed as well: the count is the account's.)
     const tv = new Client(app);
     await tv.post("/api/auth/login", credentials);
     expect((await tv.post("/api/me/child-pin/check", { pin: "2580" })).statusCode).toBe(429);
-    // (So is changing it by the PIN; the password still works.)
     expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(429);
     expect((await client.post("/api/me/child-pin", { next: "1357", password: credentials.password })).statusCode).toBe(200);
   });
@@ -291,7 +285,6 @@ describe("the PIN of a child's profile", () => {
     const codes = answers.map((answer) => answer.statusCode);
     expect(codes.filter((code) => code === 401)).toHaveLength(5);
     expect(codes.filter((code) => code === 429)).toHaveLength(25);
-    // (So is changing it by guesses: those count with the same tries.)
     expect((await client.post("/api/me/child-pin", { next: "1357", pin: "2580" })).statusCode).toBe(429);
   });
 
@@ -397,7 +390,6 @@ describe("the account", () => {
       ["browser", "Chrome on Windows"],
       ["tv", "Living room TV"],
     ]);
-    // Every device of the account sees the new name.
     expect(((await tv.get("/api/sessions")).data as typeof listed).find((s) => s.kind === "tv")?.label).toBe("Living room TV");
 
     expect((await client.patch(`/api/sessions/${tvId}`, { label: "   " })).data).toEqual({ error: "invalid_name" });
@@ -487,13 +479,11 @@ describe("keeping what was watched", () => {
     const refused = await write(4);
     expect([refused.statusCode, refused.data.error]).toEqual([429, "rate_limited"]);
     expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
-    expect(Number(refused.headers["retry-after"])).toBeLessThanOrEqual(24 * 60 * 60); // (until midnight UTC)
-    // Asking what is new is not a write: the account's other screens still get the day's changes (the last one taken is there, the one turned away is not).
+    expect(Number(refused.headers["retry-after"])).toBeLessThanOrEqual(24 * 60 * 60);
     const tv = new Client(app);
     await tv.post("/api/auth/login", credentials);
     const pulled = await tv.post(`/api/profiles/${profile}/sync`, { since: 0 });
     expect([pulled.statusCode, pulled.data.progress]).toEqual([200, [expect.objectContaining({ position: 3 })]]);
-    // ...and another account has a day of its own.
     const { client: other, me: them } = await signedUp(app, "sam@example.com");
     expect((await other.post(`/api/profiles/${them.profiles[0].id as string}/sync`, { since: 0, progress: [film(at, 1)] })).statusCode).toBe(200);
   });
@@ -509,7 +499,6 @@ describe("keeping what was watched", () => {
 
     const second = await start({ persistence });
     const again = new Client(second.app);
-    // the cookie from before still works
     again.cookie = client.cookie;
     expect((await again.get("/api/me")).data.me.account.email).toBe(credentials.email);
     expect((await again.post(`/api/profiles/${profile}/sync`, { since: 0 })).data.progress).toMatchObject([{ position: 12 }]);
@@ -543,7 +532,6 @@ describe("signing a TV in from a phone", () => {
     const devices = (await phone.get("/api/sessions")).data as Array<{ kind: string; label: string }>;
     expect(devices.map((d) => [d.kind, d.label])).toContainEqual(["tv", "Chrome on LG TV"]);
 
-    // handed over once only
     expect((await tv.post("/api/link/poll", { code, secret })).data).toEqual({ status: "gone" });
   });
 
@@ -569,7 +557,6 @@ describe("signing a TV in from a phone", () => {
     const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
     const app = await buildApp({ accounts: store, passwordCost: cheap });
     apps.push(app);
-    // the registry used by the app is its own; test the expiry on one built the same way
     const started = links.start("tv", "TV")!;
     expect(links.peek(started.code)).toBeDefined();
     clock += 5 * 60_000 + 1;
@@ -594,13 +581,11 @@ describe("signing a TV in from a phone", () => {
     const stateOf = async (started: { code: string; secret: string }, address: string) =>
       (await app.inject({ method: "POST", url: "/api/link/poll", remoteAddress: address, payload: started })).json().status as string;
 
-    // twelve from one address: the first two have given way
     const flooder = "198.51.100.1";
     const sent: Array<{ code: string; secret: string }> = [];
     for (let n = 0; n < 12; n++) sent.push(await ask(flooder));
     expect(await Promise.all(sent.map((each) => stateOf(each, flooder)))).toEqual(["gone", "gone", ...Array.from({ length: 10 }, () => "waiting")]);
 
-    // a thousand open in all, from a hundred addresses, and a TV from one more is still given a code, at the cost of the oldest
     for (let address = 2; address <= 100; address++) for (let n = 0; n < 10; n++) await ask(`198.51.100.${address}`);
     const real = await ask("203.0.113.9");
     expect(await stateOf(sent[2]!, flooder)).toBe("gone");

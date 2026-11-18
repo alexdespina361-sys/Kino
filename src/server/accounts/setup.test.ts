@@ -15,7 +15,6 @@ describe("a profile that is still to be set up", () => {
     const added = store.addProfile(made.value.id, "Ana", "owl");
     expect(added.ok && added.value.setup).toBe("more");
 
-    // (a change of name or picture leaves it to be set up: the pages after that one are still to come)
     const renamed = store.updateProfile(made.value.id, first!.id, { name: "Sam" });
     expect(renamed.ok && renamed.value.setup).toBe("all");
     const done = store.updateProfile(made.value.id, first!.id, { setup: "done" });
@@ -32,7 +31,6 @@ describe("a profile that is still to be set up", () => {
     await store.close();
     const again = await open(persistence);
     expect(again.profilesOf(made.value.id)[0]!.setup).toBe("all");
-    // (what a friend is told of a profile has no such thing)
     const card = again.profileCard(first!.id);
     expect(card?.id).toBe(first!.id);
     expect(card).not.toHaveProperty("setup");

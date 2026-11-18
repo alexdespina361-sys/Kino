@@ -2,12 +2,7 @@ import { expect, type BrowserContext, type Locator, type Page } from "@playwrigh
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { CAT_TESTS, CAT_TESTS_OFF, openDevice, openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
-
-/**
- * The corners and edges of the TV's pages that every page shares: the way out of a full-screen page, a code that can be copied, the wordmark
- * that stays beside the menu when it opens, and the keys of the search keyboard. (What a page holds is tested with the page.)
- */
+import { openDevice, openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
 
 const HD = { width: 1280, height: 720 };
 const FULL_HD = { width: 1920, height: 1080 };
@@ -15,7 +10,6 @@ const FULL_HD = { width: 1920, height: 1080 };
 const films = Array.from({ length: 6 }, (_, index) => ({ id: `f${index}`, title: `Film number ${index + 1}`, year: 1930 + index, url: `/fixtures/sample.mp4?n=${index}` }));
 const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: films }] };
 
-/** Where a button is (its right edge and top, its height) and what it is filled with. */
 const look = (page: Page, testId: string) =>
   page.getByTestId(testId).evaluate((element) => {
     const { top, right, height } = element.getBoundingClientRect();
@@ -27,18 +21,18 @@ for (const viewport of [HD, FULL_HD]) {
     const tv = await openLibrary(browser, undefined, viewport);
     const seen: Record<string, Awaited<ReturnType<typeof look>>> = {};
 
-    await tv.getByTestId("rail-connect").click(); // the code of a phone to connect
+    await tv.getByTestId("rail-connect").click();
     seen["connect"] = await look(tv, "tv-back-to-library");
     await tv.getByTestId("tv-back-to-library").click();
 
-    await tv.getByTestId("rail-party").click(); // the watch party's two ways in
+    await tv.getByTestId("rail-party").click();
     seen["party"] = await look(tv, "tv-back-to-library");
     await tv.getByTestId("tv-party-join").click();
     seen["join"] = await look(tv, "tv-party-join-back");
     await tv.getByTestId("tv-party-join-back").click();
     await tv.getByTestId("tv-back-to-library").click();
 
-    await openTvSignIn(tv); // signing in: the code, then the form
+    await openTvSignIn(tv);
     seen["sign-in"] = await look(tv, "tv-signin-back");
     await tv.getByTestId("tv-signin-email").click();
     seen["form"] = await look(tv, "tv-signin-form-back");
@@ -100,11 +94,10 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD, { width: 800,
     const browse = tv.getByTestId("tv-browse");
     const under = () => tv.evaluate(({ x, y }) => (document.elementFromPoint(x, y)?.closest(".tv-rail") ? "menu" : "page"), middle);
 
-    // A mouse: it opens the menu by resting on it, then goes up to the wordmark (under the open menu) and clicks.
     await tv.getByTestId("rail-search").click();
     await expect(browse).toHaveAttribute("data-view", "search");
     const away = { x: viewport.width - 10, y: viewport.height - 10 };
-    await tv.mouse.move(away.x, away.y); // (off the menu, to come back to it)
+    await tv.mouse.move(away.x, away.y);
     await expect(menu).toHaveAttribute("data-open", "false");
     const strip = await rect(menu);
     await tv.mouse.move(strip.left + 20, viewport.height / 2, { steps: 4 });
@@ -117,7 +110,6 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD, { width: 800,
     await expect(browse).toHaveAttribute("data-view", "home");
     await expect(menu).toHaveAttribute("data-open", "false");
 
-    // The remote in the menu, on another page than home (its focus opens it); the mouse clicks the wordmark: home, the menu shut, the remote on the titles.
     await tv.mouse.move(away.x, away.y);
     await tv.getByTestId("rail-search").focus();
     await expect(menu).toHaveAttribute("data-open", "true");
@@ -138,7 +130,7 @@ test("on a touch screen, with the menu open over it, a tap on the wordmark shuts
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   const browse = tv.getByTestId("tv-browse");
   const menu = tv.getByTestId("tv-rail");
-  await tv.getByTestId("rail-search").focus(); // (the remote, or a keyboard, in the menu: open over the wordmark)
+  await tv.getByTestId("rail-search").focus();
   await tv.keyboard.press("Enter");
   await expect(browse).toHaveAttribute("data-view", "search");
   await tv.getByTestId("rail-search").focus();
@@ -151,108 +143,40 @@ test("on a touch screen, with the menu open over it, a tap on the wordmark shuts
   await expect(menu).toHaveAttribute("data-open", "false");
 });
 
-/**
- * The cat's ears on the wordmark (Logo.tsx): a second picture over the plain one, shown while the cat is on (the cat's own setting, as the library's corner
- * button has it), and the wordmark never moves for them. The ginger cat is the flat one, which a headless browser draws without trouble.
- */
-const WANTS_CAT = { "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger", switched: 2 }) };
-const hostWith = (cat: boolean, asked = { count: 0 }) => async (context: BrowserContext) => {
-  await withLibrary(library)(context);
-  await context.route("**/api/features", (route) => {
-    asked.count++;
-    return route.fulfill({ json: { cat } });
-  });
-};
 const rect = (locator: Locator) =>
   locator.evaluate((element) => {
     const { left, top, width, height } = element.getBoundingClientRect();
     return { left, top, width, height };
   });
 
-test("the wordmark has the cat's ears when the cat is on, and only then, and it does not move for them", async ({ browser }) => {
-  test.skip(!CAT_TESTS, CAT_TESTS_OFF);
-  const seen: Record<string, Awaited<ReturnType<typeof rect>>> = {};
-  for (const [name, seed, cat] of [
-    ["no cat asked for", {}, true],
-    ["no cat on the host", WANTS_CAT, false],
-    ["the cat", WANTS_CAT, true],
-  ] as const) {
-    const asked = { count: 0 };
-    const tv = await openLibrary(browser, hostWith(cat, asked), FULL_HD, seed);
-    const logo = tv.locator(".tv-browse-logo .logo");
-    const ears = name === "the cat";
-    if (seed === WANTS_CAT) await expect.poll(() => asked.count, name).toBeGreaterThan(0); // (the host has been asked and has answered: now it is known)
-    else expect(asked.count, "a screen that has not asked for the cat does not ask the host about it").toBe(0);
-    if (!ears) await tv.waitForTimeout(300); // (an answer that leaves it off has nothing to show for itself: give a late change time to come)
-    await expect(logo, name).toHaveAttribute("data-cat", ears ? "on" : "off");
-    await expect(logo.locator(".logo-ears"), name).toHaveCSS("opacity", ears ? "1" : "0");
-    await expect(logo, "named for a screen reader whichever picture it has").toHaveAccessibleName("Kino");
-    seen[name] = await rect(logo);
-  }
-  expect(seen["the cat"], "the box with the ears is the box without them").toEqual(seen["no cat asked for"]);
-});
-
-test("the wordmark has its size before its pictures have come, the two pictures sit exactly over each other, and the box does not change when they arrive", async ({ browser }) => {
-  test.skip(!CAT_TESTS, CAT_TESTS_OFF); // (the second picture is the cat's ears)
+test("the wordmark has its size before its picture has come, and the box does not change when it arrives", async ({ browser }) => {
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
   try {
     const tv = await openLibrary(
       browser,
-      async (context) => {
-        await hostWith(true)(context);
+      async (context: BrowserContext) => {
+        await withLibrary(library)(context);
         await context.route("**/branding/*.svg", async (route) => {
           await held;
           await route.continue();
         });
       },
       FULL_HD,
-      WANTS_CAT,
     );
     const logo = tv.locator(".tv-browse-logo .logo");
-    const pictures = logo.locator("img");
-    await expect(pictures).toHaveCount(2);
+    const picture = logo.locator("img");
+    await expect(picture).toHaveCount(1);
+    await expect(logo).toHaveAccessibleName("Kino");
     const before = await rect(logo);
     expect(before.width, "the wordmark has a size with no picture yet").toBeGreaterThan(100);
     expect(before.height).toBeGreaterThan(40);
-
     release();
-    await expect.poll(() => pictures.evaluateAll((all) => all.every((one) => one instanceof HTMLImageElement && one.complete && one.naturalWidth > 0))).toBe(true);
-    expect(await rect(logo), "the same box once they have").toEqual(before);
-    expect(await rect(pictures.nth(1)), "the one with the ears is exactly over the plain one").toEqual(await rect(pictures.nth(0)));
-    // (the wordmark is one image to a screen reader, and these are its parts)
-    expect(await pictures.evaluateAll((all) => all.map((one) => [one.getAttribute("alt"), one.getAttribute("aria-hidden")]))).toEqual([["", "true"], ["", "true"]]);
+    await expect.poll(() => picture.evaluate((one) => one instanceof HTMLImageElement && one.complete && one.naturalWidth > 0)).toBe(true);
+    expect(await rect(logo), "the same box once it has").toEqual(before);
   } finally {
     release();
   }
-});
-
-test("the cat's switch gives the wordmark its ears at once, on the page it is on, and takes them away again", async ({ browser }) => {
-  test.skip(!CAT_TESTS, CAT_TESTS_OFF);
-  const tv = await openLibrary(browser, hostWith(true), FULL_HD);
-  await openTvSettings(tv);
-  await tv.getByTestId("tv-cat-open").click();
-  const logo = tv.getByTestId("tv-cat-settings").locator(".logo");
-  await expect(logo).toHaveAttribute("data-cat", "off");
-  await tv.getByTestId("tv-cat-switch").click();
-  await expect(logo).toHaveAttribute("data-cat", "on");
-  await expect(logo.locator(".logo-ears")).toHaveCSS("opacity", "1");
-  await tv.getByTestId("tv-cat-switch").click();
-  await expect(logo).toHaveAttribute("data-cat", "off");
-  await expect(logo.locator(".logo-ears")).toHaveCSS("opacity", "0");
-});
-
-test("the ears fade in over a moment, and are there at once for a screen set to less motion", async ({ browser }) => {
-  test.skip(!CAT_TESTS, CAT_TESTS_OFF);
-  const fade = async (reducedMotion: "no-preference" | "reduce") => {
-    const tv = await openDevice(browser, { viewport: FULL_HD, reducedMotion }, WANTS_CAT, hostWith(true));
-    await tv.goto("/tv");
-    const ears = tv.locator(".tv-browse-logo .logo-ears");
-    await expect(ears).toBeAttached();
-    return ears.evaluate((element) => parseFloat(getComputedStyle(element).transitionDuration)); // (seconds)
-  };
-  expect(await fade("no-preference")).toBeCloseTo(0.2, 2);
-  expect(await fade("reduce")).toBeLessThan(0.001); // (the TV's pages set every transition to a hundredth of a millisecond for this, and the logo's own rule is none)
 });
 
 test("a code on the screen is selected whole by a click, and the button under it copies it and says so", async ({ browser }) => {
@@ -271,7 +195,7 @@ test("a code on the screen is selected whole by a click, and the button under it
   await copy.click();
   await expect(copy).toContainText(en["friends.codeCopied"]);
   expect(await tv.evaluate(() => navigator.clipboard.readText())).toBe(digits);
-  await expect(copy).toContainText(en["friends.copyCode"], { timeout: 6_000 }); // (it says so for a moment, and goes back)
+  await expect(copy).toContainText(en["friends.copyCode"], { timeout: 6_000 });
 });
 
 test("the sign-in code has its button too, and the remote reaches it", async ({ browser }) => {
@@ -293,13 +217,12 @@ for (const [language, words] of [["en", en], ["ro", ro], ["it", italian]] as con
       const tv = await openLibrary(browser, withLibrary(library), viewport, { "kino.lang": language });
       await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
       const brand = tv.locator(".tv-rail-brand");
-      await expect(brand).toHaveCSS("opacity", "0"); // (shut, the page's own wordmark is the one that shows)
+      await expect(brand).toHaveCSS("opacity", "0");
 
       await tv.keyboard.press("ArrowLeft");
       await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "true");
       await expect(brand).toHaveCSS("opacity", "1");
 
-      // The same place as the page's own wordmark, which the open menu covers: the name does not move.
       const [mine, page] = await tv.evaluate(() => {
         const rect = (selector: string) => {
           const { left, top, width, height } = document.querySelector(selector)!.getBoundingClientRect();
@@ -311,7 +234,6 @@ for (const [language, words] of [["en", en], ["ro", ro], ["it", italian]] as con
       expect(Math.abs(mine.top - page.top), "the wordmark's top").toBeLessThanOrEqual(2);
       expect(Math.abs(mine.height - page.height), "the wordmark's height").toBeLessThanOrEqual(2);
 
-      // Clear of the first line, and every line's words whole (none ends in dots).
       const first = (await tv.getByTestId("rail-search").boundingBox())!;
       expect(mine.top + mine.height, "the wordmark is above the first line").toBeLessThanOrEqual(first.y);
       const cut = await tv.getByTestId("tv-rail").locator("button span").evaluateAll((spans) =>
@@ -345,7 +267,7 @@ test("a server without accounts still has the corner button, as Profile, and Set
     browser,
     async (context) => {
       await withLibrary(library)(context);
-      await context.route("**/api/me", (route) => route.fulfill({ status: 404, body: "not found" })); // (what a server without accounts answers)
+      await context.route("**/api/me", (route) => route.fulfill({ status: 404, body: "not found" }));
     },
     HD,
   );
@@ -359,6 +281,6 @@ test("a server without accounts still has the corner button, as Profile, and Set
   await tv.getByTestId("tv-profile-settings").click();
   await expect(tv.getByTestId("tv-account")).toBeVisible();
   await expect(tv.getByTestId("tv-sign-in")).toHaveCount(0);
-  await expect(tv.getByTestId("tv-lang-en")).toBeVisible(); // (what is the device's own is all there: the language, the colour, what playback does)
+  await expect(tv.getByTestId("tv-lang-en")).toBeVisible();
   await expect(tv.getByTestId("tv-autoplay")).toBeVisible();
 });

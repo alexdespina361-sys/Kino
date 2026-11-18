@@ -2,21 +2,18 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { keepRunning, type FailureLog } from "./survive";
 
-/** What `process.exit` does to whatever would have run after it: it does not come back. */
 class Exited extends Error {
   constructor(readonly code: number) {
     super(`exit ${code}`);
   }
 }
 
-/** A process that is only an emitter, and keeps the codes it was told to exit with instead of exiting (but, like the real one, does not come back from it). */
 class FakeProcess extends EventEmitter {
   readonly exits: number[] = [];
   exit(code: number): never {
     this.exits.push(code);
     throw new Exited(code);
   }
-  /** An error that nothing caught, and what the process does about it. */
   crash(error: Error): void {
     try {
       this.emit("uncaughtException", error, "uncaughtException");
@@ -26,7 +23,6 @@ class FakeProcess extends EventEmitter {
   }
 }
 
-/** A logger that keeps what it is told. */
 function recorded() {
   const lines: Array<{ level: "error" | "fatal"; fields: object; message: string }> = [];
   const log: FailureLog = {
@@ -56,7 +52,6 @@ describe("keepRunning", () => {
       expect(process.listenerCount("unhandledRejection")).toBe(rejections.length + 1);
       expect(process.listenerCount("uncaughtException")).toBe(uncaught.length + 1);
     } finally {
-      // (This runs inside a test runner: what was added here must not stay.)
       for (const listener of process.listeners("unhandledRejection")) if (!rejections.includes(listener)) process.off("unhandledRejection", listener);
       for (const listener of process.listeners("uncaughtException")) if (!uncaught.includes(listener)) process.off("uncaughtException", listener);
     }
@@ -74,7 +69,7 @@ describe("keepRunning", () => {
     expect(lines[0]).toEqual({ level: "error", fields: { message: "the fetch fell over", stack: error.stack }, message: expect.stringContaining("carries on") });
     expect(lines[0]!.fields).toHaveProperty("stack", expect.stringContaining("survive.test.ts"));
     expect(lines[1]!.fields).toMatchObject({ message: "and again" });
-    expect(target.exits).toEqual([]); // (it is still running)
+    expect(target.exits).toEqual([]);
   });
 
   it.each([

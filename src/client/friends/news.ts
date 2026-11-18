@@ -1,22 +1,13 @@
 import { activityVerb, partyOpen, planAsks, tagLabel, type ActivityItem, type FriendsState } from "../../shared";
 import type { Key, Params } from "../i18n";
 
-/**
- * What is new on the Friends page, so a screen can say so in a line when it looks again: a friend was added, somebody asked to be one, a
- * title or an invitation arrived, a friend watched something. It is worked out from two answers of the server and kept as plain facts,
- * which `describeNews` puts into words.
- */
-
-/** What a screen has been told of already. */
 export interface Known {
   friends: ReadonlySet<string>;
   inbox: ReadonlySet<string>;
   activity: ReadonlySet<string>;
-  /** The profiles that had asked to be friends. */
   requests: ReadonlySet<string>;
 }
 
-/** What a friend watched is the same thing until it is another title or episode, or the end: not each time the minute they are in moves. */
 const activityId = (item: ActivityItem): string => `${item.friend}|${item.key}|${item.season ?? ""}x${item.episode ?? ""}|${item.done ? "done" : "on"}`;
 
 export const known = (state: FriendsState): Known => ({
@@ -37,22 +28,15 @@ export type News =
   | { kind: "friend"; name: string }
   | { kind: "activity"; name: string; title: string; verb: "watching" | "watched" | "finished" };
 
-/** A friend's news is only news for this long: a friend who turns sharing on brings their last two weeks with them, which is not "just now". */
 export const NEWS_RECENT_MS = 30 * 60 * 1000;
 
-/**
- * What the new answer has that the screen had not been told, the most important first. Nothing the first time (`before` is null):
- * a page that has just opened says nothing of what was already there.
- */
 export function whatsNew(before: Known | null, state: FriendsState, now: number): News[] {
   if (!before) return [];
   const name = (id: string) => state.friends.find((friend) => friend.id === id)?.name ?? "";
   const fresh = state.inbox.filter((item) => !item.read && !before.inbox.has(item.id));
   return [
-    // (an invitation to a party that is over is not news: a screen that was asleep for the evening wakes up to it)
     ...fresh.flatMap((item): News[] => (item.kind === "party" && partyOpen(item, now) ? [{ kind: "party", name: name(item.from) }] : [])),
     ...fresh.flatMap((item): News[] => (item.kind === "together" ? [{ kind: "together", name: name(item.from) }] : [])),
-    // (a plan asks for an answer; a friend's answer to one of ours is news that is read to the end: yes, or no)
     ...fresh.flatMap((item): News[] => {
       if (item.kind !== "plan") return [];
       if (item.answer === undefined) return planAsks(item, now) ? [{ kind: "plan", name: name(item.from), when: item.when }] : [];
@@ -67,18 +51,10 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
   ];
 }
 
-/**
- * Whether any of the news is an invitation to something going on now (a party that is open, a friend asking to watch together): the one
- * kind that is let over a film, in a small note. The rest (a title sent, a new friend, what somebody watches, a request to be friends) can wait in the bell.
- */
 export const isUrgent = (news: readonly News[]): boolean => news.some((item) => item.kind === "party" || item.kind === "together");
 
 export type Translate = (key: Key, params?: Params) => string;
 
-/**
- * One line for the news: an invitation or a request (for a party, to be friends, for a plan) if there is one, else the one thing that happened, else how many things.
- * `when` puts the time of a plan into words (the viewer's own).
- */
 export function describeNews(news: readonly News[], t: Translate, when: (at: number) => string = () => ""): string | undefined {
   const asked = (item: News) => item.kind === "party" || item.kind === "together" || item.kind === "plan" || item.kind === "request";
   const first = news.find((item) => item.kind === "party") ?? news.find((item) => item.kind === "together") ?? news.find((item) => item.kind === "plan") ?? news.find((item) => item.kind === "request") ?? news[0];

@@ -8,11 +8,6 @@ import { signedRelayUrl } from "../src/server/streamRelay/links";
 import { FEEDBACK_TOKEN } from "./feedbackToken";
 import { openTv, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
 
-/**
- * The film that comes through the relay (src/server/streamRelay, which is what EDGE_STREAM_PROXY_URL points at) does not come through this server,
- * which is the whole point of it. The relay here is the real one, with the links signed as the website signs them, and the place the film comes
- * from is one that turns away any request that carries an Origin (a browser from another website does), as the places that films come from do.
- */
 const FILM = path.resolve("fixtures/hls");
 const PLAYER_PAGE = "https://player.example/embed/42";
 const KEY = "a-key-for-this-test-only-0123456789abcdef";
@@ -45,10 +40,8 @@ test("a film that comes through the relay plays without this server carrying a b
   await relay.listen({ port: 0, host: "127.0.0.1" });
   const relayPort = (relay.server.address() as AddressInfo).port;
   try {
-    // (The proxy's counters are the team's: asked with its token.)
     const health = async () => (await (await fetch(`${baseURL}/api/health`, { headers: { authorization: `Bearer ${FEEDBACK_TOKEN}` } })).json()) as { proxy: { bytes: number; requests: number } };
     const tv = await openTv(browser);
-    // Where the screen's page asked for anything but the app's own files: the places, and this server's proxy when it is one of them.
     const filmAsked = new Set<string>();
     const app = new URL(baseURL!).host;
     tv.on("request", (request) => {
@@ -67,11 +60,8 @@ test("a film that comes through the relay plays without this server carrying a b
     phone.cmd({ type: "PLAY" });
     await expect.poll(() => tvTime(tv), { timeout: 20_000, intervals: [300] }).toBeGreaterThan(3);
 
-    // The screen asked the relay and no one else (not the film's own place, not this server), ...
     expect([...filmAsked]).toEqual([`127.0.0.1:${relayPort}`]);
-    // ... this server carried none of it, ...
     expect((await health()).proxy).toMatchObject({ bytes: before.proxy.bytes, requests: before.proxy.requests });
-    // ... and the film's own place was asked as a player of its own would: its player's address, and no Origin.
     expect(heard.length).toBeGreaterThan(3);
     expect(heard.filter((note) => note.origin)).toEqual([]);
     expect(new Set(heard.map((note) => note.referer))).toEqual(new Set([PLAYER_PAGE]));

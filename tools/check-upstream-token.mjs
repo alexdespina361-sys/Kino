@@ -1,6 +1,3 @@
-// tools/check-upstream-token.mjs
-// Verifies full flow: screenfetch4 -> container -> playerUrl -> streamApi -> streamOrigin -> generate.php -> master.m3u8
-
 import { decryptWasm } from "../src/server/resolvers/adapters/filmpire.ts";
 
 const urlArg = process.argv[2] || "https://filmpire.sc/watch/95479?s=1&e=1";
@@ -21,7 +18,6 @@ async function run() {
   const contentType = isTv ? "tv" : "movie";
   const tvQuery = s && e ? `&s=${encodeURIComponent(s)}&e=${encodeURIComponent(e)}` : "";
 
-  // 1. screenfetch4
   const sfUrl = `https://screenfetch4.cyou/vs_src.php?type=${contentType}&id=${id}${tvQuery}`;
   console.log(`1. Requesting screenfetch4: ${sfUrl}`);
   const sfRes = await fetch(sfUrl, {
@@ -40,7 +36,6 @@ async function run() {
   const containerUrl = sfData.src;
   console.log(`   Got containerUrl: ${containerUrl}`);
 
-  // 2. Fetch container page
   console.log(`2. Fetching container page: ${containerUrl}`);
   const containerRes = await fetch(containerUrl, {
     headers: {
@@ -62,7 +57,6 @@ async function run() {
   const playerUrl = new URL(playerMatch[1].replace(/\\u0026/g, "&"), containerUrl).href;
   console.log(`   Got playerUrl: ${playerUrl}`);
 
-  // 3. Fetch player page
   console.log(`3. Fetching player page: ${playerUrl}`);
   const playerRes = await fetch(playerUrl, {
     headers: {
@@ -84,7 +78,6 @@ async function run() {
   const config = JSON.parse(configMatch[1]);
   console.log(`   Got apiToken: ${config.apiToken ? config.apiToken.slice(0, 16) + '...' : 'none'}`);
 
-  // 4. Fetch streamApi
   const streamBase = (config.streamBase || config.api || "").replace(/\\u0026/g, "&");
   const streamApiUrl = `${streamBase}&season=${encodeURIComponent(s)}&episode=${encodeURIComponent(e)}&stream_urls&api_token=${config.apiToken}`;
   console.log(`4. Fetching streamApi: ${streamApiUrl}`);
@@ -115,7 +108,6 @@ async function run() {
   const chosenStream = streamUrls[0];
   console.log(`   Chosen stream URL: ${chosenStream}`);
 
-  // 5. Call generate.php on streamOrigin
   const streamOrigin = new URL(chosenStream).origin;
   const genUrl = `${streamOrigin}/generate.php?api_token=${encodeURIComponent(config.apiToken)}`;
   console.log(`5. Calling generate.php at: ${genUrl}`);
@@ -143,7 +135,6 @@ async function run() {
     jwt = genText.trim();
   }
 
-  // 6. Test playlist fetch
   const playlistUrl = `${chosenStream}?token=${encodeURIComponent(jwt)}&bypass_localize=true`;
   console.log(`6. Fetching master.m3u8 from: ${playlistUrl}`);
   const plRes = await fetch(playlistUrl, {

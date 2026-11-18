@@ -4,7 +4,6 @@ import { hasNewActivity } from "./bell";
 import { useFriends } from "./FriendsProvider";
 import { useTitleNotices } from "../titleNotices/notices";
 
-/** When the bell was last opened on this device, for this profile: what friends watched after that is new to it. (A device's own fact, so it is kept here, not on the server.) */
 const key = (profileId: string) => `kino.bellSeen.${profileId}`;
 
 function read(profileId: string): number | null {
@@ -20,11 +19,9 @@ function write(profileId: string, at: number) {
   try {
     localStorage.setItem(key(profileId), String(at));
   } catch {
-    // (a browser that keeps nothing: the dot is on until the page is opened again, which is all it costs)
   }
 }
 
-/** The bell is in more than one place at once (its button, the list it opens): they share the time it was last opened. */
 const seenAt = new Map<string, number>();
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
@@ -36,10 +33,6 @@ const remember = (profileId: string, at: number) => {
   listeners.forEach((listener) => listener());
 };
 
-/**
- * What the bell in the corner says: whether it is there at all (a profile that is signed in and has friends on, or something new of what it watches), how many things wait for an answer or a look
- * (the badge), and whether friends watched something since it was last opened (a dot, when nothing waits). `markSeen` is called when it is opened.
- */
 export function useBell() {
   const account = useAccount();
   const friends = useFriends();
@@ -47,7 +40,6 @@ export function useBell() {
   const loaded = friends.state !== null;
   const seen = useSyncExternalStore(subscribe, () => (profileId ? (seenAt.get(profileId) ?? 0) : 0));
 
-  // The first time a device sees its friends, what they watched before is not news.
   useEffect(() => {
     if (!profileId || !loaded || seenAt.has(profileId)) return;
     const stored = read(profileId);
@@ -63,9 +55,7 @@ export function useBell() {
     remember(profileId, now);
   }, [profileId]);
 
-  // (A profile with friends off, or a child's, has the bell while there is something new of what it watches: titleNotices/notices.ts.)
   const titles = useTitleNotices();
   const on = (friends.on || titles.items.length > 0) && profileId !== undefined;
-  /** (`seen`: when it was opened before; the list takes it as it opens, before `markSeen` moves it, to tell which friends are new.) */
   return { on, badge: on ? friends.attention + titles.unread : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen, seen };
 }

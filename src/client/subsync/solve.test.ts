@@ -5,21 +5,17 @@ import { SAMPLE_RATE } from "./signals";
 import { dubbed, LoudnessVad, makeAudio, makeFilm, misTimed, type Film } from "./synth";
 import type { Cue } from "./cues";
 
-const PIECE = 6; // seconds of sound that arrive together
-const WINDOW = 15; // seconds the recogniser is given
+const PIECE = 6;
+const WINDOW = 15;
 
 interface Run {
-  /** Fraction of captions within `tolerance` of when they were really said. */
   within(tolerance: number): number;
   result: Cue[];
   core: SyncCore;
-  /** How the solves placed the lines (see `Method`). */
   methods: Set<string>;
-  /** Of each solve that placed lines: the sound it had reached, how it placed them, and where the earliest of them lay. */
   reaches: Array<{ end: number; method: string; earliest: number }>;
 }
 
-/** Play the film through the aligner the way the player would feed it: sound in pieces, the recogniser a window at a time, a solve after each window. */
 function play(film: Film, track: Cue[], options: { words?: (window: number) => boolean; useWords?: boolean; until?: number } = {}): Run {
   const core = new SyncCore(new LoudnessVad());
   core.setTrack("t", track, options.useWords ?? true);
@@ -69,7 +65,6 @@ describe("the sound the test film makes", () => {
   });
 });
 
-// (Each film is a few seconds of work; with other test files running beside it the default 5 s is too close.)
 describe("TrackSolver and SyncCore, played through like a film", { timeout: 60_000 }, () => {
   it("puts captions that were a constant 3.2 s late where they are said (words and voice)", () => {
     const run = play(film, misTimed(film, () => -3.2));
@@ -117,7 +112,6 @@ describe("TrackSolver and SyncCore, played through like a film", { timeout: 60_0
   });
 });
 
-// A dub: the speech is English at a steady rate and the subtitles are another translation's, so none of their words is heard.
 describe("TrackSolver and SyncCore with subtitles that are not the words that are said (a dub)", { timeout: 60_000 }, () => {
   it("puts the lines of a dub's subtitles, which the file has 3.2 s late, where the English is said", () => {
     const track = dubbed(film, () => -3.2);
@@ -128,7 +122,6 @@ describe("TrackSolver and SyncCore with subtitles that are not the words that ar
   });
 
   it("looks at the long window once the track is found to be a dub, as it does for the voice detector alone, and at the short one while the words place it", () => {
-    // (From a minute and a half of sound on, a short window starts a minute back and a long one at the start: the long one places the lines again from there.)
     const later = (run: Run, method: string) => run.reaches.filter((reach) => reach.method === method && reach.end > 80 && reach.end <= 150);
     const dub = later(play(film, dubbed(film, () => -3.2)), "dub");
     expect(dub.length).toBeGreaterThan(0);

@@ -57,7 +57,6 @@ describe("animeHeavenSource", () => {
     expect(item?.title).toBe("Dragon Ball Super: Beerus");
     expect(item?.url).toBe("https://animeheaven.me/anime.php?pynn3&s=1&e=1");
     expect(item?.image).toBe("https://animeheaven.me/image.php?dpnxp");
-    // all of it is anime: its rows and its titles say so, apart from being shows
     for (const row of rows) {
       expect(row.section).toBe("anime");
       expect(row.items.every((one) => one.section === "anime" && one.kind === "series")).toBe(true);
@@ -129,7 +128,6 @@ describe("animeHeavenSource", () => {
 
     const source = animeHeavenSource({ fetch: fetchMock as never });
     const results = await source.search!("test");
-    // empty1 has 0 episode links, so it must be filtered out!
     expect(results).toHaveLength(1);
     expect(results[0]?.title).toBe("Beerus Available");
   });

@@ -1,11 +1,5 @@
-// The live-DOM design scanner: for the page as it is on screen, every element that means something (text, a control, an icon, a picture, a surface)
-// with its real computed style - the size and weight of its type, its colours and the contrast between them, its radius, padding, shadow, motion,
-// where it sits. It is the same pass for either look, so "how far did the page drift from its own rules" is a measurement, not an impression.
-//
-// Used by lib.mjs: when SCAN=1 every picture the walk takes also leaves .ui-polish/scan/<look>/<device>/<name>.json. drift.mjs adds them up.
 import { mkdirSync, writeFileSync } from "node:fs";
 
-/** Runs inside the page. Everything it returns must be plain data. */
 function inPage(limit) {
   const num = (value) => Math.round(parseFloat(value) * 100) / 100;
   const colour = (text) => {
@@ -31,7 +25,6 @@ function inPage(limit) {
   };
   const hex = (c) => (c ? "#" + c.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, "0")).join("") + (c[3] < 1 ? Math.round(c[3] * 100) + "%" : "") : null);
 
-  /** The colour an element sits on: its ancestors' backgrounds laid over each other. `image` when a picture or gradient is in the way (the contrast is then unknown). */
   const backdrop = (element) => {
     const layers = [];
     let image = false;
@@ -79,8 +72,6 @@ function inPage(limit) {
     if (kinds.length === 0) continue;
 
     const inView = rect.right > 0 && rect.bottom > 0 && rect.left < W && rect.top < H;
-    // Something else on top of it (a scrim and a sheet, a page laid over this one): it can be neither read nor touched, whatever its size.
-    // The middle of the part that is in view is asked what is there; the element itself, what it holds and what holds it all count as "not covered".
     let covered;
     if (inView) {
       const x = Math.min(Math.max((Math.max(rect.left, 0) + Math.min(rect.right, W)) / 2, 0), W - 1);
@@ -121,12 +112,10 @@ function inPage(limit) {
         }
       }
       record.tt = style.textTransform !== "none" ? style.textTransform : undefined;
-      // outlined digits (the rank numerals): the letters are the stroke, not the fill, so the fill's contrast says nothing about them
       if (num(style.webkitTextStrokeWidth) > 0) record.textStroke = `${num(style.webkitTextStrokeWidth)} ${hex(colour(style.webkitTextStrokeColor))}`;
       if (kinds.includes("text") && (style.overflow === "hidden" || style.overflowX === "hidden" || style.textOverflow === "ellipsis")) {
         record.clipped = element.scrollWidth > element.clientWidth + 1 || undefined;
         record.ellipsis = style.textOverflow === "ellipsis" || undefined;
-        // letters cut off at the bottom: a box squeezed shorter than its text. A line clamp hides the rest of the text on purpose, so it only counts when the box is shorter than the lines it was meant to show.
         const clampLines = Number(style.webkitLineClamp);
         const lineHeight = style.lineHeight === "normal" ? num(style.fontSize) * 1.2 : num(style.lineHeight);
         record.clippedTall = (clampLines > 0
@@ -144,7 +133,6 @@ function inPage(limit) {
       record.fs = num(style.fontSize);
       record.stroke = element.getAttribute("stroke") || style.stroke || undefined;
       record.fg = hex(colour(style.color));
-      // what it sits in (the control or the box whose rule sizes it)
       const owner = element.parentElement;
       if (owner) record.in = [owner.tagName.toLowerCase(), owner.getAttribute("data-testid") || undefined, (typeof owner.className === "string" ? owner.className : "").split(/\s+/).filter(Boolean).slice(0, 2).join(".") || undefined].filter(Boolean).join(" ");
     }
@@ -160,12 +148,11 @@ function inPage(limit) {
     if (style.position === "fixed" || style.position === "sticky") record.position = style.position;
     if (style.zIndex !== "auto") record.z = style.zIndex;
     if (kinds.includes("control")) {
-      // a hit area that reaches past the drawing (a ::before or ::after with negative insets: the halo of a small button) is what a finger can land on
       const reach = { l: 0, r: 0, t: 0, b: 0 };
       for (const which of ["::before", "::after"]) {
         const pseudo = getComputedStyle(element, which);
         if (pseudo.content === "none" || pseudo.position !== "absolute") continue;
-        const past = (value) => Math.max(0, -(parseFloat(value) || 0)); // (auto is no reach)
+        const past = (value) => Math.max(0, -(parseFloat(value) || 0));
         reach.l = Math.max(reach.l, past(pseudo.left));
         reach.r = Math.max(reach.r, past(pseudo.right));
         reach.t = Math.max(reach.t, past(pseudo.top));
@@ -200,7 +187,6 @@ function inPage(limit) {
   };
 }
 
-/** Reads the page and writes the scan next to where the walk's pictures go. With AXE=1 an automated accessibility check goes with it (see saveAxe). */
 export async function saveScan(page, folder, name) {
   mkdirSync(folder, { recursive: true });
   const data = await page.evaluate(inPage, 2500);
@@ -208,7 +194,6 @@ export async function saveScan(page, folder, name) {
   if (process.env.AXE === "1") await saveAxe(page, `${folder}/axe`, name);
 }
 
-/** What axe-core finds against the rules of WCAG 2.1 A and AA on the page as it is (a third of what a person finds, but all of it is a fact): one JSON per picture, in a folder of its own. */
 async function saveAxe(page, folder, name) {
   const { AxeBuilder } = await import("@axe-core/playwright");
   mkdirSync(folder, { recursive: true });

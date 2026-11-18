@@ -19,7 +19,6 @@ import {
   tracksTitle,
 } from "./words";
 
-// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
 await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const LANGUAGES = ["en", "ro", "it"] as const;
@@ -66,7 +65,7 @@ describe("trackName", () => {
   it("calls a Romanian sound track dubbed only beside others", () => {
     const romanian = { label: "Romanian", lang: "ro" };
     expect(trackName(romanian, "audio", true)).toBe(t("player.roDubTrack"));
-    expect(trackName(romanian, "audio")).toBe(trackName(romanian)); // (a Romanian film's one sound is its own)
+    expect(trackName(romanian, "audio")).toBe(trackName(romanian));
     expect(trackName({ label: "English", lang: "en" }, "audio", true)).toBe("English");
   });
 });
@@ -116,10 +115,10 @@ describe("qualityName", () => {
 
   it("names the quality that was picked, and says Auto, with the quality it has chosen after it once that is known, when none was", () => {
     expect(qualityName({ levels, current: 1 })).toBe("720p");
-    expect(qualityName({ levels, current: 1, active: 2 })).toBe("720p"); // (a picked quality is what it says, whatever is playing as it is changed)
+    expect(qualityName({ levels, current: 1, active: 2 })).toBe("720p");
     expect(qualityName({ levels, current: -1 })).toBe("Auto");
     expect(qualityName({ levels, current: -1, active: 1 })).toBe("Auto · 720p");
-    expect(qualityName({ levels, current: -1, active: 9 })).toBe("Auto"); // (not one of the levels: nothing to add)
+    expect(qualityName({ levels, current: -1, active: 9 })).toBe("Auto");
     expect(qualityName(undefined)).toBe("Auto");
     setLanguage("ro", false);
     expect(qualityName({ levels, current: -1, active: 2 })).toBe("Automată · 1080p");
@@ -137,7 +136,7 @@ describe("the Quality button with the ✦ choices", () => {
     expect(hasPictureChoice({ quality: { levels, current: -1 } })).toBe(true);
     expect(hasPictureChoice({ quality: { levels: [levels[0]!], current: 0 } })).toBe(false);
     expect(hasPictureChoice({ enhance: { offers, current: "off" } })).toBe(true);
-    expect(hasPictureChoice({ enhance: { offers: [], current: "off" } })).toBe(false); // (a choice it no longer has: nothing to show)
+    expect(hasPictureChoice({ enhance: { offers: [], current: "off" } })).toBe(false);
     expect(hasPictureChoice({})).toBe(false);
   });
 
@@ -159,15 +158,14 @@ describe("syncWords", () => {
     expect(syncWords("ready")).toBe("On");
     expect(syncWords("syncing")).toBe("Checking the timing…");
     expect(syncWords("synced")).toBe("In sync");
-    // (Once the aligner is sure how far it moved the lines: by how much, or that they were right.)
     expect(syncWords("synced", -2.4)).toBe("In sync · moved 2.4 s");
     expect(syncWords("synced", 0.2)).toBe("In sync · it was right");
     expect(syncWords("unavailable")).toBe("Not available for this video");
     for (const language of ["ro", "it"] as const) {
       setLanguage(language, false);
       const words = (["off", "ready", "syncing", "synced", "unavailable"] as const).map(syncWords);
-      for (const word of words) expect(word, language).not.toMatch(/^player\.|^common\./); // (a missing word would show as its key)
-      expect(new Set(words).size, language).toBe(words.length); // (every state reads differently)
+      for (const word of words) expect(word, language).not.toMatch(/^player\.|^common\./);
+      expect(new Set(words).size, language).toBe(words.length);
       expect(words, language).not.toContain("Checking the timing…");
       expect(syncWords("synced", 1.5), language).toMatch(/1\.5 s$/);
       expect(syncWords("synced", 0), language).not.toBe(syncWords("synced"));

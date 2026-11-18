@@ -5,7 +5,6 @@ const dir = new URL(".", import.meta.url);
 const sheets = readdirSync(dir).filter((name) => name.endsWith(".css"));
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-/** What an old TV browser (VIDAA, Tizen, webOS) drops, or worse, drops the whole block around. The older sheets do not use these either. */
 const TOO_NEW: [RegExp, string][] = [
   [/@layer\b/, "@layer (a browser that does not know it drops the whole block)"],
   [/@container\b/, "@container"],
@@ -22,7 +21,6 @@ const TOO_NEW: [RegExp, string][] = [
   [/\bcontainer-type\s*:/, "container-type"],
 ];
 
-/** The selector of every style rule, also inside @media and @supports; the steps of @keyframes and the like are not selectors. */
 export function selectorsOf(css: string): string[] {
   const selectors: string[] = [];
   const stack: ("group" | "rule" | "opaque")[] = [];

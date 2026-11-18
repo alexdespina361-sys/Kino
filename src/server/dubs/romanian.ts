@@ -1,10 +1,3 @@
-/**
- * Registry, detector, and stream resolver for Romanian-dubbed content.
- * Matches movies and TV series that are available with Romanian dubbing (theatrical, Disney,
- * Cartoon Network, Netflix, or community dubbed releases), attaching dub tracks/alternates
- * and badging titles with "Ro Dub" in the catalog and detail hero.
- */
-
 import { readCapped, siteFetch } from "../subtitles/romanian";
 
 export interface DubLookupInfo {
@@ -21,7 +14,7 @@ export function normalizeDubTitle(raw: string): string {
   return raw
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // strip diacritics (ș->s, ț->t, ă->a, î->i, â->a)
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s*\((?:dublat[^\)]*|subtitrat[^\)]*|tv|film|movie|\d{4})\)/gi, "")
     .replace(/\b(?:film|movie|serial|desene|dublat|in romana|subtitrat)\b/gi, "")
     .replace(/[-–—_.:,'!?&]/g, " ")
@@ -29,68 +22,34 @@ export function normalizeDubTitle(raw: string): string {
     .trim();
 }
 
-/**
- * Curated list of TMDB IDs for animated and family features officially released with Romanian dubs.
- * Includes Disney, Pixar, DreamWorks, Illumination, Sony Pictures Animation, Blue Sky, and animated series.
- */
 const KNOWN_DUBBED_MOVIE_IDS = new Set<number>([
-  // Shrek & Puss in Boots
   808, 10527, 819, 10192, 6477, 76600,
-  // Cars & Planes
   920, 49013, 260514, 157353, 237756,
-  // Ice Age
   425, 38757, 8355, 57800, 278154,
-  // Toy Story & Lightyear
   862, 863, 10193, 301528, 718789,
-  // The Lion King
   8587, 861, 860, 420818, 1011985,
-  // Kung Fu Panda
   9502, 49444, 140300, 1011985,
-  // Despicable Me & Minions
   20352, 93456, 324852, 211672, 438148, 519182,
-  // How to Train Your Dragon
   10191, 82702, 166428,
-  // Madagascar
   953, 10527, 8073, 227306,
-  // Finding Nemo & Dory
   12, 127380,
-  // Inside Out
   150540, 1022789,
-  // Frozen
   109445, 330457,
-  // Moana / Vaiana
   277834, 1241982,
-  // Zootopia
   269149,
-  // Coco, Encanto, Luca, Soul, Turning Red, Elemental
   354912, 568124, 508947, 508442, 508943, 976573,
-  // Classic / Golden Disney
   408, 10882, 11360, 10895, 11224, 10530, 10693, 11886, 12092, 11244,
   10144, 87, 10545, 10020, 9986, 9292, 9741, 10674, 9928, 9739,
   10567, 11688, 9012, 10501, 10688, 13700, 11802,
-  // Pixar Classics: Wall-E, Up, Ratatouille, Monsters Inc, Incredibles
   10681, 14160, 2062, 585, 9806, 260513, 9487,
-  // Tangled, Wreck-It Ralph, Big Hero 6
   38757, 82690, 404368, 177572,
-  // Spider-Verse
   324857, 569094,
-  // Hotel Transylvania
   76492, 159824, 400155, 639721,
-  // Secret Life of Pets & Sing
   328111, 429617, 284052, 438695,
-  // Rio, Ferdinand, Croods, Boss Baby, Bad Guys
   60420, 172391, 364689, 49519, 529203, 381284, 49519, 629542,
 ]);
-/**
- * Animated series, by their TMDB TV IDs: Sonic Boom (61845), Gravity Falls (40075), Phineas and Ferb (4783), Ben 10 (2210), SpongeBob
- * (387), Avatar: The Last Airbender (246), Hunter x Hunter (46298), Miraculous (65334). A TV ID and a movie ID are different numberings
- * (movie 387 is Das Boot), so an ID counts only for a title of its kind.
- */
 const KNOWN_DUBBED_TV_IDS = new Set<number>([61845, 40075, 4783, 2210, 387, 246, 46298, 65334]);
 
-/**
- * Normalized keyword tokens of franchises or titles that have official Romanian dubs.
- */
 const KNOWN_DUBBED_TITLES = new Set<string>([
   "shrek",
   "shrek 2",
@@ -225,10 +184,6 @@ const KNOWN_DUBBED_TITLES = new Set<string>([
   "cronicile din narnia",
 ]);
 
-/**
- * `fetch` for the sites asked here: a redirect is followed only to a public address (see `siteFetch`), and an answer is read up to what a list of a few
- * posts can be, not to whatever is sent.
- */
 const get = siteFetch();
 const MAX_ANSWER_BYTES = 2 * 1024 * 1024;
 async function jsonOf<T>(res: Response): Promise<T | undefined> {
@@ -241,12 +196,8 @@ async function jsonOf<T>(res: Response): Promise<T | undefined> {
   }
 }
 
-/**
- * Memory LRU cache for dynamic probe lookups.
- */
 const dynamicDubCache = new Map<string, { hasDub: boolean; expires: number }>();
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-/** A lookup that failed (no answer in time, an error page) is not asked again for a while either: each would cost a title page its wait. */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FAILED_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
 
@@ -268,23 +219,10 @@ function setCached(key: string, hasDub: boolean, ttl = CACHE_TTL_MS): void {
   dynamicDubCache.set(key, { hasDub, expires: Date.now() + ttl });
 }
 
-/**
- * Whether a curated name counts for this title. A one-word name ("up", "cars", "coco", "sing", "rio", "soul") is also the start or
- * the middle of the names of many films that have nothing to do with it (Up in the Air, Rio Bravo, Sing Street, Coco Before Chanel):
- * it counts only for an animated title. A name of more words is particular enough by itself.
- */
 const counts = (name: string, info: DubLookupInfo): boolean => name.includes(" ") || info.isAnimation === true;
 
-/**
- * Whether Romanian dubs are offered at all (RO_DUB_SOURCES=on). Off, nothing is said to have one: a "Ro Dub" badge on a title that then
- * plays in English only is a promise the site does not keep. The badge and the dubbed source go on and off together.
- */
 export const romanianDubsOn = (): boolean => process.env.RO_DUB_SOURCES === "on";
 
-/**
- * Fast synchronous check using the static curated catalog.
- * Useful for library preloads, shelves, and quick badge lookups.
- */
 export function hasRomanianDubSync(info: DubLookupInfo): boolean {
   const ids = info.type === "tv" ? KNOWN_DUBBED_TV_IDS : info.type === "movie" ? KNOWN_DUBBED_MOVIE_IDS : undefined;
   if (ids && info.tmdbId) {
@@ -306,7 +244,6 @@ export function hasRomanianDubSync(info: DubLookupInfo): boolean {
     }
   }
 
-  // Check prefix / franchise matches
   for (const franchise of KNOWN_DUBBED_TITLES) {
     if (!counts(franchise, info)) continue;
     if (normTitle.startsWith(franchise + " ") || normTitle.includes(" " + franchise + " ")) {
@@ -317,9 +254,6 @@ export function hasRomanianDubSync(info: DubLookupInfo): boolean {
   return false;
 }
 
-/**
- * Probes public Romanian dubbed hubs (e.g. DesenFlix) to verify whether an online dubbed release exists.
- */
 async function probeOnlineDubHub(title: string): Promise<boolean> {
   const query = normalizeDubTitle(title);
   if (!query || query.length < 3) return false;
@@ -359,16 +293,11 @@ async function probeOnlineDubHub(title: string): Promise<boolean> {
   }
 }
 
-/**
- * Asynchronously determines whether a Romanian dub is available for the given title.
- * Performs instant local lookup first, falling back to a quick external probe when suitable.
- */
 export async function hasRomanianDub(info: DubLookupInfo): Promise<boolean> {
   if (hasRomanianDubSync(info)) {
     return true;
   }
 
-  // For animation or cartoons, probe the online Romanian dub catalog
   if (info.isAnimation || (info.title && /\b(?:animation|cartoon|desene|disney|pixar|anime)\b/i.test(info.title))) {
     const onlineFound = await probeOnlineDubHub(info.title);
     if (onlineFound) return true;
@@ -381,20 +310,11 @@ export async function hasRomanianDub(info: DubLookupInfo): Promise<boolean> {
   return false;
 }
 
-/**
- * Attempts to retrieve a Romanian-dubbed alternate stream for the title/episode.
- */
 export async function getRomanianDubSource(info: DubLookupInfo & { season?: number; episode?: number }): Promise<{ stream: { url: string; type: "hls" | "mp4" }; subtitles?: any[] } | null> {
-  // Off unless RO_DUB_SOURCES=on. What this finds is not yet a source the player can play: the link is the embed host's player page
-  // (`embed_frame_url`), handed over as "hls"; and the post is the first of the search's with a player in it, not one checked to be this
-  // title (or this episode: the season and episode are not looked at). Offered as "Română (Dublat)" it would be a source that fails, or
-  // another film; and it made every resolve of an animated title wait for two more lookups.
   if (!romanianDubsOn()) return null;
-  // If not known to have a Romanian dub, return null
   const hasDub = await hasRomanianDub(info);
   if (!hasDub) return null;
 
-  // Search DesenFlix for matching post
   try {
     const query = normalizeDubTitle(info.title);
     const res = await get(`https://desenflix.online/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=3`, {
@@ -405,18 +325,15 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
     const posts = await jsonOf<Array<{ content?: { rendered?: string }; title?: { rendered?: string } }>>(res);
     if (!Array.isArray(posts) || posts.length === 0) return null;
 
-    // Look for iframe player or direct video in the post
     for (const post of posts) {
       const content = post.content?.rendered || "";
       const iframeMatch = /<iframe[^>]+src=["']([^"']+)["']/i.exec(content);
       if (iframeMatch?.[1]) {
         const embedUrl = iframeMatch[1];
-        // If it's a byseraguci or similar player embed, we can resolve its stream or proxy it
         if (/byseraguci\.com\/e\/([a-zA-Z0-9]+)/i.test(embedUrl)) {
           const codeMatch = /byseraguci\.com\/e\/([a-zA-Z0-9]+)/i.exec(embedUrl);
           if (codeMatch?.[1]) {
             const code = codeMatch[1];
-            // Get embed details
             const detailRes = await get(`https://byseraguci.com/api/videos/${code}/embed/details`, {
               headers: {
                 "User-Agent": "Mozilla/5.0",
@@ -428,7 +345,6 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
             if (detailRes.ok) {
               const details = await jsonOf<{ embed_frame_url?: string }>(detailRes);
               if (details?.embed_frame_url) {
-                // Returns the playable embed/stream link
                 return {
                   stream: {
                     url: details.embed_frame_url,
@@ -442,7 +358,6 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
       }
     }
   } catch {
-    // Non-fatal
   }
 
   return null;

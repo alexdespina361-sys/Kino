@@ -1,19 +1,5 @@
 import { BlockList, isIP } from "node:net";
 
-/**
- * Where a visitor's address is read from when the server sits behind proxies. Fastify goes through the addresses of a request from the nearest (the connection)
- * outwards, and the first one it does not trust is the visitor's. A number of proxies (`TRUST_PROXY=1` on Render) trusts that many from the connection, but a
- * site that is also behind Cloudflare has Cloudflare's own address next, and that was taken for the visitor's: everybody who came through the same Cloudflare
- * machine looked like one person to the rate limits (sign-ups, wrong passwords, link polls) and to the visitor count. So Cloudflare's addresses, and the ones
- * inside a host's own network, are passed over as well: the visitor is the first address that is none of those.
- *
- * What a visitor writes in `X-Forwarded-For` comes first in the list and is never reached; the list is read from the right, and the rightmost address is the
- * one the nearest proxy saw for itself. A request sent straight to the host (not through Cloudflare) is read the same way, so it cannot claim to be Cloudflare's either.
- * What this does not stop: someone with a Cloudflare account of their own who sends requests to the origin from Cloudflare's machines (a Worker) can write
- * the list as they please. Nothing here is a secret, only a rate limit and a count.
- */
-
-/** Cloudflare's addresses (https://www.cloudflare.com/ips, read 2026-11-01). They change rarely; one that is missing here is read as a visitor, which is how it was before. */
 const CLOUDFLARE = [
   "173.245.48.0/20",
   "103.21.244.0/22",
@@ -39,7 +25,6 @@ const CLOUDFLARE = [
   "2c0f:f248::/32",
 ];
 
-/** Addresses of a network of one's own (loopback, private, shared, link-local): no visitor of a site on the internet has one, a host's proxies do. */
 const INTERNAL = ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"];
 
 const PROXIES = new BlockList();
@@ -48,21 +33,18 @@ for (const range of [...CLOUDFLARE, ...INTERNAL]) {
   PROXIES.addSubnet(address, Number(bits), isIP(address) === 6 ? "ipv6" : "ipv4");
 }
 
-/** Whether this is an address of Cloudflare's or of a host's own network. (Whatever is not an address at all is not.) */
 export function isProxyAddress(address: string): boolean {
   const family = isIP(address);
   return family !== 0 && PROXIES.check(address, family === 6 ? "ipv6" : "ipv4");
 }
 
-/** What Fastify asks about each address of a request, the nearest first (`hop` 0 is the connection itself): is it one of our own proxies? */
 export function trustedProxies(proxies: number): (address: string, hop: number) => boolean {
   return (address, hop) => hop < proxies || isProxyAddress(address);
 }
 
-/** The eight 16-bit groups of an IPv6 address, or undefined for whatever is not one. */
 function groupsOf(address: string): number[] | undefined {
   if (isIP(address) !== 6) return undefined;
-  let text = address.split("%")[0] ?? ""; // (a zone, `fe80::1%eth0`, is no part of the address)
+  let text = address.split("%")[0] ?? "";
   const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
   if (dotted) {
     const [a = 0, b = 0, c = 0, d = 0] = dotted.slice(1).map(Number);
@@ -74,17 +56,6 @@ function groupsOf(address: string): number[] | undefined {
   return [...front, ...Array<string>(8 - front.length - back.length).fill("0"), ...back].map((group) => parseInt(group, 16));
 }
 
-/**
- * Who a request counts as for the limits and the visitor count. An IPv6 customer is given a whole network (a /64 at the least, and the machine can send from
- * any address inside it), so a limit kept per full address is one that a single machine has as many of as it likes, one for each address it makes up. So the
- * address is cut to the first 64 bits of it (`2001:db8:1:2::`, the network that one household or one machine has), and an IPv4 address written as IPv6
- * (`::ffff:203.0.113.9`) is read as the IPv4 one. IPv4 addresses, and whatever is not an address, are left as they are.
- * What this does not stop: someone who is given several networks has an allowance for each of them, as someone who has several IPv4 addresses does.
- */
-/**
- * The wider network a visitor (`visitorOf`) is part of, for the few limits that need one: for IPv6 its /48, which is what one customer or one server may be
- * given whole (65,536 of the /64s a limit counts by), for IPv4 the address itself.
- */
 export function networkOf(visitor: string): string {
   if (!visitor.includes(":")) return visitor;
   const groups = visitor.split(":");

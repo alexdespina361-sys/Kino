@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
 import { EpisodeDetailsSchema, SeasonsSchema, type EpisodeDetail } from "../../shared";
 
-/** What a season's episodes are known by, by episode number. */
 export type SeasonDetails = ReadonlyMap<number, EpisodeDetail>;
 
-/** The seasons found for each show, kept for as long as the page is open. Nothing found is not kept: it may be a place that could not be reached just then. */
 const seasonsFound = new Map<string, number[]>();
 
-/** A show's episodes have links that differ in the query only, so any of them says which show it is. */
 const showOf = (link: string): string => {
   try {
     const url = new URL(link, "http://kino.local");
@@ -17,10 +14,6 @@ const showOf = (link: string): string => {
   }
 };
 
-/**
- * The seasons that can be watched of the show a link plays, in order: `undefined` while they are being asked for, and none (`[]`)
- * for a film, for a link the library knows nothing of, and when there is no link to ask about.
- */
 export function useSeasons(link: string | undefined): number[] | undefined {
   const key = link === undefined ? undefined : showOf(link);
   const [answer, setAnswer] = useState<{ key: string; seasons: number[] }>();
@@ -46,12 +39,10 @@ export function useSeasons(link: string | undefined): number[] | undefined {
   return seasonsFound.get(key) ?? (answer?.key === key ? answer.seasons : undefined);
 }
 
-/** What was learned of a season, kept for as long as the page is open: `null` is "asked, and nobody knows". */
 const learned = new Map<string, SeasonDetails | null>();
 
 const keyOf = (link: string, season: number) => `${season}|${link}`;
 
-/** The questions on their way: two parts of a page that want the same season (a title's page opened at an asked episode, say) share one. */
 const asking = new Map<string, Promise<SeasonDetails | null>>();
 
 function askSeason(key: string, link: string, season: number): Promise<SeasonDetails | null> {
@@ -71,11 +62,6 @@ function askSeason(key: string, link: string, season: number): Promise<SeasonDet
   return question;
 }
 
-/**
- * What the server's library knows about each episode of one season of a show (a still, a line about it, how long it
- * runs), asked for with the link of any episode in that season. `undefined` while it is being asked, `null` when
- * nothing is known (the list then stays plain), otherwise the details by episode number. Only a failed request is asked again.
- */
 export function useEpisodeDetails(link: string | undefined, season: number | undefined): SeasonDetails | null | undefined {
   const key = link !== undefined && season !== undefined ? keyOf(link, season) : undefined;
   const [answer, setAnswer] = useState<{ key: string; details: SeasonDetails | null }>();

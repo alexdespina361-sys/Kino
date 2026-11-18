@@ -6,7 +6,6 @@ import { MemoryStickerFiles } from "./stickerFiles";
 import { makeMovingSticker, pictureType } from "./stickerImage";
 import { StickerBook } from "./stickers";
 
-/** What sharp was given, each time it was asked to make a picture (it is the real sharp all the same). */
 const given = vi.hoisted(() => [] as Array<{ input: unknown; options: unknown }>);
 vi.mock("sharp", async (importOriginal) => {
   const real = (await importOriginal<typeof import("sharp")>()).default;
@@ -18,17 +17,14 @@ vi.mock("sharp", async (importOriginal) => {
 });
 
 type Rgba = [number, number, number, number];
-/** Pictures one under the other, as the page sends one that moves: `frames` squares of `side`, each painted by `paint`. */
 function strip(side: number, frames: number, paint: (frame: number, x: number, y: number) => Rgba): Buffer {
   const png = new PNG({ width: side, height: side * frames });
   for (let frame = 0; frame < frames; frame++)
     for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) png.data.set(paint(frame, x, y), ((frame * side + y) * side + x) * 4);
   return PNG.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, bitDepth: 8, deflateLevel: 9 });
 }
-/** A dot that goes round. */
 const moving = (frame: number, x: number, y: number): Rgba => (Math.abs(x - 8 - frame * 6) < 5 && Math.abs(y - 16) < 5 ? [230, 40, 40, 255] : [20, 90, 200, 255]);
 
-/** A chunk of text put in before the PNG's end (where an editor puts what it says of a picture). */
 function withText(png: Buffer, text: string): Buffer {
   const body = Buffer.concat([Buffer.from("tEXt", "latin1"), Buffer.from(`Comment\0${text}`, "latin1")]);
   const length = Buffer.alloc(4);
@@ -49,7 +45,7 @@ describe("a sticker that moves", () => {
     const sent = withText(strip(32, 3, moving), "secret words of the sender");
     given.length = 0;
     const made = await makeMovingSticker(sent, [80, 120, 200]);
-    const asked = [...given]; // (before this test reads the WebP back, with the same sharp)
+    const asked = [...given];
     expect(made.ok).toBe(true);
     if (!made.ok) return;
     expect(pictureType(made.data)).toBe("image/webp");
@@ -57,7 +53,6 @@ describe("a sticker that moves", () => {
     const back = await realSharp(made.data, { animated: true }).metadata();
     expect([back.format, back.width, back.pageHeight, back.pages, back.loop]).toEqual(["webp", 32, 32, 3, 0]);
     expect(back.delay).toEqual([80, 120, 200]);
-    // (sharp saw a buffer of four bytes a pixel read here, never the file the page sent)
     expect(asked).toHaveLength(1);
     const { input, options } = asked[0]!;
     expect(Buffer.isBuffer(input) && (input as Buffer).length).toBe(32 * 32 * 3 * 4);
@@ -108,7 +103,6 @@ describe("a sticker that moves", () => {
     const kept = await on.picture(made.value);
     expect(kept && pictureType(kept)).toBe("image/webp");
     expect(on.size).toEqual({ stickers: 1, bytes: kept!.length });
-    // (the same that moves, made again, is the one it made)
     expect(await on.make("p1", "a1", strip(32, 3, moving), [100, 100, 100])).toEqual({ ok: true, value: made.value });
   });
 
@@ -117,7 +111,6 @@ describe("a sticker that moves", () => {
     const host = { touch: () => {}, drop: () => {}, now: () => now, on: () => true };
     const book = new StickerBook(host, new MemoryStickerFiles(), { on: true, moving: true });
     const three = strip(32, 3, moving);
-    // (each of these is refused, having cost the server nothing much: it is a try all the same)
     for (let tried = 0; tried < MOVING_STICKER.triesPerDay; tried++) expect(await book.make("p1", "a1", three, [100, 100])).toEqual({ ok: false, error: "not_a_picture" });
     given.length = 0;
     const refused = await book.make("p1", "a1", three, [100, 100, 100]);
@@ -159,7 +152,6 @@ describe("a sticker that moves", () => {
     ]) {
       expect(readStickerMake(not), not.slice(0, 60)).toBeUndefined();
     }
-    // (what it gives is still checked: more numbers than a sticker has pictures are read, and refused by the schema)
     const many = readStickerMake(`{"data":"QUJD","delays":[${Array(MOVING_STICKER.maxFrames + 1).fill(20).join(",")}]}`);
     expect(many?.delays).toHaveLength(MOVING_STICKER.maxFrames + 1);
     expect(StickerMakeSchema.safeParse(many).success).toBe(false);

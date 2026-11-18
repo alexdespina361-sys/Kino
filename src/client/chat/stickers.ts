@@ -9,13 +9,10 @@
  */
 
 export interface Sticker {
-  /** The file's name in public/stickers, and what the tests call it. */
   id: string;
-  /** What is sent. */
   emoji: string;
 }
 
-/** In the order of the picker: the evening in (the cinema, the couch), then faces, then the rest. */
 export const STICKERS: readonly Sticker[] = [
   { id: "popcorn", emoji: "\u{1F37F}" },
   { id: "clapper", emoji: "\u{1F3AC}" },
@@ -47,10 +44,6 @@ export const STICKERS: readonly Sticker[] = [
   { id: "alarm", emoji: "\u{23F0}" },
 ];
 
-/**
- * An emoji may come with or without the "draw me as a picture" mark, U+FE0F, at its end: "❤" and "❤️" are the same heart, and a keyboard may put the mark
- * after one that has no need of it. Only those forms: a mark anywhere else, or two of them, is not one of the stickers (the judge, 17 Nov).
- */
 const MARK = "\u{FE0F}";
 const BY_TEXT = new Map<string, Sticker>();
 for (const sticker of STICKERS) {
@@ -58,12 +51,10 @@ for (const sticker of STICKERS) {
   for (const form of [bare, bare + MARK]) BY_TEXT.set(form, sticker);
 }
 
-/** The sticker a message is, when its whole text (spaces around it aside) is one of the stickers' emoji, else null. */
 export function stickerOf(text: string): Sticker | null {
   const written = text.trim();
-  if (written.length === 0 || written.length > 3) return null; // (the longest is two letters and the mark)
+  if (written.length === 0 || written.length > 3) return null;
   return BY_TEXT.get(written) ?? null;
 }
 
-/** Where a sticker's picture is: this site's own file. */
 export const stickerSrc = (sticker: Sticker) => `/stickers/${sticker.id}.webp`;

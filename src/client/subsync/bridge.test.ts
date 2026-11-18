@@ -3,7 +3,6 @@ import { pairCaptions, timeFromEnglish } from "./bridge";
 import type { Cue } from "./cues";
 import { makeFilm, random, type Film } from "./synth";
 
-/** A release of the film's captions in another language: each line moved by `shift` plus `drift` seconds per second and a little jitter, some lines missing, some extra. */
 function release(film: Film, seed: number, options: { shift: number; drift?: number; jitter?: number; dropEvery?: number; extra?: number }): { cues: Cue[]; from: number[] } {
   const rand = random(seed);
   const cues: Cue[] = [];
@@ -22,7 +21,6 @@ function release(film: Film, seed: number, options: { shift: number; drift?: num
 }
 
 const film = makeFilm(5, 600);
-/** The English release as downloaded (3.3 s late) and where the aligner put it (right). */
 const english = { original: film.truth.map((cue) => ({ ...cue, start: cue.start + 3.3, end: cue.end + 3.3 })), placed: film.truth };
 
 describe("pairing the captions of two releases", () => {

@@ -27,15 +27,6 @@ import { BackButton, Screen } from "./Idle";
 import type { Entry } from "./pages";
 import "./friends.css";
 
-/** The pages friends need besides the library's own: sending to friends, adding one, and choosing what is shared. Each is a page the remote walks (see Idle.tsx). */
-
-/* ------------------------------ sending to friends ------------------------------ */
-
-/**
- * Choosing the friends a title, or an invitation to a watch party, goes to, and sending it: what the page below and the panel over a film
- * (Party.tsx) share. Only friends who take things are offered, and with just one she is chosen already; the server has the last word on
- * who gets it. `said` is what is told when it has gone.
- */
 export function useFriendPicker({ build, said, onClose }: { build: () => Message; said: "friends.sent" | "friends.inviteSent"; onClose: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -59,7 +50,6 @@ export function useFriendPicker({ build, said, onClose }: { build: () => Message
     try {
       const answer = await friends.send([...picked], build());
       const names = (ids: readonly string[]) => ids.map((id) => nameOf(all, id)).filter(Boolean).join(", ");
-      // (Both are told when some took it and some did not: the ones who did must not be sent it again.)
       const told: string[] = [];
       if (answer.sent.length > 0) told.push(t(said, { names: names(answer.sent) }));
       if (answer.declined.length > 0) told.push(t(answer.declined.length > 1 ? "friends.declinedMany" : "friends.declined", { names: names(answer.declined) }));
@@ -74,7 +64,6 @@ export function useFriendPicker({ build, said, onClose }: { build: () => Message
   return { all, takers, picked, busy, problem, toggle, send };
 }
 
-/** The page that chooses the friends a title, or an invitation to a watch party, goes to. */
 export function FriendPickerTv({ title, lead, build, said, onClose }: { title: string; lead: string; build: () => Message; said: "friends.sent" | "friends.inviteSent"; onClose: () => void }) {
   const t = useT();
   const { all, takers, picked, busy, problem, toggle, send } = useFriendPicker({ build, said, onClose });
@@ -122,16 +111,8 @@ export function FriendPickerTv({ title, lead, build, said, onClose }: { title: s
   );
 }
 
-/* ------------------------------ adding a friend ------------------------------ */
-
-/** How the copy button joins the remote's arrow keys, as the page's other buttons do (`data-nav`: see dpad.ts). */
 const PAGE_NAV = { "data-nav": true };
 
-/**
- * A code made for a friend: the code, the QR code that carries its link, and a way to take it back. One is made as the page opens, when
- * there is none. When the code that was on the page is gone and there is a friend more than when it came up, a friend has used it: that
- * is all it was for. A code that went another way (taken back on a phone, run out) is made again.
- */
 function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -141,13 +122,11 @@ function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   const shown = useRef(false);
   const takingBack = useRef(false);
   const codeText = useRef<HTMLParagraphElement>(null);
-  /** How many friends there were when the first code came up. */
   const friendsThen = useRef(0);
   const friendCount = friends.state?.friends.length ?? 0;
   const invite = (friends.state?.invites ?? []).reduce<OpenInvite | undefined>((newest, each) => (!newest || each.expiresAt > newest.expiresAt ? each : newest), undefined);
   useQuickLooks(invite !== undefined);
 
-  // (this one first: a code that is gone makes the next effect ask for another in the same moment)
   useEffect(() => {
     if (shown.current && !takingBack.current && friendCount > friendsThen.current) {
       onDone();
@@ -213,7 +192,6 @@ function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   );
 }
 
-/** A friend's code that was typed in full: who it is from, and a button that makes the two of them friends. */
 function TypedCode({ code, onDone }: { code: string; onDone: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -264,7 +242,6 @@ function TypedCode({ code, onDone }: { code: string; onDone: () => void }) {
   );
 }
 
-/** Typing the code a friend gave: on a keyboard, or the TV's own. Once all of it is there, who it is from is asked. */
 function TypeCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const t = useT();
   const [typed, setTyped] = useState("");
@@ -296,7 +273,6 @@ function TypeCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   );
 }
 
-/** Somebody found by their tag: who it is, and the button that asks them to be friends (they have to say yes). */
 function TaggedFriend({ text, onDone }: { text: string; onDone: () => void }) {
   const t = useT();
   const { seen, problem, waiting, busy, send } = useTagAsk(text, onDone);
@@ -328,7 +304,6 @@ function TaggedFriend({ text, onDone }: { text: string; onDone: () => void }) {
   );
 }
 
-/** Typing the tag of a friend ("Sam#2"), on a keyboard or the TV's own. It is looked for when asked to (a tag is complete only when its owner says so). */
 function TypeTag({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const t = useT();
   const [typed, setTyped] = useState("");
@@ -377,7 +352,6 @@ function TypeTag({ onBack, onDone }: { onBack: () => void; onDone: () => void })
   );
 }
 
-/** The ways of becoming friends: make a code to give, type the one that was given, or find somebody by their tag. */
 export function AddFriendTv({ onClose }: { onClose: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -416,9 +390,6 @@ export function AddFriendTv({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ------------------------------ a request to be friends ------------------------------ */
-
-/** Somebody asked to be friends (a tile of the friends page): who, and the buttons that say yes or no. Back keeps it waiting. */
 export function FriendRequestTv({ person, onClose }: { person: Person; onClose: () => void }) {
   const t = useT();
   const answer = useAnswerRequests();
@@ -450,13 +421,6 @@ export function FriendRequestTv({ person, onClose }: { person: Person; onClose: 
   );
 }
 
-/* ------------------------------ plans to watch together ------------------------------ */
-
-/**
- * A plan to watch together that a friend put, or the news of one (a tile of the friends page): yes or no while it asks; once it is on, or was turned down, a
- * word to read; and when its time has come, the button that starts the party. Back leaves it as it is. It reads what the server last said, so an answer
- * given on a phone changes it here, and it goes when the plan does (the friendship ended, or its time passed with nobody saying yes).
- */
 export function PlanTv({ id, onStartParty, onClose }: { id: string; onStartParty: (friendId: string) => void; onClose: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -478,7 +442,7 @@ export function PlanTv({ id, onStartParty, onClose }: { id: string; onStartParty
       onClose();
     } catch (error) {
       account.say(describeError(error));
-      void friends.refresh(); // (a plan that is gone is gone from the page)
+      void friends.refresh();
       setBusy(false);
     }
   };
@@ -530,18 +494,12 @@ export function PlanTv({ id, onStartParty, onClose }: { id: string; onStartParty
   );
 }
 
-/**
- * Plans a watch together with a friend, with the remote: a row of days (today and the six after it), a row of hours, and the button that sends the plan.
- * No typing: the arrow keys choose, and what was chosen reads out under them. What cannot be sent (an hour that has gone, or is under five minutes off) is
- * not offered. A phone can say a few words with a plan; a TV has no keyboard to do it with.
- */
 export function PlanPickerTv({ friendId, onClose }: { friendId: string; onClose: () => void }) {
   const t = useT();
   const language = useLanguage();
   const account = useAccount();
   const friends = useFriends();
   const name = nameOf(friends.state?.friends ?? [], friendId);
-  /** The days are those from the day this page was opened. */
   const [opened] = useState(() => Date.now());
   const [chosen, setChosen] = useState(() => defaultPlan(opened));
   const [busy, setBusy] = useState(false);
@@ -621,12 +579,8 @@ export function PlanPickerTv({ friendId, onClose }: { friendId: string; onClose:
   );
 }
 
-/* ------------------------------ the bell ------------------------------ */
-
-/** How long a line takes to go once it is cleared (it slides off, then the list closes up under it) before the list is told: see `data-leaving` in polish/tv.css. */
 const LEAVE_MS = 380;
 
-/** Whether a part was lit by the remote or the keyboard (`:focus-visible`), not by a click or a tap. (A browser that does not know the question says yes.) */
 const keyLit = (element: Element): boolean => {
   try {
     return element.matches(":focus-visible");
@@ -635,12 +589,6 @@ const keyLit = (element: Element): boolean => {
   }
 };
 
-/**
- * A line of the bell's list, a card: pressing it does what pressing the same tile of the friends page does. The cross that clears it is inside the card, at
- * its right (the owner, 15 Nov: "keep the X, but inside the notification card"), and a finger can swipe the card away to either side instead (a phone that is
- * the screen, a tablet). A cleared card slides off and the list closes up under it before it is gone. The card is lit as a whole while the remote is on the
- * line (`data-lit="line"`); on the cross, only the cross is.
- */
 function BellLine({
   row,
   at,
@@ -649,10 +597,8 @@ function BellLine({
   testId = "tv-bell-item",
 }: {
   row: BellRow;
-  /** Its place in the list, from the top: the cards come in one just after the other. */
   at: number;
   onPress: (entry: Entry) => void;
-  /** Not given for a line that waits for an answer nobody else can give (a request to be friends), nor for news that is said once (a new friend). The cross pressed, or null when a finger swiped the card. */
   onClear?: ((button: HTMLElement | null) => void) | undefined;
   testId?: string;
 }) {
@@ -661,7 +607,6 @@ function BellLine({
   const card = useRef<HTMLLIElement>(null);
   const [lit, setLit] = useState<"line" | "clear" | null>(null);
   const [leaving, setLeaving] = useState(false);
-  /** When it was cleared last: a second OK on the cross while it goes (the remote is still on it) does nothing. */
   const clearedAt = useRef(-Infinity);
   const leave = (button: HTMLElement | null) => {
     if (!onClear || Date.now() - clearedAt.current < LEAVE_MS + BACK_MS) return;
@@ -672,7 +617,6 @@ function BellLine({
     setLeaving(true);
     window.setTimeout(() => onClear(button), LEAVE_MS);
   };
-  // (A card whose clearing did not take, as when the server could not be reached, comes back.)
   useEffect(() => {
     if (!leaving) return;
     const timer = window.setTimeout(() => setLeaving(false), LEAVE_MS + BACK_MS);
@@ -708,28 +652,17 @@ function BellLine({
   );
 }
 
-/**
- * What the bell opens on a TV: what waits for an answer, then what friends watch lately, a few of each, and a way on to the Friends page for the
- * rest. Pressing a line does what the same tile of the Friends page does (`onPress` is that); Back shuts the list. Opening it is looking.
- */
 export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (entry: Entry) => void; onFriends: () => void; onClose: () => void }) {
   const t = useT();
   const friends = useFriends();
   const { markSeen, seen } = useBell();
-  const [seenBefore] = useState(seen); // (as it opens: opening it moves `seen` to now)
+  const [seenBefore] = useState(seen);
   const { cleared, clear } = useCleared();
   const clearChat = useClearChat();
   const { waiting, joined, lately, more } = bellRows(friends.state, Date.now(), cleared, seenBefore);
-  // What is new of the titles the profile watches: its own lines, which a profile with friends off has too (the bell is then only these).
   const titles = useTitleNotices();
   const fresh = titles.items.slice(0, BELL_TITLES).map((notice): BellRow => ({ entry: entryOfNotice(notice), heading: notice.title, detail: noticeLine(notice), notice: notice.id }));
   const page = useRef<HTMLDivElement>(null);
-  /**
-   * A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote, if it is still on the
-   * cross of the card that went, goes on at once to the cross that takes its place, or to the list's button when there is none (not after a swipe, `button`
-   * null: a finger is not the remote, and nothing is lit for it). At once, not when the line is gone: what a friend sent goes when the server says so, and
-   * the remote is not left on a card that is no longer seen. Where it went on by itself meanwhile, or the list was shut, it stays.
-   */
   const clearLine = (row: BellRow, button: HTMLElement | null) => {
     const active = document.activeElement;
     if (button && (active === button || !active || active === document.body)) {
@@ -763,7 +696,6 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
           <span className="spinner" /> {friends.status === "offline" ? t("friends.offline") : t("common.loading")}
         </p>
       ) : waiting.length === 0 && fresh.length === 0 && joined.length === 0 && lately.length === 0 ? (
-        // Nothing new: a quiet picture of the bell and two lines, with room round them (the owner, 15 Nov: "the page should feel roomier and nicer").
         <div className="tv-bell-empty" data-testid="tv-bell-empty">
           <span className="tv-bell-empty-icon" aria-hidden="true">
             <BellIcon />
@@ -832,9 +764,6 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
   );
 }
 
-/* ------------------------------ taking a friend off ------------------------------ */
-
-/** The question before a friend is taken off the friends. Cancel is where the remote starts, so an OK pressed by mistake keeps them. */
 export function UnfriendTv({ id, name, onCancel, onGone }: { id: string; name: string; onCancel: () => void; onGone: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -876,12 +805,6 @@ export function UnfriendTv({ id, name, onCancel, onGone }: { id: string; name: s
   );
 }
 
-/* ------------------------------ what is shared ------------------------------ */
-
-/**
- * What a friend may do is on for everybody, and the one thing to choose is whether what is watched is shared (both ways: a profile sees what friends watch while it shares
- * its own). A profile that had turned one of the others off keeps the switch for it, these ones (the one that turns friends on or off is in the settings).
- */
 const SUNSET_ROWS: ReadonlyArray<{ key: Exclude<SunsetSwitch, "newsPopups">; label: Key; testId: string }> = [
   { key: "friendsLists", label: "friends.switchLists", testId: "tv-friends-lists" },
   { key: "friendsRatings", label: "friends.switchRatings", testId: "tv-friends-ratings" },
@@ -890,13 +813,12 @@ const SUNSET_ROWS: ReadonlyArray<{ key: Exclude<SunsetSwitch, "newsPopups">; lab
   { key: "friendsMessages", label: "chat.settingsSwitch", testId: "tv-friends-messages" },
 ];
 
-/** Choosing whether what each watches is told, and for a profile that turned something else off before, that too. Each change reaches the server at once: it is what decides what a friend is shown. */
 export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
   const t = useT();
   const account = useAccount();
   const { settings, set } = useSettings();
   const choices = friendChoices(settings);
-  const [sunset] = useState(() => sunsetSwitches(settings)); // (asked once: a switch that is turned back on stays under the remote until the screen is left)
+  const [sunset] = useState(() => sunsetSwitches(settings));
   const row = (key: FriendSetting, label: Key, testId: string) => (
     <button
       key={key}
@@ -921,7 +843,6 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
       <div className="tv-friend-switches">
         {row("friendsGive", "friends.switchGive", "tv-friends-give")}
         {SUNSET_ROWS.filter(({ key }) => sunset.includes(key)).map(({ key, label, testId }) => row(key, label, testId))}
-        {/* (What this screen does with friends' news, not what a friend may do: it stays on this side and is not sent to the server.) */}
         {sunset.includes("newsPopups") && (
           <button
             className="tv-switch-row"
@@ -939,7 +860,6 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
       <p className="tv-hint tv-friend-help" data-testid="tv-friends-give-hint">
         {t("friends.switchGiveHint")}
       </p>
-      {/* (What a chat is kept as, said where friends are chosen: plain text, on the server, unencrypted, for so long.) */}
       <p className="tv-hint tv-friend-help" data-testid="tv-friends-messages-hint">
         {t("chat.settingsHint", CHAT_FACTS)}
       </p>

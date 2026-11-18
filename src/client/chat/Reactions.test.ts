@@ -13,7 +13,6 @@ const FIRE = "\u{1F525}";
 const with_ = (base: ChatLine, parts: Partial<ChatLine>): ChatLine => ({ ...base, ...parts });
 const lines = (props: Partial<Parameters<typeof ChatLines>[0]> = {}) =>
   renderToStaticMarkup(createElement(ChatLines, { lines: [line(1, false), line(2, true), line(3, false)], name: "Sam", now: NOW, ...props }));
-/** The part of the markup that is one line (up to the next). */
 const lineOf = (html: string, id: number) => {
   const from = html.indexOf(`data-line="${id}"`);
   const next = html.indexOf('data-testid="chat-line"', from + 1);
@@ -36,7 +35,6 @@ describe("reactions under a message", () => {
 
   it("show nothing for what is not one of the reactions (an old or broken record), and nothing in a report, which sends the words alone", () => {
     expect(has(lines({ lines: [with_(line(1, false), { theirReaction: "<b>", myReaction: "\u{1F680}" })] }), "chat-reactions")).toBe(false);
-    // (one of the sixteen behind the + is one)
     expect(has(lines({ lines: [with_(line(1, false), { myReaction: "\u{1F37F}" })] }), "chat-reactions")).toBe(true);
     expect(has(lines({ lines: [with_(line(1, false), { theirReaction: FIRE })], showWriter: true }), "chat-reactions")).toBe(false);
   });
@@ -129,10 +127,9 @@ describe("the TV's chat and reactions", () => {
     for (const screen of [{ desk: true }, { narrow: true }]) {
       const html = read(screen);
       expect(count(html, "chat-bubble"), JSON.stringify(screen)).toBe(3);
-      expect(tagOf(html, "chat-bubble")).toContain('tabindex="-1"'); // (the remote's stop is the list, not each message)
+      expect(tagOf(html, "chat-bubble")).toContain('tabindex="-1"');
     }
     expect(count(read(), "chat-bubble")).toBe(0);
-    // (a friend who takes no messages: one's own can still be taken back, the friend's are only read)
     expect(count(read({ desk: true, session: fakeSession({ state: { lines: [line(1, false), line(2, true)], open: false } }) }), "chat-bubble")).toBe(1);
   });
 });

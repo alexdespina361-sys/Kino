@@ -4,22 +4,13 @@ import { pictureType } from "../accounts/stickerImage";
 import { readWords } from "./intake";
 import { FeedbackFull, TooManyOpen, type FeedbackStore } from "./store";
 
-/**
- * The most chat reports one account may have open at once (see `TooManyOpen`). A person reports a chat or two before anybody has looked at the first, and an
- * account cannot fill the room the team's side has with reports nobody has dealt with (all of it is for everything people send: see `FeedbackFull`).
- */
 export const CHAT_REPORTS_OPEN = 3;
 
 const stamp = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
-/**
- * The messages of a reported chat as the team reads them: who reported whom and when, then each message with its time and who wrote it. The
- * names are the ones friends see (one line each) and a message is one line of plain text, so no message can pass for a line of another.
- */
 export function chatTranscript(report: ChatReport): string {
   const who = (from: "reporter" | "about") => (from === "reporter" ? report.reporter.label : report.about.label);
   const pictures = pictureNames(report);
-  // (A personal sticker is said as what it is, with the file its picture is in: or that it is not in the report, being one of the older ones or gone.)
   const said = (line: ChatReport["lines"][number]) =>
     line.sticker ? `${line.text} [personal sticker ${line.sticker}: ${pictures.get(line.sticker) ? `picture in ${pictures.get(line.sticker)}` : "picture not in this report"}]` : line.text;
   return [
@@ -35,17 +26,11 @@ export function chatTranscript(report: ChatReport): string {
   ].join("\n");
 }
 
-/** The file a personal sticker's picture is in: `sticker1.png`, ... (`.webp` for one that moves), in the order the report has them. */
 const pictureName = (data: Buffer, at: number) => `sticker${at + 1}.${pictureType(data) === "image/webp" ? "webp" : "png"}`;
 function pictureNames(report: ChatReport): Map<string, string> {
   return new Map((report.pictures ?? []).map((picture, at) => [picture.sticker, pictureName(picture.data, at)]));
 }
 
-/**
- * Reports go to the team the way feedback does (see shared/reports.ts): a problem about the friends, with the messages in a file of its own, so that
- * the team reads the part of a chat that somebody chose to send and never browses chats. A report from a chat is not answered in the app (it is
- * not tied to an account, and the one who is reported must never be found by it).
- */
 export function chatReporter(feedback: FeedbackStore): ChatReporter {
   return async (report) => {
     const { title, message } = readWords({
@@ -53,7 +38,6 @@ export function chatReporter(feedback: FeedbackStore): ChatReporter {
       message: `${report.reporter.label} reported their chat with ${report.about.label}. The last ${report.lines.length} messages are in chat.txt.`,
     });
     try {
-      // (The messages are the report: a report that could not keep them is not taken, and the reporter is told so.)
       await feedback.create(
         {
           key: randomBytes(18).toString("base64url"),
@@ -66,13 +50,11 @@ export function chatReporter(feedback: FeedbackStore): ChatReporter {
           context: null,
           files: [
             { meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") },
-            // (The pictures of the personal stickers in it, as they were when it was sent: see `ChatReport.pictures`.)
             ...(report.pictures ?? []).map((picture, at) => ({
               meta: { id: `sticker${at + 1}`, name: pictureName(picture.data, at), mime: pictureType(picture.data), role: "photo" as const },
               data: picture.data,
             })),
           ],
-          // (Kept in memory only, while the report is open, to count an account's reports: the report itself is not tied to the account.)
           from: `chat:${report.account}`,
         },
         { maxOpen: CHAT_REPORTS_OPEN },

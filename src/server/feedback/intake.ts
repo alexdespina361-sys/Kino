@@ -14,7 +14,6 @@ import {
 } from "../../shared";
 import type { FeedbackFile, NewReport } from "./store";
 
-/** Why a file was not kept (the report was: nobody loses their words to a picture). */
 export type RejectedReason = "bad_type" | "too_big" | "too_many" | "empty";
 export interface Rejected {
   id: string;
@@ -28,7 +27,6 @@ export interface ReadFile {
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-/** What a picture is by its first bytes, whatever its sender called it. */
 function imageType(data: Buffer): "image/png" | "image/jpeg" | "image/webp" | undefined {
   if (data.length >= 8 && data.subarray(0, 8).equals(PNG)) return "image/png";
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return "image/jpeg";
@@ -36,25 +34,18 @@ function imageType(data: Buffer): "image/png" | "image/jpeg" | "image/webp" | un
   return undefined;
 }
 
-/** Whether the first bytes hold a zero: what a person could read does not. */
 const looksBinary = (data: Buffer): boolean => data.subarray(0, 8192).includes(0);
 
-/** The text a file holds when a person could read it: not a pile of broken characters. */
 function textOf(data: Buffer): string | undefined {
   const text = data.toString("utf8");
   const broken = text.split("�").length - 1;
   return broken > Math.max(2, text.length * 0.02) ? undefined : text;
 }
 
-/** The most base64 a file can be, once decoded: nothing is decoded that is longer. */
 const MOST_BASE64 = Math.ceil((FEEDBACK_LIMITS.imageBytes * 4) / 3) + 4;
 
 const fileName = (name: string, fallback: string): string => cleanText(name, 80).replace(/[\\/:*?"<>|]+/g, "_").replace(/^\.+/, "") || fallback;
 
-/**
- * The files of a request, checked by what they are and not by what they are called: a picture is a PNG, JPEG or WebP by its first bytes, a log is
- * text. What is not that, is too big, or is past the limits, is left out and said (`rejected`), and the rest is kept.
- */
 export function readFiles(inputs: unknown[], taken: Set<string> = new Set(), usedBytes = 0): { files: ReadFile[]; rejected: Rejected[] } {
   const files: ReadFile[] = [];
   const rejected: Rejected[] = [];
@@ -86,7 +77,6 @@ export function readFiles(inputs: unknown[], taken: Set<string> = new Set(), use
       reject("bad_type");
       continue;
     }
-    // (The size is looked at before the text is read: what is too big is not read.)
     if (data.length > (image ? FEEDBACK_LIMITS.imageBytes : FEEDBACK_LIMITS.fileBytes) || total + data.length > FEEDBACK_LIMITS.totalBytes) {
       reject("too_big");
       continue;
@@ -103,7 +93,6 @@ export function readFiles(inputs: unknown[], taken: Set<string> = new Set(), use
       mime = input.mime === "application/json" && isJson(text) ? "application/json" : "text/plain";
     }
     total += data.length;
-    // (The id the page gave is kept unless it is taken, so the page can tell which of its files was left out.)
     let id = input.id;
     while (taken.has(id)) id = randomBytes(6).toString("hex");
     taken.add(id);
@@ -133,7 +122,6 @@ function isJson(text: string): boolean {
   }
 }
 
-/** Every text in the value without the characters that only break things (control, zero-width, direction marks). */
 function cleanDeep<T>(value: T): T {
   if (typeof value === "string") return cleanText(value, value.length) as T;
   if (Array.isArray(value)) return value.map(cleanDeep) as T;
@@ -141,10 +129,6 @@ function cleanDeep<T>(value: T): T {
   return value;
 }
 
-/**
- * What the page said about the device and the moment. A part that cannot be read is left out (and named in `dropped`) instead of the whole of it
- * or the report: the report is what matters.
- */
 export function readContext(raw: unknown): { context: FeedbackContext | null; dropped: string[] } {
   if (raw === undefined || raw === null) return { context: null, dropped: [] };
   const whole = FeedbackContextSchema.safeParse(raw);
@@ -162,7 +146,6 @@ export function readContext(raw: unknown): { context: FeedbackContext | null; dr
   return { context: cleanDeep(kept as FeedbackContext), dropped };
 }
 
-/** The answers to the guided questions: only the questions there are, only text, only so much of it. */
 export function readDetails(raw: unknown): Partial<Record<FeedbackDetailKey, string>> {
   const details: Partial<Record<FeedbackDetailKey, string>> = {};
   if (!raw || typeof raw !== "object") return details;
@@ -175,7 +158,6 @@ export function readDetails(raw: unknown): Partial<Record<FeedbackDetailKey, str
   return details;
 }
 
-/** What a report's own words come to: the title (written, or made from the message, or from the first answer to a question) and the message, cleaned. */
 export function readWords(input: { title?: string | undefined; message: string }, details: Record<string, string> = {}): { title: string; message: string } {
   const message = cleanText(input.message, FEEDBACK_LIMITS.text);
   const written = input.title ? cleanText(input.title, FEEDBACK_LIMITS.title) : "";
@@ -184,5 +166,4 @@ export function readWords(input: { title?: string | undefined; message: string }
 
 export type Intake = Omit<NewReport, "key" | "accountId" | "files"> & { files: ReadFile[]; rejected: Rejected[] };
 
-/** Whether there is anything to keep: words, or at least one file that was kept. */
 export const isEmptyReport = (message: string, details: Record<string, string>, files: unknown[]): boolean => !message && Object.keys(details).length === 0 && files.length === 0;

@@ -19,7 +19,7 @@ describe("the chat's GIFs and stickers", () => {
     expect(first).toContain('data-kind="sticker"');
     expect(html.indexOf(stickerSrc(STICKERS[0]!))).toBeLessThan(html.indexOf(GIF));
     expect(html).toContain('loading="lazy"');
-    expect(html.toLowerCase()).toContain('referrerpolicy="no-referrer"'); // (KLIPY is not told which chat the picture is in)
+    expect(html.toLowerCase()).toContain('referrerpolicy="no-referrer"');
   });
 
   it("say when there are none", () => {

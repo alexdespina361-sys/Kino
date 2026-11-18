@@ -39,11 +39,63 @@ import {
   type SyncItem,
   type SyncRequest,
   type SyncResponse,
-  type WatchFacts,
+  type WatchFacts, progressKey
 } from "../../shared";
-import { LEGACY_KEYS, readLegacy } from "./legacy";
+import { z } from "zod";
 
-/** Where what was watched is kept when nobody is signed in: this browser only. */
+const LEGACY_KEYS = ["controller.history", "controller.watched", "tv.watched"] as const;
+const HistorySchema = z.array(
+  z.object({
+    url: z.string().max(2048),
+    title: z.string().max(300),
+    seriesKey: z.string().max(300).optional(),
+    position: z.number().finite().min(0),
+    duration: z.number().finite().min(0),
+    at: z.number().finite(),
+  }),
+);
+const WatchedSchema = z.array(
+  z.object({
+    show: z.string().max(300),
+    season: z.number().int(),
+    episode: z.number().int(),
+    position: z.number().finite().min(0),
+    duration: z.number().finite().min(0),
+    done: z.boolean(),
+    at: z.number().finite(),
+  }),
+);
+function parse<T>(schema: z.ZodType<T>, raw: string | null): T | undefined {
+  if (!raw) return undefined;
+  try {
+    const result = schema.safeParse(JSON.parse(raw));
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function readLegacy(read: (key: string) => string | null): ProfileData | undefined {
+  const data = emptyData();
+  for (const entry of parse(HistorySchema, read("controller.history")) ?? []) {
+    data.progress.push({
+      key: progressKey({ ...(entry.seriesKey ? { show: entry.seriesKey } : {}), url: entry.url }),
+      at: entry.at,
+      title: entry.seriesKey ?? entry.title,
+      url: entry.url,
+      position: entry.position,
+      duration: entry.duration,
+    });
+  }
+  const seen = new Set<string>();
+  for (const entry of [...(parse(WatchedSchema, read("controller.watched")) ?? []), ...(parse(WatchedSchema, read("tv.watched")) ?? [])]) {
+    const key = watchedKey(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    data.watched.push({ key, at: entry.at, show: entry.show, season: entry.season, episode: entry.episode, position: entry.position, duration: entry.duration, done: entry.done });
+  }
+  return data.progress.length > 0 || data.watched.length > 0 ? data : undefined;
+}
+
 export const GUEST = "guest";
 const KEY_PREFIX = "kino.data.";
 const SAVE_AFTER_MS = 400;
@@ -54,29 +106,18 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
-/** What the screens read: live items only, newest first. */
 export interface Snapshot {
   scope: string;
-  /** "Continue watching" and "Recently played": one card per film or show. */
   progress: LiveProgress[];
   watched: LiveWatched[];
-  /** The lists, the first one always. */
   lists: ListInfo[];
-  /** Every saved title of every list (a title in two lists is there twice), newest first. */
   list: LiveListItem[];
-  /** What the profile rated: titles and seasons, the one changed last first. */
   ratings: LiveRating[];
   settings: Settings;
-  /** The chat's pictures the profile keeps (a GIF, one of Kino's stickers), the one kept last first. Read through client/chat/saved.ts, which checks each. */
   saved: LiveSaved[];
-  /**
-   * A profile this screen has never kept a copy of, opened just now: its settings are the defaults until the server's first answer,
-   * which is not the same as having chosen them (a child's profile is not one until that answer says so).
-   */
   waiting: boolean;
 }
 
-/** A title that can go in a list: what a library tile has. */
 export interface ListEntry {
   id: string;
   title: string;
@@ -87,7 +128,6 @@ export interface ListEntry {
   description?: string | undefined;
 }
 
-/** A title that can be rated: the same, and whether it is a film or a show when that is known. */
 export interface RatedTitle {
   title: string;
   url: string;
@@ -95,11 +135,9 @@ export interface RatedTitle {
   backdrop?: string | undefined;
   year?: number | undefined;
   kind?: LibraryKind | undefined;
-  /** A cartoon or an anime, when the library says so. */
   section?: "cartoon" | "anime" | undefined;
 }
 
-/** What a person changes in a rating: the score, the note (the note alone changes nothing without a score). */
 export interface RatingChange {
   score?: number;
   note?: string;
@@ -108,29 +146,20 @@ export interface RatingChange {
 interface Saved {
   v: 1;
   data: ProfileData;
-  /** The server's counter as of the last exchange with it. */
   rev: number;
-  /** What was changed here (as "list:key") and has not been confirmed by the server yet. */
   dirty: string[];
-  /** The server has answered for this copy at least once (see `Snapshot.waiting`). A copy kept before this was known counts as answered when its `rev` is past 0. */
   answered?: boolean;
 }
 
 const live = <T extends SyncItem>(items: readonly T[]) => items.filter((item) => !item.deleted) as Array<Exclude<T, { deleted: true }>>;
 const byNewest = <T extends { at: number }>(items: T[]) => items.sort((a, b) => b.at - a.at);
 
-/**
- * What the person has watched, saved in its lists, and chosen in the settings: in memory, kept in localStorage per place (the
- * browser's own "guest" copy, and one per profile), and brought into line with the server by `pending` and `accept`. All
- * changes are small items stamped with the time, so the copies on every screen settle on the same answer (see account.ts).
- */
 export class ProfileStore {
   private scopeName = GUEST;
   private opened = false;
   private data: ProfileData = emptyData();
   private revision = 0;
   private dirty = new Set<string>();
-  /** Whether the server has answered for this copy yet (see `Snapshot.waiting`): kept with it, since a copy is written long before the first answer may come. */
   private answered = true;
   private snapshot: Snapshot | undefined;
   private readonly listeners = new Set<() => void>();
@@ -143,12 +172,9 @@ export class ProfileStore {
     this.openScope(GUEST);
   }
 
-  /* ------------------------------ reading ------------------------------ */
-
   get scope() {
     return this.scopeName;
   }
-  /** The server's counter, as it was when this copy was last brought up to date. */
   get rev() {
     return this.revision;
   }
@@ -157,7 +183,6 @@ export class ProfileStore {
     if (!this.snapshot) {
       const lists = resolveLists(this.data.listNames);
       const known = new Set(lists.map((list) => list.id));
-      // A title in a list that was removed on another screen meanwhile is in no list: it is not shown.
       this.snapshot = {
         scope: this.scopeName,
         progress: byNewest(live(this.data.progress)),
@@ -185,8 +210,6 @@ export class ProfileStore {
     this.listeners.forEach((listener) => listener());
   }
 
-  /* ------------------------------ keeping ------------------------------ */
-
   private read(scope: string): Saved | undefined {
     try {
       const raw = this.storage?.getItem(KEY_PREFIX + scope);
@@ -202,7 +225,6 @@ export class ProfileStore {
     try {
       this.storage?.setItem(KEY_PREFIX + scope, JSON.stringify(saved));
     } catch {
-      /* storage full or unavailable: it is kept in memory until the page closes */
     }
   }
 
@@ -211,21 +233,18 @@ export class ProfileStore {
     this.saveTimer = setTimeout(() => this.flush(), SAVE_AFTER_MS);
   }
 
-  /** Write what has changed to localStorage now (the page is going away, or the scope is changing). */
   flush() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = undefined;
     this.write(this.scopeName, { v: 1, data: this.data, rev: this.revision, dirty: [...this.dirty], answered: this.answered });
   }
 
-  /** Start working with the copy kept for this place: the browser's own (`GUEST`), or one profile's. */
   openScope(scope: string) {
     if (this.opened && scope === this.scopeName) return;
     if (this.opened) this.flush();
     this.opened = true;
     this.scopeName = scope;
     const saved = this.read(scope);
-    // (The browser's own copy has no server to wait for.)
     this.answered = scope === GUEST || saved?.answered === true;
     if (saved) {
       this.data = saved.data;
@@ -239,7 +258,6 @@ export class ProfileStore {
     this.changed(true);
   }
 
-  /** The old per-screen lists (before accounts) become this browser's guest data, once. */
   private takeLegacy(): ProfileData | undefined {
     const storage = this.storage;
     if (!storage) return undefined;
@@ -254,13 +272,11 @@ export class ProfileStore {
       try {
         storage.removeItem(key);
       } catch {
-        /* nothing to do */
       }
     }
     return data;
   }
 
-  /** Forget a place's saved copy (when someone signs out of a shared screen, their history must not stay behind on it). */
   forget(scope: string) {
     if (scope === this.scopeName) {
       this.data = emptyData();
@@ -274,34 +290,22 @@ export class ProfileStore {
     try {
       this.storage?.removeItem(KEY_PREFIX + scope);
     } catch {
-      /* nothing to do */
     }
   }
 
-  /**
-   * Sign-in on a screen that has been used without an account: what was watched here as a guest joins this profile, and the
-   * guest's history is emptied (it is the profile's now). Returns whether anything came across.
-   */
   adoptGuest(): boolean {
     if (this.scopeName === GUEST) return false;
     const guest = this.read(GUEST);
     if (!guest || guest.data.progress.length + guest.data.watched.length + guest.data.list.length + guest.data.listNames.length + guest.data.ratings.length === 0) return false;
-    // The guest's settings stay with the guest: a profile's own choices are not overwritten by a visitor's.
     this.data = mergeData(this.data, { ...guest.data, settings: [] }, this.now());
-    // What came across is old news here, but the server has not seen it.
     this.markAllDirty();
     this.write(GUEST, { v: 1, data: { ...emptyData(), settings: guest.data.settings }, rev: 0, dirty: [] });
     this.changed();
     return true;
   }
 
-  /* ------------------------------ what is watched ------------------------------ */
-
-  /** Add an item (or its removal) to one list, keeping the lists as short as they are meant to be. It is now news for the server. */
   private put<T extends SyncItem>(name: keyof ProfileData, item: T) {
     const before = (this.data[name] as SyncItem[]).find((other) => other.key === item.key);
-    // A change made here is the newest this copy has seen of the thing, even when this screen's clock runs behind the one that made the
-    // last change: otherwise the server would keep that one, and this screen would show a switch that is not the one the server acts on.
     const next = before && before.at >= item.at ? { ...item, at: before.at + 1 } : item;
     const rest = (this.data[name] as SyncItem[]).filter((other) => other.key !== item.key);
     const items = mergeCollection<SyncItem>([next, ...rest], [], { limit: LIMITS[name], now: this.now() });
@@ -319,14 +323,12 @@ export class ProfileStore {
     return found && isLive(found) ? (found as T & { deleted?: undefined }) : undefined;
   }
 
-  /** A video was found and is starting: it moves to the front of "Continue watching", keeping its place if it was left unfinished. */
   playbackStarted(media: NormalizedMedia) {
     const key = progressKeyOf(media);
     const card = key ? progressFor(media, this.now(), undefined, this.find<LiveProgress>("progress", key)) : undefined;
     if (card) this.put("progress", card);
   }
 
-  /** The video is at this point. Does nothing, and costs nothing, until it has moved far enough to be worth saving. */
   playbackAt(media: NormalizedMedia, playback: Playback) {
     const now = this.now();
     const key = progressKeyOf(media);
@@ -343,12 +345,10 @@ export class ProfileStore {
     }
   }
 
-  /** Take a title off "Continue watching". Watching it again brings it back. */
   removeProgress(key: string) {
     this.put("progress", { key, at: this.now(), deleted: true });
   }
 
-  /** Take a title off a list (the first one, when none is named), under whichever link it was saved with: a show saved by one of its episodes is the same show. */
   removeFromList(url: string, list: string = DEFAULT_LIST) {
     const key = listKey(url, list);
     const at = this.now();
@@ -356,7 +356,6 @@ export class ProfileStore {
     for (const each of keys) this.put("list", { key: each, at, deleted: true });
   }
 
-  /** Put a title in a list or take it out. A show goes in by its first episode's link, whichever episode it was found by. */
   setInList(entry: ListEntry, inList: boolean, list: string = DEFAULT_LIST) {
     if (!inList) return this.removeFromList(entry.url, list);
     const url = titleLink(entry.url);
@@ -375,7 +374,6 @@ export class ProfileStore {
     this.put("list", item);
   }
 
-  /** Make a list: its id, or nothing when it has no name or there are as many lists as there can be. */
   createList(name: string): string | undefined {
     const named = ListNameSchema.safeParse(name);
     if (!named.success || resolveLists(this.data.listNames).length >= MAX_LISTS) return undefined;
@@ -384,7 +382,6 @@ export class ProfileStore {
     return key;
   }
 
-  /** Give a list another name (the first list too: until then it is called "Favourites"). It keeps its place among the others. */
   renameList(id: string, name: string) {
     const named = ListNameSchema.safeParse(name);
     if (!named.success || !resolveLists(this.data.listNames).some((list) => list.id === id)) return;
@@ -392,7 +389,6 @@ export class ProfileStore {
     this.put("listNames", { key: id, at: this.now(), name: named.data, ...(order === undefined ? {} : { order }) });
   }
 
-  /** Put a list one place earlier or later among the others. The first list stays first, whatever is done. */
   moveList(id: string, by: -1 | 1) {
     const ids = resolveLists(this.data.listNames)
       .map((list) => list.id)
@@ -402,14 +398,12 @@ export class ProfileStore {
     if (from < 0 || to < 0 || to >= ids.length) return;
     [ids[from], ids[to]] = [ids[to]!, ids[from]!];
     const at = this.now();
-    // Every list is given its place, so that one that was never placed does not end up somewhere else than where it was shown.
     ids.forEach((key, order) => {
       const named = this.find<LiveListName>("listNames", key);
       if (named && named.order !== order) this.put("listNames", { ...named, at, order });
     });
   }
 
-  /** Remove a list and the titles in it. The first list stays, whatever is done: it can be renamed and emptied, not removed. */
   deleteList(id: string) {
     if (id === DEFAULT_LIST) return;
     const at = this.now();
@@ -417,11 +411,6 @@ export class ProfileStore {
     this.put("listNames", { key: id, at, deleted: true });
   }
 
-  /**
-   * Give a title (or one season of a show) a score, a note, or both: the score is what makes it a rating, so a note on its own is kept
-   * only for a title that has one. What was watched at that moment (`facts`, see rating.ts) is remembered with it; a rating that is changed
-   * again keeps what it knew when `facts` has nothing new. The rating's date moves only with the score.
-   */
   setRating(title: RatedTitle, season: number | undefined, change: RatingChange, facts: WatchFacts = {}) {
     const url = titleLink(title.url);
     const key = ratingKey(url, season);
@@ -459,30 +448,21 @@ export class ProfileStore {
     } satisfies LiveRating);
   }
 
-  /** Take back a rating (of a title, or of one of its seasons). */
   removeRating(url: string, season?: number) {
     this.put("ratings", { key: ratingKey(url, season), at: this.now(), deleted: true });
   }
 
-  /** A setting (language, colour...). `undefined` goes back to the default. */
   setSetting<K extends SettingKey>(key: K, value: Settings[K] | undefined) {
     const at = this.now();
     this.put("settings", (value === undefined ? { key, at, deleted: true } : { key, at, value }) as SettingItem);
   }
 
-  /**
-   * Keep a picture of the chat (`text`: the message as the chat sends it) at the top of the panel, or (`undefined`) let it go. `key` and `text` come from
-   * client/chat/saved.ts, which knows what is one. One kept again moves to the front. When as many are kept as there can be, the oldest goes.
-   */
   setSaved(key: string, text: string | undefined) {
     if (key.length > 400 || (text !== undefined && (text.length === 0 || text.length > 400))) return;
     const at = this.now();
     this.put("saved", text === undefined ? { key, at, deleted: true } : ({ key, at, text } satisfies LiveSaved));
   }
 
-  /* ------------------------------ staying in step with the server ------------------------------ */
-
-  /** What to tell the server: what changed here and has not been confirmed, and where this copy is up to. `sent` goes back to `accept`. */
   pending(): { request: SyncRequest; sent: Map<string, number> } {
     const sent = new Map<string, number>();
     const send = (name: keyof ProfileData) =>
@@ -496,7 +476,6 @@ export class ProfileStore {
     return { request, sent };
   }
 
-  /** The server answered: take in what other screens did, and note that what was sent is safe (unless it changed again meanwhile). */
   accept(response: SyncResponse, sent: ReadonlyMap<string, number>): void {
     const incoming: ProfileData = {
       progress: response.progress,
@@ -507,10 +486,6 @@ export class ProfileStore {
       settings: response.settings,
       saved: response.saved,
     };
-    // What the server answers about a thing this screen has just sent is the server's word, even when its copy is the older: it holds back
-    // the time of a clock that runs ahead (this screen would otherwise keep its copy over every later change made on another screen, and
-    // show a switch that is not the one the server acts on), and it may have preferred another screen's copy. So a thing that was sent and
-    // is answered with an older copy takes that one, unless it has been changed here again since.
     const overruled = new Set<string>();
     for (const [id, at] of sent) {
       const split = id.indexOf(":");
@@ -543,9 +518,7 @@ export class ProfileStore {
       const now = list.find((item) => item.key === id.slice(split + 1));
       if (!now || now.at === at || overruled.has(id)) this.dirty.delete(id);
     }
-    // The server lost what it had: it needs all of it again.
     if (response.reset) this.markAllDirty();
-    // (The first answer for a profile new to this screen is news even when it brings nothing: the settings are now the profile's own.)
     const first = !this.answered;
     this.answered = true;
     this.changed(different || first);

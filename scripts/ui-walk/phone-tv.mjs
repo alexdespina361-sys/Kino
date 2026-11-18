@@ -1,5 +1,3 @@
-// A phone used as the screen: the page the TV shows (/tv, ?role=tv, a party link), on a phone, touched with a finger. Pictures go to screen-<size>/
-// (the remote's pictures are phone-<size>/, see phone.mjs). Every step is a tap: no key, no hover, no click without a finger.
 import { chromium, base, wait, PHONE, phoneName, openContext, step, snap, movies, series, log } from "./lib.mjs";
 import { seed } from "./seed.mjs";
 
@@ -11,10 +9,9 @@ const context = await openContext(browser, PHONE, { phone: true, seed });
 const page = await context.newPage();
 await page.goto("/tv");
 await page.getByTestId("tv-browse").waitFor();
-await page.getByTestId("tv-welcome").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {}); // (the greeting, which goes by itself)
-await wait(900); // (the pictures)
+await page.getByTestId("tv-welcome").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
+await wait(900);
 
-/** Scrolls what a finger would scroll: the page itself, or the box under the middle of the screen that scrolls. */
 const scrollDown = (page, fraction = 0.8) =>
   page.evaluate((f) => {
     const scrolls = (node) => /(auto|scroll)/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 4;
@@ -30,7 +27,6 @@ await step(device, "s02-home-scrolled", async () => {
   await snap(page, device, "s02-home-scrolled");
   await scrollDown(page, -2);
 });
-/** A tap on the first of these that the screen has: a phone held upright has a chip for a section (and a bar below), a wider screen a rail icon. */
 const tapFirst = async (...ids) => {
   for (const id of ids) {
     const element = page.getByTestId(id);
@@ -40,7 +36,6 @@ const tapFirst = async (...ids) => {
 };
 
 await step(device, "s03-section", async () => {
-  // (a tap on a rail icon goes straight to its page: the labels only show on focus, which a finger never gives)
   await tapFirst("section-movies", "rail-movies");
   await wait(700);
   await snap(page, device, "s03-section-movies");
@@ -90,8 +85,6 @@ await step(device, "s10-player-menu", async () => {
   await page.keyboard.press("Escape");
 });
 
-// The pages that are not the library or the player: each is opened by a tap on its button, looked at, and left with Back. (New with the phone's own layout: the
-// pictures before it have no such pages, and the numbers of the walk are only for what the first ten steps show.)
 const leave = async () => {
   await page.keyboard.press("Escape");
   await wait(300);
@@ -126,13 +119,10 @@ await step(device, "s13-profile-pages", async () => {
   await wait(700);
   await snap(page, device, "s16-sign-in");
   await leave();
-  // ("Use as a remote" turns the page into the remote: it is the last, and the next step starts the page again.)
   await tapFirst("rail-connect");
   await wait(700);
   await snap(page, device, "s15-use-as-remote");
 });
-// The player at its fullest (episodes before and after, subtitles, a second source), driven by a phone that is only a socket: the screen is a window as narrow as a phone
-// on a computer (not a touch device, whose menu has no code to show), which is what a phone as a screen is from the page's side.
 await step(device, "s17-player-fullest", async () => {
   const tvContext = await openContext(browser, PHONE, { seed });
   const tv = await tvContext.newPage();
@@ -180,7 +170,6 @@ await step(device, "s17-player-fullest", async () => {
     await tv.getByTestId("tv-party-panel").waitFor();
     await snap(tv, device, "s20-player-party-menu", { settle: 700 });
     await tv.keyboard.press("Escape");
-    // the end of the episode: the next one is offered, over the picture, with the seconds that are left
     socket.send(JSON.stringify({ type: "CMD", command: { type: "SEEK", time: 27 } }));
     socket.send(JSON.stringify({ type: "CMD", command: { type: "PLAY" } }));
     await tv.getByTestId("netflix-upnext").waitFor({ timeout: 15_000 });

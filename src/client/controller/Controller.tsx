@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, useMemo } from "react";
 import {
   IDLE_STATE,
   MAX_LINK_LENGTH,
@@ -14,7 +14,7 @@ import {
   type PlayHint,
   type PlayerState,
   type ResolveStatus,
-  type TvInfo,
+  type TvInfo, type ListInfo, type LiveListItem, type LiveRating, forChildren
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
@@ -24,13 +24,13 @@ import { GetTheAppStrip } from "../app/GetTheApp";
 import { PhoneChat } from "../chat/PhoneChat";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
-import { useT } from "../i18n";
+import { useT, rowTitle } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { useBackWhile } from "../shared/backButton";
 import { CONTROLLER_KEY } from "../role";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
-import { ChevronLeftIcon } from "../shared/icons";
+import { ChevronLeftIcon, HomeIcon, ListIcon, SearchIcon, UserIcon, ChevronIcon, TvIcon, PauseIcon, PlayIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
 import { forgetStrayAddress, strayAddress } from "../shared/strayAddress";
@@ -41,21 +41,16 @@ import { BellButton, NotificationsSheet } from "./Bell";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
 import { FriendInvite, FriendsHome } from "./Friends";
-import { Library } from "./Library";
+import { Library, Tile } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink, ResolveLine } from "./PlayLink";
-import { Remote, type SheetKind } from "./Remote";
-import { LINE_EVENT } from "./Round";
+import { Remote, type SheetKind, mediaTitle, stateLabel } from "./Remote";
+import { LINE_EVENT, useListToggle } from "./Round";
 import { RatingsSheet } from "./RatingsSheet";
 import { useChildCards } from "../shared/childGate";
-import { ContinueRow } from "./Rows";
-import { MiniRemote } from "./shell/MiniRemote";
-import { MyLists } from "./shell/MyLists";
-import { RowPage } from "./shell/RowPage";
-import { TabBar } from "./shell/TabBar";
-import { TvChip } from "./shell/TvChip";
-import { useTabs } from "./shell/useTabs";
+import { ContinueRow, hasListRows, ListRows, RatingsRow } from "./Rows";
+import { useTabs, TABS, type Tab } from "./shell/useTabs";
 import { TitleSheet } from "./TitleSheet";
 import {
   CaptionStyleSheet,
@@ -73,8 +68,183 @@ import {
 import "./controller.css";
 import "../polish/phone.css";
 import "../polish/shell.css";
+import { Poster } from "../shared/Poster";
+import { listEntryOf } from "../account/cards";
+import { scoreOf, useScores } from "../account/ratings";
+import { allRows, failedTitles, feed, GRID_CAP, hasMoreTitles, loadingTitles, nearBottom, useFeed } from "../shared/feed";
+import { entryOfItem } from "../tv/pages";
 
-/** A lookup that has not answered by now is reported as failed instead of spinning forever. */
+const WAITING = 6;
+function RowPage({ rowId, onClose, onOpen, onPick }: { rowId: string; onClose: () => void; onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void }) {
+  const t = useT();
+  const toggleFor = useListToggle(onPick);
+  const scores = useScores();
+  const feeding = useFeed();
+  const child = useProfileData().settings.child === true;
+  const row = useMemo(() => {
+    const found = allRows(feeding.data, GRID_CAP).find((one) => one.id === rowId);
+    return found && child ? { ...found, items: found.items.filter((item) => forChildren(item, found)) } : found;
+  }, [feeding.data, rowId, child]);
+  const grid = useRef<HTMLDivElement>(null);
+  const count = row?.items.length ?? 0;
+  const more = row !== undefined && hasMoreTitles(feeding, rowId, count, GRID_CAP);
+  const loading = loadingTitles(feeding, rowId);
+  const failed = failedTitles(feeding, rowId);
+
+  useEffect(() => {
+    const body = grid.current?.closest<HTMLElement>(".page-body");
+    if (!more || !body) return;
+    const look = () => {
+      if (nearBottom(body)) feed.loadMore(rowId, GRID_CAP);
+    };
+    look();
+    body.addEventListener("scroll", look, { passive: true });
+    return () => body.removeEventListener("scroll", look);
+  }, [more, rowId, count, failed]);
+
+  return (
+    <Page title={row ? rowTitle(row) : t("library.title")} onBack={onClose} testId="row-page">
+      <div className="poster-grid" ref={grid} data-testid="row-grid">
+        {row?.items.map((item) => (
+          <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleFor(listEntryOf(item))} onOpen={() => onOpen(entryOfItem(item))} />
+        ))}
+        {loading &&
+          Array.from({ length: WAITING }, (_, at) => (
+            <div className="lib-tile lib-waiting" aria-hidden="true" key={`waiting-${at}`}>
+              <span className="lib-art" />
+            </div>
+          ))}
+      </div>
+      {failed && (
+        <p className="muted small" role="status" data-testid="row-failed">
+          {t("rows.moreFailed")}
+        </p>
+      )}
+    </Page>
+  );
+}
+
+function MyLists({
+  lists,
+  items,
+  ratings,
+  ratingsOn,
+  onOpen,
+  onPick,
+  onRemove,
+  onManage,
+  onAllRatings,
+  onBrowse,
+}: {
+  lists: readonly ListInfo[];
+  items: readonly LiveListItem[];
+  ratings: readonly LiveRating[];
+  ratingsOn: boolean;
+  onOpen: (entry: Entry) => void;
+  onPick: (entry: ListEntry) => void;
+  onRemove: (url: string, list: string) => void;
+  onManage: () => void;
+  onAllRatings: () => void;
+  onBrowse: () => void;
+}) {
+  const t = useT();
+  const empty = !hasListRows(lists, items) && !(ratingsOn && ratings.length > 0);
+  return (
+    <section className="tab-list" data-testid="my-lists" aria-labelledby="my-lists-heading">
+      <h2 className="tab-heading" id="my-lists-heading">
+        {t("tabs.list")}
+      </h2>
+      {empty ? (
+        <div className="empty-state" data-testid="my-lists-empty">
+          <span className="empty-icon" aria-hidden="true">
+            <ListIcon />
+          </span>
+          <h3>{t("lists.emptyTitle")}</h3>
+          <p className="muted">{t("rows.myListEmpty")}</p>
+          <button type="button" className="btn btn-red" data-testid="my-lists-browse" onClick={onBrowse}>
+            {t("lists.browse")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <ListRows lists={lists} items={items} onOpen={onOpen} onPick={onPick} onRemove={onRemove} onManage={onManage} />
+          {ratingsOn && <RatingsRow ratings={ratings} onOpen={onOpen} onAll={onAllRatings} />}
+        </>
+      )}
+    </section>
+  );
+}
+
+function MiniRemote({ media, player, tvName, online, onOpen, onToggle }: { media: NormalizedMedia; player: PlayerState; tvName: string; online: boolean; onOpen: () => void; onToggle: () => void }) {
+  const t = useT();
+  const title = mediaTitle(media);
+  const playing = player.state === "playing";
+  const loading = player.state === "loading";
+  const progress = player.duration > 0 ? Math.min(1, Math.max(0, player.currentTime / player.duration)) : 0;
+  return (
+    <div className="mini-remote" data-testid="mini-remote" data-state={player.state}>
+      <span className="mini-progress" aria-hidden="true">
+        <i style={{ width: `${Math.round(progress * 1000) / 10}%` }} />
+      </span>
+      <button type="button" className="mini-open" data-testid="playing-bar" aria-label={`${t("remote.open")}: ${title}`} onClick={onOpen}>
+        <Poster className="mini-art" title={title} image={media.poster ?? media.backdrop} />
+        <span className="mini-text">
+          <b className="mini-title">{title}</b>
+          <span className="mini-state" data-testid="mini-state">
+            {stateLabel(player, tvName)}
+          </span>
+        </span>
+      </button>
+      <button type="button" className="mini-toggle" data-testid={playing ? "mini-pause" : "mini-play"} aria-label={playing ? t("hud.pause") : t("hud.play")} disabled={!online || loading} onClick={onToggle}>
+        {loading ? <span className="spinner" /> : playing ? <PauseIcon /> : <PlayIcon />}
+      </button>
+    </div>
+  );
+}
+
+function TvChip({ name, party, ok, status, onClick }: { name: string; party: number; ok: boolean; status: string; onClick: () => void }) {
+  const t = useT();
+  return (
+    <button type="button" className="top-tv tv-chip" aria-label={`${name}${party > 0 ? ` +${party}` : ""} ${status}, ${t("phone.tvMenu")}`} data-testid="menu" onClick={onClick}>
+      <TvIcon />
+      <span className="top-name">
+        <span className="top-line">
+          <span className="tv-name" data-testid="tv-name">
+            {name}
+          </span>
+          {party > 0 && (
+            <>
+              {" "}
+              <span className="party-count" data-testid="party-count">
+                +{party}
+              </span>
+            </>
+          )}
+        </span>{" "}
+        <span className={`tv-status ${ok ? "ok" : "bad"}`} data-testid="tv-online">
+          {status}
+        </span>
+      </span>
+      <ChevronIcon className="tv-chip-more" />
+    </button>
+  );
+}
+
+const ICONS: Record<Tab, ReactNode> = { home: <HomeIcon />, search: <SearchIcon />, list: <ListIcon />, you: <UserIcon /> };
+function TabBar({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
+  const t = useT();
+  return (
+    <nav className="tabbar" aria-label={t("tabs.label")} data-testid="tabbar">
+      {TABS.map((each) => (
+        <button key={each} type="button" className="tab" aria-current={each === tab ? "page" : undefined} data-testid={`tab-${each}`} onClick={() => onSelect(each)}>
+          <span className="tab-icon">{ICONS[each]}</span>
+          <span className="tab-label">{t(`tabs.${each}`)}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 const RESOLVE_TIMEOUT_MS = 40_000;
 
 export function Controller() {
@@ -83,45 +253,28 @@ export function Controller() {
   const friends = useFriends();
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
-  /** The server has not answered for a while: the header's "Reconnecting…" gets a line that says why that can be. */
   const [tv, setTv] = useState<TvInfo | null>(null);
-  /** Every TV this phone has connected to and not let go of, the one it controls among them (see `TvsSheet`). */
   const [tvs, setTvs] = useState<PhoneTv[]>([]);
   const [media, setMedia] = useState<NormalizedMedia | null>(null);
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [error, setError] = useState<string | null>(null);
-  /** What the lookup of a link is up to (a status of "cancelled" clears it instead of being kept). */
   const [resolve, setResolve] = useState<Exclude<ResolveStatus, { phase: "cancelled" }> | null>(null);
-  /** How many lookups have failed so far: the library asks the server for its lists again at each, which may have taken the title off them. */
   const [failedLookups, setFailedLookups] = useState(0);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [pairing, setPairing] = useState(false);
-  /** The other TVs that watch along with this phone's TV, and the code that brings another one in. */
   const [party, setParty] = useState<PartyTv[]>([]);
   const [invite, setInvite] = useState<PartyInvite>(null);
-  /** The code of another TV that this phone scanned while it had one: waiting to be told what the new TV is for. `control`: that TV has a phone, so joining its party is not an option. */
   const [other, setOther] = useState<{ code: string; control: boolean } | null>(null);
-  /** The sheets of the lists: the lists themselves, or the lists one title can go in. They open over whatever sheet is open. */
   const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
-  /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
   const [title, setTitle] = useState<Entry | null>(null);
-  /** Whether the home screen has the box for pasting a link (turned on and off in the settings: see linkBox.ts). */
   const [linkBox] = useLinkBox();
-  // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { watched, lists, settings } = useProfileData();
   const ratingsOn = ratingsShown(settings);
-  /**
-   * A child's profile (see the TV's Browse): only cartoons for children (its own cards too: see childGate.ts), no watch party, and no link played that is not a
-   * title of the library.
-   */
   const { child, progress, list, ratings } = useChildCards();
   const childRef = useRef(child);
   childRef.current = child;
-  /** The page that lists everything this profile rated. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
-  /** The row of the library that "See all" opened on a page of its own (by its id). */
   const [seeAll, setSeeAll] = useState<string | null>(null);
-  // The profile became a child's (here, or on another screen: the next exchange brings it): what was open of the rest of the library is closed, as on the TV.
   useEffect(() => {
     if (!child) return;
     setTitle(null);
@@ -130,43 +283,30 @@ export function Controller() {
     setSheet((open) => (open === "party" ? null : open));
   }, [child]);
 
-  // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
   const [code, setCode] = useState(launchRef.current.code ?? "");
-  /** The code that was last sent to connect with: when the server says it belongs to a watch party instead, this is the party to go to. */
   const sentCodeRef = useRef("");
-  /** This phone had a TV, and the first screen is showing again without the phone having asked for it. */
   const hadTvRef = useRef(false);
-  /** The list of TVs sent a code for another one: it stays open until the TV answers, and shows what went wrong if it does not. */
   const addingRef = useRef(false);
   const [lost, setLost] = useState(false);
-  // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
-  /** The account page opens on its menu, or on the friends when the bell sent it there. */
   const [accountAt, setAccountAt] = useState<"main" | "friends">("main");
   const [showBell, setShowBell] = useState(false);
-  /** The friend whose chat the bell opened (the chat from a friend's page is that page's own). */
   const [chatWith, setChatWith] = useState<string | null>(null);
   const closeAccount = () => {
     setShowAccount(false);
     setAccountAt("main");
   };
-  // A profile that is still to be set up is asked before anything else (account/ProfileSetup.tsx): the account's page, where the sign-up was typed, is
-  // closed for it, so the pages are not under it, and the remote is what is there when they are done.
   const settingUp = Boolean(account.profile?.setup);
   useEffect(() => {
     if (settingUp) closeAccount();
   }, [settingUp]); // eslint-disable-line react-hooks/exhaustive-deps
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
-  /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
   const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
   useLayoutEffect(() => {
-    // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again). Nor does a friend's.
-    // (Before the sheet that asks about it adds its own step to the history: that one would be changed, and the first would keep the code.)
     if (launchRef.current.link || launchRef.current.friend) window.history.replaceState(window.history.state, "", location.pathname);
   }, []);
 
-  /** A video was found: it moves to the front of "Continue watching" (keeping its place if it was left unfinished). */
   const onFound = (found: NormalizedMedia) => {
     setMedia(found);
     profileStore.playbackStarted(found);
@@ -177,7 +317,7 @@ export function Controller() {
       hello: () => ({ type: "CTL_HELLO", controllerId: readKept(CONTROLLER_KEY) }),
       onStatus: (status) => {
         setConnection(status);
-        if (status !== "open") setPairing(false); // a code sent over a connection that is gone gets no answer: do not wait for one
+        if (status !== "open") setPairing(false);
       },
       onMessage: (message) => {
         switch (message.type) {
@@ -192,14 +332,14 @@ export function Controller() {
             setError(null);
             setPairing(false);
             if (addingRef.current) {
-              addingRef.current = false; // the TV that was asked for has answered: the list of TVs has done its job
+              addingRef.current = false;
               setSheet((open) => (open === "tvs" ? null : open));
             }
             if (message.tv) {
               hadTvRef.current = true;
               setLost(false);
             } else if (hadTvRef.current) {
-              hadTvRef.current = false; // the TV let go, or the server forgot it (it was restarted): the first screen says so, and its code is no use any more
+              hadTvRef.current = false;
               setLost(true);
               setCode("");
             }
@@ -217,7 +357,6 @@ export function Controller() {
             if (launch.code || launch.control || launch.url) window.history.replaceState(window.history.state, "", location.pathname);
             const scanned = launch.code ?? launch.control;
             if (scanned && message.tv && !message.tv.online && message.tv.controlCode !== scanned) {
-              // The TV this phone had is off, so there is nothing to ask: another TV's code is the answer. The first stays on the list.
               launchRef.current = { ...launch, code: undefined, control: undefined };
               sentCodeRef.current = scanned;
               socketRef.current?.send({ type: "PAIR", code: scanned });
@@ -225,7 +364,6 @@ export function Controller() {
               break;
             }
             if (scanned) {
-              // Scanned the TV's QR code: connect straight away. A phone that has a TV is asked first (unless this is that TV's own code).
               launchRef.current = { ...launch, code: undefined, control: undefined };
               if (!message.tv) {
                 sentCodeRef.current = scanned;
@@ -235,10 +373,9 @@ export function Controller() {
                 setOther({ code: scanned, control: launch.code === undefined });
               }
             } else if (launch.url && message.tv) {
-              // Shared a link to this app: play it as soon as there is a TV to play it on.
               launchRef.current = { ...launch, url: undefined, startAt: undefined };
               if (childRef.current) setError(t("notice.childNoLinks"));
-              else playLink(launch.url, launch.startAt); // (from where the screen's Play would have started it: `&t=`, see role.ts `playOnTv`)
+              else playLink(launch.url, launch.startAt);
             }
             break;
           }
@@ -246,7 +383,7 @@ export function Controller() {
             setPlayer(message.state);
             break;
           case "RESOLVE_STATUS":
-            setResolve(message.status.phase === "cancelled" ? null : message.status); // given up on at the TV: nothing left to wait for
+            setResolve(message.status.phase === "cancelled" ? null : message.status);
             if (message.status.phase === "failed") setFailedLookups((n) => n + 1);
             if (message.status.phase === "found") {
               onFound(message.status.media);
@@ -261,7 +398,6 @@ export function Controller() {
             setTv((current) => (current ? { ...current, online: message.online } : current));
             break;
           case "TVS": {
-            // How the list looks now (a TV came or went, was named); the header shows the TV in use, so it is told as well.
             const now = message.tvs.find((row) => row.current);
             setTvs(message.tvs);
             setTv((current) => (current && now ? { ...current, name: now.name, online: now.online } : current));
@@ -271,24 +407,21 @@ export function Controller() {
             setMedia(message.media);
             break;
           case "ERROR":
-            // The code was a watch party's, which a screen joins, not a remote: this phone becomes one, as the party's own link would make it.
             if (message.code === "PARTY_CODE" && sentCodeRef.current) {
               if (!childRef.current) {
                 location.assign(partyLink(sentCodeRef.current));
                 break;
               }
-              // (A child's profile joins no party: the code is said to be one, and is of no use here.)
               setError(t("notice.childNoParty"));
               setCode("");
               setPairing(false);
               break;
             }
-            // "Invalid message" means the server is older than this page (started before an update, never restarted); see socketError.
             setError(socketError(message.code, message.message));
-            if (message.code === "INVALID_CODE") setCode(""); // the digits are of no use again: the field is ready for the next try
+            if (message.code === "INVALID_CODE") setCode("");
             setPairing(false);
-            addingRef.current = false; // (the list of TVs stays open, with the error in it)
-            setInvite((current) => (current === "asking" ? null : current)); // no answer is coming
+            addingRef.current = false;
+            setInvite((current) => (current === "asking" ? null : current));
             break;
         }
       },
@@ -297,26 +430,19 @@ export function Controller() {
     return () => socket.disconnect();
   }, []);
 
-  /**
-   * Any pasted or shared link (page or direct media): the server finds the video and tells the TV. `startAt` picks up an
-   * unfinished title where it was left, and `hint` carries the picture and year a library tile already has.
-   */
   const playLink = (link: string, startAt?: number, hint?: PlayHint) => {
     setError(null);
     setResolve(null);
-    // (The server cannot read a longer one, and would answer with the words for a page that is newer than it: a signed link of a file host can be that long.)
     if (link.length > MAX_LINK_LENGTH) return setError(t("phone.linkTooLong"));
-    setRemoteShown(true); // (a title picked while another plays: the remote is for that one)
+    setRemoteShown(true);
     socketRef.current?.send({ type: "PLAY_URL", url: link, ...(startAt ? { startAt } : {}), ...(hint ? { hint } : {}) });
   };
 
-  /** Ask the TV for the code of its party; asking is what opens one, and the TV answers with the code (and who is in). */
   const openParty = () => {
     setInvite("asking");
     socketRef.current?.send({ type: "OPEN_PARTY" });
   };
 
-  /** A friend asked to watch together: this phone's TV starts a party (asking for its code does that), and the friend is invited as soon as the code is here. */
   const [together, setTogether] = useState<string | null>(null);
   const startTogether = (friend: string) => {
     setTogether(friend);
@@ -329,16 +455,14 @@ export function Controller() {
     void friends.send([together], { kind: "party", code: invite.code, endsAt: invite.endsAt }).then(
       async (answer) => {
         account.say(answer.sent.length > 0 ? t("friends.inviteSent", { names: name }) : t("friends.declined", { names: name }));
-        await friends.refresh(); // (the server takes the request away once they are invited)
+        await friends.refresh();
       },
       (error: unknown) => account.say(describeError(error)),
     );
-    // The party is what the person asked for: they see its code, and who comes.
     closeAccount();
     setSheet("party");
   }, [together, invite]);
 
-  /** The menu shows the code a second phone joins with: opening it asks again, which gives the current code and keeps it good for a while. */
   const openMenu = () => {
     socketRef.current?.send({ type: "CTL_HELLO", controllerId: readKept(CONTROLLER_KEY) });
     setSheet("menu");
@@ -346,28 +470,24 @@ export function Controller() {
 
   const send = (command: Command) => {
     setError(null);
-    // A tick under the thumb, where the browser has a motor for it (not on iPhones).
     try {
       navigator.vibrate?.(8);
     } catch {
-      /* no vibration here */
     }
     socketRef.current?.send({ type: "CMD", command });
   };
 
   const stop = () => {
-    if (media && player.duration > 0 && stateIsFor(media, player)) profileStore.playbackAt(media, player); // the exact spot it stopped at
+    if (media && player.duration > 0 && stateIsFor(media, player)) profileStore.playbackAt(media, player);
     setResolve(null);
     send({ type: "STOP" });
   };
 
-  // What the TV reports of the video is where it got to: remembered every few seconds (the store ignores what barely moved).
   useEffect(() => {
     if (!media || (player.state !== "playing" && player.state !== "paused") || player.buffering || player.duration <= 0 || !stateIsFor(media, player)) return;
     profileStore.playbackAt(media, player);
   }, [player, media]);
 
-  // What the TV just did, in a line at the bottom: the answer to a button, and the news when someone else pressed one.
   const [toast, setToast] = useState<{ id: number; text: string; long?: true } | null>(null);
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   const sheetRef = useRef(sheet);
@@ -375,7 +495,6 @@ export function Controller() {
   useEffect(() => {
     const change = describeChange(lastPlayerRef.current, player, noticeText);
     lastPlayerRef.current = player;
-    // With a sheet open the answer is in the sheet itself (the row that is now chosen): a line over its rows would only be in the way.
     if (change && !sheetRef.current) setToast((current) => ({ id: (current?.id ?? 0) + 1, text: change }));
   }, [player]);
   useEffect(() => {
@@ -386,9 +505,6 @@ export function Controller() {
     const timer = setTimeout(() => setToast(null), toast.long ? 4500 : 2000);
     return () => clearTimeout(timer);
   }, [toast]);
-  // An address that is no page of the site opened the remote as "/" does: it says so (see shared/strayAddress.ts), in the line at the bottom, or on the
-  // first screen of a phone with no TV yet, which has no such line.
-  // (Read while drawing, and only marked as said once the page is up: a first drawing that React throws away does not lose it.)
   const [stray, setStray] = useState(strayAddress);
   useEffect(() => {
     if (!stray) return;
@@ -397,19 +513,16 @@ export function Controller() {
     const timer = setTimeout(() => setStray(false), 8000);
     return () => clearTimeout(timer);
   }, [stray]);
-  // What a hold on a title did (it went in a list, or came out) is said down here as well, where the finger is.
   useEffect(() => {
     const say = (event: Event) => setToast((current) => ({ id: (current?.id ?? 0) + 1, text: String((event as CustomEvent<string>).detail) }));
     window.addEventListener(LINE_EVENT, say);
     return () => window.removeEventListener(LINE_EVENT, say);
   }, []);
-  // A play that did not work says so where the thumb is: the page's own line sits at the top of a library that may be scrolled far from it.
   useEffect(() => {
     if (resolve?.phase === "failed") setToast((current) => ({ id: (current?.id ?? 0) + 1, text: resolveFailure(resolve), long: true }));
-    else if (resolve?.phase === "resolving") setToast((current) => (current?.long ? null : current)); // another try: the answer to the last one has had its say
+    else if (resolve?.phase === "resolving") setToast((current) => (current?.long ? null : current));
   }, [resolve]);
 
-  // A lookup that never reports back must not leave the phone waiting.
   useEffect(() => {
     if (resolve?.phase !== "resolving") return;
     const timer = setTimeout(
@@ -420,43 +533,32 @@ export function Controller() {
     return () => clearTimeout(timer);
   }, [resolve]);
 
-  // "Video found" is only a stepping stone; it must not still be on screen once playback has ended.
   useEffect(() => {
     if (player.state === "idle" || player.state === "playing" || player.state === "paused") setResolve((status) => (status?.phase === "found" ? null : status));
   }, [player.state]);
 
   const active = player.state !== "idle" && media !== null;
-  // The remote is the page while something plays, as it has been; the phone's own Back puts it away, to the library, and the film plays on (a line
-  // at the top of the library brings the remote back). A film that starts (here, or on the TV) brings it up again.
   const [remoteShown, setRemoteShown] = useState(true);
   const wasActive = useRef(false);
   useEffect(() => {
     if (active && !wasActive.current) setRemoteShown(true);
     wasActive.current = active;
   }, [active]);
-  /** The server is reached but the TV is not: nothing the remote shows of it can be trusted. */
   const away = connection === "open" && tv !== null && !tv.online;
-  /** The remote has the screen (the bar, and the places it leads to, are put away until it is). */
   const remoteOpen = active && remoteShown && !away;
   useBackWhile(remoteOpen, () => setRemoteShown(false));
-  /** A page or a sheet lies over the place that is showing: the place is not what is scrolled meanwhile, and is where it was when they go. */
   const covered = seeAll !== null || title !== null || sheet !== null || listSheet !== null || other !== null || ratingsOpen || showAccount || showBell || chatWith !== null || approveCode !== null || friendCode !== null;
-  // The four places of the bar: Home, Search, My lists and You.
   const tabs = useTabs(remoteOpen || covered, tv !== null);
   useEffect(() => {
     if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" && open !== "tvs" ? null : open));
   }, [active]);
 
-  /* ------------------------------ views ------------------------------ */
-
   const closeApprove = () => setApproveCode(null);
-  /** Devices were signed out of the account: the TV that goes with this phone may be one of them, and finds out now rather than at its next exchange with the server. */
   const tellTvToLookAgain = () => {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
   const bellButton = <BellButton onClick={() => setShowBell(true)} />;
   const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
-  // A title's page, and the lists it can go in: over the remote, and over the account too (My ratings, a friend's lists), which a phone with no TV has as well. It then has no Play.
   const titleSheets = (
     <>
       {title && (
@@ -479,7 +581,6 @@ export function Controller() {
       {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}
     </>
   );
-  // On top of whichever screen is showing: the account, a TV asking to be signed in, and what the account has to say.
   const accountLayer = (
     <>
       {approveCode ? (
@@ -528,7 +629,6 @@ export function Controller() {
     </>
   );
 
-  // The TVs this phone has: over the remote, and over the first screen when it controls none of them.
   const tvsSheet = sheet === "tvs" && (
     <TvsSheet
       tvs={tvs}
@@ -538,7 +638,7 @@ export function Controller() {
         socketRef.current?.send({ type: "SWITCH_TV", id });
       }}
       onForget={(id) => {
-        if (tvs.some((row) => row.id === id && row.current)) hadTvRef.current = false; // asked for: not a pairing that was lost
+        if (tvs.some((row) => row.id === id && row.current)) hadTvRef.current = false;
         socketRef.current?.send({ type: "UNPAIR", id });
       }}
       onName={(name) => socketRef.current?.send({ type: "NAME_TV", name })}
@@ -550,13 +650,12 @@ export function Controller() {
         socketRef.current?.send({ type: "PAIR", code: value });
       }}
       onClose={() => {
-        setError(null); // (what went wrong in there is not for the page behind it)
+        setError(null);
         setSheet(null);
       }}
     />
   );
 
-  // Signed in on a phone that has not been told who is holding it: the first thing to ask.
   if (account.choosing && !approveCode) {
     return (
       <>
@@ -565,8 +664,6 @@ export function Controller() {
       </>
     );
   }
-  // ...and a profile that is new: its name and picture, its subtitles, what it watches (account/ProfileSetup.tsx).
-  // (Nothing is over it: the account's page, which the sign-up was typed on, is closed by then - see `settingUp` above.)
   if (settingUp && !approveCode) return <SetUpProfile />;
 
   if (!tv) {
@@ -589,10 +686,8 @@ export function Controller() {
           onTvs={() => setSheet("tvs")}
           corner={
             <>
-              {/* This page's own full screen, which hides the browser's bar (the TV's is a button on the remote, in the paired phone's menu there is this one). */}
               <FullscreenToggle className="icon-btn" />
               {bellButton}
-              {/* (The first page has no bar: the account opens over it. On the bar's pages it is a place of the bar: "You".) */}
               <AccountButton onClick={() => setShowAccount(true)} />
             </>
           }
@@ -607,22 +702,18 @@ export function Controller() {
   }
 
   const online = connection === "open" && tv.online;
-  /** Let go of this TV: it shows a new code, and this phone is on the first screen again. */
   const disconnect = () => {
-    hadTvRef.current = false; // asked for: not a pairing that was lost
+    hadTvRef.current = false;
     socketRef.current?.send({ type: "UNPAIR" });
     setCode("");
     setSheet(null);
   };
   const closeSheet = () => {
-    if (sheet === "party" || sheet === "tvs") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
+    if (sheet === "party" || sheet === "tvs") setError(null);
     setSheet(null);
   };
   const status = connection !== "open" ? t("phone.reconnecting") : tv.online ? t("phone.tvConnected") : t("phone.tvDisconnected");
 
-  /* The four places of the bar (the one that is showing is drawn; the others are not: a library that is not on screen must not go on asking for its next rows). */
-
-  // Home: where a link is pasted (the box is there when it is turned on, and when the library has nothing to play instead: it would be the only way to start anything) and what to watch next.
   const home = (
     <section className="home" data-testid="home-panel">
       <h2 className="sr-only">{t("phone.homeTitle")}</h2>
@@ -656,7 +747,6 @@ export function Controller() {
     <AccountScreen inline onClose={() => tabs.setTab("home")} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} onStartParty={startTogether} onTvs={() => setSheet("tvs")} tvCount={tvs.length} />
   );
   const panel = { home, search, list: myLists, you }[tabs.tab];
-  /** What plays is a line above the bar, on every page, until the remote is the page (and not while the TV is gone: what it says of the film cannot be trusted). */
   const mini = active && !remoteOpen && !away;
 
   return (
@@ -678,7 +768,6 @@ export function Controller() {
         )}
       </header>
 
-      {/* (On a phone's browser with Android: the line that says there is an app, in the page under its top, until it is put away. The You page has the card instead. See app/GetTheApp.tsx.) */}
       {!remoteOpen && tabs.tab !== "you" && <GetTheAppStrip />}
 
       {away && (
@@ -692,7 +781,6 @@ export function Controller() {
         </section>
       )}
 
-      {/* What the lookup of a link is up to, whichever page the phone is on (a title is picked on any of them). */}
       <ResolveLine resolve={resolve} tvName={tv.name} />
 
       {error && sheet !== "party" && sheet !== "tvs" && (
@@ -716,7 +804,6 @@ export function Controller() {
           }}
           onOpen={setSheet}
           onChangeVideo={() => {
-            // Another video is picked where videos are: the remote steps aside (the film plays on) and the page with the box for a link and the library is the one in view.
             setRemoteShown(false);
             tabs.setTab("home");
           }}
@@ -772,7 +859,6 @@ export function Controller() {
             setSheet("party");
           }}
           onSwitch={() => {
-            // The first TV stays on the list, as it was: the code is all it takes.
             setError(null);
             sentCodeRef.current = other.code;
             socketRef.current?.send({ type: "PAIR", code: other.code });

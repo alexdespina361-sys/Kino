@@ -8,29 +8,17 @@ import { SAMPLE_RATE } from "../../../client/subsync/signals";
 import type { Method } from "../../../client/subsync/solve";
 import type { VttCue } from "../vtt";
 
-/**
- * Timing a file to a film's sound with the screens' own aligner (`src/client/subsync`: the voice detector and the solver, the vendored kit
- * unchanged), for a film on this computer. A screen hears the film as it plays; here the whole sound is read first, in the same 10 s pieces,
- * and solved every 15 s of it, as a screen does. Voice only: the recogniser (Whistle) runs in a browser's worker, so a line is placed where
- * speech starts near it, which on real sound is within a second or three (see docs/subtitle-sync.md). Never run on the website's server:
- * it has no film's sound, and fetching films to get one is not done.
- */
-
 const PIECE_SECONDS = 10;
 const SOLVE_EVERY = 15;
 
 export interface Timed {
   cues: VttCue[];
-  /** Lines a solve placed (the others took the shift learned). */
   placed: number;
-  /** Video time minus the file's time, as the solver learned it (seconds), or null when it learned none. */
   shift: number | null;
   methods: Partial<Record<Method, number>>;
-  /** Seconds of sound heard. */
   heard: number;
 }
 
-/** The weights the screens use, from the site's own folder (`public/subtitle-sync/1/`). */
 const WEIGHTS = fileURLToPath(new URL("../../../../public/subtitle-sync/1/silero-vad-16k.bin", import.meta.url));
 
 export async function sileroVad(weightsFile = WEIGHTS): Promise<Vad> {
@@ -40,7 +28,6 @@ export async function sileroVad(weightsFile = WEIGHTS): Promise<Vad> {
   return new Silero(new Float32Array(weights));
 }
 
-/** A film's sound as 16 kHz mono pieces, through ffmpeg (`FFMPEG` from the environment, else `ffmpeg` on the PATH). */
 export async function* soundOf(file: string, ffmpeg = process.env.FFMPEG ?? "ffmpeg"): AsyncGenerator<Float32Array> {
   const child = spawn(ffmpeg, ["-v", "error", "-nostdin", "-i", file, "-vn", "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "f32le", "-"], { windowsHide: true });
   let failed = "";
@@ -66,7 +53,6 @@ function floats(bytes: Buffer): Float32Array {
   return new Float32Array(copy.buffer);
 }
 
-/** The lines where the sound says them. `sound` gives the film's sound from its start, piece after piece. */
 export async function timeToSound(cues: readonly VttCue[], sound: AsyncIterable<Float32Array> | Iterable<Float32Array>, vad: Vad): Promise<Timed> {
   const core = new SyncCore(vad);
   core.setTrack("file", cues as VttCue[], false);

@@ -1,17 +1,6 @@
-/*
- * The chat between two friends (see ChatPhone.tsx and ChatTv.tsx). The list of messages is one thing on both screens; the phone sizes it in
- * rem and pixels, the TV in em, where 1em is 1% of the screen's width (tv.css), and every TV rule is under .tv.
- */
-
-/* ------------------------------ what waits ------------------------------ */
-
-/* A chat that has something waiting is told of quietly: a line under the friend's name on the phone's page, and a number after the label of the TV's chip. */
 .friend-text small.friend-unread { color: var(--accent); font-weight: 600; }
 .tv-choice small { font-size: 0.8em; font-weight: 600; opacity: 0.9; }
 
-/* ------------------------------ the messages ------------------------------ */
-
-/* The box the list scrolls in, and the list in it (the box is what is watched for the end to stay in view: see ChatLines.tsx). */
 .chat-lines {
   flex: 1 1 auto;
   min-height: 140px;
@@ -34,7 +23,7 @@
   font: inherit;
   line-height: 1.35;
   text-align: left;
-  overflow-wrap: anywhere; /* (a long word or a link that is only text must not widen the list) */
+  overflow-wrap: anywhere;
 }
 .chat-mine .chat-bubble { border-bottom-right-radius: 5px; background: var(--accent); color: var(--accent-ink); }
 .chat-theirs .chat-bubble { border-bottom-left-radius: 5px; }
@@ -42,31 +31,21 @@ button.chat-bubble:focus-visible, .chat-picked { outline: 2px solid var(--text);
 .chat-writer { display: block; margin-bottom: 2px; font-size: 0.72em; font-weight: 700; opacity: 0.75; }
 .chat-text { display: block; }
 .chat-time { display: block; margin-top: 2px; font-size: 0.7em; opacity: 0.7; text-align: right; }
-/* One's own message's ticks, after its time: one when a screen of the friend's has it, two (lit) when the friend has seen it. */
 .chat-ticks { display: inline-block; margin-left: 0.35em; vertical-align: -0.1em; line-height: 0; }
 .chat-ticks svg { height: 0.95em; width: auto; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-/* (The time beside them is dimmed on its own and so is one tick; the two lit ones are not, in a colour of 3:1 or more on each accent's bubble.) */
 .chat-time-ticked { opacity: 1; }
 .chat-time-ticked .chat-stamp, .chat-time-ticked .chat-ticks:not(.chat-ticks-seen) { opacity: 0.7; }
 .chat-ticks-seen { color: #9be7ff; }
 .chat-ticks-seen svg { stroke-width: 2.3; }
 :root:is([data-accent="green"], [data-accent="orange"], [data-accent="pink"]) .chat-mine .chat-bubble:not(.chat-bubble-gif, .chat-bubble-sticker) .chat-ticks-seen { color: #00406e; }
-/* (A message is held to select it: the phone's own selecting of its words, and its menu for a picture, stay away. Words in a button were never selected.) */
 button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer; }
-/* What can be done with the selected message (ChatLines `PickedActions`), at the top of the chat: the phone's sheet draws them as its Mute and Report, on the
-   right; the TV's pages as round buttons beside the ⋯, their words for a screen reader only. Take back is the red of undoing, Save is not. */
-/* (They wrap among themselves, at the right, rather than leave the screen: the longest words of a narrow phone, the screenshots, 17 Nov.) */
 .chat-tools-picked { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; margin-left: auto; }
-/* (Save of a GIF or one of Kino's stickers: a round star, filled once it is saved; its words are for a screen reader, and the note under the chat says what it
-   did. With words, Reply, Save and Take back did not fit a narrow phone's row in Romanian.) */
 .chat-tool.chat-act-picture { position: relative; justify-content: center; width: 40px; padding: 0; }
 .chat-tool.chat-act-picture .chat-act-words { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .chat-tools-picked:empty { display: none; }
 .chat-tool.chat-act-takeback { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .chat-act:disabled { opacity: 0.6; }
 .chat-act:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-/* A picture of the chat shown larger (ChatLines `PictureView`), over whatever the chat is in (a sheet is 50, the TV's pages 80 and their notes 90) and under
-   the question asked before the site is left (100). It is drawn at the end of the page, outside the chat's own colours: its own are said here. */
 .chat-view { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.9); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); cursor: zoom-out; animation: chat-view-in 0.14s ease-out; }
 .chat-view-picture { display: block; width: min(100vw - 48px, 640px); height: auto; max-height: 72vh; border-radius: 14px; object-fit: contain; }
 .chat-view-small { width: min(78vw, 60vh, 384px); border-radius: 0; }
@@ -74,7 +53,6 @@ button.chat-bubble { -webkit-user-select: none; user-select: none; -webkit-touch
 .chat-view-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @keyframes chat-view-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .chat-view { animation: none; } }
-/* A title a message names (titles.ts): its poster and name under the bubble. The same size while the server is asked as after, so the list does not move. */
 .chat-card {
   display: flex;
   flex: none;
@@ -100,7 +78,6 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .chat-card-name { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
 .chat-card-text small { color: var(--muted); font-size: 0.78em; }
-/* (What the address asks for besides the title - the episode, the time - and the rating its writer gave it: one line each, cut short rather than wrapped.) */
 .chat-card-where, .chat-card-score { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-card-text small.chat-card-score { color: var(--text); }
 .chat-card-score svg { width: 1em; height: 1em; margin-right: 2px; color: #f5c518; vertical-align: -0.12em; }
@@ -109,27 +86,19 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-card-loading .chat-card-art { animation: chat-card-wait 1.2s ease-in-out infinite alternate; }
 @keyframes chat-card-wait { from { opacity: 0.45; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .chat-card-loading .chat-card-art { animation: none; } }
-/* The list in a report is the whole of what would be sent, so it has room, and scrolls inside the sheet. */
 .sheet-body > .chat-lines { flex: none; max-height: 42vh; }
 
-/* ------------------------------ the phone ------------------------------ */
-
 .chat { display: flex; flex-direction: column; gap: 10px; height: min(66vh, 540px); min-height: 0; }
-/* One row under the sheet's title: when the friend was last online (or the search), what can be done with the message selected, and the ⋮ at the end. */
 .chat-tools { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px; }
-/* (Whether the friend is online, green as their dot is, else when they last were; and "Muted" when they are.) */
 .chat-presence { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
 .chat-more-wrap { position: relative; flex: none; margin-left: auto; }
 .chat-tool.chat-more { justify-content: center; width: 40px; padding: 0; font-size: 1rem; }
-/* The ⋮'s menu: under it, at its right, over the messages (the sheet's own layer). */
-/* (A little larger than it was: the owner, 17 Nov.) */
 .chat-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; display: flex; flex-direction: column; min-width: 15rem; max-width: calc(100vw - 32px); padding: 8px; border-radius: 16px; background: var(--surface-2, #222227); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.6); }
 .chat-menu[hidden] { display: none; }
 .chat-menu button { display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 10px 14px; border: 0; border-radius: 11px; background: transparent; color: var(--text); font: inherit; font-size: 1.05rem; font-weight: 600; text-align: left; cursor: pointer; }
 .chat-menu button svg { flex: none; font-size: 1.2em; opacity: 0.8; }
 .chat-menu button:hover, .chat-menu button:focus-visible { background: rgba(255, 255, 255, 0.08); outline: none; }
 .chat-menu [data-testid="chat-report"] { color: #ffb4b4; }
-/* The search (ChatSearch.tsx): the box as wide as the row allows, what it found, and the buttons that go through it. */
 .chat-search { display: flex; flex: 1 1 14rem; align-items: center; gap: 4px; min-width: 0; min-height: 40px; padding: 0 2px 0 12px; border-radius: 999px; background: var(--surface-2); }
 .chat-search-icon { flex: none; color: var(--muted); font-size: 1rem; line-height: 0; }
 .chat-search-box { flex: 1 1 auto; min-width: 3rem; height: 40px; padding: 0 4px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 0.95rem; outline: none; }
@@ -139,12 +108,9 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-search-step[aria-disabled="true"] { opacity: 0.35; cursor: default; }
 .chat-search-step:focus-visible, .chat-search:focus-within { outline: 2px solid var(--text); outline-offset: 1px; }
 .chat-search-step:focus-visible { outline-offset: -2px; }
-/* What it found: each message lit at its edge, the one shown more, and the words looked for marked as a highlighter would. (In the highlighter's yellow, not
-   the site's red: one's own messages are red, and a red ring around them was not seen, the screenshots, 17 Nov.) */
 .chat-line[data-found] > .chat-bubble { box-shadow: 0 0 0 2px rgba(255, 213, 74, 0.4); }
 .chat-line[data-found="current"] > .chat-bubble { box-shadow: 0 0 0 3px #ffd54a; }
 .chat-found-words { padding: 0 1px; border-radius: 3px; background: #ffd54a; color: #111; }
-/* The chat's GIFs and stickers (ChatMedia.tsx): small squares, four or more to a row, the newest first. */
 .chat-media { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .chat-media li { min-width: 0; }
 .chat-media-tile { display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 10px; background: var(--surface-2); overflow: hidden; cursor: pointer; }
@@ -158,7 +124,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px; /* (a finger's size: the judge, 17 Nov) */
+  min-height: 40px;
   box-sizing: border-box;
   padding: 8px 14px;
   border-radius: 999px;
@@ -177,9 +143,6 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-empty p { margin: 0; }
 .chat-privacy { color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 
-/* The bar a message is written in (the owner, 17 Nov: three round buttons and a box a few words wide were cramped). One bar: the buttons that send
-   something else are in it, with no ring of their own, then the box; Send is beside it, at the bar's foot when a long message has made the bar tall.
-   The bar lights when the box is typed in. */
 .sheet-body .chat-compose { display: flex; flex: none; flex-direction: row; align-items: flex-end; gap: 8px; }
 .chat-pill {
   display: flex;
@@ -193,7 +156,6 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
   background: var(--surface-2);
 }
 .chat-pill:focus-within { border-color: var(--accent); }
-/* (Lit for the box, not for the panel's button beside it: pressed, that one has put the keyboard away.) */
 .chat-pill:has(.chat-panel-btn:focus) { border-color: transparent; }
 .chat-input {
   flex: 1;
@@ -203,12 +165,9 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 1rem; /* (16px: a smaller one makes a phone's browser zoom the page when the box is touched) */
+  font-size: 1rem;
 }
 .chat-input:focus { outline: none; }
-/* The box of a phone is an editable area (MessageBox.tsx), not a form field: it says what to do while empty, as a field would (on one line, cut short
-   where the bar is narrow), and grows to six lines with a long message before it scrolls. (Selectable whatever the page around says: Safari gives no
-   caret to an area that may not be selected.) */
 .chat-input[contenteditable], .tv-chat-box-area {
   line-height: 1.35;
   white-space: pre-wrap;
@@ -230,25 +189,16 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 }
 .tv-chat-box-area:empty::before { color: rgba(255, 255, 255, 0.45); }
 .chat-send { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 1.25rem; }
-/* (Nothing to send yet: plainly a button, and plainly not ready. Not the accent dimmed, which read as a muddy red.) */
 .chat-send:disabled { background: var(--surface-2); color: var(--muted); }
 .chat-send:active:not(:disabled) { background: var(--accent-hover); }
-/* The one button of what is sent besides words (ChatPanel.tsx): a sticker's face, a keyboard's while the panel is open. */
 .chat-title-btn { display: grid; flex: none; place-items: center; width: 42px; height: 44px; margin: 0.5px 0; border-radius: 22px; background: transparent; color: var(--muted); font-size: 1.3rem; }
 .chat-title-btn:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); color: var(--text); }
 .chat-panel-btn[aria-expanded="true"] { color: var(--text); }
 .chat-title-btn:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
 
-/*
- * The panel (ChatPanel.tsx): under the box, where the keyboard was, as a messenger's keyboard of stickers - the pane of the tab chosen, which scrolls, and the
- * tabs at its foot. The chat is taller while it is open (the sheet's room, less its head), so that the messages keep theirs.
- */
 .chat[data-panel] { height: min(calc(86vh - 96px), 760px); }
 .chat[data-panel] .chat-lines { min-height: 80px; }
-/* (The phone's sheets are at most 70% of the screen, for a short choice with the page above it; the chat's grows to the sheets' old 86% while the panel is
-   open, the panel being where the keyboard was. Where even that is short, the panel gives up room before the bar: it never pushes its tabs out of sight.) */
 :root[data-ui="polish"] .phone-ui .sheet[data-testid="chat-sheet"]:has(.chat[data-panel]) { max-height: 86%; }
-/* (No side margins: 4px outside the sheet's body made the body slide 4px sideways when a button at the panel's right edge took focus.) */
 .chat-panel { display: flex; flex: 0 1 auto; flex-direction: column; height: min(38vh, 320px); min-height: 190px; padding-top: 8px; border-top: 1px solid var(--line, rgba(255, 255, 255, 0.1)); }
 .chat-panel-pane { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
 .chat-panel-tabs { display: flex; flex: none; justify-content: center; gap: 6px; padding-top: 6px; }
@@ -257,9 +207,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-panel-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-panel-tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); }
 .chat-panel-tab:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
-/* (A 320px phone in Romanian: the three tabs' words fit whole only with narrower insides.) */
 @media (max-width: 360px) { .chat-panel-tab { padding-inline: 10px; } }
-/* (What scrolls is the pane's list: the titles, the stickers, the GIFs under their search.) */
 .chat-picks, .chat-sticker-list, .chat-gif-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-picks { display: flex; flex-direction: column; gap: 6px; }
 .chat-pick-none { margin: 16px 8px 0; color: var(--muted); font-size: 0.85rem; line-height: 1.4; text-align: center; }
@@ -285,15 +233,12 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-pick-art .poster-initial, .tv-chat-pick-art .poster-initial { font-weight: 700; color: rgba(255, 255, 255, 0.85); }
 .chat-pick-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .chat-pick-year { color: var(--muted); font-size: 0.85em; }
-/* (Beside each title, the button of its send step: an episode, a time, the rating - TitlePick.tsx.) */
 .chat-pick-row { display: flex; flex: none; align-items: stretch; gap: 6px; }
 .chat-pick-row > .chat-pick { flex: 1 1 auto; min-width: 0; }
 .chat-pick-more { display: grid; flex: none; place-items: center; width: 44px; padding: 0; border-radius: 12px; background: var(--surface-2); color: var(--muted); font-size: 1.2rem; }
 .chat-pick-more:active { background: var(--surface-3, rgba(255, 255, 255, 0.14)); color: var(--text); }
 .chat-pick-more:focus-visible, .chat-pick:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
-/* The send step: in the pane, in place of the titles; it scrolls, and Send stays at its foot. */
 .chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 56px; font-size: 0.85rem; }
-/* (The scroll padding: what the keys land on is scrolled clear of Send, which stays over the step's foot.) */
 .chat-extras-head { display: flex; flex: none; align-items: center; gap: 10px; }
 .chat-extras-back { display: grid; flex: none; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 1.15rem; }
 .chat-extras-art { position: relative; display: grid; flex: none; place-items: center; width: 28px; height: 42px; border-radius: 4px; overflow: hidden; }
@@ -305,10 +250,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-extras-chip[aria-checked="true"], .chat-extras-chip[aria-pressed="true"] { background: var(--text); color: #0b0b0c; }
 .chat-extras-step { min-width: 44px; padding: 8px 10px; }
 .chat-extras-step[aria-disabled="true"], .chat-extras-chip[aria-disabled="true"], .chat-extras-go[aria-disabled="true"] { opacity: 0.4; }
-/* (The panel is taller while a title's send step is in it: the step is what is being looked at, and the messages give it room.) */
 .chat-panel:has(.chat-extras) { height: min(60vh, 440px); }
-/* (On a short phone the empty chat's words gave way to nothing and left the step 135px, and shrunk they were cut mid-line: while the step is open they
-   wait, and the step has the room.) */
 .chat:has(.chat-extras) .chat-empty { display: none; }
 .chat:has(.chat-extras) > .chat-panel { flex-grow: 1; }
 .chat-extras-stepper { display: inline-flex; align-items: center; border-radius: 999px; background: var(--surface-2); }
@@ -317,7 +259,7 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-extras-label { flex: none; margin: 2px 0 0; color: var(--muted); }
 .chat-extras-label b { color: var(--text); }
 .chat-extras-typed { display: flex; flex: none; align-items: center; gap: 8px; color: var(--muted); }
-.chat-extras-typed input { width: 7.5em; min-height: 40px; padding: 6px 10px; border: 1px solid var(--line, rgba(255, 255, 255, 0.14)); border-radius: 10px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 16px; } /* (16px: a phone does not zoom into it) */
+.chat-extras-typed input { width: 7.5em; min-height: 40px; padding: 6px 10px; border: 1px solid var(--line, rgba(255, 255, 255, 0.14)); border-radius: 10px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 16px; }
 .chat-extras-typed input[aria-invalid="true"] { border-color: #e5484d; }
 .chat-extras-note { flex: none; margin: 0; color: var(--muted); }
 .chat-extras-rating { flex: none; align-self: flex-start; }
@@ -325,10 +267,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .chat-extras-go { position: sticky; bottom: 0; flex: none; margin-top: auto; background: var(--accent); color: var(--accent-ink, #fff); box-shadow: 0 -8px 12px var(--sheet-bg, rgba(20, 20, 24, 0.9)); }
 .chat-extras button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
-/* ------------------------------ the TV ------------------------------ */
-
 .tv .chat-lines {
-  flex: 0 1 auto; /* (it gives up room to the lines under it when there are several, and shows fewer messages) */
+  flex: 0 1 auto;
   width: min(100%, 62em);
   min-height: 5em;
   max-height: 44vh;
@@ -372,20 +312,13 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 }
 .tv-chat-quote b { color: #fff; }
 
-/* Five buttons under the messages: smaller than the start screens' and, where a language is long, a second row. */
 .tv .tv-chat-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.9em 1em; margin-top: 0; }
 .tv .tv-chat-actions .tv-action { min-width: 0; padding: 0.55em 1em; font-size: 1.45em; }
 .tv .tv-chat-actions .tv-action[aria-pressed="true"]:not(:focus-visible) { background: rgb(var(--accent-rgb) / 0.3); box-shadow: inset 0 0 0 0.1em var(--accent); color: #fff; }
 .tv .tv-chat-actions .tv-action:disabled { opacity: 0.4; }
 
-/* Writing: the box and its keys are the editor of a list's name (tv.css), a little tighter so that four rows of keys and the buttons fit at 720p. */
 .tv .chat-editor-tv .auth-field input { text-align: left; }
 
-/*
- * The chat itself: one window, like the chat of any messenger. The friend at the top (picture, name, online) with the ⋯ for what is done less
- * often, the messages in the middle taking what room there is, and the box to write in at the bottom. On a TV the box is a button that opens the
- * page that writes; on a computer it is the box. (The `.tv-chat-actions` above are the report's buttons.)
- */
 .tv-chat-window {
   display: flex;
   flex: 0 1 auto;
@@ -405,13 +338,11 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-name { margin: 0; overflow: hidden; color: #fff; font-size: 2em; font-weight: 700; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
 .tv-chat-status { margin: 0.15em 0 0; color: rgba(255, 255, 255, 0.6); font-size: 1.25em; }
 .tv-chat-more-wrap { position: relative; flex: none; }
-/* (Take back and Save, in the head's row as they were: the span only listens for the keys.) */
 .tv-chat-picked { display: contents; }
 .tv-chat-more { display: grid; place-items: center; width: 3.4em; height: 3.4em; border-radius: 50%; background: transparent; color: rgba(255, 255, 255, 0.75); font-size: 1em; }
 .tv-chat-more svg { width: 1.8em; height: 1.8em; }
 .tv-chat-more:hover, .tv-chat-more[aria-expanded="true"] { background: rgba(255, 255, 255, 0.1); color: #fff; }
 .tv-chat-more:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
-/* (What can be done with the selected message, beside the ⋯ and drawn as it is: the picture says it, the words are a screen reader's and the tip's.) */
 .tv-chat-more.chat-act { position: relative; flex: none; background: rgba(255, 255, 255, 0.1); color: #fff; }
 .tv-chat-more.chat-act svg { width: 1.5em; height: 1.5em; }
 .tv-chat-more.chat-act-takeback { color: #ffb4b4; }
@@ -426,7 +357,6 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-menu button:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 .tv-chat-menu [data-testid="tv-chat-report"] { color: #ffb4b4; }
 .tv-chat-menu [data-testid="tv-chat-report"]:focus-visible { color: #b3261e; }
-/* The search on the TV's pages (ChatSearch.tsx): the head's width, in place of the friend while it is open, drawn as the TV's buttons are. */
 .tv-chat-head .chat-search { flex: 1 1 auto; gap: 0.3em; min-height: 3.4em; padding: 0 0.3em 0 1em; background: rgba(255, 255, 255, 0.08); font-size: 1em; }
 .tv-chat-head .chat-search:focus-within { outline: 0.15em solid rgba(255, 255, 255, 0.85); outline-offset: 0; }
 .tv-chat-head .chat-search-icon { color: rgba(255, 255, 255, 0.6); font-size: 1.5em; }
@@ -435,9 +365,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-head .chat-search-step { width: 2.8em; height: 2.8em; color: #fff; font-size: 1.5em; }
 .tv-chat-head .chat-search-step:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.1); }
 .tv-chat-head .chat-search-step:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
-/* The chat's GIFs and stickers on a page of their own (ChatMedia.tsx `ChatMediaTv`). */
 .tv-chat-media-list { width: min(100%, 62em); max-height: 62vh; padding: 0.4em; overflow-y: auto; }
-.tv-chat-media-list .chat-media { grid-template-columns: repeat(auto-fit, 9em); justify-content: center; gap: 0.6em; } /* (a few in the middle, under the name) */
+.tv-chat-media-list .chat-media { grid-template-columns: repeat(auto-fit, 9em); justify-content: center; gap: 0.6em; }
 .tv-chat-media-list .chat-media-tile { border-radius: 0.8em; background: rgba(255, 255, 255, 0.08); }
 .tv-chat-media-list .chat-media-tile:hover { box-shadow: inset 0 0 0 0.15em rgba(255, 255, 255, 0.35); }
 .tv-chat-media-list .chat-media-tile:focus-visible { outline: 0.22em solid #fff; outline-offset: 0.15em; }
@@ -460,11 +389,8 @@ button.chat-card:focus-visible { outline: 2px solid var(--text); outline-offset:
 .tv-chat-fakebox:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff, 0 0 0 0.25em rgb(var(--accent-rgb) / 0.35); }
 .tv-chat-send-round { display: grid; flex: none; place-items: center; width: 3.2em; height: 3.2em; border-radius: 50%; background: var(--accent); color: #fff; font-size: 1em; }
 .tv-chat-send-round svg { width: 1.45em; height: 1.45em; }
-/* (Nothing to send yet: plainly a button, and plainly not ready. Not the accent dimmed, which read as a muddy red.) */
 button.tv-chat-send-round:disabled { background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.4); }
 button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em #fff; }
-/* One bar (a computer, a hand-held screen; the phone's is `.chat-pill`, above): the buttons that send something else are in it, with no ring of their own,
-   then the box, which has no ground of its own there; Send is beside it. The bar lights when the box is typed in. */
 .tv-chat-pill { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; padding: 0 0.6em 0 0.35em; border-radius: 2em; background: #222227; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
 .tv-chat-pill:focus-within { box-shadow: inset 0 0 0 0.1em var(--accent); }
 .tv-chat-pill .tv-chat-box, .tv-chat-pill .tv-chat-box:focus { border-radius: 0; background: transparent; box-shadow: none; }
@@ -473,7 +399,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-pill .tv-chat-title-btn { width: 2.9em; height: 3.2em; border-radius: 1.6em; background: transparent; box-shadow: none; color: rgba(255, 255, 255, 0.72); }
 .tv-chat-pill .tv-chat-title-btn:hover { background: rgba(255, 255, 255, 0.08); box-shadow: none; color: #fff; }
 .tv-chat-pill .tv-chat-title-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff; color: #fff; }
-/* The one button before the box (ChatPanel.tsx), round as Send is; lit while its panel is open. */
 .tv-chat-compose-row { display: flex; align-items: center; gap: 0.8em; width: 100%; }
 .tv-chat-panel-btn[aria-expanded="true"]:not(:focus-visible) { background: rgba(255, 255, 255, 0.12); color: #fff; }
 .tv-chat-compose-row > .tv-chat-composer { flex: 1 1 auto; min-width: 0; }
@@ -481,10 +406,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-title-btn svg { width: 1.45em; height: 1.45em; }
 .tv-chat-title-btn:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .tv-chat-title-btn:focus-visible { outline: none; box-shadow: inset 0 0 0 0.15em #fff, 0 0 0 0.25em rgb(var(--accent-rgb) / 0.35); }
-/*
- * The panel on the TV's pages: under the box in the chat's window, which is taller while it is open; the pane that scrolls (the remote's next one is brought
- * into view), the tabs at its foot. The posters of the titles are smaller here than on a page of their own: a row and the start of the next are in view.
- */
 .tv-chat-window[data-panel] { height: min(100%, 54em); }
 .tv-chat-panel { display: flex; flex: none; flex-direction: column; height: min(36vh, 20em); margin: 0.1em -0.4em 0; padding-top: 0.7em; border-top: 1px solid rgba(255, 255, 255, 0.07); }
 .tv-chat-panel-pane { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; min-height: 0; }
@@ -497,8 +418,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-picks, .tv-chat-sticker-list, .tv-chat-gif-list { flex: 1 1 auto; width: 100%; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .tv-chat-picks::-webkit-scrollbar, .tv-chat-sticker-list::-webkit-scrollbar, .tv-chat-gif-list::-webkit-scrollbar { display: none; }
 .tv-chat-pick-none { margin: 1em 0 0; color: rgba(255, 255, 255, 0.7); font-size: 1.3em; text-align: center; }
-/* (A title is a row in the panel - a small poster, its name and year - as on the phone, a few to a line: a whole poster is taller than the panel, and a
- * row of them was never seen whole, nor reached with the remote's Up from the tabs.) */
 .tv-chat-picks {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17em, 1fr));
@@ -524,20 +443,17 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-pick-art { grid-row: 1 / 3; align-self: center; width: 100%; aspect-ratio: 2 / 3; border-radius: 0.4em; }
 .tv-chat-pick-art .poster-initial { font-size: 1.4em; }
 .tv-chat-pick-name { display: -webkit-box; overflow: hidden; align-self: end; font-size: 1.1em; font-weight: 600; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.tv-chat-pick-name:last-child { grid-row: 1 / 3; align-self: center; } /* (a title with no year: its name in the middle) */
+.tv-chat-pick-name:last-child { grid-row: 1 / 3; align-self: center; }
 .tv-chat-pick-year { align-self: start; color: rgba(255, 255, 255, 0.6); font-size: 1em; }
 .tv-chat-pick:hover { background: rgba(255, 255, 255, 0.09); }
 .tv-chat-pick:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; }
 .tv-chat-pick:disabled { opacity: 0.5; }
-/* (Beside each title, the button of its send step - TitlePick.tsx: the remote's Right from the title.) */
 .tv-chat-picks:has(.tv-chat-pick-row) { grid-template-columns: repeat(auto-fill, minmax(20em, 1fr)); }
 .tv-chat-pick-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.35em; }
 .tv-chat-pick-more { display: grid; place-items: center; width: 2.6em; padding: 0; border-radius: 0.8em; background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.7); font: inherit; font-size: 1.15em; }
 .tv-chat-pick-more:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
 .tv-chat-pick-more:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); box-shadow: inset 0 0 0 0.15em #fff; color: #fff; }
-/* The send step on the TV's pages: as the phone's, in the TV's sizes. */
 .tv-chat-extras { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.5em; width: 100%; min-height: 0; padding: 0.2em 0.6em 0; overflow-y: auto; scrollbar-width: none; scroll-padding-bottom: 3.2em; color: #fff; font-size: 1.25em; }
-/* (Taller while the step is in it, as on the phone: read from the couch, its words are the size of the titles'.) */
 .tv-chat-panel:has(.tv-chat-extras) { height: min(52vh, 30em); }
 .tv-chat-extras::-webkit-scrollbar { display: none; }
 .tv-chat-extras-head { display: flex; flex: none; align-items: center; gap: 0.7em; }
@@ -561,27 +477,17 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-extras-rating:not([aria-pressed="true"]) svg { color: #f5c518; }
 .tv-chat-extras-go { position: sticky; bottom: 0; flex: none; margin-top: auto; background: var(--accent); color: var(--accent-ink, #fff); box-shadow: 0 -0.6em 0.8em #16161a; }
 .tv-chat-extras button:hover:not([aria-disabled="true"]) { filter: brightness(1.15); }
-/* (A ring outside: inside one would not be seen on a chosen chip, which is white.) */
 .tv-chat-extras button:focus-visible { outline: 0.15em solid #fff; outline-offset: 0.15em; }
-/* (The way back, which the stylesheet puts in the top corner on every page that fills the screen, as before.) */
 
-/*
- * GIFs (gifs.ts, GifPick.tsx). In the chat a GIF is the picture, without the bubble around it, at one height for all (the list does not move while it
- * comes; only its width settles), shown whole. The grid that sends one: KLIPY's order, each GIF whole in a square, "Search KLIPY" over it and "Powered by
- * KLIPY" under it, as KLIPY asks.
- */
 .chat-bubble.chat-bubble-gif, .chat-mine .chat-bubble.chat-bubble-gif { padding: 0; background: transparent; color: var(--muted); }
 .chat-gif-picture { display: block; width: auto; max-width: min(100%, 260px); min-width: 90px; height: 150px; border-radius: 12px; background: var(--surface-2); object-fit: contain; }
 .chat-gif-gone { display: block; padding: 8px 12px; border-radius: 16px; background: var(--surface-2); color: var(--muted); font-style: italic; }
 .tv .chat-gif-picture { max-width: 100%; height: 9em; border-radius: 0.6em; background: #2a2a31; }
 .tv .chat-gif-gone { padding: 0.4em 0.8em; border-radius: 0.8em; background: #2a2a31; }
-/* (The search stays at the top of the pane, KLIPY's line at its foot; the GIFs scroll between them.) */
 .chat-gif-pane { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; }
 .chat-gif-list { display: flex; flex-direction: column; gap: 8px; }
 .chat-gif-search { flex: none; width: 100%; padding: 11px 14px; border: 1.5px solid transparent; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; }
 .chat-gif-search:focus { border-color: var(--accent); outline: none; }
-/* (Rows as tall as their squares, always: the list scrolls, the grid is never squeezed. A tile hides what spills out of its corners, which makes its own
-   least height nothing, so rows left to share a squeezed grid's height came out a few pixels tall and the GIFs lay over each other.) */
 .chat-gifs { display: grid; flex: none; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); grid-auto-rows: max-content; align-content: start; gap: 6px; }
 .chat-gif { display: block; aspect-ratio: 1; padding: 0; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
 .chat-gif img, .tv-chat-gif img { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -605,10 +511,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-gif-note p { margin: 0; }
 .tv-chat-gif-powered { flex: none; margin: 0; color: rgba(255, 255, 255, 0.55); font-size: 1em; }
 
-/*
- * Stickers (stickers.ts, StickerPick.tsx). In the chat a sticker is its picture, big and without the bubble (as a messenger draws an emoji sent alone), at
- * one size for all. The grid that sends one: the whole set, each whole in a square; on a TV the remote walks it.
- */
 .chat-bubble.chat-bubble-sticker, .chat-line .chat-bubble.chat-bubble-sticker, .tv-chat-window .chat-line .chat-bubble.chat-bubble-sticker { padding: 0; background: transparent; color: var(--muted); }
 .chat-sticker { display: block; width: 120px; height: 120px; object-fit: contain; }
 .tv .chat-sticker { width: 7em; height: 7em; }
@@ -618,24 +520,18 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-sticker-btn img, .tv-chat-sticker-btn img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .chat-sticker-btn:active { background: var(--surface-2); }
 .chat-sticker-btn:disabled, .tv-chat-sticker-btn:disabled { opacity: 0.5; }
-/* (A picture that did not come: the emoji, as big.) */
 .chat-sticker-emoji { display: grid; place-items: center; line-height: 1; }
 .chat-sticker-btn .chat-sticker-emoji, .tv-chat-sticker-btn .chat-sticker-emoji { width: 100%; height: 100%; font-size: 40px; }
 .tv-chat-sticker-btn .chat-sticker-emoji { font-size: 3.6em; }
-.chat-sticker.chat-sticker-emoji { font-size: 84px; } /* (in the chat: the 120px of a picture) */
-.tv .chat-sticker.chat-sticker-emoji { width: 1.46em; height: 1.46em; font-size: 4.8em; } /* (7em of the list's letters, as a picture) */
+.chat-sticker.chat-sticker-emoji { font-size: 84px; }
+.tv .chat-sticker.chat-sticker-emoji { width: 1.46em; height: 1.46em; font-size: 4.8em; }
 .tv-chat-sticker-list { display: flex; flex-direction: column; align-items: center; }
 .tv-chat-stickers { display: grid; flex: none; grid-template-columns: repeat(7, 6.5em); grid-auto-rows: max-content; align-content: start; justify-content: center; gap: 0.7em; width: min(100%, 74em); padding: 0.3em 0.5em 0.5em; }
 .tv-chat-sticker-btn { display: block; aspect-ratio: 1; padding: 0.55em; border-radius: 0.8em; background: #222227; }
 .tv-chat-sticker-btn:hover { box-shadow: 0 0 0 0.12em rgba(255, 255, 255, 0.35); }
 .tv-chat-sticker-btn:focus-visible { outline: none; background: #34343c; box-shadow: 0 0 0 0.2em #fff; }
 
-/*
- * Personal stickers (personalStickers.ts): a picture of one's own, its corners rounded (a photo, not a cut-out); in the grid, "Yours" over Kino's, with the
- * button that adds one and, after Edit, the cross that removes one. The two grids are one list that scrolls, on a TV as on a hand-held screen.
- */
 .chat-sticker-personal { object-fit: cover; border-radius: 22px; }
-/* (A picture that did not come, while it is asked for again: its place, quietly.) */
 .chat-sticker-waiting { background: var(--surface-2); }
 .tv .chat-sticker-waiting { background: #2a2a31; }
 .tv .chat-sticker-personal { border-radius: 1.2em; }
@@ -645,32 +541,23 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv .chat-stickers-yours > .chat-note, .tv .chat-stickers-yours > .chat-privacy { margin-inline: 0.5em; }
 .chat-stickers-head { margin: 6px 2px 2px; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
 .tv .chat-stickers-head { width: min(100%, 74em); margin: 0.3em auto 0.1em; font-size: 1.15em; text-align: left; }
-/*
- * (On a TV with the profile's own, the two grids are one list that scrolls: the remote's next sticker is brought into view, wherever it is. The list is as wide
- * as the grid of seven, 7 x 6.5em with its gaps and edges, so that the headings and both grids start at the same place.)
- */
 .tv-chat-sticker-list.with-yours { align-items: stretch; width: min(100%, 50.7em); margin-inline: auto; }
 .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: auto; justify-content: start; }
 .tv-chat-sticker-list.with-yours .chat-stickers-head { width: auto; margin: 0.3em 0.45em 0.1em; }
 .chat-sticker-mine { position: relative; display: block; }
 .chat-sticker-mine > button:first-child { width: 100%; }
 .chat-sticker-mine img { border-radius: 18%; object-fit: cover; }
-.chat-sticker-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; overflow: hidden; padding: 4px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.68rem; line-height: 1.1; text-align: center; overflow-wrap: anywhere; } /* (a square of the grid whatever its words: min-height 0 lets the square win over them) */
+.chat-sticker-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 0; overflow: hidden; padding: 4px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.68rem; line-height: 1.1; text-align: center; overflow-wrap: anywhere; }
 .chat-sticker-add-plus { font-size: 1.7rem; line-height: 1; }
 .tv-chat-sticker-btn.chat-sticker-add { border: 0.12em dashed rgba(255, 255, 255, 0.35); color: #c9c9d1; font-size: 0.85em; }
 .tv-chat-sticker-btn .chat-sticker-add-plus { font-size: 2.4em; }
-.chat-sticker-add-icon { font-size: 1.45rem; margin-bottom: 2px; } /* (From WhatsApp, in the Android app) */
+.chat-sticker-add-icon { font-size: 1.45rem; margin-bottom: 2px; }
 .tv-chat-sticker-btn .chat-sticker-add-icon { font-size: 2em; }
-/* (WhatsApp GIFs, in the Android app while stickers that move are on: a GIF badge in the icon's place) */
 .chat-sticker-add-gif { margin-bottom: 4px; padding: 1px 5px; border: 2px solid currentColor; border-radius: 5px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1.2; }
 .chat-sticker-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bad); color: #fff; font-size: 20px; line-height: 1; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
 .tv-chat-stickers .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
 .chat-sticker-remove:focus-visible { outline: none; box-shadow: 0 0 0 3px #fff; }
 
-/*
- * The pictures the profile saved from its chats (saved.ts, SavedPick.tsx): "Saved", first in the GIFs tab and in the Stickers tab, a grid like the one under
- * it, with Edit and its crosses as "Yours" has. On a TV the GIFs' heading and grid are as wide as KLIPY's grid under them.
- */
 .chat-saved { display: flex; flex: none; flex-direction: column; gap: 6px; width: 100%; }
 .chat-saved .chat-stickers-head { width: auto; }
 .tv .chat-saved .chat-stickers-head { width: auto; margin: 0.3em 0.45em 0.1em; }
@@ -679,17 +566,11 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .chat-saved-one { position: relative; display: block; min-width: 0; }
 .chat-saved-one > button:first-child { width: 100%; }
 .tv-chat-gifs .chat-sticker-remove { top: -0.35em; right: -0.35em; width: 1.9em; height: 1.9em; font-size: 1.2em; }
-/* (A saved GIF that KLIPY took away: its place, quietly, until it is let go.) */
 .chat-saved-gone { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; }
 .tv .chat-saved-gone { color: rgba(255, 255, 255, 0.45); font-size: 1em; }
 .chat-gif-head { flex: none; }
-/* (Save on a message that is saved: its star filled.) */
 .chat-act-kept svg { color: var(--accent); }
 
-/*
- * Reactions (Reactions.tsx): what is on a message, small and under it on its side, a little over the bubble's edge as a messenger draws them; the bar of
- * six that comes under a pressed message; on a TV that is only a remote, a page of six big buttons. Each is its sticker's picture (the emoji if it did not come).
- */
 .chat-reactions { display: inline-flex; flex: none; gap: 2px; margin: -6px 6px 0; padding: 2px 5px; position: relative; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
 .chat-reaction { display: grid; place-items: center; width: 22px; height: 22px; }
 .chat-reaction-picture { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -714,7 +595,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-react.is-on { background: rgb(var(--accent-rgb) / 0.3); box-shadow: inset 0 0 0 0.15em var(--accent); }
 .tv-chat-react:focus-visible { outline: none; background: #34343c; box-shadow: 0 0 0 0.2em #fff; }
 .tv-chat-react.is-on:focus-visible { background: rgb(var(--accent-rgb) / 0.45); box-shadow: inset 0 0 0 0.15em var(--accent), 0 0 0 0.2em #fff; }
-/* The + after the six, and the sixteen more it brings: the bar then wraps, seven to a row, in a box with rounder corners than a pill's. */
 .chat-react-more { color: var(--muted); }
 .chat-react-more svg { width: 22px; height: 22px; }
 .chat-react-bar.is-all { flex-wrap: wrap; width: max-content; max-width: min(100%, calc(7 * 42px + 10px)); border-radius: 22px; }
@@ -724,11 +604,6 @@ button.tv-chat-send-round:focus-visible { outline: none; box-shadow: 0 0 0 0.2em
 .tv-chat-reacts.is-all { max-width: 48em; gap: 0.6em; }
 .tv-chat-reacts.is-all .tv-chat-react { width: 5.2em; height: 5.2em; padding: 0.55em; }
 
-/*
- * Answering a message (Reply.tsx). The quote over an answer: who wrote the message it answers and a line of it, in a small box with a bar of colour on its side,
- * on the answer's side. The strip over the box while one is answering. A message drawn to the right moves with the finger, and the arrow of Reply shows from
- * under it; a message a quote was pressed for is lit for a moment.
- */
 .chat-quote {
   display: flex;
   align-items: center;
@@ -771,18 +646,12 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
 .tv .chat-reply-cancel { width: 2.4em; height: 2.4em; color: #c9c9d1; }
 .tv .chat-reply-cancel:focus-visible { background: #fff; color: #0b0b0c; outline: none; }
 .tv-chat-quote[data-replying] .tv-chat-quote-lead { color: #fff; font-weight: 700; }
-/* (A finger draws a message across, not the page: up and down still scroll the list from a message, and two fingers still zoom the page: the judge, 17 Nov.) */
 .chat-lines-swipe :is(.chat-bubble, .chat-card) { touch-action: pan-y pinch-zoom; }
-/* (A title's card is held as its message is: no long-press menu or picture callout of the phone's own.) */
 .chat-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-/* (What a line holds is drawn across, by `--swipe` (ChatLines.tsx), not the line: the day over its first message stays. Only while it is drawn, and as it
-   goes back ("back"): a transform is no thing to leave on every message. The list never scrolls sideways for it: a message of one's own, on the right, goes
-   past the edge as it is drawn.) */
 .chat-lines { overflow-x: hidden; }
 .chat-line { position: relative; }
 .chat-line[data-swipe] > :not(.chat-day) { transform: translateX(var(--swipe, 0)); }
 .chat-line[data-swipe="back"] > :not(.chat-day) { transition: transform 0.18s ease-out; }
-/* (The arrow goes beside the bubble, on its left, whichever side the bubble is on: the line is the list's width.) */
 .chat-line:is([data-swipe="on"], [data-swipe="ready"]) > .chat-bubble { position: relative; }
 .chat-line:is([data-swipe="on"], [data-swipe="ready"]) > .chat-bubble::before {
   content: "";
@@ -797,28 +666,22 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   opacity: 0.55;
 }
 .chat-line[data-swipe="ready"] > .chat-bubble::before { opacity: 1; transform: scale(1.12); }
-/* (A message shown - a quote or the gallery pressed - is lit in white for a moment: the site's red was not seen around one's own red messages.) */
 .chat-line[data-shown] > .chat-bubble { animation: chat-shown 1.4s ease-out; }
 @keyframes chat-shown { 0%, 40% { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9); } 100% { box-shadow: 0 0 0 3px transparent; } }
 @media (prefers-reduced-motion: reduce) { .chat-line[data-swipe] > :not(.chat-day) { transition: none; } .chat-line[data-shown] > .chat-bubble { animation: none; outline: 2px solid rgba(255, 255, 255, 0.9); } }
 
-/* A hand-held screen: the list takes the width, and stacks above the buttons. */
 @media (max-width: 899px) {
   .tv-chat-window { width: 100%; height: auto; max-height: none; }
   .tv-chat-window > .chat-lines { max-height: 50vh; font-size: 1.4em; }
   .tv-chat-name { font-size: 1.7em; }
-  /* (the ⋯ as wide as what it says, and at most as the screen allows, its lines wrapping then: "Reacționează la ultimul mesaj al lui <a long name>" is wider
-     than the narrowest phone. As wide as what it says is said outright: it hangs from the ⋯, which is a button wide, and a box that may break its words
-     anywhere was made no wider than that, a letter to a line: the owner, 17 Nov.) */
   .tv-chat-menu { min-width: 0; width: max-content; max-width: calc(100vw - 2rem); }
   .tv-chat-menu button { font-size: 1.38em; padding: 0.7em 0.9em; white-space: normal; overflow-wrap: break-word; }
   .tv .chat-lines { width: 100%; max-height: 38vh; font-size: 1.5em; }
   .tv .tv-chat-actions .tv-action { padding: 0.5em 0.9em; font-size: 1.35em; }
   .tv .chat-note, .tv .chat-problem, .tv .chat-closed, .tv-chat-quote { font-size: 1.3em; }
   .tv-chat-lead, .tv .chat-privacy { font-size: 1.2em; }
-  .tv-chat-gif-search { font-size: 16px; } /* (16px: as the box of the chat) */
+  .tv-chat-gif-search { font-size: 16px; }
   .tv-chat-gif-note { font-size: 1.3em; }
-  /* The panel (ChatPanel.tsx) on a hand-held screen: under the bar, in the sizes of a thumb, as the phone's own; its grids the screen's width. */
   .tv-chat-screen .tv-chat-panel { height: min(40vh, 320px); margin: 4px -8px 0; padding-top: 8px; }
   .tv-chat-screen .tv-chat-panel-tabs { gap: 6px; padding-top: 6px; }
   .tv-chat-screen .tv-chat-panel-tab { min-height: 40px; padding: 8px 14px; font-size: 14px; }
@@ -842,45 +705,34 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv-chat-screen .tv-chat-stickers, .tv-chat-screen .tv-chat-sticker-list.with-yours .tv-chat-stickers { width: 100%; padding: 0 8px 8px; gap: 0.45em; }
   .tv-chat-screen .tv-chat-sticker-list.with-yours { align-items: center; width: 100%; margin: 0; }
   .tv-chat-screen .tv-chat-sticker-list .chat-stickers-head { width: 100%; margin: 0.3em auto 0.1em; padding-inline: 8px; font-size: 1em; }
-  /* (Saved, in the GIFs' tab and the stickers': its heading and Edit inside the grids' edges, as KLIPY's heading under it; Edit off the screen's edge.) */
   .tv-chat-screen .chat-saved > .chat-stickers-headrow { padding-inline: 8px; }
   .tv-chat-screen .chat-stickers-yours > .chat-stickers-headrow { padding-right: 8px; }
   .tv-chat-screen .chat-saved .chat-stickers-head, .tv-chat-screen .tv-chat-sticker-list .chat-saved .chat-stickers-head { width: auto; margin: 0.3em 0 0.1em; padding-inline: 0; font-size: 1em; }
   .tv-chat-screen .tv-chat-gif-list > .chat-gif-head { width: 100%; margin: 0.3em 0 0.1em; padding-inline: 8px; font-size: 1em; }
-  /* The gallery's page (ChatMedia.tsx): the whole screen, as the chat - the arrow and the name at the top, the squares one list that scrolls and fills the rest. */
   .tv-screen.tv-gif-screen { background: #0f0f12; }
   .tv-gif-head { display: flex; flex: none; align-items: center; gap: 0.5em; width: 100%; padding: max(0.6em, env(safe-area-inset-top)) 0.8em 0.6em 0.4em; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
   .tv-sticker-title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; color: #fff; font-size: 1.6em; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
   .tv-media-screen .tv-chat-media-list { flex: 1 1 auto; width: 100%; max-height: none; min-height: 0; padding: 0.6em 0.6em max(1.2em, env(safe-area-inset-bottom)); overscroll-behavior: contain; }
   .tv-media-screen .chat-media { grid-template-columns: repeat(4, minmax(0, 1fr)); justify-content: stretch; gap: 0.45em; }
-  .tv-chat-screen .tv-chat-head[data-searching] { padding-left: 0.8em; } /* (the search clear of the screen's edge, as the arrow was) */
+  .tv-chat-screen .tv-chat-head[data-searching] { padding-left: 0.8em; }
   .tv-media-screen .chat-media-none { margin-top: 2em; }
 
-  /*
-   * The chat itself on a hand-held screen is the whole screen, as in any messenger (the owner, 16 Nov): the friend at the top with the arrow back, the
-   * messages filling the middle, and the box at the bottom, typed in with the screen's own keyboard. (The wordmark and the Back pill of the other pages
-   * are not on it: the arrow is the way back.)
-   */
-  .tv-screen.tv-chat-screen { top: var(--chat-top, 0px); bottom: auto; height: var(--chat-vh, 100%); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; } /* (the part the keyboard leaves free: visibleArea.ts) */
-  /* (Whatever of the screen it does not cover - a keyboard that got shorter before the browser said so - is its own dark, not the friends page under it.) */
+  .tv-screen.tv-chat-screen { top: var(--chat-top, 0px); bottom: auto; height: var(--chat-vh, 100%); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
   .tv-screen.tv-chat-screen { box-shadow: 0 0 0 100vmax #0f0f12; }
   .tv-screen.tv-chat-screen::before, .tv-screen.tv-chat-screen::after { content: none; }
   .tv-chat-screen > .tv-brand { display: none; }
   .tv-chat-screen > .tv-chat-window { flex: 1 1 auto; height: auto; min-height: 0; border-radius: 0; background: #0f0f12; box-shadow: none; }
   .tv-chat-screen .tv-chat-window > .chat-lines { display: flex; flex-direction: column; max-height: none; padding: 0.8em 1em; font-size: 1.5em; }
-  .tv-chat-screen .tv-chat-window > .chat-lines > .chat-list { margin-top: auto; } /* (a few messages sit over the box, where the eye is, as in any messenger) */
+  .tv-chat-screen .tv-chat-window > .chat-lines > .chat-list { margin-top: auto; }
   .tv-chat-screen .tv-chat-head { gap: 0.6em; padding: max(0.7em, env(safe-area-inset-top)) 0.8em 0.7em 0.4em; }
   .tv-chat-screen .tv-chat-pic { font-size: 3em; }
-  /* (the ⋯, and what is done with a selected message beside it: a finger's size on the narrowest phone too, where 3.4em was 34 pixels) */
   .tv-chat-screen .tv-chat-more { width: max(3.4em, 40px); height: max(3.4em, 40px); }
   .tv-chat-screen .tv-chat-more.chat-act { margin-right: -0.2em; }
   .tv-chat-screen .tv-chat-foot { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
-  /* The bar, in the sizes of a thumb (as the phone's own, `.chat-pill`): 48px high on one line, the buttons in it 42 by 44, Send 48 round beside it, both
-     at the bar's foot when a long message has made it tall. */
   .tv-chat-screen .tv-chat-composer { align-items: flex-end; gap: 8px; }
   .tv-chat-screen .tv-chat-pill { align-items: flex-end; min-height: 48px; padding: 0 12px 0 2px; border-radius: 24px; }
   .tv-chat-screen .tv-chat-pill:focus-within { box-shadow: inset 0 0 0 1.5px var(--accent); }
-  .tv-chat-screen .tv-chat-box { padding: 13px 0 13px 6px; font-size: 16px; } /* (16px: a smaller one makes a phone's browser zoom the page when the box is touched) */
+  .tv-chat-screen .tv-chat-box { padding: 13px 0 13px 6px; font-size: 16px; }
   .tv-chat-screen .tv-chat-pill > .tv-chat-box:first-child { padding-left: 14px; }
   .tv-chat-screen .tv-chat-pill .tv-chat-title-btn { width: 42px; height: 44px; margin: 2px 0; border-radius: 22px; }
   .tv-chat-screen .tv-chat-pill .tv-chat-title-btn:active { background: rgba(255, 255, 255, 0.12); color: #fff; }
@@ -889,7 +741,5 @@ button.chat-quote:focus-visible { outline: 2px solid var(--text); outline-offset
   .tv-chat-headback { display: grid; flex: none; place-items: center; width: 4em; height: 4em; border-radius: 50%; background: transparent; color: #fff; font-size: 1em; }
   .tv-chat-headback svg { width: 2em; height: 2em; }
   .tv-chat-headback:active, .tv-chat-headback:focus-visible { background: rgba(255, 255, 255, 0.12); outline: none; }
-  /* (A note that comes up while the chat is open stands under the friend's name, at the top of what the keyboard leaves: the bar at the bottom is as tall
-     as what is typed in it, and a note over it was a note on it.) */
   :root[data-ui="polish"] .tv:has(.tv-chat-screen) .tv-toast, .tv:has(.tv-chat-screen) .tv-toast { top: calc(var(--chat-top, 0px) + max(8px, env(safe-area-inset-top)) + 70px); bottom: auto; }
 }

@@ -24,7 +24,7 @@ describe("what the bell lists", () => {
     const old: Friend = { ...sam, id: "pro_old", name: "Old", since: NOW - 5000 };
     expect(bellView(state({ friends: [old, kim, ann] }), NOW, {}, NOW - 1000).joined.map((friend) => friend.name)).toEqual(["Ann", "Kim"]);
     expect(bellView(state({ friends: [old, kim, ann] }), NOW).joined).toEqual([]);
-    expect(bellView(state({ friends: [old, kim, ann] }), NOW, {}, NOW - 1000, new Set(["pro_ann"])).joined.map((friend) => friend.name)).toEqual(["Kim"]); // (Ann was made on this screen: no news to it)
+    expect(bellView(state({ friends: [old, kim, ann] }), NOW, {}, NOW - 1000, new Set(["pro_ann"])).joined.map((friend) => friend.name)).toEqual(["Kim"]);
     expect(bellView(state({ friends: Array.from({ length: 6 }, (_, at) => ({ ...sam, id: `pro_${at}`, since: NOW - at })) }), NOW, {}, 1).joined).toHaveLength(4);
   });
 
@@ -77,7 +77,6 @@ describe("what the bell lists", () => {
     expect(view.chat.map((notice) => notice.friend)).toEqual(["pro_kim", "pro_sam"]);
     expect(view.more).toBe(0);
 
-    // (what asks for an answer keeps its places: messages take what is left of them)
     const full = bellView(state({ friends: [sam, kim], chat: waiting, inbox: Array.from({ length: BELL_WAITING - 1 }, (_, at) => recommendation(`t${at}`, NOW - at)) }), NOW);
     expect(full.inbox).toHaveLength(BELL_WAITING - 1);
     expect(full.chat.map((notice) => notice.friend)).toEqual(["pro_kim"]);
@@ -102,15 +101,12 @@ describe("what the bell lists", () => {
     const cleared = withCleared({}, [activity[1]!], NOW);
     expect(isCleared(cleared, activity[1]!)).toBe(true);
     expect(bellView(state({ activity }), NOW, cleared).lately.map((item) => item.key)).toEqual(["a", "c0", "c1"]);
-    // The friend is still watching it: the line is dated by their last minute of it, and stays away for the rest of the sitting.
     const later = NOW + 40 * 60 * 1000;
     const still = [watched("b", later - 5), ...activity.filter((item) => item.key !== "b")];
     expect(bellView(state({ activity: still }), later, cleared).lately.map((item) => item.key)).toEqual(["a", "c0", "c1"]);
-    // Watched again another day: that is news again.
     const tomorrow = NOW + CLEARED_FOR_MS + 60_000;
     const again = [watched("b", tomorrow), ...activity.filter((item) => item.key !== "b")];
     expect(bellView(state({ activity: again }), tomorrow, cleared).lately.map((item) => item.key)).toEqual(["b", "a", "c0", "c1"]);
-    // The record keeps the newest few and forgets the rest.
     const many = withCleared(cleared, Array.from({ length: 200 }, (_, at) => watched(`m${at}`, NOW - 5000 - at)), NOW - 1);
     expect(Object.keys(many)).toHaveLength(80);
     expect(isCleared(many, activity[1]!)).toBe(true);

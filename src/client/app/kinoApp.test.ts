@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { noPinchZoom } from "./kinoApp";
 
-/** A page with the site's viewport line, as far as `noPinchZoom` looks at one. */
 const page = (content: string) => {
   const viewport = { content };
   const style: { touchAction?: string } = {};

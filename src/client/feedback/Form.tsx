@@ -22,14 +22,12 @@ export interface FormProps {
   signedIn: boolean;
 }
 
-/** The group a place of the app is listed under, for "Playing · Subtitles". */
 export const groupOf = (area: FeedbackArea) => FEEDBACK_AREA_GROUPS.find((group) => (group.areas as readonly string[]).includes(area))?.id ?? "general";
 
 const INCLUDES: Array<keyof Include> = ["device", "steps", "errors", "playback"];
 
 const counter = (value: string, max: number) => (value.length > max * 0.8 ? `${value.length} / ${max}` : null);
 
-/** The form for one kind of feedback: where it is, what it is, the pictures, what the page may say about itself, and the way to answer. */
 export function FormScreen({ form, onChange, pictures, pieces, send, onSend, onWhere, signedIn }: FormProps) {
   const t = useT();
   const questions = FEEDBACK_DETAILS_FOR[form.kind];
@@ -38,7 +36,6 @@ export function FormScreen({ form, onChange, pictures, pieces, send, onSend, onW
   const [previewing, setPreviewing] = useState(false);
   const ready = hasContent(form, pieces.length);
   const sending = send.phase === "sending";
-  // What would go with the report, as it is now (read when the preview is opened and whenever a part is switched).
   const preview = useMemo(() => (previewing ? JSON.stringify(collectContext(form.include, { signedIn }), null, 1) : ""), [previewing, form.include, signedIn]);
 
   const setInclude = (key: keyof Include, on: boolean) => onChange({ include: { ...form.include, [key]: on } });

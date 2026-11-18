@@ -16,7 +16,6 @@ function read(profileId: string): Cleared {
   }
 }
 
-// (The bell's button and the list it opens are on screen together: they share one record.)
 const known = new Map<string, Cleared>();
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
@@ -28,7 +27,6 @@ const of = (profileId: string): Cleared => {
   return known.get(profileId)!;
 };
 
-/** What this profile cleared from the bell on this device, and the way to clear more. */
 export function useCleared(): { cleared: Cleared; clear: (items: readonly Pick<ActivityItem, "friend" | "key" | "at">[]) => void } {
   const account = useAccount();
   const profileId = account.me && account.profile ? account.profile.id : undefined;
@@ -41,7 +39,6 @@ export function useCleared(): { cleared: Cleared; clear: (items: readonly Pick<A
       try {
         localStorage.setItem(key(profileId), JSON.stringify(next));
       } catch {
-        // (a browser that keeps nothing: the lines are back when the page is opened again, which is all it costs)
       }
       listeners.forEach((listener) => listener());
     },

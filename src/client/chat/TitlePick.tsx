@@ -13,46 +13,25 @@ import { cardOf, showKeyOf, startOf, type Entry } from "../tv/pages";
 import type { ChatSession } from "./useChat";
 import { chosenExtras, isShowAddress, messageOf, movedTime, sendableTitles, TIME_MAX, typedTime, type Sendable } from "./titles";
 
-/**
- * Sending a title in the chat: a press on one of the titles this profile watched or saved sends it at once (its name and its address, see titles.ts),
- * through the chat's own send, so what limits a message limits it too, and the friend is told as of any message. What was being typed stays in the box.
- * A title sent by mistake is taken back as any message is.
- *
- * The small button beside each one opens the send step (the owner, 17 Nov: "a specific episode for series/animes, showing the rating given, including a timed
- * send"): an episode of a show, where to start, and this profile's rating of it, each only when it is chosen there. Nothing more is ever sent than was chosen
- * on that step, for that one message: a plain press sends what it always did.
- */
-
-/** The titles this profile can send (see `sendableTitles`). */
 function useSendable(): Sendable[] {
   const { progress, list } = useProfileData();
   return useMemo(() => sendableTitles(progress, list), [progress, list]);
 }
 
-/** (As any message: the text as the server will keep it, and nothing that it would refuse.) */
 const send = async (session: ChatSession, title: Sendable, extras: TitleExtras = {}): Promise<boolean> => {
   const checked = checkChatText(messageOf(title, location.origin, extras));
   return checked.ok ? session.send(checked.text) : false;
 };
 
-/** What the nav attribute is, where the remote walks the panel. */
 const navOf = (nav: boolean) => (nav ? { "data-nav": true } : {});
 
-/**
- * The titles of the chat's panel (ChatPanel.tsx): a poster a title, what this profile watched and saved. A press sends one at once, and the panel goes with it
- * (the chat shows it sent, or why not); the button beside it opens the send step in its place. `tv`: drawn for the TV's pages; `nav`: walked with the arrows
- * (the remote lands on the first). `pointer`: a screen that is touched or clicked, where a time can be typed.
- */
 export function TitleList({ session, tv, nav, pointer = false, onSent }: { session: ChatSession; tv: boolean; nav: boolean; pointer?: boolean; onSent: () => void }) {
   const t = useT();
   const titles = useSendable();
   const prefix = tv ? "tv-chat" : "chat";
   const [step, setStep] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
-  /** The title whose step was shut: the keys go back to its button (it was the one pressed). */
   const back = useRef<string | null>(null);
-  // (The titles are this profile's, and another screen can change them while the panel is open: the remote, left on nothing when the poster it was on goes, is
-  // given the first title, or the panel's tab when there is none any more.)
   useEffect(() => {
     if (!nav || step !== null) return;
     const on = document.activeElement;
@@ -70,8 +49,6 @@ export function TitleList({ session, tv, nav, pointer = false, onSent }: { sessi
   }, [step, prefix]);
 
   const open = titles.find((title) => title.address === step);
-  // (A title can leave the list while its step is open - another screen of this profile played something, and it is no longer among the newest: the step goes
-  // for good, rather than come back unasked if the title does, and the keys go to the first title, as the effect above gives them.)
   const gone = step !== null && !open;
   useEffect(() => {
     if (gone) setStep(null);
@@ -141,18 +118,11 @@ export function TitleList({ session, tv, nav, pointer = false, onSent }: { sessi
   );
 }
 
-/** One episode of a show, by its season and its number. */
 interface EpisodeChoice {
   season: number;
   episode: number;
 }
 
-/**
- * The send step of one title (see the top of this file), in the panel's pane: an episode of a show (bounded by the seasons and the episodes the library lists,
- * the one this profile is at first), where to start (from the beginning, a few minutes on or back, where this profile is, or a time typed on a screen that is
- * touched or clicked), and this profile's rating of the title when it gave one. Everything is off as it opens: Send then sends what a plain press does.
- * Back (the key, the system's, or the arrow at its top) goes back to the titles, before it would shut the panel.
- */
 function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title: Sendable; session: ChatSession; tv: boolean; nav: boolean; pointer: boolean; onBack: () => void; onSent: () => void }) {
   const t = useT();
   const prefix = tv ? "tv-chat" : "chat";
@@ -163,18 +133,14 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
   useBackFirst(onBack);
   const root = useRef<HTMLDivElement>(null);
 
-  // The episode: none (the whole show) until one is chosen; then the one this profile is at, else the first.
   const seasons = useSeasons(show && url ? url : undefined);
   const [episode, setEpisode] = useState<EpisodeChoice | null>(null);
   const details = useEpisodeDetails(episode && url ? url : undefined, episode?.season);
   const numbers = details ? [...details.values()].filter((detail) => detail.url).map((detail) => detail.episode).sort((a, b) => a - b) : details;
-  // (An episode the season does not list - the season changed, or the list came after - is the first it does list.)
   const shown: EpisodeChoice | null = episode && numbers?.length ? { season: episode.season, episode: numbers.includes(episode.episode) ? episode.episode : numbers[0]! } : episode;
-  // (A show's choice is there while its seasons are asked for - "One episode" waits for them - and goes if it has none the library can list.)
   const offerEpisode = show && url !== "" && (seasons === undefined || seasons.length > 0);
   const canEpisode = offerEpisode && seasons !== undefined;
 
-  // The keys land on the first choice as it opens; and again if what they were on went (the choice of a show the library has no seasons of).
   useEffect(() => {
     const step = root.current;
     if (!step || step.contains(document.activeElement)) return;
@@ -196,12 +162,10 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
     if (next !== undefined) setEpisode({ season: shown.season, episode: next });
   };
 
-  // Where to start: in a film, or in the episode chosen (a whole show has no time to start at).
   const timed = !show || shown !== null;
   const [at, setAt] = useState(0);
   const runtime = shown && details ? details.get(shown.episode)?.runtime : undefined;
   const card = cardOf(entry, progress);
-  // (Up to a minute or so before the end, when its length is known: a start any later would be the end for the friend, and count it watched.)
   const end = runtime ? runtime * 60 : !show && card && card.duration > 0 ? Math.floor(card.duration) : undefined;
   const max = end ? Math.max(1, lastStartAt(end)) : TIME_MAX;
   const startAt = Math.min(at, max);
@@ -217,15 +181,12 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
       : undefined;
   const [typed, setTyped] = useState<string | null>(null);
   const typedAt = typed === null ? undefined : typedTime(typed, max);
-  // (A time typed that is not one, or past the end: Send waits for it to be put right, rather than send the last one that was.)
   const badTime = timed && typed !== null && typed.trim() !== "" && typedAt === undefined;
 
-  // This profile's rating of the title, if it gave one: off until it is chosen.
   const rating = url ? ratingFor(ratings, url) : undefined;
   const [withRating, setWithRating] = useState(false);
 
   const extras = chosenExtras({ show, episode: shown && numbers?.length ? shown : null, at: timed ? startAt : 0, score: withRating ? rating?.score : undefined });
-  // (An episode chosen whose season's episodes are still being asked for, or could not be: nothing is sent that the library could not say is one.)
   const waiting = show && episode !== null && !numbers?.length;
 
   return (
@@ -291,7 +252,6 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
                 type="button"
                 className={`${prefix}-extras-step`}
                 aria-label={t(minutes < 0 ? "chat.minutesBack" : "chat.minutesOn", { n: Math.abs(minutes) })}
-                // (Not `disabled`: the remote on it would be left on nothing when it went off. A press that cannot move it does nothing.)
                 aria-disabled={(minutes < 0 ? startAt === 0 : startAt >= max) || undefined}
                 onClick={() => {
                   setTyped(null);
@@ -370,11 +330,9 @@ function TitleSend({ title, session, tv, nav, pointer, onBack, onSent }: { title
   );
 }
 
-/** A value between a button that takes it back one and one that takes it on one (a season, an episode). */
 function Stepper({ prefix, nav, value, back, on, testId }: { prefix: string; nav: boolean; value: string; back: { label: string; can: boolean; run: () => void }; on: { label: string; can: boolean; run: () => void }; testId: string }) {
   return (
     <span className={`${prefix}-extras-stepper`} data-testid={testId}>
-      {/* (`aria-disabled`, not `disabled`: see the time's steps.) */}
       <button type="button" className={`${prefix}-extras-step`} aria-label={back.label} title={back.label} aria-disabled={!back.can || undefined} onClick={() => back.can && back.run()} {...navOf(nav)} data-testid={`${testId}-back`}>
         <ChevronLeftIcon aria-hidden="true" />
       </button>

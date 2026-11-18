@@ -40,7 +40,7 @@ describe("which addresses are a proxy's and not a visitor's", () => {
 describe("what Fastify is told to trust", () => {
   it("trusts that many addresses from the connection, and Cloudflare's and a host's own network wherever they come", () => {
     const one = trustedProxies(1);
-    expect(one("203.0.113.9", 0)).toBe(true); // (the connection itself: the host's proxy, whatever its address)
+    expect(one("203.0.113.9", 0)).toBe(true);
     expect(one("203.0.113.9", 1)).toBe(false);
     expect(one("172.70.1.2", 1)).toBe(true);
     expect(one("10.9.9.9", 2)).toBe(true);
@@ -88,7 +88,6 @@ describe("who a request counts as", () => {
     expect(visitorOf("::ffff:cb00:7109")).toBe("203.0.113.9");
     expect(visitorOf("0:0:0:0:0:ffff:cb00:7109")).toBe("203.0.113.9");
     expect(visitorOf("::ffff:10.1.2.3")).toBe("10.1.2.3");
-    // (Only the one prefix is the IPv4 one: the others are networks like any other.)
     expect(visitorOf("::fffe:203.0.113.9")).toBe("0:0:0:0::");
     expect(visitorOf("64:ff9b::203.0.113.9")).toBe("64:ff9b:0:0::");
     expect(visitorOf("1::ffff:203.0.113.9")).toBe("1:0:0:0::");

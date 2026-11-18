@@ -8,9 +8,7 @@ const TOOL_ICONS: Record<Tool, typeof OvalIcon> = { circle: OvalIcon, arrow: Arr
 
 interface Props {
   piece: Piece;
-  /** Done: the marks as they are now. */
   onDone: (shapes: Shape[]) => void;
-  /** Leave the picture as it was. */
   onCancel: () => void;
 }
 
@@ -24,14 +22,12 @@ interface Word {
   value: string;
 }
 
-/** The largest box of this shape that fits in a space. */
 export function fitBox(space: Box, picture: Box): Box {
   if (space.width <= 0 || space.height <= 0 || picture.width <= 0 || picture.height <= 0) return { width: 0, height: 0 };
   const scale = Math.min(space.width / picture.width, space.height / picture.height);
   return { width: Math.floor(picture.width * scale), height: Math.floor(picture.height * scale) };
 }
 
-/** Sets the size of a canvas only when it changes (setting it empties it, and takes time on a big one), and gives it back empty. */
 function emptied(canvas: HTMLCanvasElement, width: number, height: number): CanvasRenderingContext2D | null {
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
@@ -40,10 +36,6 @@ function emptied(canvas: HTMLCanvasElement, width: number, height: number): Canv
   return context;
 }
 
-/**
- * The marks that point at the trouble: a circle round it, an arrow to it, a box, a line by hand, a word, and a block over what is private. A mark is
- * kept as numbers across the picture (shapes.ts), so it is the same on this screen and on the picture that is sent.
- */
 export function Annotator({ piece, onDone, onCancel }: Props) {
   const t = useT();
   const stage = useRef<HTMLDivElement>(null);
@@ -57,7 +49,6 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
   const [tool, setTool] = useState<Tool>("circle");
   const [color, setColor] = useState<Color>(COLORS[0]);
   const [size, setSize] = useState(1);
-  // The word being typed: kept in a ref as well, since the one place that ends it (a press elsewhere) and the other (the field losing focus) come in one breath.
   const [word, setWordState] = useState<Word | null>(null);
   const wordRef = useRef<Word | null>(null);
   const setWord = useCallback((next: Word | null) => {
@@ -80,7 +71,6 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
     };
   }, [piece.url]);
 
-  // The room there is, and the picture in it as large as it will go.
   useLayoutEffect(() => {
     const element = stage.current;
     if (!element || !image) return;
@@ -98,13 +88,11 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
   const pixelsWide = Math.round(box.width * ratio);
   const pixelsHigh = Math.round(box.height * ratio);
-  // The picture itself: drawn again only when its size changes.
   useLayoutEffect(() => {
     const canvas = base.current;
     if (!canvas || !image || box.width === 0) return;
     emptied(canvas, pixelsWide, pixelsHigh)?.drawImage(image, 0, 0, pixelsWide, pixelsHigh);
   }, [image, box.width, pixelsWide, pixelsHigh]);
-  // What is drawn on it: every time a mark is added, changed, or taken off.
   useLayoutEffect(() => {
     const canvas = top.current;
     if (!canvas || box.width === 0) return;
@@ -112,7 +100,6 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
     if (context) paintShapes(context, draft ? [...shapes, draft] : shapes, pixelsWide, pixelsHigh);
   }, [shapes, draft, box.width, pixelsWide, pixelsHigh]);
 
-  /** The word being typed becomes part of the picture (an empty one is nothing). */
   const commitWord = useCallback(() => {
     const now = wordRef.current;
     if (!now) return;
@@ -132,7 +119,7 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
     commitWord();
     event.currentTarget.setPointerCapture(event.pointerId);
     if (tool === "text") {
-      placing.current = at; // (the word is put down when the finger is lifted: a keyboard that opens needs the press to be over)
+      placing.current = at;
       return;
     }
     setDraft(tool === "draw" ? { kind: "draw", points: [at], color, size } : { kind: tool, from: at, to: at, color, size });
@@ -181,7 +168,6 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
   };
 
   const finish = () => {
-    // (A word that is still being typed is part of the picture.)
     const now = wordRef.current;
     const value = now?.value.trim();
     onDone(now && value ? [...shapes, { kind: "text", at: now.at, text: value, color, size }] : shapes);
@@ -239,7 +225,7 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
                     commitWord();
                   } else if (event.key === "Escape") {
                     event.preventDefault();
-                    event.stopPropagation(); // (it ends the word, not the whole marking)
+                    event.stopPropagation();
                     setWord(null);
                   }
                 }}
@@ -249,7 +235,6 @@ export function Annotator({ piece, onDone, onCancel }: Props) {
         ) : (
           <span className="spinner" />
         )}
-        {/* What the tool needs, said over the picture for a few seconds (not in the bar: the picture would change size each time it came and went). */}
         {tool === "hide" || tool === "text" ? (
           <p key={tool} className="fb-hint fb-annotate-hint" role="note">
             {t(tool === "hide" ? "feedback.mark.hideHint" : "feedback.mark.textHint")}

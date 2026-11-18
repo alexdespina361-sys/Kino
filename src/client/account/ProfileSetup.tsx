@@ -10,19 +10,9 @@ import { useSettings } from "./settings";
 import { useProfileData } from "./store";
 import { keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, pickableLanguages, toggleLanguage } from "./subtitleLanguages";
 
-/**
- * A profile is set up by whoever uses it, the first time it is used (the owner, 18 Nov: after the first login an account "must pick nickname for their
- * first profile, subtitle settings (main, secondary, others available), profile image", and "what they are interested in per profile: movies,
- * series, anime, cartoons"). Three short pages, which cannot be left before the last: the name and the picture (only for the first profile of a new
- * account, whose name was made up from the e-mail; one that was added has them), the subtitle languages in their order, and the sections of the
- * library the profile watches. The server says which profiles are still to be set up (`Profile.setup`), so it is asked once, on whichever screen
- * the profile is first used; profiles from before are asked nothing, and find the same choices in the settings.
- */
-
 const SECTION_LABEL: Record<LibrarySection, Key> = { movie: "tv.movies", series: "tv.series", cartoon: "tv.cartoons", anime: "tv.anime" };
 const SECTION_ICON: Record<LibrarySection, ReactNode> = { movie: <FilmIcon />, series: <TvIcon />, cartoon: <CartoonIcon />, anime: <AnimeIcon /> };
 
-/** The sections a profile watches, as four buttons that are on or off. The last one that is on stays on: a profile watches something. */
 export function SectionPicker({ value, onChange, tv = false }: { value: readonly LibrarySection[]; onChange: (next: LibrarySection[]) => void; tv?: boolean }) {
   const t = useT();
   const toggle = (section: LibrarySection) => {
@@ -60,18 +50,14 @@ export function SectionPicker({ value, onChange, tv = false }: { value: readonly
   );
 }
 
-/** The sections a profile's setting says, as the picker shows them: all four when it says nothing. */
 export const sectionsShown = (chosen: readonly LibrarySection[] | undefined): LibrarySection[] => (chosen && chosen.length > 0 ? LIBRARY_SECTIONS.filter((section) => chosen.includes(section)) : [...LIBRARY_SECTIONS]);
-/** ...and what is kept for what the picker shows: nothing for all four (a section added to the library later is then the profile's too). */
 export const sectionsKept = (shown: readonly LibrarySection[]): LibrarySection[] | undefined => (shown.length >= LIBRARY_SECTIONS.length ? undefined : [...shown]);
 
-/** The subtitle languages in their order, as buttons that stay where they are: a press adds a language at the end of the order, one more takes it out. */
 function LanguagePicker({ chosen, onChange, tv }: { chosen: readonly string[]; onChange: (next: string[]) => void; tv: boolean }) {
   const t = useT();
   const language = useLanguage();
   const name = useMemo(() => languageNamer(language), [language]);
   const full = chosen.length >= MAX_SUBTITLE_LANGUAGES;
-  // (The order they were in when the page opened: a language that is chosen keeps its place among the buttons.)
   const [listed] = useState(() => pickableLanguages(chosen));
   const said = (index: number) => (index === 0 ? t("setup.main") : index === 1 ? t("setup.second") : t("setup.also"));
   return (
@@ -110,7 +96,6 @@ function LanguagePicker({ chosen, onChange, tv }: { chosen: readonly string[]; o
 type Step = "who" | "subtitles" | "sections";
 
 export interface SetupFrame {
-  /** The page a step is drawn in: the TV's screen (which the remote walks) or the phone's. `step` tells the pages apart, so each is a page of its own. */
   (step: Step, children: ReactNode): ReactNode;
 }
 
@@ -121,10 +106,6 @@ interface SetupProps {
   onDone?: () => void;
 }
 
-/**
- * The pages begin from what the profile has, so they wait for the screen to have opened that profile's own copy (it does so right after the profile is
- * chosen, see AccountProvider's `openScope`): begun a moment sooner they showed, and then kept, what the profile used before it had chosen.
- */
 export function ProfileSetup(props: SetupProps) {
   const { scope } = useProfileData();
   return scope === props.profile.id ? <SetupPages key={props.profile.id} {...props} /> : null;
@@ -137,7 +118,6 @@ function SetupPages({ profile, tv = false, frame, onDone }: SetupProps) {
   const { settings, set } = useSettings();
   const steps: Step[] = profile.setup === "more" ? ["subtitles", "sections"] : ["who", "subtitles", "sections"];
   const [step, setStep] = useState<Step>(steps[0]!);
-  // (What the profile has, or what it would get without choosing: the page's language first, then English, Romanian and Italian - `preferredLanguages`.)
   const [subtitles, setSubtitles] = useState<string[]>(() => [...(settings.subtitleLanguages ?? preferredLanguages(undefined, language))]);
   const [sections, setSections] = useState<LibrarySection[]>(() => sectionsShown(settings.sections));
   const [busy, setBusy] = useState(false);

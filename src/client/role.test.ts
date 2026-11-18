@@ -24,17 +24,17 @@ const page = (changes: Partial<RoleInput>): RoleInput => ({
 
 describe("chooseRole", () => {
   it("makes a screen without touch the TV, and a touch screen that comes for the first time a screen too: it opens on the library", () => {
-    expect(chooseRole(page({}))).toBe("tv"); // a desktop or a monitor
+    expect(chooseRole(page({}))).toBe("tv");
     expect(chooseRole(page({ userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
-    expect(chooseRole(page({ userAgent: IPAD, touchPoints: 5 }))).toBe("tv"); // a tablet as well
+    expect(chooseRole(page({ userAgent: IPAD, touchPoints: 5 }))).toBe("tv");
     expect(chooseRole(page({ userAgent: FIRE_TABLET, touchPoints: 10 }))).toBe("tv");
   });
 
   it("keeps a touch screen that has been the remote here before the remote: it may be somebody's, paired with their TV", () => {
     expect(chooseRole(page({ userAgent: IPHONE, touchPoints: 5, remoteBefore: true }))).toBe("remote");
     expect(chooseRole(page({ userAgent: IPAD, touchPoints: 5, remoteBefore: true }))).toBe("remote");
-    expect(chooseRole(page({ userAgent: PIXEL, touchPoints: 5, remoteBefore: true, storedRole: "tv" }))).toBe("tv"); // (what was chosen with the switch wins)
-    expect(chooseRole(page({ remoteBefore: true }))).toBe("tv"); // (a screen without touch plays, whatever it was once)
+    expect(chooseRole(page({ userAgent: PIXEL, touchPoints: 5, remoteBefore: true, storedRole: "tv" }))).toBe("tv");
+    expect(chooseRole(page({ remoteBefore: true }))).toBe("tv");
     expect(chooseRole(page({ userAgent: FIRE_TV, touchPoints: 1, remoteBefore: true }))).toBe("tv");
   });
 
@@ -46,7 +46,7 @@ describe("chooseRole", () => {
     ["an Android TV set", ANDROID_TV],
   ])("recognises a TV browser by its user agent: %s", (_name, userAgent) => {
     expect(chooseRole(page({ userAgent }))).toBe("tv");
-    expect(chooseRole(page({ userAgent, touchPoints: 1 }))).toBe("tv"); // even when it claims a touch point
+    expect(chooseRole(page({ userAgent, touchPoints: 1 }))).toBe("tv");
   });
 
   it("always plays on /tv, with or without a trailing slash", () => {
@@ -57,28 +57,26 @@ describe("chooseRole", () => {
   it("follows an address that asks for a role", () => {
     expect(chooseRole(page({ search: "?role=remote" }))).toBe("remote");
     expect(chooseRole(page({ search: "?role=tv", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
-    expect(chooseRole(page({ search: "?role=banana" }))).toBe("tv"); // not a role: the guess decides
+    expect(chooseRole(page({ search: "?role=banana" }))).toBe("tv");
   });
 
   it("plays a title's link, wherever it is opened: it opens that title's page on a screen that plays", () => {
     expect(chooseRole(page({ search: "?title=movie-603", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
     expect(chooseRole(page({ search: "?title=movie-603", storedRole: "remote" }))).toBe("tv");
-    expect(chooseRole(page({ search: "?title=movie-603&role=remote" }))).toBe("remote"); // an explicit role still wins
+    expect(chooseRole(page({ search: "?title=movie-603&role=remote" }))).toBe("remote");
   });
 
   it("plays a watch party's link, wherever it is opened", () => {
     expect(chooseRole(page({ search: "?party=123456", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
     expect(chooseRole(page({ search: "?party=123456", storedRole: "remote" }))).toBe("tv");
-    expect(chooseRole(page({ search: "?party=123456&role=remote" }))).toBe("remote"); // an explicit role still wins
+    expect(chooseRole(page({ search: "?party=123456&role=remote" }))).toBe("remote");
   });
 
   it("treats the links made for the phone as the remote, wherever they are opened", () => {
     expect(chooseRole(page({ search: "?code=123456" }))).toBe("remote");
     expect(chooseRole(page({ search: "?url=https%3A%2F%2Fsite.example%2Fwatch" }))).toBe("remote");
     expect(chooseRole(page({ search: "?text=look+at+this", storedRole: "tv" }))).toBe("remote");
-    // the code on a TV's sign-in screen is meant for a phone, even one that was last used as a TV
     expect(chooseRole(page({ search: "?link=ABCD2345", storedRole: "tv" }))).toBe("remote");
-    // ...and so is a friend's code, on a laptop too (it has no touch screen, which would make it a TV)
     expect(chooseRole(page({ search: "?friend=ABCD2345", touchPoints: 0 }))).toBe("remote");
   });
 
@@ -102,7 +100,7 @@ describe("isPhone", () => {
 
   it("is not a computer, even one with a touch screen beside its mouse or pad", () => {
     expect(isPhone({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: false, shortSide: 1080 })).toBe(false);
-    expect(isPhone({ userAgent: DESKTOP, touchPoints: 10, coarsePointer: false, shortSide: 360 })).toBe(false); // a touch laptop
+    expect(isPhone({ userAgent: DESKTOP, touchPoints: 10, coarsePointer: false, shortSide: 360 })).toBe(false);
   });
 
   it("is not a TV, whatever it claims about touch", () => {
@@ -120,7 +118,7 @@ describe("isHandHeld", () => {
   it("is not a computer, with or without a touch screen, nor a TV, whatever it says about touch (their Back is a key the page hears)", () => {
     expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: false })).toBe(false);
     expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 10, coarsePointer: false })).toBe(false);
-    expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: true })).toBe(false); // (a coarse pointer and nothing to touch)
+    expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: true })).toBe(false);
     for (const userAgent of [FIRE_TV, TIZEN, WEBOS, VIDAA, ANDROID_TV]) expect(isHandHeld({ userAgent, touchPoints: 1, coarsePointer: true })).toBe(false);
   });
 });
@@ -128,13 +126,13 @@ describe("isHandHeld", () => {
 describe("isDesk", () => {
   it("is a laptop or a PC with a mouse or a pad, whose big-screen page stops growing with the window", () => {
     expect(isDesk({ userAgent: DESKTOP, finePointer: true })).toBe(true);
-    expect(isDesk({ userAgent: IPAD, finePointer: true })).toBe(true); // (a Mac says the same as an iPad: the pointer tells them apart)
+    expect(isDesk({ userAgent: IPAD, finePointer: true })).toBe(true);
   });
 
   it("is not a TV, a TV box with a mouse, a phone or a tablet", () => {
     for (const userAgent of [TIZEN, WEBOS, FIRE_TV, ANDROID_TV]) expect(isDesk({ userAgent, finePointer: true })).toBe(false);
     for (const userAgent of [PIXEL, IPHONE, FIRE_TABLET]) expect(isDesk({ userAgent, finePointer: true })).toBe(false);
-    expect(isDesk({ userAgent: DESKTOP, finePointer: false })).toBe(false); // (a touch screen with no mouse)
+    expect(isDesk({ userAgent: DESKTOP, finePointer: false })).toBe(false);
     expect(isDesk({ userAgent: IPAD, finePointer: false })).toBe(false);
   });
 });

@@ -7,7 +7,6 @@ import { kindOfFile, newPictureId, plan, room, scaleToFit, type Piece } from "./
 import { addReceipt, clearDraft, DRAFT_DAYS, forgetReceipt, newKey, readDraft, readReceipts, saveDraft } from "./receipts";
 import { arrowHead, boxOf, isMark, paintShapes, toUnit, type Shape, type Surface } from "./shapes";
 
-/** The browser's storage, as a map (the tests run in node, which has none). */
 function fakeStorage(): Storage {
   const map = new Map<string, string>();
   return {
@@ -80,7 +79,7 @@ describe("the receipt and the draft", () => {
     const key = newKey((bytes) => bytes.forEach((_, index) => (bytes[index] = index * 17)));
     expect(FEEDBACK_KEY.test(key)).toBe(true);
     expect(key).toHaveLength(22);
-    expect(key).toBe(newKey((bytes) => bytes.forEach((_, index) => (bytes[index] = index * 17)))); // (the same bits, the same key)
+    expect(key).toBe(newKey((bytes) => bytes.forEach((_, index) => (bytes[index] = index * 17))));
     expect(newKey()).not.toBe(newKey());
   });
 
@@ -117,7 +116,7 @@ describe("the receipt and the draft", () => {
   it("keeps a draft of words only, and lets it go after two weeks", () => {
     vi.stubGlobal("localStorage", fakeStorage());
     saveDraft({ kind: "bug", area: "player", text: "   ", details: {}, at: 1 });
-    expect(readDraft(2)).toBeUndefined(); // (nothing written: nothing kept)
+    expect(readDraft(2)).toBeUndefined();
     saveDraft({ kind: "bug", area: "player", text: "It stopped", details: { steps: "x" }, severity: "annoying", at: 1_000 });
     expect(readDraft(2_000)).toMatchObject({ text: "It stopped", area: "player", severity: "annoying" });
     expect(readDraft(1_000 + DRAFT_DAYS * 86_400_000 + 1)).toBeUndefined();
@@ -135,7 +134,6 @@ describe("the receipt and the draft", () => {
 describe("sending a report", () => {
   const report = { key: newKey(), kind: "bug", area: "player", text: "It stopped" } as unknown as FeedbackSend;
   const answered = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
-  /** No waiting between tries: the delays are what the page puts between them, not what is tested here. */
   const NOW = [0, 0, 0, 0];
 
   it("is told at once, in the words of its own, when the server has no room for another report, and does not ask again", async () => {
@@ -202,9 +200,9 @@ describe("the form", () => {
   it("counts the words a screen gave a form as the person's own only once they have changed them", () => {
     const seed = "It would not play. The screen said: Something went wrong.";
     const form = newForm("bug", "wontplay", true, seed);
-    expect(writtenByThePerson(form, seed)).toBe(false); // (as it opens, or with the spaces changed)
+    expect(writtenByThePerson(form, seed)).toBe(false);
     expect(writtenByThePerson({ ...form, text: `  ${seed} ` }, seed)).toBe(false);
-    expect(writtenByThePerson({ ...form, text: "" }, seed)).toBe(false); // (the words were taken off: nothing was written)
+    expect(writtenByThePerson({ ...form, text: "" }, seed)).toBe(false);
     expect(writtenByThePerson({ ...form, text: `${seed} It happens on every film.` }, seed)).toBe(true);
     expect(writtenByThePerson({ ...form, details: { steps: "pressed play" } }, seed)).toBe(true);
     expect(writtenByThePerson(newForm("bug", "wontplay", true, ""), "")).toBe(false);
@@ -279,7 +277,7 @@ describe("the pictures", () => {
 
   it("leaves out the plain pictures behind marks first when there is no room, and says how many", () => {
     const pieces = [piece({ shapes: [circle], marked: 600, size: 600 }), piece({ shapes: [circle], marked: 600, size: 600 })];
-    const { items, dropped, bytes } = plan(pieces, 8, 1800); // (room for the two marked ones and one plain one)
+    const { items, dropped, bytes } = plan(pieces, 8, 1800);
     expect(items.map((each) => each.role)).toEqual(["annotated", "annotated", "screenshot"]);
     expect(dropped).toBe(1);
     expect(bytes).toBe(1800);
@@ -291,7 +289,6 @@ describe("the pictures", () => {
     expect(room([], FEEDBACK_LIMITS.totalBytes)).toBe(false);
     const full = Array.from({ length: FEEDBACK_LIMITS.attachments }, () => piece({ size: 10 }));
     expect(room(full, 1)).toBe(false);
-    // (a marked picture counts as what is sent for it, not as its plain original, which goes only if there is room)
     expect(room([piece({ size: 5_000_000, shapes: [circle], marked: 100 })], 5_000_000)).toBe(true);
   });
 });
@@ -302,7 +299,7 @@ describe("the marks", () => {
     expect(toUnit(200, 100, box)).toEqual([0.5, 0.5]);
     expect(toUnit(0, 0, box)).toEqual([0, 0]);
     expect(toUnit(900, 900, box)).toEqual([1, 1]);
-    expect(toUnit(10, 10, { left: 0, top: 0, width: 0, height: 0 })).toEqual([1, 1]); // (a box with no size does not divide by zero)
+    expect(toUnit(10, 10, { left: 0, top: 0, width: 0, height: 0 })).toEqual([1, 1]);
   });
 
   it("does not take a tap that went nowhere for a mark", () => {
@@ -331,7 +328,6 @@ describe("the marks", () => {
     expect(Math.hypot(a[0] - 100, a[1])).toBeCloseTo(10);
   });
 
-  /** A canvas that writes down what it was asked to draw. */
   function recorder() {
     const calls: string[] = [];
     const surface = {

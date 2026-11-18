@@ -22,7 +22,6 @@ import { PinSetting } from "./Pin";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 
-/** A labelled group of settings (one whose button says it all has no heading). */
 export function Group({ title, help, children }: { title?: string | undefined; help?: string | undefined; children: ReactNode }) {
   return (
     <section className="group">
@@ -33,7 +32,6 @@ export function Group({ title, help, children }: { title?: string | undefined; h
   );
 }
 
-/** An on/off setting; what it does is said under it, in the same row (a tap on those words is a tap on the row), where a line or two of words is needed. */
 export function Switch({ label, hint, checked, onChange, testId }: { label: string; hint?: string | undefined; checked: boolean; onChange: (checked: boolean) => void; testId?: string }) {
   const id = useId();
   return (
@@ -59,14 +57,10 @@ export function Switch({ label, hint, checked, onChange, testId }: { label: stri
   );
 }
 
-/** Settings that belong together are one card, a row to each with a hairline between (a card to each is a stack of ten the same). */
 export function Rows({ children }: { children: ReactNode }) {
   return <div className="menu">{children}</div>;
 }
 
-/* ------------------------------ settings ------------------------------ */
-
-/** The languages of subtitles this profile cares about: listed first in the subtitle menus, in this order. */
 function SubtitleLanguages() {
   const t = useT();
   const language = useLanguage();
@@ -74,7 +68,6 @@ function SubtitleLanguages() {
   const chosen = settings.subtitleLanguages ?? [];
   const name = useMemo(() => languageNamer(language), [language]);
   const save = (list: string[]) => set("subtitleLanguages", keptLanguages(list));
-  // (The 26 languages to add are folded until asked for: open, they were most of the page.)
   const [adding, setAdding] = useState(false);
   const move = (index: number, by: number) => save(moveLanguage(chosen, index, by));
 
@@ -122,10 +115,6 @@ function SubtitleLanguages() {
   );
 }
 
-/**
- * What a friend may do is on for everybody while friends are on, and the one thing to choose is whether what is watched is shared (both ways). A profile that had
- * turned one of these off keeps the switch for it (`sunsetSwitches`; the chat's and the news' are drawn apart, they say more).
- */
 const SUNSET_SWITCH_ROWS: ReadonlyArray<{ key: FriendSetting & SunsetSwitch; label: Key; testId: string }> = [
   { key: "friendsLists", label: "friends.switchLists", testId: "friends-lists" },
   { key: "friendsRatings", label: "friends.switchRatings", testId: "friends-ratings" },
@@ -133,26 +122,18 @@ const SUNSET_SWITCH_ROWS: ReadonlyArray<{ key: FriendSetting & SunsetSwitch; lab
   { key: "friendsPresence", label: "friends.switchPresence", testId: "friends-presence" },
 ];
 
-/** How long to wait before looking again for the friends that are kept when the first look failed, and how many more tries there are. */
 const KEPT_RETRY_MS = 5000;
 const KEPT_RETRIES = 4;
 
-/**
- * Friends turned off, but not gone: who they still are, with a way to end a friendship from here, so that nobody has to turn on (if
- * only for a moment) everything that is shared with all of them just to remove one. Only for a profile that has turned friends on
- * and off again; nothing at all if it has no friends left.
- */
 function KeptFriends({ profileId }: { profileId: string }) {
   const t = useT();
   const account = useAccount();
   const [kept, setKept] = useState<KeptFriend[]>([]);
-  /** The friend whose removal waits for a second tap. */
   const [asking, setAsking] = useState<string | null>(null);
 
   useEffect(() => {
     let stopped = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
-    // (A look that failed, because the connection blinked or the server asked to slow down, is tried again a few times: nothing else would ask.)
     const ask = (retries: number): void => {
       friendsApi.kept(profileId).then(
         (answer) => !stopped && setKept(answer.friends),
@@ -168,7 +149,6 @@ function KeptFriends({ profileId }: { profileId: string }) {
     };
   }, [profileId]);
 
-  // The second tap has to come soon; a button left asking goes back to what it was.
   useEffect(() => {
     if (!asking) return;
     const timer = setTimeout(() => setAsking(null), 4000);
@@ -207,19 +187,12 @@ function KeptFriends({ profileId }: { profileId: string }) {
   );
 }
 
-/**
- * Friends: whether what each watches is shared (and, for a profile that turned something else off before, that too). Friends themselves are on for
- * everybody and have no switch (the owner, 15 Nov 2026: "remove the ratings and friends and turn it on for all accounts"); for a profile they are turned off
- * for (`friendsOff`, nothing sets it yet), the friendships kept are listed instead.
- * These are settings of the profile (so they follow it onto every screen), and each change is sent to the server at once: the server is
- * what decides what a friend is shown, from what the profile has chosen here.
- */
 function FriendsGroup({ onOpen }: { onOpen: () => void }) {
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
   const { settings, set } = useSettings();
-  const [sunset] = useState(() => sunsetSwitches(settings)); // (asked once: a switch that is turned back on stays until the page is left)
+  const [sunset] = useState(() => sunsetSwitches(settings));
   if (!account.me || !account.profile) {
     return (
       <Group title={t("friends.settings")}>
@@ -246,7 +219,6 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
             {sunset.includes("friendsMessages") && <Switch label={t("chat.settingsSwitch")} checked={choices.friendsMessages} onChange={(on) => change("friendsMessages", on)} testId="friends-messages" />}
             {sunset.includes("newsPopups") && <Switch label={t("friends.popups")} hint={t("friends.popupsHelp")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />}
           </Rows>
-          {/* (What a chat is kept as, said where friends are chosen: plain text, on the server, unencrypted, for so long.) */}
           <p className="muted small" data-testid="friends-messages-hint">
             {t("chat.settingsHint", CHAT_FACTS)}
           </p>
@@ -261,8 +233,7 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** What changes how the site looks and plays: language, colour, autoplay, subtitle languages. */
-export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => void; /** Do it once the PIN of a child's profile is given (the account's screen asks for it). */ grownUp: (action: () => void) => void }) {
+export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => void; grownUp: (action: () => void) => void }) {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
@@ -271,7 +242,6 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
   const child = settings.child === true;
   return (
     <div className="page-stack" data-testid="settings-page">
-      {/* (The groups of the TV's settings, in its order: the language and the colour are one card, as there.) */}
       <Group title={t("settings.appearance")}>
         <p className="group-label">{t("settings.language")}</p>
         <div className="segmented" role="radiogroup" aria-label={t("settings.language")}>
@@ -325,24 +295,19 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
         </div>
       </Group>
       <SubtitleLanguages />
-      {/* What the profile watches (the owner, 18 Nov): the sections it has; the others are not shown on it. Not on a child's profile, which has the Cartoons. */}
       {!child && (
         <Group title={t("settings.sections")} help={t("setup.sectionsHelp")}>
           <SectionPicker value={sectionsShown(settings.sections)} onChange={(next) => set("sections", sectionsKept(next))} />
         </Group>
       )}
-      {/* Told when a new episode, season or film of what it watches comes out (shared/titleNotices.ts): on unless turned off. */}
       <Group>
         <Rows>
           <Switch label={t("settings.titleNotices")} hint={t("settings.titleNoticesHelp")} checked={settings.titleNotices !== false} onChange={(on) => set("titleNotices", on ? undefined : false)} testId="title-notices-switch" />
-          {/* Whether what it watches is counted, with no name, in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off. */}
-          {/* (Counted for accounts only: a phone that is not signed in has nothing to turn off.) */}
           {account.me && !child && (
             <Switch label={t("settings.publicWatching")} hint={t("settings.publicWatchingHelp")} checked={settings.publicWatching !== false} onChange={(on) => set("publicWatching", on ? undefined : false)} testId="public-watching-switch" />
           )}
         </Rows>
       </Group>
-      {/* A child's profile: only cartoons for children, no friends and no watch party, wherever the profile is used (see the TV's Browse). Sent at once: the server turns the friends off. */}
       <Group title={t("settings.childGroup")} help={t("settings.childHelp")}>
         <Rows>
           <Switch
@@ -354,21 +319,18 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
                 account.syncNow();
               };
               if (on) change();
-              else grownUp(change); // (made an ordinary profile again: with the PIN, if there is one)
+              else grownUp(change);
             }}
             testId="child-profile"
           />
         </Rows>
       </Group>
-      {/* (Set from a grown-up's profile only; one that is there is changed or taken off with it, or the password, from any.) */}
       {account.me && account.profile && (!child || account.me.account.childPin) && <PinSetting />}
       <FriendsGroup onOpen={onOpenFriends} />
-      {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
       <Group title={t("settings.labs")} help={t("settings.labsHelp")}>
         <Rows>
           <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
           <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
-          {/* (A child's profile has no box for links: see the Home of the remote.) */}
           {!child && <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />}
         </Rows>
       </Group>
@@ -377,12 +339,9 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
   );
 }
 
-/* ------------------------------ devices ------------------------------ */
-
 const KIND_ICON = { tv: TvIcon, remote: PhoneIcon, browser: GlobeIcon } as const;
 
-/** Where this account is signed in, with a way to sign any of them out (a TV left at a friend's, a lost phone). */
-export function DevicesPage({ onChanged }: { /** Some of them were signed out. */ onChanged?: (() => void) | undefined }) {
+export function DevicesPage({ onChanged }: { onChanged?: (() => void) | undefined }) {
   const t = useT();
   const language = useLanguage();
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
@@ -416,7 +375,6 @@ export function DevicesPage({ onChanged }: { /** Some of them were signed out. *
     }
   };
 
-  // A device is called what its owner calls it (every row saying "Chrome on Windows" tells a TV from a laptop by its icon only).
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const cancelled = useRef(false);
@@ -465,9 +423,9 @@ export function DevicesPage({ onChanged }: { /** Some of them were signed out. *
                     onChange={(event) => setDraft(event.target.value)}
                     onBlur={() => void saveRename(session)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") event.currentTarget.blur(); // (done: the blur saves it)
+                      if (event.key === "Enter") event.currentTarget.blur();
                       else if (event.key === "Escape") {
-                        event.stopPropagation(); // not the page's own Escape, which goes back
+                        event.stopPropagation();
                         cancelled.current = true;
                         event.currentTarget.blur();
                       }
@@ -510,9 +468,6 @@ export function DevicesPage({ onChanged }: { /** Some of them were signed out. *
   );
 }
 
-/* ------------------------------ password and deleting ------------------------------ */
-
-/** A password field with its label. */
 function Password({ label, value, onChange, autoComplete, testId }: { label: string; value: string; onChange: (value: string) => void; autoComplete: string; testId: string }) {
   return (
     <label className="auth-field">
@@ -522,10 +477,6 @@ function Password({ label, value, onChange, autoComplete, testId }: { label: str
   );
 }
 
-/**
- * The password, Google, and deleting the account. An account made with Google has no password to change, and is deleted once the person has signed in to Google again
- * (the page goes to Google, and the account is deleted when it comes back with Google's yes); one with a password can connect Google too, and sign in with either.
- */
 export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -657,9 +608,6 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
   );
 }
 
-/* ------------------------------ signing a TV in ------------------------------ */
-
-/** Where a TV's sign-in code comes from: the camera, or typing what the TV shows. */
 export function LinkPage({ onCode }: { onCode: (code: string) => void }) {
   const t = useT();
   const [typed, setTyped] = useState("");

@@ -36,7 +36,6 @@ async function resolveBuzz(id, isTv, s = "1", e = "1") {
         playStreams.push({ name: srv.name || "Server", url: fullStream, type: pData.type || "hls" });
       }
     } catch {
-      // ignore
     }
   }
 
@@ -50,19 +49,16 @@ async function resolveBuzz(id, isTv, s = "1", e = "1") {
 
 async function test12Titles() {
   const titles = [
-    // 4 Anime
     { kind: "Anime", name: "Madoka Magica: Walpurgisnacht", id: 823219, isTv: false },
     { kind: "Anime", name: "Jujutsu Kaisen S1E1", id: 95479, isTv: true, s: 1, e: 1 },
     { kind: "Anime", name: "Attack on Titan S1E1", id: 1429, isTv: true, s: 1, e: 1 },
     { kind: "Anime", name: "Demon Slayer S1E1", id: 85937, isTv: true, s: 1, e: 1 },
 
-    // 4 Movies
     { kind: "Movie", name: "The Odyssey", id: 332794, isTv: false },
     { kind: "Movie", name: "The Matrix", id: 603, isTv: false },
     { kind: "Movie", name: "Inception", id: 27205, isTv: false },
     { kind: "Movie", name: "Interstellar", id: 157336, isTv: false },
 
-    // 4 Series
     { kind: "Series", name: "Doctor Who S1E1", id: 57243, isTv: true, s: 1, e: 1 },
     { kind: "Series", name: "Breaking Bad S1E1", id: 1396, isTv: true, s: 1, e: 1 },
     { kind: "Series", name: "Game of Thrones S1E1", id: 1399, isTv: true, s: 1, e: 1 },

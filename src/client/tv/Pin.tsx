@@ -14,20 +14,13 @@ interface PadProps {
   testId: string;
   title: string;
   hint?: string | undefined;
-  /** A line under the pad (how to take off a PIN that was forgotten). */
   note?: string | undefined;
   problem: string | null;
-  /** The PIN is with the server: what is pressed meanwhile is not taken. */
   busy: boolean;
-  /** The last digit was typed. */
   onPin: (pin: string) => void;
   onBack: () => void;
 }
 
-/**
- * The PIN's page, the way the party's code is typed: the digits as boxes (dots, not the digits: someone may be looking), a pad of three columns that the remote walks,
- * and the number keys of a keyboard or a remote. The last digit sends it. Back takes the digits back one at a time, then leaves.
- */
 function TvPinPad({ testId, title, hint, note, problem, busy, onPin, onBack }: PadProps) {
   const t = useT();
   const [digits, setDigits] = useState("");
@@ -53,7 +46,6 @@ function TvPinPad({ testId, title, hint, note, problem, busy, onPin, onBack }: P
   putRef.current = put;
   const remove = () => put(latest.current.slice(0, -1));
 
-  // A wrong PIN starts over.
   useEffect(() => {
     if (!problem) return;
     latest.current = "";
@@ -111,7 +103,6 @@ function TvPinPad({ testId, title, hint, note, problem, busy, onPin, onBack }: P
   );
 }
 
-/** Asked before a child's profile is left (see `ChildLock`): the right PIN does what was waiting, Back drops it. A PIN forgotten is taken off on a phone. */
 export function TvPinAsk() {
   const t = useT();
   const { childLock } = useAccount();
@@ -129,10 +120,6 @@ export function TvPinAsk() {
 
 type Step = "menu" | "current" | "new" | "again";
 
-/**
- * The PIN's page of the settings (a grown-up's profile): set one (twice, the same), or change it or take it off with the one there is now. A PIN that was forgotten is
- * taken off with the account's password, which is typed on a phone.
- */
 export function TvPinSetup({ onBack }: { onBack: () => void }) {
   const t = useT();
   const account = useAccount();

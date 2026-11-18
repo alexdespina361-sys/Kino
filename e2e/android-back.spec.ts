@@ -2,25 +2,14 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, pressMenuLine, test, tvRoot, withLibrary } from "./helpers";
 
-/**
- * The Back button of an Android phone (the button, the swipe from the edge of the screen). Every Back goes back a page, as a back button does, and
- * at the bottom of the site, where the next one would leave it, the first only asks ("Press Back again to leave") and a second one leaves.
- * The tests press Back as the browser does (`page.goBack()`) on a touch screen, and tell "left the site" by the page the phone was on before it.
- * What they cannot show is Chrome's own rule for entries a page makes without a touch (see shared/backButton.ts): `page.goBack()` walks the history
- * one entry at a time and applies none of it. The rule is in the unit tests (a fake browser that keeps it) and in android-back-real.spec.ts, which
- * presses Chrome's own Back.
- */
-
 test.use({ actionTimeout: 15_000 });
 
 const films = Array.from({ length: 4 }, (_, i) => ({ id: `f${i}`, title: `Film number ${i + 1}`, year: 1990 + i, kind: "movie", url: `/fixtures/sample.mp4?n=${i}` }));
 const withFilms = withLibrary({ updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", kind: "movie", items: films }] });
 
-/** The page a phone is on before the site: a Back that leaves the site lands here. */
 const BEFORE = "/api/health";
 
 const hint = (phone: Page) => phone.getByTestId("exit-hint");
-/** The phone's library, opened on a touch screen with a page before it. */
 async function library(browser: Browser): Promise<Page> {
   const phone = await openDevice(browser, PHONE, {}, withFilms);
   await phone.goto(BEFORE);
@@ -28,9 +17,7 @@ async function library(browser: Browser): Promise<Page> {
   await expect(phone.getByTestId("tv-browse-tile").first()).toBeVisible();
   return phone;
 }
-/** How many entries of the history stand for something open on the page (the guard under them is none). */
 const layers = (phone: Page) => phone.evaluate(() => (history.state as { layers?: number } | null)?.layers ?? 0);
-/** The page left the site: it is on the one before it. */
 const left = (phone: Page) => expect.poll(() => new URL(phone.url()).pathname).toBe(BEFORE);
 
 test.describe("the Back button of a phone", () => {
@@ -39,7 +26,6 @@ test.describe("the Back button of a phone", () => {
     const address = phone.url();
     const tiles = phone.getByTestId("tv-browse-tile");
 
-    // The film was chosen from a title's page and Back leaves it, to the library: the site stays.
     await tiles.first().tap();
     await phone.getByTestId("tv-detail-play").tap();
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
@@ -49,7 +35,6 @@ test.describe("the Back button of a phone", () => {
     await expect(hint(phone)).toHaveCount(0);
     expect(phone.url()).toBe(address);
 
-    // A title's page goes the same way.
     await tiles.first().tap();
     await expect(phone.getByTestId("tv-detail")).toBeVisible();
     await phone.goBack();
@@ -57,7 +42,6 @@ test.describe("the Back button of a phone", () => {
     await expect(hint(phone)).toHaveCount(0);
     expect(phone.url()).toBe(address);
 
-    // At the library nothing is left to go back to but the site's door: the first Back says so and stays, the second goes through it.
     await phone.goBack();
     await expect(hint(phone)).toHaveText(en["exit.press"]);
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
@@ -77,10 +61,10 @@ test.describe("the Back button of a phone", () => {
     await phone.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
     await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
     await expect(phone.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
-    await expect.poll(() => layers(phone)).toBe(0); // (the title's entry in the history went with it)
+    await expect.poll(() => layers(phone)).toBe(0);
 
     await phone.goBack();
-    await expect(hint(phone)).toHaveText(en["exit.press"]); // the library's door, asked about: not the title again
+    await expect(hint(phone)).toHaveText(en["exit.press"]);
     await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
     expect(phone.url()).toBe(address);
   });
@@ -89,19 +73,18 @@ test.describe("the Back button of a phone", () => {
     const phone = await library(browser);
     const address = phone.url();
     const tiles = phone.getByTestId("tv-browse-tile");
-    // (A page that nobody has touched has nothing to lose: the browser lets a Back go before the first touch, see the next test.)
     await tiles.first().tap();
     await phone.goBack();
     await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
 
     await phone.goBack();
     await expect(hint(phone)).toBeVisible();
-    await expect(hint(phone)).toHaveCount(0, { timeout: 6_000 }); // (it goes by itself)
-    await phone.goBack(); // a Back long after the first is a first Back again
+    await expect(hint(phone)).toHaveCount(0, { timeout: 6_000 });
+    await phone.goBack();
     await expect(hint(phone)).toBeVisible();
     expect(phone.url()).toBe(address);
 
-    await tiles.nth(1).tap(); // a touch anywhere is the end of the question too, and what it opened closes with one Back
+    await tiles.nth(1).tap();
     await expect(phone.getByTestId("tv-detail")).toBeVisible();
     await expect(hint(phone)).toHaveCount(0);
     await phone.goBack();
@@ -130,7 +113,7 @@ test.describe("the Back button of a phone", () => {
     await phone.reload();
     await expect(phone.getByTestId("tv-browse-tile").first()).toBeVisible();
     await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
-    await phone.goBack(); // (the entry of the title's page the earlier visit made is of no use to this one: it is passed on the way)
+    await phone.goBack();
     await expect(hint(phone)).toBeVisible();
     expect(phone.url()).toBe(address);
     await phone.goBack();
@@ -155,7 +138,7 @@ test.describe("the Back button of a phone", () => {
     await phone.goBack();
     await expect(phone.getByTestId("media-title")).toHaveCount(0);
     await expect(phone.getByTestId("playing-bar")).toBeVisible();
-    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // (the film is not stopped by a Back)
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     expect(phone.url()).toBe(address);
 
     await phone.getByTestId("playing-bar").tap();
@@ -163,7 +146,6 @@ test.describe("the Back button of a phone", () => {
     await phone.goBack();
     await expect(phone.getByTestId("playing-bar")).toBeVisible();
 
-    // The library of the remote is where the site's door is.
     await phone.goBack();
     await expect(hint(phone)).toHaveText(en["exit.press"]);
     await expect(phone.getByTestId("playing-bar")).toBeVisible();
@@ -188,15 +170,15 @@ test.describe("the Back button of a phone", () => {
     await playFirst(host);
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
 
-    await phone.goBack(); // a Back is too easy to make by mistake for this one: it asks
+    await phone.goBack();
     await expect(hint(phone)).toHaveText(en["exit.leaveParty"]);
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
     await expect(phone.getByTestId("tv-follow-bar")).toBeVisible();
-    await expect.poll(() => layers(phone)).toBe(1); // (the film's entry is put back for the answer)
+    await expect.poll(() => layers(phone)).toBe(1);
     await phone.goBack();
     await expect(tvRoot(phone)).not.toHaveAttribute("data-state", "playing");
     await expect(phone.getByTestId("tv-follow-bar")).toHaveCount(0);
-    await expect(phone.getByTestId("tv-party-start")).toBeVisible(); // (the party's page, where leaving a party lands, as it does for the remote's key)
+    await expect(phone.getByTestId("tv-party-start")).toBeVisible();
     await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
     await phone.goBack();
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
@@ -210,7 +192,7 @@ test.describe("the Back button of a phone", () => {
     expect(await tv.evaluate(() => history.state)).toBeNull();
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
-    expect(await tv.evaluate(() => history.length)).toBe(2); // (the blank page, and this one)
+    expect(await tv.evaluate(() => history.length)).toBe(2);
   });
 });
 

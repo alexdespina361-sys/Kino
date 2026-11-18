@@ -16,10 +16,10 @@ describe("whether the Android app is offered", () => {
     expect(wantsTheApp({ userAgent: PIXEL, handHeld: true, inApp: true })).toBe(false);
     expect(wantsTheApp({ userAgent: IPHONE, handHeld: true, inApp: false })).toBe(false);
     expect(wantsTheApp({ userAgent: ANDROID_TV, handHeld: false, inApp: false })).toBe(false);
-    expect(wantsTheApp({ userAgent: ANDROID_TV, handHeld: true, inApp: false })).toBe(false); // (a TV with a touch remote is still a TV)
+    expect(wantsTheApp({ userAgent: ANDROID_TV, handHeld: true, inApp: false })).toBe(false);
     expect(wantsTheApp({ userAgent: FIRE_TV, handHeld: true, inApp: false })).toBe(false);
     expect(wantsTheApp({ userAgent: WINDOWS, handHeld: false, inApp: false })).toBe(false);
-    expect(wantsTheApp({ userAgent: PIXEL, handHeld: false, inApp: false })).toBe(false); // (an Android box with a mouse)
+    expect(wantsTheApp({ userAgent: PIXEL, handHeld: false, inApp: false })).toBe(false);
   });
 
   it("is not offered in the app before its bridge is there (its user agent says so), nor in another app's window onto the web", () => {

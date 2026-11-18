@@ -12,7 +12,7 @@ describe("who is here now", () => {
     const live = new LiveCount(() => clock);
     expect(live.now()).toEqual({ people: 0, signedIn: 0, guests: 0 });
     for (let i = 0; i < 5; i++) live.seen("203.0.113.7", PHONE, false);
-    live.seen("203.0.113.7", LAPTOP, true); // (the same home, another device)
+    live.seen("203.0.113.7", LAPTOP, true);
     live.seen("203.0.113.8", PHONE, false);
     expect(live.now()).toEqual({ people: 3, signedIn: 1, guests: 2 });
   });
@@ -23,9 +23,8 @@ describe("who is here now", () => {
     for (let i = 0; i < 500; i++) live.seen("198.51.100.1", `made up ${i}`, false);
     live.seen("203.0.113.7", PHONE, true);
     expect(live.now()).toEqual({ people: BROWSERS_PER_ADDRESS + 1, signedIn: 1, guests: BROWSERS_PER_ADDRESS });
-    // (they leave; a quarter of an hour later the address's places are free again)
     clock += 16 * MINUTE;
-    live.seen("203.0.113.9", PHONE, false); // (the sweep of the minute runs)
+    live.seen("203.0.113.9", PHONE, false);
     live.seen("198.51.100.1", LAPTOP, true);
     expect(live.now()).toEqual({ people: 2, signedIn: 1, guests: 1 });
   });
@@ -39,7 +38,7 @@ describe("who is here now", () => {
     clock += 1;
     expect(live.now().people).toBe(0);
     live.seen("203.0.113.7", PHONE, false);
-    expect(live.now()).toEqual({ people: 1, signedIn: 0, guests: 1 }); // (it signed out meanwhile: what it was is not remembered past the five minutes)
+    expect(live.now()).toEqual({ people: 1, signedIn: 0, guests: 1 });
   });
 
   it("keeps a browser signed in while some of what it asks carries no session (a picture, a page)", () => {
@@ -86,7 +85,7 @@ describe("how the server answered, by the hour", () => {
 
     clock += 30_000;
     const second = new LiveCount(() => clock);
-    second.answered(429); // (already counting when what was kept is given back)
+    second.answered(429);
     second.restore(handed);
     expect(second.now()).toEqual({ people: 0, signedIn: 0, guests: 0 });
     expect(second.answers(2)).toEqual([
@@ -94,7 +93,6 @@ describe("how the server answered, by the hour", () => {
       { hour: Date.parse("2026-11-18T11:00:00Z"), requests: 2, refused: 0, limited: 1, failed: 0 },
     ]);
 
-    // What no server wrote is let go: an hour that is not an hour, one from the future, one too old, numbers that are none.
     const third = new LiveCount(() => clock);
     third.restore([[clock + 5, 9, 9, 9, 9], [Date.parse("2026-11-19T10:00:00Z"), 9, 0, 0, 0], [Date.parse("2026-11-10T10:00:00Z"), 9, 0, 0, 0], "x", [Date.parse("2026-11-18T10:00:00Z"), -4, "many", 1.5, null]]);
     expect(third.answers(HOURS_KEPT).reduce((all, each) => all + each.requests + each.refused + each.limited + each.failed, 0)).toBe(0);
@@ -108,7 +106,7 @@ describe("how the server answered, by the hour", () => {
     clock += HOURS_KEPT * HOUR;
     live.answered(200);
     expect(live.answers(1000)).toHaveLength(HOURS_KEPT);
-    expect(live.answers(HOURS_KEPT).reduce((sum, each) => sum + each.requests, 0)).toBe(1); // (the first one is forgotten)
+    expect(live.answers(HOURS_KEPT).reduce((sum, each) => sum + each.requests, 0)).toBe(1);
   });
 });
 
@@ -128,9 +126,8 @@ describe("an hour that looks unlike the others", () => {
   it("is not named for a handful, for a site that is always like that, nor with too little to compare with", () => {
     expect(oddHours([...usual, hour(22, { refused: 14 }), hour(23, { failed: 29 })])).toEqual([]);
     const busy = Array.from({ length: 22 }, (_, n) => hour(n, { refused: 40 }));
-    expect(oddHours([...busy, hour(22, { refused: 60 }), hour(23, { refused: 190 })])).toEqual([]); // (not five times the usual forty)
+    expect(oddHours([...busy, hour(22, { refused: 60 }), hour(23, { refused: 190 })])).toEqual([]);
     expect(oddHours([hour(0), hour(1, { refused: 500 })])).toEqual([]);
-    // (a server that has just started: the hours before it are empty, and say nothing of what is usual)
     const quiet = Array.from({ length: 22 }, (_, n) => hour(n, { requests: 0, refused: 0 }));
     expect(oddHours([...quiet, hour(22, { refused: 80 }), hour(23, { refused: 90 })])).toEqual([]);
   });

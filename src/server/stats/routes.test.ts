@@ -16,7 +16,6 @@ const at = Date.parse("2026-11-01T10:00:00Z");
 
 const PHONE = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/156.0 Mobile Safari/537.36";
 const LAPTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/156.0 Safari/537.36";
-/** What a browser sends when a person opens a page. */
 const page = (agent = PHONE, extra: Record<string, string> = {}) => ({ accept: "text/html,application/xhtml+xml", "user-agent": agent, "accept-language": "ro", "sec-fetch-dest": "document", ...extra });
 
 const folders: string[] = [];
@@ -24,7 +23,6 @@ afterEach(async () => {
   while (folders.length) await rm(folders.pop()!, { recursive: true, force: true });
 });
 
-/** A site folder: the page, and a file of the kind Vite names after what is in it. */
 async function siteFolder() {
   const dir = await mkdtemp(path.join(tmpdir(), "kino-stats-"));
   folders.push(dir);
@@ -110,12 +108,11 @@ describe("the owner's stats", () => {
     await server.register(statsRoutes, { adminToken: TOKEN, accounts, maxAccounts: 2, now: () => at });
     const body = (await server.inject({ url: "/api/admin/stats", headers: auth })).json();
     expect(body.accounts).toMatchObject({ total: 2, limit: 2, signUps: "closed" });
-    expect(body.visits).toBeUndefined(); // (no counter: nothing to tell)
+    expect(body.visits).toBeUndefined();
   });
 });
 
 describe("counting the people who open the site", () => {
-  /** What a browser sends when the site's own page, having started, asks who is signed in. */
   const asks = (agent = PHONE, extra: Record<string, string> = {}) => ({ accept: "*/*", "user-agent": agent, "accept-language": "ro", "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty", ...extra });
   const ME = "/api/me";
 
@@ -135,7 +132,6 @@ describe("counting the people who open the site", () => {
     expect(today()).toEqual({ visitors: 1, loads: 3 });
     await server.inject({ url: ME, headers: asks(LAPTOP) });
     expect(today()).toEqual({ visitors: 2, loads: 4 });
-    // (an old TV's browser says nothing of where its question comes from, and is somebody)
     await server.inject({ url: ME, headers: { "user-agent": "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4) AppleWebKit/538.1 TV Safari/538.1", "accept-language": "ro" } });
     expect(today()).toEqual({ visitors: 3, loads: 5 });
     await server.close();
@@ -175,7 +171,6 @@ describe("counting the people who open the site", () => {
     ];
     for (const [, request] of refused) await server.inject(request);
     expect(today()).toEqual({ visitors: 0, loads: 0 });
-    // and the same question, asked as the page asks it, is counted: nothing above was refused for being wrong in some other way
     await server.inject({ url: ME, headers: asks() });
     expect(today()).toEqual({ visitors: 1, loads: 1 });
     await server.close();
@@ -191,10 +186,9 @@ describe("counting the people who open the site", () => {
 
   it("tells visitors apart by the address behind Cloudflare and the host's proxy, and by nothing a visitor can send when there is no proxy", async () => {
     const behind = await site({ trustProxy: 1 });
-    // (Cloudflare in front of the host: the visitor, then the Cloudflare machine the host's proxy saw. Two people through the same machine are two.)
     await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.7, 172.70.1.2" }) });
     await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) });
-    await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) }); // (the second one again)
+    await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) });
     expect(behind.today()).toEqual({ visitors: 2, loads: 3 });
     await behind.server.close();
 
@@ -207,7 +201,7 @@ describe("counting the people who open the site", () => {
 
   it("writes the counts when the server stops, and the owner reads them from the same server", async () => {
     const persistence = new MemoryPersistence();
-    const visits = await VisitCounter.open({ persistence }); // (the real delay: only stopping writes it)
+    const visits = await VisitCounter.open({ persistence });
     const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
     const server = await buildApp({ clientDir: await siteFolder(), visits, accounts, feedbackAdminToken: TOKEN });
     await server.inject({ url: ME, headers: asks() });
@@ -229,9 +223,8 @@ describe("counting the people who open the site", () => {
   });
 });
 describe("which address a request is read as", () => {
-  const HOST_PROXY = "10.8.0.4"; // (the connection: the host's own proxy)
+  const HOST_PROXY = "10.8.0.4";
 
-  /** What the server reads as the address of a request that came in on `HOST_PROXY` with these headers, with this many proxies said to be in front. */
   async function addressOf(headers: Record<string, string>, trustProxy?: number) {
     const server = await buildApp({ feedbackAdminToken: TOKEN, ...(trustProxy === undefined ? {} : { trustProxy }) });
     const response = await server.inject({ url: "/api/admin/stats", headers: { ...auth, ...headers }, remoteAddress: HOST_PROXY });
@@ -245,7 +238,6 @@ describe("which address a request is read as", () => {
     expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2" }, 1)).address).toBe("203.0.113.9");
     expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2, 104.16.0.3" }, 1)).address).toBe("203.0.113.9");
     expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2, 10.9.9.9" }, 1)).address).toBe("203.0.113.9");
-    // (An IPv6 visitor is the network of 64 bits that the address is in: trust.ts.)
     expect((await addressOf({ "x-forwarded-for": "2a02:2f0e:1::7, 2606:4700::6810:1" }, 1)).address).toBe("2a02:2f0e:1:0::");
     expect((await addressOf({ "x-forwarded-for": "2a02:2f0e:1:9:8:7:6:5" }, 1)).address).toBe("2a02:2f0e:1:9::");
   });
@@ -256,9 +248,7 @@ describe("which address a request is read as", () => {
 
   it("is never one a visitor wrote: what comes before the proxies' own addresses is not read", async () => {
     expect((await addressOf({ "x-forwarded-for": "6.6.6.6, 203.0.113.9, 172.70.1.2" }, 1)).address).toBe("203.0.113.9");
-    // sent straight to the host, dressed up as Cloudflare's: the address the host's proxy added is what counts
     expect((await addressOf({ "x-forwarded-for": "6.6.6.6, 173.245.48.1, 198.51.100.7" }, 1)).address).toBe("198.51.100.7");
-    // and a Cloudflare header is only a header
     expect((await addressOf({ "x-forwarded-for": "198.51.100.7", "cf-connecting-ip": "6.6.6.6" }, 1)).address).toBe("198.51.100.7");
   });
 

@@ -1,11 +1,3 @@
-// Reads the scans a phone walk leaves (SCAN=1, see lib.mjs and scan.mjs) and prints, per screen and per device, the numbers the phone work is judged by:
-//   the smallest text, the smallest thing a finger must hit, how much of the screen a sheet covers, whether the page scrolls sideways, text that is cut off, controls with no name.
-//
-//   node scripts/ui-walk/phone-numbers.mjs <scan root> <device folder> [<device folder> ...] [--from=<state>] [--detail]
-//   e.g.  node scripts/ui-walk/phone-numbers.mjs .ui-polish/scan/before phone-390 phone-360x800
-//
-// What counts as "on screen": everything in view; when a sheet is open, only what is inside the sheet (what is behind its scrim cannot be touched).
-// A control's size is the larger of its drawing and the reach of its ::before / ::after hit area (the scan records that as `hit`).
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -18,21 +10,15 @@ if (!root || devices.length === 0) {
 }
 
 const round = (n) => Math.round(n * 10) / 10;
-/** The test ids of what a finger picks a title with (the remote's tiles, cards and results). */
 const TITLE_IDS = new Set(["library-tile", "continue-play", "list-play", "rating-play", "library-result", "title-episode"]);
 
-/** The numbers of one scan file. */
 function measure(file) {
   const data = JSON.parse(readFileSync(file, "utf8"));
   const { width: W, height: H } = data.page;
-  // what is in view and not under something else (the scan asks the browser what is on top: scan.mjs `covered`)
   const inView = data.elements.filter((e) => e.inView);
   const visible = inView.filter((e) => !e.covered);
-  // a sheet: the box with the class "sheet" (not its backdrop or grip); a modal sheet's share of the screen is what it covers
   const sheet = inView.find((e) => (e.cls ?? "").split(" ")[0] === "sheet");
   const covered = sheet ? Math.max(0, Math.min(sheet.y + sheet.h, H) - Math.max(sheet.y, 0)) / H : 0;
-  // (a field's own type counts as text: what is typed and its hint. The sample line of the subtitle style is a picture of what the TV shows, scaled to
-  // the little screen it sits on: its size is the subtitle's, not the page's, so it is left out.)
   const texts = visible.filter(
     (e) => e.fs && !(e.cls ?? "").split(" ").includes("cap-sample") && ((e.kinds.includes("text") && (e.text ?? "").trim().length > 0) || e.tag === "input" || e.tag === "textarea"),
   );
@@ -45,7 +31,6 @@ function measure(file) {
   const hit = controls.map((e) => ({ e, size: sizeOf(e) }));
   const smallestControl = hit.reduce((best, c) => (best === null || c.size < best.size ? c : best), null);
   const describe = (e) => [e.tag, e.id ?? e.label ?? e.text ?? e.cls ?? ""].filter(Boolean).join(" ").slice(0, 38);
-  // a title you could pick: a tile, a card, a search result, an episode (the TV page's tiles have the class tv-tile)
   const isTitle = (e) => TITLE_IDS.has(e.id) || (e.cls ?? "").split(" ").includes("tv-tile");
   const titles = visible.filter((e) => isTitle(e) && e.w > 40 && e.h > 40);
   const shown = titles.filter((e) => Math.min(e.y + e.h, H) - Math.max(e.y, 0) >= e.h * 0.5 && Math.min(e.x + e.w, W) - Math.max(e.x, 0) >= e.w * 0.5);
@@ -61,9 +46,7 @@ function measure(file) {
     controls: controls.length,
     sheetCover: sheet ? Math.round(covered * 100) : null,
     sideways: data.page.sidewaysScroll ? `${data.page.scrollWidth - W}px` : "",
-    // (a heading that is only for a screen reader is a box of one pixel, clipped on purpose: it is not text a person can see cut off)
     cutOff: visible.filter((e) => (e.clipped || e.clippedTall) && e.w > 2 && e.h > 2).length,
-    // (a field is named by the label around it, which the scan does not look at: the fields are checked with axe instead)
     unnamed: controls.filter((e) => e.named === false && !["input", "textarea", "select"].includes(e.tag)).length,
     titlesShown: shown.length,
     firstTitleAt: firstTitle === null ? null : Math.round(Math.max(firstTitle, 0)),

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fitMedia, NormalizedMediaSchema, preferredSourceIndex, sourceMenus, sourcesOf, type NormalizedMedia } from "./media";
 
-/*
- * Where a film comes from and how sharp it is are two questions, with a picker each. A source that hands over the same stream in several qualities
- * marks them (`quality`), and those are listed under Quality: under Source the main stream stands for them all.
- */
 const stream = (name: string) => ({ url: `https://films.example/${name}.mp4`, type: "mp4" as const });
 
 describe("a film's sources and its qualities", () => {
@@ -32,14 +28,13 @@ describe("a film's sources and its qualities", () => {
 
   it("does not make a quality picker out of one marked stream, or out of marks the main stream does not share", () => {
     expect(sourceMenus(sourcesOf({ stream: stream("a"), quality: "1080p", alternates: [{ label: "Mirror", stream: stream("b") }] }))).toEqual({ sources: [0, 1], qualities: [] });
-    // (Marked alternates beside an unmarked main stream: nothing says they are the same stream, so they stay sources.)
     const all = sourcesOf({ stream: stream("a"), alternates: [{ quality: "720p", stream: stream("b") }, { quality: "480p", stream: stream("c") }] });
     expect(sourceMenus(all)).toEqual({ sources: [0, 1, 2], qualities: [] });
   });
 
   it("keeps the marks when a film is trimmed to fit, and the trimmed film is still one the screen accepts", () => {
     const { media: fitted, unfit } = fitMedia({ ...film, title: "long ".repeat(100) });
-    expect(unfit).toEqual(["title"]); // (so it was trimmed, not passed through)
+    expect(unfit).toEqual(["title"]);
     expect(NormalizedMediaSchema.safeParse(fitted).success).toBe(true);
     expect(fitted?.quality).toBe("Auto (HLS)");
     expect(fitted?.alternates?.map((alternate) => alternate.quality)).toEqual(["1080p", "720p", undefined]);
@@ -90,7 +85,6 @@ describe("preferredSourceIndex (anime audio preferred language)", () => {
       alternates: [{ label: "Server 2 (English Dub)", stream: { url: "https://films.example/dub.m3u8", type: "hls" } }],
     };
     expect(preferredSourceIndex(server, "eng")).toBe(1);
-    // (The main one is not labelled: it is the anime's own audio, the one that is not the dub - Japanese chosen while the dub plays goes back to it.)
     expect(preferredSourceIndex(server, "jp")).toBe(0);
     expect(preferredSourceIndex(server, undefined)).toBe(0);
     const dubFirst: NormalizedMedia = {

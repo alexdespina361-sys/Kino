@@ -1,4 +1,3 @@
-// The subtitle fixer from the command line: `node scripts/subfix.mjs <file> --lang en|ro [...]` (docs/subtitle-fixer.md).
 import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isOfficialLang } from "../../../shared";
@@ -66,7 +65,6 @@ async function main(): Promise<number> {
   if (typeof command === "string") options.polish = { polisher: new CommandPolisher(command), strength };
   const asked = { audio: typeof audio === "string", seconv: Boolean(seconv), polish: typeof command === "string" ? strength : false };
 
-  // (The same file done the same way before: say where, unless --again.)
   const names = await readdir(out);
   const versions = names.map((name) => new RegExp(`^${escape(stem)}\\.kino-v(\\d+)\\.report\\.json$`).exec(name)).filter((m): m is RegExpExecArray => m !== null);
   for (const match of versions) {

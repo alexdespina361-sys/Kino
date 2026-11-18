@@ -1,8 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import { FEEDBACK_TOKEN } from "./e2e/feedbackToken";
 
-const PORT = Number(process.env.E2E_PORT) || 8788; // not the dev port, so `pnpm dev` and e2e can run side by side
-/** A second server, as the site is: a new profile is set up by whoever uses it (e2e/profile-setup.spec.ts). The others make accounts to try something else, and are asked nothing. */
+const PORT = Number(process.env.E2E_PORT) || 8788;
 const SETUP_PORT = PORT + 50;
 const ENV = { HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", SLOW_CHECKS_PER_15_MIN: "100000", PAIRINGS_PER_HOUR: "100000", FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000", PERSONAL_STICKERS: "on", MOVING_STICKERS: "on" };
 
@@ -15,9 +14,6 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
-    // Every page starts as if its viewer had left full screen on an earlier visit (see src/client/shared/fullscreen.ts): a screen would
-    // otherwise go full screen at the first key press of any test. The tests of full screen itself start from FIRST_VISIT (e2e/helpers.ts).
-    // And as if the phone's menu had turned on the box for pasting a link (off on a new phone, see Controller.tsx), which most tests play from.
     storageState: {
       cookies: [],
       origins: [
@@ -26,7 +22,6 @@ export default defineConfig({
           localStorage: [
             { name: "kino.fullscreen.left", value: "1" },
             { name: "kino.linkbox", value: "1" },
-            // And as a screen that is watched from the couch, whatever its size: the tests of the big screen are of a TV, run in a computer's browser (see `thisIsDesk`; e2e/desk.spec.ts leaves this out).
             { name: "kino.fit", value: "couch" },
           ],
         },
@@ -34,25 +29,15 @@ export default defineConfig({
     },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  // The real thing: production build, one Fastify process serving UI + /ws + local fixtures.
   webServer: [
    {
-    // (E2E_NO_BUILD=1: the build is already made, by a run that goes on beside this one on another port.)
     command: process.env.E2E_NO_BUILD ? "pnpm start" : "pnpm build && pnpm start",
     url: `http://127.0.0.1:${PORT}/api/health`,
-    // ALLOW_PRIVATE_NETWORK lets the resolver fetch our own localhost fixture pages. Test-only; off by default.
-    // DATA_DIR=memory: accounts made by the tests are not kept (and do not end up in a data folder).
-    // SIGNUPS_PER_HOUR: every test is the same address, and the limit (10 an hour) is for a public server, not for a suite that makes an account in each of its account tests.
-    // FEEDBACK_ADMIN_TOKEN and FEEDBACK_SENDS_PER_10_MIN: the same for the feedback (6 reports in ten minutes), and the feedback specs read what was sent with the token.
-    // PERSONAL_STICKERS=on: the chat specs try them (a host has them off until its owner turns them on, see src/server/accounts/stickers.ts). MOVING_STICKERS=on
-    // too: stickers that move (the specs that need them off say so to their pages).
-    // PROFILE_SETUP=off: a new profile is asked nothing (the second server below is the one that asks).
     env: { ...ENV, PORT: String(PORT), PROFILE_SETUP: "off" },
     reuseExistingServer: false,
     timeout: 120_000,
    },
    {
-    // (Started once the first is up, which has made the build.)
     command: "pnpm start",
     url: `http://127.0.0.1:${SETUP_PORT}/api/health`,
     env: { ...ENV, PORT: String(SETUP_PORT) },

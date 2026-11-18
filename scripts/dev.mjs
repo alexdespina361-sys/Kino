@@ -1,4 +1,3 @@
-// `pnpm dev`: Fastify (auto-restart) + Vite dev server, one terminal. No extra dependency.
 import { spawn } from "node:child_process";
 
 const run = (name, args) =>

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { startWhistle, Unsupported, type WorkerLike } from "./whistle";
 
-/** A stand-in for the recogniser's worker: what it is sent is kept, and the test answers as the real one would. */
 class FakeWorker implements WorkerLike {
   sent: Array<{ message: any; transfer: Transferable[] | undefined }> = [];
   terminated = false;
@@ -24,7 +23,7 @@ class FakeWorker implements WorkerLike {
 const start = async (extra: Parameters<typeof startWhistle>[0] = {}) => {
   const worker = new FakeWorker();
   const made = startWhistle({ createWorker: () => worker, validateEngine: async () => true, ...extra });
-  made.catch(() => {}); // (a start that fails while the test is still looking is not an unhandled one)
+  made.catch(() => {});
   await vi.waitFor(() => expect(worker.sent.length).toBeGreaterThan(0));
   return { worker, made };
 };
@@ -63,7 +62,6 @@ describe("the recogniser's worker", () => {
       { word: "hello", start: 0.2, end: 0.5, probability: 0.9 },
       { word: "there", start: 0.6, end: 0.9 },
     ]);
-    // (A window with nothing said has no words at all.)
     const quiet = recogniser.hear(new Float32Array(100));
     worker.say({ type: "result", id: worker.requests[1].id, value: { text: "" } });
     expect(await quiet).toEqual([]);

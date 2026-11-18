@@ -2,20 +2,9 @@ import { useEffect, useState } from "react";
 import { isHisense } from "./browser";
 import { readStorage, writeStorage } from "./format";
 
-/**
- * Full screen for the page itself. A browser lets a page go full screen only right after a key press or click on it, so a page can't
- * open that way: a TV's screen goes full screen at its first press, once, and from then on it is the viewer's call. What they did last is
- * kept in this browser: leave full screen and the next visit stays as it is; go in again and it opens full screen once more. A computer's
- * or a phone's screen is never taken there by itself: its button does it (see main.tsx).
- */
-
 const LEFT_KEY = "kino.fullscreen.left";
 const REFUSED_KEY = "kino.fullscreen.refused";
 
-/**
- * A browser that is never asked for a full screen: Hisense's (see browser.ts), or one that was opened on an address with
- * `?fullscreen=off` (kept until `?fullscreen=on`), for a TV browser that goes wrong on it without saying what it is.
- */
 let refused: boolean | undefined;
 function refusesFullscreen(): boolean {
   if (refused === undefined) {
@@ -26,15 +15,10 @@ function refusesFullscreen(): boolean {
   return refused;
 }
 
-/** Whether the browser has a full screen to give this page (an iPhone's has none) and may be asked for it. */
 export const canFullscreen = (): boolean => Boolean(document.fullscreenEnabled) && !refusesFullscreen();
 
 export const isFullscreen = (): boolean => document.fullscreenElement !== null;
 
-/**
- * The request that is on its way. A press is used up by the first request made on it, and a second one is refused (with a line in the
- * console): the page's first-press listener and the welcome's own button both ask for the same press, so they share the one request.
- */
 let asked: Promise<void> | null = null;
 function requestFullscreen(): Promise<void> {
   asked ??= document.documentElement.requestFullscreen().finally(() => {
@@ -52,7 +36,6 @@ export function toggleFullscreen(): void {
   else enterFullscreen();
 }
 
-/** Whether the page is full screen right now, kept up to date. */
 export function useFullscreen(): boolean {
   const [on, setOn] = useState(isFullscreen);
   useEffect(() => {
@@ -64,61 +47,41 @@ export function useFullscreen(): boolean {
   return on;
 }
 
-/** What a browser that can hold a screen's orientation has to offer (not all of them do; the lock is not in every copy of the DOM typings). */
 type Orientation = { lock?: (to: "landscape") => Promise<void>; unlock?: () => void };
 
-/** A touch screen (a phone, a tablet) whose browser can hold its orientation: anything else has nothing to turn, or no way to. */
 const canTurn = (): boolean => {
   const orientation = typeof screen === "undefined" ? undefined : (screen.orientation as Orientation | undefined);
   return typeof orientation?.lock === "function" && matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0;
 };
 
-/**
- * A film is small on a phone held upright. For as long as `on` (the page is full screen with a video playing), a touch screen is kept
- * sideways, and it is let go the moment that is over, so it turns back by itself, upright if that is how it is held. A browser that
- * can't hold the orientation (an iPhone's, a desktop's) refuses, and nothing changes.
- */
 export function useLandscapeWhile(on: boolean): void {
   useEffect(() => {
     if (!on || !canTurn()) return;
     const orientation = screen.orientation as Orientation;
     try {
-      orientation.lock!("landscape").catch(() => {}); // (refused outside full screen, and where the device has no say)
+      orientation.lock!("landscape").catch(() => {});
     } catch {
-      // refused at once
     }
     return () => {
       try {
-        orientation.unlock?.(); // (a lock that has not been granted yet is cancelled by this)
+        orientation.unlock?.();
       } catch {
-        // nothing was held
       }
     };
   }, [on]);
 }
 
-/** Safari takes no typed letters in a full-screen page (so that a page there can't pose as a sign-in), so it never goes there by itself. */
 const takesTyping = (): boolean => !navigator.vendor.startsWith("Apple");
 
-/** Whether the page already fills the display: in its own full screen, or in the browser's (F11, a kiosk, an installed app that opens that way). */
 const fillsDisplay = (): boolean => isFullscreen() || matchMedia("(display-mode: fullscreen)").matches;
 
-/** Whether the page may go full screen at the first press: the browser has one to give, takes typing there, and the viewer did not leave it last time. */
 const mayEnterByItself = (): boolean => canFullscreen() && takesTyping() && readStorage(LEFT_KEY) === undefined;
 
-/** Whether this page goes full screen at its first press at all (`setUpFullscreen`'s `byItself`): a TV's does, a computer's and a phone's do not. */
 let atFirstPress = false;
 
-/** Whether the first press would take this page full screen, so that the welcome can ask for it with a button. */
 export const entersAtFirstPress = (): boolean => atFirstPress && mayEnterByItself() && !fillsDisplay();
 
-/**
- * Once, as the page starts. Keeps what the viewer chose: every way into and out of full screen (the button, a key, the phone's, the
- * browser's own) ends in the browser's `fullscreenchange`. And, for a page that plays (`byItself`), goes full screen at the first
- * key press or click, unless the viewer left it last time.
- */
 export function setUpFullscreen({ byItself }: { byItself: boolean }): void {
-  // A page that is going away (reloaded, switched to the remote) leaves full screen without anybody having chosen it.
   let unloading = false;
   addEventListener("pagehide", () => (unloading = true));
   addEventListener("pageshow", () => (unloading = false));
@@ -136,9 +99,8 @@ export function setUpFullscreen({ byItself }: { byItself: boolean }): void {
   };
   const enter = (event: Event) => {
     if (!event.isTrusted || asking) return;
-    if (fillsDisplay()) return stop(); // already as full as it gets (it was opened that way, or the button got there first)
+    if (fillsDisplay()) return stop();
     asking = true;
-    // A key that is no press to a browser (Escape) is refused: the next press is tried instead.
     requestFullscreen().then(stop, () => (asking = false));
   };
   addEventListener("keydown", enter, true);

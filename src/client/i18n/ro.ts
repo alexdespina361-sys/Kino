@@ -1,11 +1,23 @@
 import { chatRo } from "./chat.ro";
-import { catRo } from "./cat.ro";
-import { shellRo } from "./shell.ro";
 import type { Dictionary } from "./en";
+import type { ShellDictionary } from "./shell.en";
 
-/** Română. Aceleași chei ca în en.ts (compilatorul verifică); formele de plural sunt `_one`, `_few`, `_other`. */
+const shellRo: ShellDictionary = {
+  "tabs.label": "Navigare principală",
+  "tabs.home": "Acasă",
+  "tabs.search": "Caută",
+  "tabs.list": "Listele mele",
+  "tabs.you": "Tu",
+
+  "remote.open": "Deschide telecomanda",
+
+  "lists.emptyTitle": "Nimic salvat încă",
+  "lists.browse": "Caută ceva de văzut",
+
+  "rows.seeAll": "Vezi toate",
+};
+
 export const ro: Dictionary = {
-  /* common */
   "common.back": "Înapoi",
   "common.cancel": "Anulează",
   "common.close": "Închide",
@@ -21,7 +33,6 @@ export const ro: Dictionary = {
   "common.optional": "Opțional",
   "common.clear": "Golește",
 
-  /* playing a link from the phone */
   "play.paste": "Lipește un link către un film sau o pagină",
   "play.pasteLabel": "Link către film sau pagină",
   "play.pasteButton": "Lipește",
@@ -29,7 +40,6 @@ export const ro: Dictionary = {
   "play.finding": "Caut videoclipul…",
   "play.found": "Videoclip găsit. Se trimite pe {tv}…",
 
-  /* signing in */
   "auth.signIn": "Autentificare",
   "auth.signUp": "Creează cont",
   "auth.signOut": "Deconectare",
@@ -56,14 +66,12 @@ export const ro: Dictionary = {
   "auth.google": "Continuă cu Google",
   "auth.or": "sau",
 
-  /* how a round trip to Google ended */
   "google.denied": "Conectarea cu Google a fost anulată.",
   "google.failed": "Conectarea cu Google nu a reușit. Încearcă din nou.",
   "google.taken": "Acest cont Google este deja legat de alt cont.",
   "google.unavailable": "Conectarea cu Google nu este disponibilă aici.",
   "google.linked": "Google este conectat. Acum te poți autentifica și cu el.",
 
-  /* things the server says no to */
   "error.generic": "Ceva nu a mers bine. Încearcă din nou.",
   "error.offline": "Nu mă pot conecta la server. Verifică conexiunea.",
   "error.invalid_credentials": "Nume de utilizator sau parolă greșită.",
@@ -85,7 +93,6 @@ export const ro: Dictionary = {
   "error.bad_response": "Acest server nu are conturi.",
   "error.reauth_required": "Confirmă mai întâi cu Google.",
 
-  /* profiles */
   "profiles.title": "Cine se uită?",
   "profiles.manage": "Gestionează profilurile",
   "profiles.add": "Adaugă profil",
@@ -141,7 +148,6 @@ export const ro: Dictionary = {
   "avatar.vampire": "Vampir",
   "avatar.dragon": "Dragon",
 
-  /* the account page on the phone */
   "account.title": "Cont",
   "account.open": "Cont și profiluri",
   "account.signInPrompt": "Autentifică-te",
@@ -186,7 +192,6 @@ export const ro: Dictionary = {
   "account.deleteWarnGoogle": "Contul, profilurile, istoricul și listele se șterg definitiv. Pentru a confirma, autentifică-te din nou cu Google.",
   "account.deleteWithGoogle": "Confirmă cu Google",
 
-  /* signing another device in */
   "link.title": "Autentifică-te cu alt dispozitiv",
   "link.step1": "Deschide Kino pe alt dispozitiv și autentifică-te.",
   "link.step2": "Atinge poza ta, apoi „Autentifică alt dispozitiv”.",
@@ -209,7 +214,6 @@ export const ro: Dictionary = {
   "link.device.remote": "Un telefon",
   "link.device.browser": "Un browser",
 
-  /* settings that follow a profile */
   "settings.title": "Setări",
   "settings.language": "Limbă",
   "settings.accent": "Culoare",
@@ -241,7 +245,6 @@ export const ro: Dictionary = {
   "accent.orange": "Portocaliu",
   "accent.pink": "Roz",
 
-  /* rows and cards */
   "rows.continue": "Continuă vizionarea",
   "rows.myList": "Listele mele",
   "rows.myListEmpty": "Ține apăsat pe un titlu, sau apasă + pe pagina lui, ca să-l salvezi aici.",
@@ -285,7 +288,6 @@ export const ro: Dictionary = {
   "library.aboutLess": "Arată mai puțin",
   "library.kindSeries": "Serial",
 
-  /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */
   "category.trending-movies": "Filme în tendințe",
   "category.trending-tv": "Seriale în tendințe",
   "category.popular-movies": "Filme populare",
@@ -416,7 +418,6 @@ export const ro: Dictionary = {
   "category.world-zh-movies": "Cinema chinezesc",
   "category.world-ru-movies": "Cinema rusesc",
   "category.world-tr-movies": "Cinema turc",
-  /* the rows of the Cartoons and Anime pages */
   "category.cartoon-tv": "Seriale de desene animate populare",
   "category.cartoon-movies": "Filme de desene animate populare",
   "category.cartoon-top-tv": "Cele mai bine cotate seriale de desene animate",
@@ -470,7 +471,6 @@ export const ro: Dictionary = {
   "category.best-anime-tv": "Cele mai bune seriale anime",
   "category.best-anime-movies": "Cele mai bune filme anime",
 
-  /* the account pages: settings, devices, signing another device in */
   "settings.playback": "Redare",
   "settings.appearance": "Aspect",
   "settings.subtitleDefaults": "Acum apar primele: {languages}.",
@@ -486,7 +486,6 @@ export const ro: Dictionary = {
   "link.scan": "Scanează codul de pe celălalt dispozitiv",
   "link.codeOr": "sau scrie codul",
   "link.codeLabel": "Codul de pe celălalt dispozitiv",
-  /* the TV's start screens and account pages */
   "tv.welcome": "Bun venit",
   "tv.welcomeStart": "Începe vizionarea",
   "tv.welcomeAbout": "Filme și seriale pe acest ecran, cu telefonul drept telecomandă, dacă vrei.",
@@ -514,7 +513,6 @@ export const ro: Dictionary = {
   "role.asRemote": "Folosește acest ecran ca telecomandă",
   "tv.notSignedIn": "Neautentificat",
   "tv.approveHelp": "Scrie codul pe care îl arată celălalt dispozitiv.",
-  /* the TV's library */
   "tv.library": "Bibliotecă",
   "tv.menu": "Meniul bibliotecii",
   "tv.search": "Caută",
@@ -553,7 +551,6 @@ export const ro: Dictionary = {
   "tv.caretLeft": "Mută cursorul la stânga",
   "tv.caretRight": "Mută cursorul la dreapta",
 
-  /* the player: menus, sheets and the controls over the picture */
   "player.audioSubtitles": "Audio și subtitrări",
   "player.audio": "Audio",
   "player.subtitles": "Subtitrări",
@@ -892,7 +889,6 @@ export const ro: Dictionary = {
   "ws.HAS_PHONE": "Deconectează telefonul de la acest televizor înainte să intri într-o vizionare comună.",
   "ws.ALREADY_IN_PARTY": "Ieși mai întâi din această vizionare comună, apoi intră în alta.",
 
-  /* a watch party on the TV: the menu line, the page, the panel over a film */
   "party.rail": "Vizionare comună",
   "party.size_one": "{count} dispozitiv",
   "party.size_few": "{count} dispozitive",
@@ -936,10 +932,8 @@ export const ro: Dictionary = {
   "resolve.unsupported": "Nu am găsit un videoclip care să ruleze aici.",
   "resolve.temporary": "Ceva nu a mers la căutarea videoclipului. Încearcă din nou peste un moment.",
 
-  /* subtitle languages: the way out of a profile's own list */
   "player.showAll": "Arată toate limbile",
 
-  /* the TV's library: its menu and the pages behind it */
   "tv.movies": "Filme",
   "tv.series": "Seriale",
   "tv.cartoons": "Desene animate",
@@ -1011,7 +1005,6 @@ export const ro: Dictionary = {
   "rows.moreLike": "Mai multe ca {title}",
   "rows.moreFailed": "Nu s-au putut încărca mai multe titluri. Se încearcă din nou…",
 
-  /* ratings: a score out of ten, why, and what was watched */
   "rating.mine": "Notele mele",
   "rating.mineHelp": "Titlurile și sezoanele cărora le-ai dat o notă.",
   "rating.all": "Vezi toate",
@@ -1063,7 +1056,6 @@ export const ro: Dictionary = {
   "rating.finishedOn": "Terminat pe {date}",
   "rating.lastWatchedOn": "Văzut ultima dată pe {date}",
 
-  /* prieteni: își văd listele și notele, își trimit titluri și invitații, află ce se uită celălalt */
   "friends.title": "Prieteni",
   "friends.settings": "Prieteni",
   "friends.settingsHelp": "Prietenii văd numele, poza, listele și notele acestui profil și când e online, și îi pot trimite titluri, invitații și mesaje. Ce te uiți se împărtășește doar dacă alegi tu, mai jos.",
@@ -1253,7 +1245,6 @@ export const ro: Dictionary = {
   "error.plan_full": "Ai deja atâtea planuri care așteaptă un răspuns câte pot fi. Așteaptă mai întâi un răspuns.",
   "error.plan_gone": "Planul acesta nu mai așteaptă un răspuns.",
 
-  /* feedback: un formular prin care îi spui echipei ce n-a mers, ce ar putea fi mai bine sau ce lipsește (client/feedback) */
   "feedback.title": "Trimite feedback",
   "feedback.entry": "Feedback",
   "feedback.report": "Raportează această problemă",
@@ -1477,12 +1468,7 @@ export const ro: Dictionary = {
   "feedback.leave.stay": "Continuă editarea",
   "feedback.leave.go": "Închide oricum",
 
-  /* chat între doi prieteni (client/chat): într-un fișier separat, adăugat aici */
   ...chatRo,
 
-  /* shell-ul telefonului, bara de jos și ecranele din ea (client/controller/shell): într-un fișier separat, adăugat aici */
   ...shellRo,
-
-  /* the cat companion (client/cat): kept in a file of its own, spread in here */
-  ...catRo,
 };

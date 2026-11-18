@@ -1,11 +1,3 @@
-// The phone work's before and after, in the same numbers phone-numbers.mjs prints, but only over the screens the two walks have in common (matched by name, without a
-// "-1of3" part), so that a screen that exists only in the new layout cannot flatter it. Two scan folders, one before and one after:
-//
-//   node scripts/ui-walk/phone-compare.mjs <before scan root> <before folder> <after scan root> <after folder> [--all]
-//   e.g.  node scripts/ui-walk/phone-compare.mjs .ui-polish/scan/before phone-390 .ui-polish/scan/final phone-390x844
-//
-// --all compares every screen of each walk instead. The bar's four words (12 px, the only text on the phone under 14 px) are told apart: a second "smallest text"
-// is given without them. docs/phone-layout/QA.md has the tables this made.
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 

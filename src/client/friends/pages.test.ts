@@ -76,7 +76,6 @@ describe("the rows of the friends page", () => {
     expect(people(sam)?.online).toBeUndefined();
     expect(people({ ...sam, online: true })).toMatchObject({ avatar: "fox", online: true, note: t("friends.online") });
     expect(people({ ...sam, on: false, online: true })?.online).toBeUndefined();
-    // (and when they last were, once they are not: no dot, and the line says it before since when they are friends would)
     const seen = people({ ...sam, lastOnline: NOW - 5 * 60_000 });
     expect(seen).toMatchObject({ note: t("friends.lastOnline", { when: "5 minutes ago" }) });
     expect(seen?.online).toBeUndefined();
@@ -95,7 +94,7 @@ describe("the rows of the friends page", () => {
     const entries = rows.find((row) => row.id === "friend-parties")?.entries ?? [];
     expect(entries.map((entry) => entry.inboxId)).toEqual(["old", "p2"]);
     expect(entries[0]).toMatchObject({ id: "party:old", title: t("friends.partyOf", { name: "Sam" }), url: "", ask: "pro_sam", inboxId: "old" });
-    expect(entries[0]).not.toHaveProperty("party"); // (there is nothing to join)
+    expect(entries[0]).not.toHaveProperty("party");
     expect(entries[0]?.note).toContain(t("friends.partyOver"));
     expect(entries[1]).toMatchObject({ party: "482731" });
   });
@@ -106,7 +105,6 @@ describe("the rows of the friends page", () => {
       expect(friendRows(state({ friends: [friend], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
     }
     expect(friendRows(state({ friends: [], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
-    // (telling what they watch is not needed to be asked: it is off until it is turned on)
     expect(friendRows(state({ friends: [{ ...sam, activity: false }], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people", "friend-parties"]);
   });
 
@@ -114,9 +112,9 @@ describe("the rows of the friends page", () => {
     const row = (changes: Partial<FriendsState>, iGet: boolean) => friendRows(state(changes), NOW, iGet).find((each) => each.id === "friend-activity-off");
     expect(row({}, false)).toMatchObject({ layout: "categories", title: t("friends.activity") });
     expect(row({}, false)?.entries).toEqual([{ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGive"), action: "friendSettings" }]);
-    expect(friendRows(state(), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-activity-off"]); // (the last row)
-    expect(row({}, true)).toBeUndefined(); // (on: as before, the rows are there when there is something to show)
-    expect(row({ friends: [{ ...sam, on: false }] }, false)).toBeUndefined(); // (nobody who could be heard from)
+    expect(friendRows(state(), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-activity-off"]);
+    expect(row({}, true)).toBeUndefined();
+    expect(row({ friends: [{ ...sam, on: false }] }, false)).toBeUndefined();
     expect(row({ friends: [] }, false)).toBeUndefined();
     expect(friendRows(state({ activity: [watched("pro_sam", "k")] }), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-watched:pro_sam"]);
   });
@@ -143,7 +141,7 @@ describe("the rows of the friends page", () => {
     const { heading, detail } = planLines({ kind: "plan", id: "p1", from: "pro_sam", at: NOW, read: false, when, note: "popcorn" }, "Sam", NOW);
     expect(plans?.entries[0]).toMatchObject({ id: "plan:p1", title: heading, note: detail, url: "", plan: "p1", inboxId: "p1" });
     expect(plans?.entries[0]?.note).toContain("popcorn");
-    expect(plans?.entries[0]).not.toHaveProperty("wants"); // (it is no request for a party yet)
+    expect(plans?.entries[0]).not.toHaveProperty("wants");
   });
 
   it("show a plan whose time has come as a tile that starts the party for them, as a request to watch together does", () => {
@@ -346,22 +344,22 @@ describe("a friend's page", () => {
   it("says under the name what the friend is doing: watching, when it is told, else online", () => {
     const doing = state({ activity: [watched("pro_sam", "k")] });
     expect(friendGrid(view, doing, { data: lists() }, null, true, NOW)?.meta).toBe(`${t("friends.line.watching", { title: "Alien" })}  ·  ${since(sam)}`);
-    expect(friendGrid(view, { ...doing, friends: [{ ...sam, online: true }] }, { data: lists() }, null, true, NOW)?.meta).toContain(t("friends.line.watching", { title: "Alien" })); // (watching says more than online)
+    expect(friendGrid(view, { ...doing, friends: [{ ...sam, online: true }] }, { data: lists() }, null, true, NOW)?.meta).toContain(t("friends.line.watching", { title: "Alien" }));
   });
 
   it("says, when what a friend watches is not shown, why: this profile is not told, else the friend does not tell", () => {
     const quiet = state({ friends: [{ ...sam, activity: false }] });
     expect(friendGrid(view, quiet, { data: lists() }, null, false)?.hint).toBe(t("friends.hintMine", { name: "Sam", switch: t("friends.switchGive") }));
     expect(friendGrid(view, quiet, { data: lists() }, null, true)?.hint).toBe(t("friends.hintTheirs", { name: "Sam" }));
-    expect(friendGrid(view, state(), { data: lists() }, null, false)).not.toHaveProperty("hint"); // (it is shown: nothing to explain)
-    expect(friendGrid(view, state({ friends: [{ ...sam, on: false, activity: false }] }), null, null, false)).not.toHaveProperty("hint"); // (friends off has a line of its own)
+    expect(friendGrid(view, state(), { data: lists() }, null, false)).not.toHaveProperty("hint");
+    expect(friendGrid(view, state({ friends: [{ ...sam, on: false, activity: false }] }), null, null, false)).not.toHaveProperty("hint");
   });
 
   it("shows the titles in the lists they keep, a section to each list under its name, one under the other, and none that were taken out", () => {
     const grid = friendGrid(view, state(), { data: lists() }, null);
     expect(grid?.entries.map((entry) => entry.title)).toEqual(["Alien", "It"]);
     expect(grid?.sections).toEqual([{ title: t("list.favourites"), count: 1 }, { title: "Horror", count: 1 }]);
-    expect(grid?.entries.map((entry) => entry.note)).toEqual([undefined, undefined]); // (the heading says which list: the tiles need not)
+    expect(grid?.entries.map((entry) => entry.note)).toEqual([undefined, undefined]);
     expect(grid?.entries[1]).toMatchObject({ url: "https://x.example/it", image: "poster-it" });
   });
 
@@ -387,7 +385,6 @@ describe("a friend's page", () => {
         { key: "horror|k1", at: 3, list: "horror", id: "k1", title: "Alien", url: "https://x.example/alien" },
       ],
     };
-    // (Which of my lists a title is in does not matter: the title is what counts.)
     const mine = { list: [{ url: "https://x.example/alien" }, { url: "https://x.example/heat" }], ratings: [] };
     const grid = friendGrid(view, state(), { data: twice }, null, true, NOW, mine);
     expect(grid?.sections).toEqual([{ title: t("friends.bothWant"), count: 1 }, { title: t("list.favourites"), count: 1 }, { title: "Horror", count: 2 }]);
@@ -407,7 +404,7 @@ describe("a friend's page", () => {
       ratings: [
         { url: "https://x.example/alien", score: 6 },
         { url: "https://x.example/dark", season: 2, score: 9 },
-        { url: "https://x.example/dark", score: 4 }, // (the show as a whole: not the season the friend rated)
+        { url: "https://x.example/dark", score: 4 },
       ],
     };
     const grid = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: ratings() }, true, NOW, mine);

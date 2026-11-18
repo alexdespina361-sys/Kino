@@ -16,7 +16,6 @@ describe("the requests of TVs that wait to be signed in", () => {
 
     const eleventh = links.start("tv", "TV", "203.0.113.5")!;
     expect(eleventh).toBeDefined();
-    // (The one that gave way is told as one that is gone, and the others are as they were.)
     expect(links.claim(mine[0]!.code, mine[0]!.secret)).toEqual({ status: "gone" });
     expect(mine.slice(1).every((each) => alive(links, each))).toBe(true);
     expect(alive(links, eleventh)).toBe(true);
@@ -38,7 +37,6 @@ describe("the requests of TVs that wait to be signed in", () => {
 
   it("gives a request its place when the table is full, by letting the oldest of all give way", () => {
     const links = open();
-    // a thousand, ten from each of a hundred addresses
     const flood = Array.from({ length: 100 }, (_, address) => Array.from({ length: 10 }, () => links.start("tv", "TV", `198.51.100.${address}`)!)).flat();
     expect(flood).toHaveLength(1000);
     expect(flood.every((each) => alive(links, each))).toBe(true);

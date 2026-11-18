@@ -1,37 +1,16 @@
-/**
- * GIFs in a chat, from KLIPY (https://klipy.com): what the owner asked for on 16 Nov ("implement gifs"). Tenor's API was shut on 30 Jun 2026 and GIPHY's
- * production use is paid; KLIPY's is free, with a key of the site's own (`KLIPY_KEY` on the host, given to the pages by `/api/features`: KLIPY puts it in
- * the address of every request a visitor's browser makes, so it is no secret).
- *
- * KLIPY's rules for a standard integration (docs.klipy.com, "Integration Requirements"), and how this keeps them:
- * - the requests and the pictures go from the visitor's browser straight to KLIPY, never through this site's server (nothing here fetches or keeps one);
- * - a picture's address is used as KLIPY gave it, every part of it;
- * - Search and Trending are shown in KLIPY's order, all of them, in a grid of their own; the filter is KLIPY's own (`content_filter`), and the box says
- *   "Search KLIPY", with "Powered by KLIPY" under the grid (the attribution they ask for).
- *
- * A GIF is sent as a message whose whole text is the address of the picture (the size KLIPY calls `sm`, about 220 pixels and 80 KB as WebP). A screen
- * draws such a message as the picture (ChatLines.tsx); any other text, an address on another host among it, stays text. Older pages show the address.
- */
-
-// (What a GIF is, the server holds messages and kept pictures to as well: shared/gifs.ts.)
 import { gifOf, KLIPY_HOSTS } from "../../shared/gifs";
 
 export { gifOf, KLIPY_HOSTS };
 
-/** One GIF of KLIPY's answer: what the grid shows, and what is sent. */
 export interface Gif {
   slug: string;
   title: string;
-  /** The picture in the grid (small). */
   thumb: string;
-  /** Its size, so that the grid does not move while the pictures come. */
   width: number;
   height: number;
-  /** What is sent (see the top of this file). */
   sent: string;
 }
 
-/** A page of KLIPY's answer. */
 export interface GifPage {
   gifs: Gif[];
   more: boolean;
@@ -50,7 +29,6 @@ const fileAt = (sizes: KlipySizes, size: string, kind: string): { url: string; w
   return { url, width, height };
 };
 
-/** The first of these that the answer has: WebP before GIF (a fourth of the size), the small size before the others. */
 const pick = (sizes: KlipySizes, order: readonly (readonly [string, string])[]) => {
   for (const [size, kind] of order) {
     const found = fileAt(sizes, size, kind);
@@ -61,10 +39,6 @@ const pick = (sizes: KlipySizes, order: readonly (readonly [string, string])[]) 
 const SENT = [["sm", "webp"], ["sm", "gif"], ["md", "webp"], ["xs", "webp"], ["md", "gif"], ["xs", "gif"]] as const;
 const THUMB = [["sm", "webp"], ["xs", "webp"], ["sm", "gif"], ["xs", "gif"], ["md", "webp"], ["md", "gif"]] as const;
 
-/**
- * KLIPY's answer to Trending or Search, as the grid shows it: in its order. An entry that has no picture of the kinds a page can show (an ad, if the
- * site's KLIPY panel left them on: they are turned off there) cannot be drawn, and is the only thing not shown.
- */
 export function gifPageOf(answer: unknown): GifPage {
   const outer = (answer as { data?: { data?: unknown; has_next?: unknown } } | null)?.data;
   const entries = Array.isArray(outer?.data) ? (outer.data as unknown[]) : [];
@@ -81,17 +55,14 @@ export function gifPageOf(answer: unknown): GifPage {
   return { gifs, more: outer?.has_next === true };
 }
 
-/** How many GIFs a page of the grid asks for (KLIPY's default; at most 50). */
 export const GIFS_PER_PAGE = 24;
 
-/** The country KLIPY is told, for what is trending there (ISO 3166 alpha-2, as they ask): the browser's own, else the one of the site's language. */
 export function klipyLocale(language: string, browser = typeof navigator === "undefined" ? "" : navigator.language): string {
   const region = /^[a-z]{2,3}[-_]([a-z]{2})\b/i.exec(browser)?.[1];
   if (region) return region.toLowerCase();
   return language === "ro" ? "ro" : language === "it" ? "it" : "us";
 }
 
-/** The address of a page of Trending (no words) or of Search. `strict`: KLIPY's strictest filter (a child's profile), else the middle one. */
 export function klipyAddress(key: string, { query, page, customer, locale, strict = false }: { query: string; page: number; customer: string; locale: string; strict?: boolean }): string {
   const words = query.trim();
   const address = new URL(`https://api.klipy.com/api/v1/${encodeURIComponent(key)}/gifs/${words ? "search" : "trending"}`);
@@ -106,33 +77,23 @@ export function klipyAddress(key: string, { query, page, customer, locale, stric
 
 const CUSTOMER = "kino:klipy-customer";
 let customer: string | undefined;
-/**
- * The number KLIPY is told this browser is, as they ask (`customer_id`, "the same for the same user"): a random one, made here and kept by this browser,
- * that says nothing of the account or the profile. Where the browser keeps nothing, it lasts as long as the page.
- */
 export function klipyCustomer(): string {
   if (customer) return customer;
   try {
     const kept = localStorage.getItem(CUSTOMER);
     if (kept && /^[a-z0-9-]{8,64}$/.test(kept)) return (customer = kept);
   } catch {
-    /* (no storage: one for this page) */
   }
   const made = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   customer = made;
   try {
     localStorage.setItem(CUSTOMER, made);
   } catch {
-    /* (as above) */
   }
   return made;
 }
 
 let features: Promise<string | null> | undefined;
-/**
- * The site's KLIPY key (`/api/features`), or null when it has none: then there is no GIF button anywhere. Asked once a page; a host that did not answer is
- * asked again the next time.
- */
 export function klipyKey(): Promise<string | null> {
   features ??= (async () => {
     try {
@@ -148,7 +109,6 @@ export function klipyKey(): Promise<string | null> {
   return features;
 }
 
-/** (Tests: forget what was asked.) */
 export function forgetKlipy(): void {
   features = undefined;
   customer = undefined;

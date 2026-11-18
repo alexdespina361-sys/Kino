@@ -7,16 +7,10 @@ export interface Score {
   share: number;
   words: number;
   seconds: number;
-  /** Sure words per second of the sound listened to: how much speech there was (see `heardRate`). */
   rate: number;
 }
 
-/**
- * The aligner as the page uses it. On a device it runs in a worker (the voice detector and the solves are work that must not stop the
- * picture); in tests it runs in the same thread. Calls are answered in the order they were made.
- */
 export interface Backend {
-  /** Sound for the voice detector; resolves with the milliseconds the work took. */
   addAudio(time: number, pcm: Float32Array): Promise<number>;
   addWords(words: Word[], from: number, to: number): Promise<void>;
   setTrack(key: string, cues: Cue[], useWords: boolean): Promise<void>;
@@ -56,7 +50,6 @@ export class DirectBackend implements Backend {
   close(): void {}
 }
 
-/** The request a worker is sent, and what it answers with. */
 export interface WorkerRequest {
   id: number;
   op: "init" | "audio" | "words" | "track" | "drop" | "solve" | "score" | "reset";
@@ -68,7 +61,6 @@ export interface WorkerReply {
   error?: string;
 }
 
-/** The aligner in a worker (see `subsync.worker.ts`). */
 export class WorkerBackend implements Backend {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
@@ -87,7 +79,6 @@ export class WorkerBackend implements Backend {
     };
   }
 
-  /** Starts the worker and has it load the voice detector's weights. */
   static async start(weightsUrl: string): Promise<WorkerBackend> {
     const backend = new WorkerBackend(new Worker(new URL("./subsync.worker.ts", import.meta.url), { type: "module" }));
     try {

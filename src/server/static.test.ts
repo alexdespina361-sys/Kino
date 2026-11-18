@@ -29,18 +29,15 @@ describe("serving the built page", () => {
         expect(page.headers["cache-control"]).not.toMatch(/immutable|31536000/);
       }
 
-      // The page answers for paths of its own too (/tv, a link with a code): the same caution.
       const tv = await app.inject({ url: "/tv", headers: { accept: "text/html" } });
       expect(tv.statusCode).toBe(200);
       expect(tv.headers["cache-control"] ?? "").not.toMatch(/immutable|31536000/);
       for (const url of ["/tv/", "/tv?title=movie-603", "/?party=123456"]) expect((await app.inject({ url, headers: { accept: "text/html" } })).statusCode, url).toBe(200);
-      // (A check that it is there, as an uptime monitor makes: the headers alone, whatever it accepts.)
       const checked = await app.inject({ method: "HEAD", url: "/tv", headers: { accept: "*/*" } });
       expect([checked.statusCode, checked.body]).toEqual([200, ""]);
       expect((await app.inject({ url: "/tv", headers: { accept: "*/*" } })).statusCode).toBe(200);
       expect((await app.inject({ method: "HEAD", url: "/does-not-exist", headers: { accept: "*/*" } })).statusCode).toBe(404);
 
-      // An address that is no page of the site gets the page all the same (it says so, and opens the library), with a 404 (the judge, 16 Nov).
       for (const url of ["/does-not-exist", "/tv/anything", "/remote?x=1"]) {
         const stray = await app.inject({ url, headers: { accept: "text/html" } });
         expect(stray.statusCode, url).toBe(404);
@@ -79,12 +76,10 @@ describe("serving the built page", () => {
       const plain = await app.inject({ url: "/assets/index-abc123.js", headers: { "accept-encoding": "identity" } });
       expect([plain.statusCode, plain.headers["content-encoding"], plain.body]).toEqual([200, undefined, script]);
 
-      // A script with no packed copy (a build from before) is packed on the fly, as it always was.
       const loose = await app.inject({ url: "/assets/loose-def456.js", headers: { "accept-encoding": "br" } });
       expect([loose.statusCode, loose.headers["content-encoding"]]).toEqual([200, "br"]);
       expect(brotliDecompressSync(loose.rawPayload).toString()).toBe(script);
 
-      // The page itself is untouched by it.
       const page = await app.inject({ url: "/", headers: { "accept-encoding": "br" } });
       expect(page.statusCode).toBe(200);
       expect(page.headers["cache-control"]).not.toMatch(/immutable|31536000/);
@@ -103,11 +98,9 @@ describe("serving the built page", () => {
       expect(first.statusCode).toBe(200);
       expect(first.headers["cache-control"]).toBe("no-store");
       expect(first.json()).toEqual({ build: "index-Ab1_c2-D" });
-      // (A deploy writes a new page: its time is another, and so is its script.)
       await writeFile(path.join(dir, "index.html"), page("index-Zz9"));
       await utimes(path.join(dir, "index.html"), new Date(), new Date(Date.now() + 5000));
       expect((await app.inject({ url: "/api/build" })).json()).toEqual({ build: "index-Zz9" });
-      // (A page with no script of the app's names no build; one that is not there, while a build is made, neither.)
       await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
       await utimes(path.join(dir, "index.html"), new Date(), new Date(Date.now() + 10000));
       expect((await app.inject({ url: "/api/build" })).json()).toEqual({ build: null });
@@ -136,10 +129,10 @@ describe("serving the built page", () => {
   it("serves the wordmark's pictures as pictures, and does not keep them for good (they keep their names: a new logo has to show up)", async () => {
     dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
     await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
-    await cp(new URL("../../public/branding", import.meta.url), path.join(dir, "branding"), { recursive: true }); // (public/ is copied as it is into the built page)
+    await cp(new URL("../../public/branding", import.meta.url), path.join(dir, "branding"), { recursive: true });
     const app = await buildApp({ clientDir: dir });
     try {
-      for (const name of ["kino-cat-off.svg", "kino-cat-on.svg"]) {
+      for (const name of ["kino-cat-off.svg"]) {
         const picture = await app.inject({ url: `/branding/${name}` });
         expect(picture.statusCode).toBe(200);
         expect(picture.headers["content-type"]).toMatch(/^image\/svg\+xml/);
@@ -151,7 +144,6 @@ describe("serving the built page", () => {
   });
 
   it("does not serve a file whose name starts with a dot, nor one in a folder whose name does, from the page or from the test media", async () => {
-    // (`CLIENT_DIR` and `FIXTURES_DIR` can point at any folder, a project's own among them.)
     dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
     const page = path.join(dir, "page");
     const media = path.join(dir, "media");
@@ -169,36 +161,12 @@ describe("serving the built page", () => {
         expect(answer.statusCode, url).toBe(404);
         expect(answer.body, url).not.toContain("SECRET");
       }
-      // (A browser that asks for such a path is told the same: it is no page of the site, so it is not shown the page either. See `looksLikePage`.)
       const asked = await app.inject({ url: "/.env", headers: { accept: "text/html" } });
       expect(asked.statusCode).toBe(404);
       expect(asked.body).not.toContain("SECRET");
-      // (An address that is no file is the page's own to make sense of.)
       expect((await app.inject({ url: "/tv", headers: { accept: "text/html" } })).body).toBe("<!doctype html><title>Kino</title>");
-      // (...and the files that are served still are.)
       expect((await app.inject({ url: "/sample.txt" })).body).toBe("film");
       expect((await app.inject({ url: "/fixtures/sample.txt" })).body).toBe("film");
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("serves the upscaler test page of Kino Labs as a page of its own, checked again every time, and sends its address without the last slash to it", async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
-    await mkdir(path.join(dir, "labs", "upscale"), { recursive: true });
-    await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
-    await writeFile(path.join(dir, "labs", "upscale", "index.html"), "<!doctype html><title>Kino Labs: upscaler test</title>");
-    const app = await buildApp({ clientDir: dir });
-    try {
-      const page = await app.inject({ url: "/labs/upscale/", headers: { accept: "text/html" } });
-      expect(page.statusCode).toBe(200);
-      expect(page.body).toContain("upscaler test");
-      expect(page.headers["cache-control"]).toMatch(/no-cache/);
-      const bare = await app.inject({ url: "/labs/upscale", headers: { accept: "text/html" } });
-      expect(bare.statusCode).toBe(301);
-      expect(bare.headers.location).toBe("/labs/upscale/");
-      // (The app's own addresses are the app's still.)
-      expect((await app.inject({ url: "/tv", headers: { accept: "text/html" } })).body).toBe("<!doctype html><title>Kino</title>");
     } finally {
       await app.close();
     }

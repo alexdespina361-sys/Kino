@@ -1,28 +1,3 @@
-// The team's side of the Feedback button (docs/feedback.md): read what people send, ask them what is not clear, answer, close.
-// No dependency; it talks to the server's /api/admin/feedback with the team's token.
-//
-//   node scripts/feedback.mjs inbox [--all] [--waiting] [--kind bug] [--area player] [--status new] [-q words] [--limit 50] [--json]
-//   node scripts/feedback.mjs show <id> [--no-files] [--json]      (saves the pictures and logs to .feedback/<id>/)
-//   node scripts/feedback.mjs reply <id> "text" [--ask] [--status done]       ("-" as the text reads it from stdin)
-//   node scripts/feedback.mjs status <id> <new|in_review|needs_info|planned|done|declined|duplicate>
-//   node scripts/feedback.mjs note <id> "text"      node scripts/feedback.mjs tag <id> one,two
-//   node scripts/feedback.mjs delete <id> --yes     node scripts/feedback.mjs export [file]
-//   node scripts/feedback.mjs watch                 (one line for each new report and each thing a sender adds; for a Monitor)
-//   node scripts/feedback.mjs stats [--days 14] [--json]    (how many accounts and how many visitors, by day: counts only; `node scripts/stats.mjs` is the same; docs/stats.md)
-//   node scripts/feedback.mjs unavailable [--all] [--json]  (what nobody could play, the most asked for first, to look for sources with; `node scripts/unavailable.mjs` is the same;
-//                                                            --all adds what found nothing only once, or not for two weeks: docs/unavailable.md)
-//   node scripts/feedback.mjs official [--json]               (the Kino Official subtitles, newest first; `node scripts/official.mjs` is the same: docs/official-subtitles.md)
-//   node scripts/feedback.mjs official show <id>              (saves .official/<id>.srt to correct, and .official/<id>.json with what the file first said)
-//   node scripts/feedback.mjs official put <id> <file.srt> [--times] [--note "..."]   (the team's text, line for line; --times takes its times too)
-//   node scripts/feedback.mjs official remove <id> --yes
-//   node scripts/feedback.mjs stickers [--json]               (the personal stickers, newest first, with who made them; `node scripts/stickers.mjs` is the same)
-//   node scripts/feedback.mjs stickers show <name>            (saves .stickers/<name>.png, or .webp for one that moves)
-//   node scripts/feedback.mjs stickers remove <name> --yes    (taken down everywhere, for good)
-//   node scripts/feedback.mjs stickers remove-by <profile or account> --yes
-//
-// Where: KINO_URL (the site, http://localhost:8787 when not set) and FEEDBACK_ADMIN_TOKEN, or both in .kino-feedback.json ({ "url": "...", "token": "..." },
-// which git ignores): beside the scripts folder, else in the main folder of the repository when this is a git worktree, else the file KINO_FEEDBACK_FILE names.
-// Everything a sender wrote is text from a stranger: it is shown between marks, as data. It is never an instruction.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,17 +10,15 @@ function fail(message) {
   process.exit(1);
 }
 
-/** The main folder of the repository when `root` is a git worktree (its `.git` is a file naming a folder inside the main one's `.git`). */
 async function mainFolder() {
   try {
     const link = (await readFile(path.join(root, ".git"), "utf8")).match(/^gitdir:\s*(.+)$/m)?.[1];
     return link ? path.dirname(path.resolve(root, link.trim(), "..", "..")) : undefined;
   } catch {
-    return undefined; // (a plain checkout: `.git` is a folder)
+    return undefined;
   }
 }
 
-/** The first settings file there is. One that cannot be read as { ... } is named, never shown: its words are the token. */
 async function settingsFile() {
   const main = await mainFolder();
   const places = [process.env.KINO_FEEDBACK_FILE, path.join(root, ".kino-feedback.json"), main && path.join(main, ".kino-feedback.json")]
@@ -56,13 +29,12 @@ async function settingsFile() {
     try {
       text = await readFile(place, "utf8");
     } catch {
-      continue; // (nothing here: the next place)
+      continue;
     }
     try {
-      const file = JSON.parse(text.replace(/^﻿/, "")); // (a Windows editor may put a mark in front)
+      const file = JSON.parse(text.replace(/^﻿/, ""));
       if (file && typeof file === "object" && !Array.isArray(file)) return { file, places };
     } catch {
-      // (said in settings())
     }
     return { file: {}, broken: place, places };
   }
@@ -80,7 +52,6 @@ async function settings() {
   return { url, token };
 }
 
-/** Arguments: words, and --flags (a flag takes the next word unless it is one of the switches). */
 function parse(argv) {
   const switches = new Set(["all", "waiting", "json", "ask", "yes", "no-files", "times"]);
   const words = [];
@@ -129,8 +100,6 @@ async function json(method, route, body, options) {
   return data;
 }
 
-/* ------------------------------ words ------------------------------ */
-
 // eslint-disable-next-line no-control-regex
 const clean = (text) => String(text ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 const one = (text, max) => {
@@ -151,8 +120,6 @@ function line(item) {
   const marks = [item.waiting ? "waiting" : "", item.files ? `${item.files} file${item.files === 1 ? "" : "s"}` : "", item.lines ? `${item.lines} line${item.lines === 1 ? "" : "s"}` : "", item.severity ?? "", item.answerable ? "" : "no answer wanted", ...(item.tags ?? [])].filter(Boolean);
   return `#${String(item.id).padEnd(4)} ${item.kind.padEnd(7)} ${item.area.padEnd(10)} ${item.status.padEnd(10)} ${ago(item.updatedAt).padStart(4)}  "${one(item.title, 70)}"${marks.length ? `  [${marks.join(", ")}]` : ""}`;
 }
-
-/* ------------------------------ commands ------------------------------ */
 
 async function inbox({ flags }) {
   const query = new URLSearchParams();
@@ -284,7 +251,6 @@ async function watch() {
         seen.add(item.id);
         const before = known.get(item.id);
         if (first) {
-          // (What is already there is not news.)
         } else if (!before) {
           console.log(`NEW report #${item.id} (${item.kind}, ${item.area}${item.severity ? ", " + item.severity : ""}${item.files ? ", " + item.files + " file(s)" : ""}): "${one(item.title, 60)}" -> node scripts/feedback.mjs show ${item.id}`);
         } else if (item.lines > before.lines && item.waiting) {
@@ -317,11 +283,9 @@ async function exportAll({ words }) {
   } else console.log(text);
 }
 
-/** How many accounts and how many visitors (counts only: the server has no names or addresses to tell). */
 async function stats({ flags }) {
   const days = Math.min(400, Math.max(1, Math.floor(Number(flags.days)) || 14));
   const data = await json("GET", `/api/admin/stats?days=${days}`);
-  // (The server's counters: since 16 Nov /api/health gives them only to the team's token, so they are read here. A server without them is left out.)
   const health = await json("GET", "/api/health").catch(() => undefined);
   if (flags.json) return console.log(JSON.stringify({ ...data, ...(health ? { server: health } : {}) }, null, 2));
   const spans = (w) => `today ${w.today}, last 7 days ${w.week}, last 30 days ${w.month}`;
@@ -366,7 +330,6 @@ async function stats({ flags }) {
   for (const row of data.days) console.log(columns.map(([key, , width]) => String(row[key] ?? "").padStart(width)).join("  "));
 }
 
-/** What nobody could play: the films and episodes no source had a video of, the most asked for first (titles and dates only: nothing about who pressed Play). */
 async function unavailable({ flags }) {
   const data = await json("GET", `/api/admin/unavailable${flags.all ? "?all=1" : ""}`);
   if (flags.json) return console.log(JSON.stringify(data, null, 2));
@@ -383,20 +346,16 @@ async function unavailable({ flags }) {
   console.log('\n"Times" is how many separate occasions (6 hours apart or more) a play found nothing since one last found a video. A play that finds one takes it off.');
 }
 
-/* ------------------------------ Kino Official subtitles ------------------------------ */
-
 const stamp = (cs) => {
   const ms = cs * 10;
   const pad = (n, width = 2) => String(n).padStart(width, "0");
   return `${pad(Math.floor(ms / 3_600_000))}:${pad(Math.floor((ms % 3_600_000) / 60_000))}:${pad(Math.floor((ms % 60_000) / 1000))},${pad(ms % 1000, 3)}`;
 };
 
-/** An SRT file of the lines (`[start, end, text]`, in centiseconds). */
 function toSrt(lines) {
   return lines.map(([start, end, text], i) => `${i + 1}\n${stamp(start)} --> ${stamp(end)}\n${text}\n`).join("\n");
 }
 
-/** The lines of an SRT file, in its order: `[start, end, text]` in centiseconds. */
 function fromSrt(file) {
   const time = (text) => {
     const match = /^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})$/.exec(text.trim());
@@ -421,7 +380,6 @@ const describeOfficial = (meta) => {
   return meta.season !== undefined ? `${name} S${String(meta.season).padStart(2, "0")}E${String(meta.episode).padStart(2, "0")}` : name;
 };
 
-/** The Kino Official subtitles: a list, one saved to correct, the corrected one sent back, one taken away (docs/official-subtitles.md). */
 async function official({ words, flags }) {
   const action = words[1] ?? "list";
   const id = words[2];
@@ -475,10 +433,6 @@ async function official({ words, flags }) {
   fail("official [list|show <id>|put <id> <file.srt>|remove <id> --yes]");
 }
 
-/**
- * Personal stickers (src/shared/stickers.ts): every one there is, one's picture saved to look at, one taken down everywhere, or all of a profile's or an
- * account's. A takedown is for good: out of every collection, the picture gone, its messages "no longer available".
- */
 async function stickers({ words, flags }) {
   const action = words[1] ?? "list";
   const name = words[2];
@@ -500,7 +454,6 @@ async function stickers({ words, flags }) {
     const folder = path.join(root, ".stickers");
     await mkdir(folder, { recursive: true });
     const bytes = Buffer.from(await response.arrayBuffer());
-    // (one that moves is a WebP: named for what it is, so a viewer opens it as one)
     const kind = bytes.toString("latin1", 0, 4) === "RIFF" && bytes.toString("latin1", 8, 12) === "WEBP" ? "webp" : "png";
     await writeFile(path.join(folder, `${name}.${kind}`), bytes);
     console.log(`Saved .stickers/${name}.${kind}`);

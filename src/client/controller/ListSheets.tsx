@@ -8,7 +8,6 @@ import { useT } from "../i18n";
 import { CheckIcon, PencilIcon, PlusIcon } from "../shared/icons";
 import { Sheet } from "./Sheet";
 
-/** Which of the lists a title is in: a tap on a list puts it there or takes it out. And a new list for it, when none is the right one. */
 export function ListPickerSheet({ entry, onClose }: { entry: ListEntry; onClose: () => void }) {
   const t = useT();
   const { lists, list } = useProfileData();
@@ -59,16 +58,13 @@ export function ListPickerSheet({ entry, onClose }: { entry: ListEntry; onClose:
   );
 }
 
-/** The lists themselves: make one, give one another name, delete one (all but the first). */
 export function ListsSheet({ onClose }: { onClose: () => void }) {
   const t = useT();
   const { lists, list } = useProfileData();
-  /** `undefined`: the lists; `null`: making a new one; an id: changing that one. */
   const [editing, setEditing] = useState<string | null | undefined>(undefined);
   const back = () => setEditing(undefined);
   const changing = typeof editing === "string" ? lists.find((info) => info.id === editing) : undefined;
   const showing = editing === undefined || (typeof editing === "string" && !changing) ? undefined : editing;
-  /** The first list stays first: only the others have a place to move to, and need another to change places with. */
   const place = changing ? lists.findIndex((info) => info.id === changing.id) : -1;
 
   return (

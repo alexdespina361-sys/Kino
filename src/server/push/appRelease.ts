@@ -4,24 +4,12 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { PushHub } from "./push";
 
-/**
- * The Android app's own updates (docs/android-app.md). Its builds are kept on the host, outside the site's checkout and outside the repository (env
- * ANDROID_APP_DIR, `/var/lib/kino-web/app` on the box): `android.json` says which one is the newest, and the APK is beside it. `scripts/android-release.mjs` puts
- * a new one there; this notices it within a minute, and sends every copy of the app the news once (`PushHub.appUpdate`), which is "the signal": each app asks
- * `/api/app/android`, downloads the APK, checks its hash and asks Android to install it. An app also asks when it is opened, so a phone that missed the news
- * is not left behind.
- *
- * `/app/kino.apk` is the newest one under one address, for a link to give to people.
- */
-
 export interface AppRelease {
   versionCode: number;
   versionName: string;
-  /** The APK's name in the folder (`kino-<versionCode>.apk`). */
   file: string;
   sha256: string;
   size: number;
-  /** A line about what is new, in English (the app shows it). */
   notes?: string;
 }
 
@@ -30,7 +18,6 @@ const MANIFEST = "android.json";
 const SIGNALLED = "signalled.json";
 const CHECK_MS = 60_000;
 
-/** What `android.json` says, if it says a release: anything else is nothing. */
 export function readRelease(value: unknown): AppRelease | undefined {
   if (!value || typeof value !== "object") return undefined;
   const { versionCode, versionName, file, sha256, size, notes } = value as Record<string, unknown>;
@@ -46,7 +33,6 @@ export class AppReleases {
   private seenMtime = -1;
   private signalled = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
-  /** The site listens: the news may go out (an app that hears it asks at once; before that it would be told nothing, the judge, 17 Nov). */
   private mayTell = false;
 
   constructor(
@@ -59,7 +45,6 @@ export class AppReleases {
     return this.current;
   }
 
-  /** Read `android.json` again if it changed; tell the apps of a version they have not been told of. */
   async check(): Promise<void> {
     try {
       const { mtimeMs } = await stat(path.join(this.dir, MANIFEST));
@@ -81,22 +66,19 @@ export class AppReleases {
     if (await this.push.appUpdate(release.versionCode)) {
       this.log.info?.(`The apps were told of version ${release.versionName} (${release.versionCode}).`);
       await writeFile(path.join(this.dir, SIGNALLED), JSON.stringify({ versionCode: release.versionCode }), "utf8").catch(() => this.log.warn(`${SIGNALLED} could not be written: the news may be sent again after a restart.`));
-    } else this.signalled = 0; // (tried again at the next check)
+    } else this.signalled = 0;
   }
 
-  /** The site listens: the apps are told of a version they have not been told of, now and whenever one comes. */
   listening(): Promise<void> {
     this.mayTell = true;
     return this.check();
   }
 
-  /** Remember which version was told of (so a restart does not send it again), read the release, and keep checking. Nothing is told before `listening`. */
   async start(): Promise<void> {
     try {
       const said = JSON.parse(await readFile(path.join(this.dir, SIGNALLED), "utf8")) as { versionCode?: unknown };
       if (typeof said.versionCode === "number") this.signalled = said.versionCode;
     } catch {
-      // (nothing told yet)
     }
     await this.check();
     this.timer = setInterval(() => void this.check(), CHECK_MS);
@@ -107,13 +89,11 @@ export class AppReleases {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** The APK's place on disk, if `name` is the newest one. */
   fileOf(name: string): string | undefined {
     return this.current && name === this.current.file ? path.join(this.dir, name) : undefined;
   }
 }
 
-/** `/api/app/android` (what the newest version is) and the APK itself. Without a release, the first is a 404 and there is no APK. */
 export function appReleaseRoutes(app: FastifyInstance, releases: AppReleases | undefined): void {
   app.get("/api/app/android", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

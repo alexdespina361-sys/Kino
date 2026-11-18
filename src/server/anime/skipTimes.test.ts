@@ -3,10 +3,6 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app";
 import { baseTitle, createAnimeSkipLookup, lastsAsLong, namesSeason, plainTitle, sameName, sameShow, saysAnotherSeason, type AnimeSkipLookup } from "./skipTimes";
 
-/**
- * AniList and AniSkip as they answer (the shapes are theirs; AniSkip's times are what it answered for Frieren's first episode, 16 Nov 2026: the opening is at
- * 3-93 s in a cut 1560 s long, and at 117-207 s in one 1510 s long). Nothing here asks the real ones.
- */
 const FRIEREN = { idMal: 52991, episodes: 28, format: "TV", countryOfOrigin: "JP", title: { english: "Frieren: Beyond Journey’s End", romaji: "Sousou no Frieren" }, synonyms: [] };
 const ANISKIP = [
   { interval: { startTime: 3.221, endTime: 93.221 }, skipType: "op", skipId: "a", episodeLength: 1559.949 },
@@ -20,7 +16,6 @@ interface Fake {
   aniList: Array<{ search: string }>;
 }
 
-/** AniList answers `media` to any search; AniSkip answers the results of the cuts within 60 s of the length asked (as it does: a near cut, not only the same). */
 function fake({ media = [FRIEREN] as unknown[], aniListStatus = 200, aniSkipStatus = 200, results = ANISKIP } = {}): Fake {
   const asked: string[] = [];
   const aniList: Array<{ search: string }> = [];
@@ -46,7 +41,7 @@ const HINT = { title: "Frieren: Beyond Journey's End", season: 1, episode: 1 };
 
 describe("names", () => {
   it("are words without accents, apostrophes or the season", () => {
-    expect(plainTitle("Pokémon")).toBe("pokemon"); // (Gemini's cleaner made it "Pok mon")
+    expect(plainTitle("Pokémon")).toBe("pokemon");
     expect(plainTitle("Frieren: Beyond Journey’s End")).toBe(plainTitle("Frieren: Beyond Journey's End"));
     expect(baseTitle("Attack on Titan Season 2")).toBe("attack on titan");
     expect(baseTitle("Mob Psycho 100 (2016)")).toBe("mob psycho 100");
@@ -57,24 +52,24 @@ describe("names", () => {
     expect(sameShow("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End"])).toBe(true);
     expect(sameShow("Demon Slayer: Kimetsu no Yaiba", ["Demon Slayer: Kimetsu no Yaiba Entertainment District Arc"])).toBe(true);
     expect(sameShow("Attack on Titan", ["Attack on Titan Season 2"])).toBe(true);
-    expect(sameShow("Monster", ["Monster Musume: Everyday Life with Monster Girls"])).toBe(false); // (one word must be the whole name)
-    expect(sameShow("The Simpsons", ["The Simpsons Movie Anime Fan Project"])).toBe(false); // (not half of the longer name)
+    expect(sameShow("Monster", ["Monster Musume: Everyday Life with Monster Girls"])).toBe(false);
+    expect(sameShow("The Simpsons", ["The Simpsons Movie Anime Fan Project"])).toBe(false);
     expect(sameShow("Frieren", ["Sousou no Frieren"])).toBe(false);
   });
 
   it("are the very name, or another season's, or episodes as long as a video, only when they are", () => {
     expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End"])).toBe(true);
     expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Mini Anime"])).toBe(false);
-    expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Season 2"])).toBe(true); // (a season is not the name: see saysAnotherSeason)
+    expect(sameName("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Season 2"])).toBe(true);
     expect(saysAnotherSeason("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End Season 2"])).toBe(true);
     expect(saysAnotherSeason("Frieren: Beyond Journey's End", ["Frieren: Beyond Journey’s End", "Sousou no Frieren"])).toBe(false);
     expect(saysAnotherSeason("Kaiju No. 8", ["Kaiju No. 8"])).toBe(false);
     expect(saysAnotherSeason("Mob Psycho 100", ["Mob Psycho 100 II"])).toBe(true);
     expect(lastsAsLong(24, 1510)).toBe(true);
-    expect(lastsAsLong(24, 1260)).toBe(true); // (a cut without its credits)
+    expect(lastsAsLong(24, 1260)).toBe(true);
     expect(lastsAsLong(1, 1510)).toBe(false);
     expect(lastsAsLong(120, 1510)).toBe(false);
-    expect(lastsAsLong(null, 1510)).toBe(true); // (AniList does not always say)
+    expect(lastsAsLong(null, 1510)).toBe(true);
   });
 
   it("say a season", () => {
@@ -83,7 +78,7 @@ describe("names", () => {
     expect(namesSeason(["Mob Psycho 100 II"], 2)).toBe(true);
     expect(namesSeason(["Mob Psycho 100 III"], 3)).toBe(true);
     expect(namesSeason(["Attack on Titan"], 2)).toBe(false);
-    expect(namesSeason(["Mob Psycho 100"], 2)).toBe(false); // (100 is not 2)
+    expect(namesSeason(["Mob Psycho 100"], 2)).toBe(false);
   });
 });
 
@@ -92,15 +87,12 @@ describe("AniSkip's times", () => {
     const site = fake();
     const lookup = createAnimeSkipLookup({ fetch: site.fetch });
     expect(await lookup.find(HINT, 1510)).toEqual({ intro: { start: 116.75, end: 206.75 }, outro: { start: expect.closeTo(1417.14, 1), end: expect.closeTo(1507.14, 1) } });
-    // (the 1560 s cut has an opening sent in, and no ending: the ending AniSkip has is the 1510 s cut's, 50 s away, and is not taken)
     expect(await lookup.find(HINT, 1560)).toEqual({ intro: { start: 3.22, end: 93.22 } });
     expect(await lookup.find(HINT, 1300)).toBeNull();
-    // what was asked: by the length, and no "mixed" openings or endings (played over the story)
     const aniSkip = site.asked.filter((address) => address.includes("aniskip"));
     expect(aniSkip).toHaveLength(3);
     expect(aniSkip[0]).toBe("https://api.aniskip.com/v2/skip-times/52991/1?types=op&types=ed&types=recap&episodeLength=1510");
     for (const address of aniSkip) expect(address).not.toContain("mixed");
-    // the id was asked of AniList once, for all three
     expect(site.aniList).toEqual([{ search: "Frieren: Beyond Journey's End" }]);
   });
 
@@ -110,11 +102,11 @@ describe("AniSkip's times", () => {
     expect(other.asked.some((address) => address.includes("aniskip"))).toBe(false);
 
     const season2 = fake({ media: [{ ...FRIEREN, title: { english: "Frieren: Beyond Journey’s End", romaji: "Sousou no Frieren" } }] });
-    expect(await createAnimeSkipLookup({ fetch: season2.fetch }).find({ ...HINT, season: 2 }, 1510)).toBeNull(); // (season 1 is not season 2)
+    expect(await createAnimeSkipLookup({ fetch: season2.fetch }).find({ ...HINT, season: 2 }, 1510)).toBeNull();
     expect(season2.aniList.map((asked) => asked.search)).toEqual(["Frieren: Beyond Journey's End Season 2", "Frieren: Beyond Journey's End 2"]);
 
     const beyond = fake();
-    expect(await createAnimeSkipLookup({ fetch: beyond.fetch }).find({ ...HINT, episode: 29 }, 1510)).toBeNull(); // (it has 28)
+    expect(await createAnimeSkipLookup({ fetch: beyond.fetch }).find({ ...HINT, episode: 29 }, 1510)).toBeNull();
 
     const western = fake({ media: [{ ...FRIEREN, countryOfOrigin: "US" }] });
     expect(await createAnimeSkipLookup({ fetch: western.fetch }).find(HINT, 1510)).toBeNull();
@@ -133,7 +125,6 @@ describe("AniSkip's times", () => {
     expect(await lookup.find(HINT, 1510)).toEqual({ intro: { start: 116.75, end: 206.75 }, outro: { start: expect.closeTo(1417.14, 1), end: expect.closeTo(1507.14, 1) } });
     expect(site.asked.filter((address) => address.includes("aniskip"))).toEqual(["https://api.aniskip.com/v2/skip-times/52991/1?types=op&types=ed&types=recap&episodeLength=1510"]);
 
-    // the second season first, as another search may answer: still the first season's, for a first season
     const reversed = fake({ media: [media[3], media[2]] });
     await createAnimeSkipLookup({ fetch: reversed.fetch }).find(HINT, 1510);
     expect(reversed.asked.find((address) => address.includes("aniskip"))).toContain("/52991/1?");
@@ -143,7 +134,7 @@ describe("AniSkip's times", () => {
     const long = { ...FRIEREN, idMal: 9, episodes: 50, title: { english: "Frieren: Beyond Journey’s End Complete", romaji: "x" } };
     const site = fake({ media: [FRIEREN, long] });
     const lookup = createAnimeSkipLookup({ fetch: site.fetch });
-    await lookup.find({ ...HINT, episode: 29 }, 1510); // (Frieren has 28: the longer one, whose name holds the title)
+    await lookup.find({ ...HINT, episode: 29 }, 1510);
     await lookup.find({ ...HINT, episode: 2 }, 1510);
     expect(site.aniList).toHaveLength(1);
     expect(site.asked.filter((address) => address.includes("aniskip"))).toEqual([
@@ -154,13 +145,13 @@ describe("AniSkip's times", () => {
 
   it("does not take a show whose episodes last far longer or shorter than this video, nor a season a name only seems to say", async () => {
     const film = fake({ media: [{ ...FRIEREN, duration: 120 }] });
-    expect(await createAnimeSkipLookup({ fetch: film.fetch }).find(HINT, 1510)).toBeNull(); // (a two-hour film is not a 25-minute episode)
+    expect(await createAnimeSkipLookup({ fetch: film.fetch }).find(HINT, 1510)).toBeNull();
     expect(film.asked.some((address) => address.includes("aniskip"))).toBe(false);
 
     const kaiju = { episodes: 12, duration: 24, format: "TV", countryOfOrigin: "JP", synonyms: [] };
     const site = fake({ media: [{ ...kaiju, idMal: 2, title: { english: "Kaiju No. 8 Season 2", romaji: "Kaijuu 8-gou 2nd Season" } }, { ...kaiju, idMal: 1, title: { english: "Kaiju No. 8", romaji: "Kaijuu 8-gou" } }] });
     await createAnimeSkipLookup({ fetch: site.fetch }).find({ title: "Kaiju No. 8", season: 1, episode: 1 }, 1420);
-    expect(site.asked.find((address) => address.includes("aniskip"))).toContain("/1/1?"); // ("No. 8" is not an eighth season)
+    expect(site.asked.find((address) => address.includes("aniskip"))).toContain("/1/1?");
   });
 
   it("takes the second of AniList's answers when the first is not the show", async () => {
@@ -185,18 +176,18 @@ describe("AniSkip's times", () => {
     const lookup = createAnimeSkipLookup({ fetch: site.fetch, now: () => clock });
     const [one, two] = await Promise.all([lookup.find(HINT, 1510), lookup.find(HINT, 1510)]);
     expect(one).toEqual(two);
-    expect(site.asked).toHaveLength(2); // (AniList once, AniSkip once)
+    expect(site.asked).toHaveLength(2);
     await lookup.find(HINT, 1510);
-    expect(site.asked).toHaveLength(2); // kept
+    expect(site.asked).toHaveLength(2);
 
     const failing = fake({ aniListStatus: 500 });
     const flaky = createAnimeSkipLookup({ fetch: failing.fetch, now: () => clock });
     expect(await flaky.find(HINT, 1510)).toBeNull();
     expect(await flaky.find(HINT, 1510)).toBeNull();
-    expect(failing.aniList).toHaveLength(1); // (a failure is kept a little while)
+    expect(failing.aniList).toHaveLength(1);
     clock += 3 * 60_000;
     await flaky.find(HINT, 1510);
-    expect(failing.aniList).toHaveLength(2); // (and asked again after it)
+    expect(failing.aniList).toHaveLength(2);
   });
 
   it("asks AniList at most so often a minute for the whole server, and rests when AniList says so", async () => {
@@ -206,14 +197,14 @@ describe("AniSkip's times", () => {
     for (const title of ["One A", "Two B", "Three C"]) await lookup.find({ ...HINT, title }, 1510);
     expect(site.aniList).toHaveLength(2);
     clock += 61_000;
-    await lookup.find({ ...HINT, title: "Three C" }, 1510); // (the one past the budget was not kept as "none": it is asked now)
+    await lookup.find({ ...HINT, title: "Three C" }, 1510);
     expect(site.aniList).toHaveLength(3);
 
     const busy = fake({ aniListStatus: 429 });
     const resting = createAnimeSkipLookup({ fetch: busy.fetch, now: () => clock });
     await resting.find({ ...HINT, title: "Four D" }, 1510);
     await resting.find({ ...HINT, title: "Five E" }, 1510);
-    expect(busy.aniList).toHaveLength(1); // (a minute's rest after a 429)
+    expect(busy.aniList).toHaveLength(1);
   });
 });
 

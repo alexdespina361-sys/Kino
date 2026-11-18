@@ -27,11 +27,9 @@ export const SECONV_RULES = [
   "FixLongLines",
   "FixShortLines",
 ] as const;
-/** The timing rules: for a file the aligner does not time (its own timing is better than these guesses, so they run before it). */
 export const SECONV_TIMING_RULES = ["FixOverlappingDisplayTimes", "FixShortDisplayTimes", "FixLongDisplayTimes", "FixShortGaps"] as const;
 
 export interface SeconvOptions {
-  /** The `seconv` program (else `SECONV` from the environment, else `seconv` on the PATH). */
   bin?: string;
   lang: string;
   timing: boolean;
@@ -39,7 +37,6 @@ export interface SeconvOptions {
 
 export interface SeconvResult {
   cues: VttCue[];
-  /** The rules it was asked to run. */
   rules: string[];
 }
 
@@ -47,7 +44,6 @@ export function seconvBin(bin?: string): string {
   return bin ?? process.env.SECONV ?? "seconv";
 }
 
-/** The lines as Subtitle Edit leaves them; undefined (and a reason) when it could not run or did not keep the lines one for one. */
 export async function runSeconv(cues: readonly VttCue[], options: SeconvOptions): Promise<SeconvResult | { failed: string }> {
   const rules = [...SECONV_RULES, ...(options.timing ? SECONV_TIMING_RULES : [])];
   const dir = await mkdtemp(path.join(tmpdir(), "kino-seconv-"));

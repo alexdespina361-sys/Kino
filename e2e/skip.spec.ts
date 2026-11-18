@@ -2,11 +2,6 @@ import { expect, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { guestStorage, openLibrary, openProfilePlace, openTv, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, tvTime } from "./helpers";
 
-/**
- * The Skip button of an opening, a "previously on" and credits, and the Next episode button that came in place of the Up Next card (the owner, 17 Nov).
- * fixtures/episode.mp4 is two and a half minutes of a test picture: times for anything under two minutes are not believed (shared/skip.ts).
- */
-
 const seek = (tv: Page, to: number) => tv.evaluate((time) => void (document.querySelector("video")!.currentTime = time), to);
 const AUTO_SKIP = () => guestStorage({ settings: [{ key: "autoSkip", at: Date.now(), value: true }] });
 
@@ -19,7 +14,6 @@ function withNext(baseURL: string, extra: Partial<NormalizedMedia> = {}): Normal
   return episode({ series: { season: 1, episode: 1, episodes: [part(1), part(2)], next: part(2) }, ...extra });
 }
 
-/** Puts `media` on the TV, at `at` seconds, playing. */
 async function start(tv: Page, baseURL: string, media: NormalizedMedia, at: number): Promise<RawPhone> {
   const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
   phone.cmd({ type: "LOAD", media });
@@ -38,15 +32,15 @@ test.describe("the Skip button", () => {
     await expect(button).toBeVisible({ timeout: 8_000 });
     await expect(button).toHaveAttribute("data-kind", "intro");
     await expect(button).toHaveAttribute("data-fresh", "true");
-    await expect(button).toHaveAttribute("data-counting", "false"); // (skipping by itself is off until the profile turns it on)
-    await expect(button).toHaveAttribute("data-fading", "true"); // (its bar runs out over the 5 seconds it stays)
+    await expect(button).toHaveAttribute("data-counting", "false");
+    await expect(button).toHaveAttribute("data-fading", "true");
     await expect(button).toContainText("Skip intro");
     await expect.poll(() => phone.states.at(-1)?.skip?.kind).toBe("intro");
 
     await tv.keyboard.press("Enter");
     await expect(button).toHaveCount(0);
-    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39); // (the button goes at the press; the picture gets there a moment later)
-    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // OK skipped, and did not pause
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await expect.poll(() => phone.states.at(-1)?.skip).toBeUndefined();
     phone.close();
   });
@@ -62,7 +56,7 @@ test.describe("the Skip button", () => {
     await expect(button).not.toHaveAttribute("data-fading", /./);
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 12_000 });
     await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(0);
-    await tv.keyboard.press("ArrowDown"); // the controls come up, and so does it
+    await tv.keyboard.press("ArrowDown");
     await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1);
     phone.close();
   });
@@ -73,17 +67,17 @@ test.describe("the Skip button", () => {
     const button = tv.getByTestId("tv-skip");
     await expect(button).toBeVisible({ timeout: 8_000 });
     await expect(button).not.toHaveAttribute("data-fresh", /./);
-    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 12_000 }); // with the controls gone, a quiet button goes (the owner, 17 Nov)
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 12_000 });
     await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(0);
 
     await tv.keyboard.press("Enter");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
-    await expect(button).toBeVisible(); // (OK paused the picture: it did not skip)
-    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1); // (and back with the controls)
+    await expect(button).toBeVisible();
+    await expect.poll(() => button.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1);
 
     phone.cmd({ type: "SKIP_SEGMENT" });
     await expect(button).toHaveCount(0);
-    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39); // (the button goes at the press; the picture gets there a moment later)
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39);
     phone.close();
   });
 
@@ -94,18 +88,18 @@ test.describe("the Skip button", () => {
     await expect(button).toBeVisible({ timeout: 8_000 });
     await expect(button).not.toHaveAttribute("data-fresh", /./);
 
-    await tv.keyboard.press("ArrowDown"); // onto the controls
+    await tv.keyboard.press("ArrowDown");
     await expect.poll(() => tv.evaluate(() => Boolean(document.activeElement?.closest(".hud-controls")))).toBe(true);
-    await tv.keyboard.press("ArrowUp"); // and up out of them, onto it
+    await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("tv-skip-btn")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-skip-dismiss")).toBeFocused();
-    await tv.keyboard.press("Escape"); // off it, and the film plays on
+    await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-skip-dismiss")).not.toBeFocused();
     await expect(button).toBeVisible();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
 
-    await tv.keyboard.press("ArrowUp"); // from the picture
+    await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("tv-skip-btn")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(button).toHaveCount(0);
@@ -120,7 +114,7 @@ test.describe("the Skip button", () => {
     const phone = await start(tv, baseURL!, episode({ skip: { recap: { start: 6, end: 30 }, intro: { start: 30, end: 60 } } }), 4);
     const button = tv.getByTestId("tv-skip");
     await expect(button).toHaveAttribute("data-kind", "recap", { timeout: 8_000 });
-    await expect(button).toHaveAttribute("data-kind", "intro", { timeout: 10_000 }); // landed at the opening's start: played into, so it fills too
+    await expect(button).toHaveAttribute("data-kind", "intro", { timeout: 10_000 });
     await expect(button).toHaveAttribute("data-counting", "true");
     await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThanOrEqual(59);
     phone.close();
@@ -133,7 +127,7 @@ test.describe("the Skip button", () => {
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
-    await tv.getByTestId("tv-account-back").click(); // (the settings page has no menu: back to the profile's page, which has)
+    await tv.getByTestId("tv-account-back").click();
     await expect(tv.getByTestId("tv-rail")).toBeVisible();
     await pressMenuLine(tv, "rail-connect");
     const phone = await start(tv, baseURL!, episode({ skip: { intro: { start: 6, end: 40 } } }), 4);
@@ -148,16 +142,16 @@ test.describe("the Skip button", () => {
     const button = tv.getByTestId("tv-skip");
     await expect(button).toHaveAttribute("data-counting", "true", { timeout: 8_000 });
     await expect(button.locator("b")).toHaveText(/^[1-5]s$/);
-    await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThanOrEqual(39); // it skipped by itself
+    await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThanOrEqual(39);
     await expect(button).toHaveCount(0);
 
-    await seek(tv, 1); // well before it: the opening is new again
+    await seek(tv, 1);
     await expect(button).toHaveAttribute("data-counting", "true", { timeout: 12_000 });
     await tv.keyboard.press("Escape");
     await expect(button).toHaveCount(0);
-    await tv.waitForTimeout(6_500); // longer than the fill would have taken
-    expect(await tvTime(tv)).toBeLessThan(25); // the opening plays
-    await expect(button).toHaveCount(0); // and stays turned down
+    await tv.waitForTimeout(6_500);
+    expect(await tvTime(tv)).toBeLessThan(25);
+    await expect(button).toHaveCount(0);
     phone.close();
   });
 
@@ -179,7 +173,7 @@ test.describe("the Skip button", () => {
 
     await tv.getByTestId("tv-skip-btn").click();
     await expect(button).toHaveCount(0);
-    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39); // (the button goes at the press; the picture gets there a moment later)
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(39);
     phone.close();
   });
 });
@@ -191,8 +185,8 @@ test.describe("the Next episode button", () => {
     const phone = await start(tv, baseURL!, withNext(baseURL!, { skip: { outro: { start: 120, end: 148 } } }), 118);
     const upNext = tv.getByTestId("netflix-upnext");
     await expect(upNext).toBeVisible({ timeout: 8_000 });
-    expect(await tvTime(tv)).toBeLessThan(130); // with the credits, not in the last seconds
-    await expect(tv.getByTestId("tv-skip")).toHaveCount(0); // (credits that run to the end are the Next episode button's)
+    expect(await tvTime(tv)).toBeLessThan(130);
+    await expect(tv.getByTestId("tv-skip")).toHaveCount(0);
     await expect(upNext).toHaveAttribute("data-counting", "false");
     await expect(upNext).toHaveAttribute("data-fresh", "true");
     await expect(upNext).not.toContainText(/\ds/);
@@ -214,7 +208,7 @@ test.describe("the Next episode button", () => {
     await expect(upNext.locator("b")).toHaveText(/^[1-5]s$/);
     expect(await tvTime(tv)).toBeLessThan(130);
     await expect(upNext).toHaveCount(0, { timeout: 10_000 });
-    await expect.poll(() => tvTime(tv), { timeout: 15_000 }).toBeLessThan(20); // the next episode, from its start
+    await expect.poll(() => tvTime(tv), { timeout: 15_000 }).toBeLessThan(20);
     phone.close();
   });
 
@@ -225,7 +219,7 @@ test.describe("the Next episode button", () => {
     await expect(upNext).toBeVisible({ timeout: 8_000 });
     await tv.keyboard.press("Escape");
     await expect(upNext).toHaveCount(0);
-    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // (it turned the button down; it did not leave the film)
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     phone.close();
   });
 });

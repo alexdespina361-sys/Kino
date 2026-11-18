@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { AvatarId } from "../../shared";
 import { useT } from "../i18n";
 
-/** Round dark eyes with a white glint, the shared look of the faces below. */
 const Eye = ({ x, y, r = 4.2, colour = "#1d1d26" }: { x: number; y: number; r?: number; colour?: string }) => (
   <>
     <circle cx={x} cy={y} r={r} fill={colour} />
@@ -14,10 +13,6 @@ const Cheek = ({ x, y, colour = "#ff9fb0" }: { x: number; y: number; colour?: st
 
 const line = { fill: "none", strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
-/**
- * The pictures a profile can have: a face on a colour, drawn here so they are crisp at any size and cost no downloads. Twelve animals and creatures,
- * and twelve of the cinema and of what is watched there (the owner, 18 Nov: "more profile pictures, and more in theme").
- */
 const ART: Record<AvatarId, { bg: string; art: ReactNode }> = {
   fox: {
     bg: "#ffb26b",
@@ -444,7 +439,6 @@ const ART: Record<AvatarId, { bg: string; art: ReactNode }> = {
   },
 };
 
-/** One profile picture. It is as big as the text around it (1em), so a parent sets the size with `font-size`. */
 export function Avatar({ id, className = "" }: { id: AvatarId; className?: string }) {
   const t = useT();
   const { bg, art } = ART[id];

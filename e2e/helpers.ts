@@ -2,11 +2,6 @@ import { chromium, expect, test as base, type Browser, type BrowserContext, type
 import { AVATAR_IDS, avatarName, parseServerMessage, PROFILE_NAME_MAX, type Command, type NormalizedMedia, type PlayerState, type PlayHint, type ServerMessage } from "../src/shared";
 import { COMPACT_MAX_WIDTH, COMPACT_MIN_HEIGHT } from "../src/client/tv/compact";
 
-/**
- * The tests' `test`: Playwright's, and every device a test opened is closed when the test is over. A device made with
- * `browser.newContext()` (see `openDevice`) is no fixture of Playwright's, so nothing closes it before the worker's browser does, at the end
- * of the whole run: every test left its browsers behind, and a full run ended with hundreds of browser processes and tens of gigabytes.
- */
 export const test = base.extend<{ closeDevices: void }>({
   closeDevices: [
     async ({ browser }, use) => {
@@ -17,33 +12,20 @@ export const test = base.extend<{ closeDevices: void }>({
   ],
 });
 
-/** Where the tests' pages are (playwright.config.ts). */
 const ORIGIN = `http://127.0.0.1:${Number(process.env.E2E_PORT) || 8788}`;
-/** What every page of the tests starts with (playwright.config.ts): a device that is given a storage of its own is given these with it. */
 export const SEEDED = [
   { name: "kino.fullscreen.left", value: "1" },
   { name: "kino.linkbox", value: "1" },
   { name: "kino.fit", value: "couch" },
 ] as const;
-/** A storage with what every page starts with (`SEEDED`) and `more`, or without the ones named in `without`. */
 export const seeded = (more: { name: string; value: string }[] = [], without: string[] = []) => ({
   cookies: [],
   origins: [{ origin: ORIGIN, localStorage: [...SEEDED.filter((entry) => !without.includes(entry.name)), ...more] }],
 });
-/** A narrow touch screen: a phone. (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */
 const PHONE_SIZE = { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } as const;
-/**
- * A phone that is somebody's remote, which is what most of the tests are of: one that has been the remote here before stays it (see `chooseRole`), and
- * these say so the way the switch does. (A phone that comes for the first time opens on the library: `NEW_PHONE`.)
- */
 export const PHONE = { ...PHONE_SIZE, storageState: seeded([{ name: "kino.role", value: "remote" }]) } as const;
-/** A phone that comes here for the first time, with what every page starts with but nothing it chose. */
 export const NEW_PHONE = { ...PHONE_SIZE, storageState: seeded() } as const;
 
-/**
- * One stream at two sizes, for a screen that is to be offered a choice of quality: the context serves /fixtures/hls/multi.m3u8, the smaller
- * size listed second (as a real one's might be), over the fixture's own pieces.
- */
 export const twoSizes = (context: BrowserContext) =>
   context.route("**/fixtures/hls/multi.m3u8", (route) =>
     route.fulfill({
@@ -60,10 +42,6 @@ export const twoSizes = (context: BrowserContext) =>
     }),
   );
 
-/**
- * ...and at three sizes with a 480p between, as /fixtures/hls/three.m3u8 (for the first piece of a film with Auto off: see `lowFirstLevel`);
- * `broken480`: its 480p's list is not there (a 404).
- */
 export const threeSizes = (context: BrowserContext, broken480 = false) =>
   context.route("**/fixtures/hls/three.m3u8", (route) =>
     route.fulfill({
@@ -82,36 +60,17 @@ export const threeSizes = (context: BrowserContext, broken480 = false) =>
     }),
   );
 
-/** A device that has never opened the page: nothing kept, so a screen goes full screen at its first press (the config's pages start as if it had been left). */
 export const FIRST_VISIT = { cookies: [], origins: [] };
-/** ...one that has nothing kept but the choice of being the remote (which a phone has that was one before, or came by the TV's QR code). */
 export const REMOTE_FIRST_VISIT = seeded([{ name: "kino.role", value: "remote" }], SEEDED.map((entry) => entry.name));
 
-/**
- * A browser that starts a video only for a press made in the last few seconds, which is what a phone's does (and what some of them
- * do for every video): one that a command from another device starts, with nobody having just pressed anything here, stays stopped.
- * It is not the browser the tests run in, so the caller closes it.
- */
 export const strictBrowser = () => chromium.launch({ args: ["--autoplay-policy=user-gesture-required"] });
-/**
- * Longer than the few seconds a press stays good for (see strictBrowser). Playwright counts what it asks of a page as presses, so a page
- * that is to stay unpressed is left alone: for this long to let it start the video, and for PRESS_EXPIRES_MS to let a press run out.
- */
 export const PRESS_EXPIRES_MS = 5500;
 export const PAGE_LEFT_ALONE_MS = 2000;
 
-/**
- * What a screen has kept about its guest (nobody signed in): the same place the page itself writes, for a test that needs the
- * screen to have watched or chosen something before it opens.
- */
 export function guestStorage(data: { progress?: unknown[]; watched?: unknown[]; list?: unknown[]; listNames?: unknown[]; ratings?: unknown[]; settings?: unknown[] }): Record<string, string> {
   return { "kino.data.guest": JSON.stringify({ v: 1, data: { progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], ...data }, rev: 0, dirty: [] }) };
 }
 
-/**
- * A new device (its own storage) whose localStorage already holds `seed`, unless the page has written there since.
- * `setup` runs on the new context before any page opens, for what the page asks for as it loads (the library).
- */
 export async function openDevice(
   browser: Browser,
   options: Parameters<Browser["newContext"]>[0],
@@ -128,14 +87,8 @@ export async function openDevice(
   return context.newPage();
 }
 
-/** What `sleepingServer` leaves on the page for the test to switch. */
 type ServerSwitch = { up: boolean; sockets: WebSocket[] };
 
-/**
- * A page whose server does not answer: the connections it tries stay "connecting", which is what a free host's do while it wakes up,
- * until the test lets them through (`serverUp`; `up` says whether it starts that way). The page's clock is fake, so the ten seconds
- * it waits before saying more are skipped with `page.clock.fastForward`.
- */
 export const sleepingServer =
   (up = false) =>
   async (context: BrowserContext): Promise<void> => {
@@ -151,7 +104,6 @@ export const sleepingServer =
             server.sockets.push(socket);
             return socket;
           }
-          // Never answered: it stays CONNECTING until the page gives up on it, and then closes as a connection that never came up does.
           const hung = {
             readyState: Real.CONNECTING as number,
             onopen: null,
@@ -171,7 +123,6 @@ export const sleepingServer =
     }, up);
   };
 
-/** The connection the page has is cut, and the ones it tries after that are not answered. */
 export const serverDown = (page: Page) =>
   page.evaluate(() => {
     const server = (window as unknown as { __server: ServerSwitch }).__server;
@@ -179,24 +130,16 @@ export const serverDown = (page: Page) =>
     server.sockets.forEach((socket) => socket.close());
   });
 
-/** The next connection the page tries is a real one. */
 export const serverUp = (page: Page) =>
   page.evaluate(() => {
     (window as unknown as { __server: ServerSwitch }).__server.up = true;
   });
 
-/** What the library says to the rows that come after the first ones and to more titles of a row, when a test has it do so. */
 export interface LibraryFeed {
-  /** The rows after the first ones: `{ rows, next }`, asked from `cursor` (for the page of one section: movie, series, cartoon or anime; or for Home, `null`). */
   rows?: (cursor: number, section: string | null) => unknown;
-  /** More titles of a row, from page 2: `{ items, last }`. */
   more?: (row: string, page: number) => unknown;
 }
 
-/**
- * Answer the library's requests with `library` (and the search with `search`: a list of titles, or `{ items, exact }` to say how many have every word): the server
- * the tests run against has no library of its own. The rows that come after the first ones, and the pages of a row, are `feed`'s; without it there are none.
- */
 export const withLibrary =
   (library: unknown, search?: (query: string) => unknown, feed?: LibraryFeed) =>
   async (context: BrowserContext): Promise<void> => {
@@ -219,7 +162,6 @@ export const withLibrary =
     }
   };
 
-/** Open /tv in its own browser context (its own storage, like a separate device): it opens on the library, with nothing to press first. */
 export async function openLibrary(
   browser: Browser,
   setup?: (context: BrowserContext) => Promise<unknown>,
@@ -228,50 +170,31 @@ export async function openLibrary(
 ): Promise<Page> {
   const page = await openDevice(browser, { viewport }, seed, setup);
   await page.goto("/tv");
-  await expect(page.getByTestId("tv-browse")).toBeVisible(); // (the screen is a chunk of its own, so it is not there the moment the page has loaded)
+  await expect(page.getByTestId("tv-browse")).toBeVisible();
   return page;
 }
 
-/** A screen held upright, the one question client/tv/compact.ts asks: narrow, and tall enough to be held that way. Its menu is a bar of four places. */
 export const heldUpright = (page: Page): boolean => {
   const size = page.viewportSize();
   return size !== null && size.width <= COMPACT_MAX_WIDTH && size.height >= COMPACT_MIN_HEIGHT;
 };
 
-/**
- * The cat is off for everyone (the owner, 15 Nov 2026: it has not been brought up to date and may not work as intended), and its tests are kept out of our
- * runs: they run only when CAT_TESTS=1 is set. A seed that turns the cat on carries `switched: 2` (cat/settings.ts CAT_SWITCH), as a switch turned on now does.
- */
-export const CAT_TESTS = Boolean(process.env.CAT_TESTS);
-export const CAT_TESTS_OFF = "the cat is off for everyone and its tests are kept out of our runs: set CAT_TESTS=1 to run them";
 
-/** Whether the page is on a phone held on its side: its menu says so. */
 export const onItsSide = async (page: Page): Promise<boolean> => (await page.getByTestId("tv-rail").getAttribute("data-flat")) === "true";
 
-/** Whether the profile's page is the one that is open. */
 const onProfilePage = async (tv: Page): Promise<boolean> => (await tv.getByTestId("tv-browse").getAttribute("data-view")) === "profile";
 
-/**
- * A line of a TV's menu that the bar of a screen held upright has no room for (the watch party, a phone to connect): there it is a button of the profile's
- * page, with the same test id, and the profile's page is opened first. `how`: pressed with the mouse, or with a finger (a touch screen's tests are about touches).
- */
 export async function pressMenuLine(tv: Page, id: "rail-party" | "rail-connect", how: "click" | "tap" = "click"): Promise<void> {
-  // (A phone on its side has the upright phone's four places in its menu too: the party and the phone are on the profile's page. See compact.ts `isFlatHand`.)
   if ((heldUpright(tv) || (await onItsSide(tv))) && !(await onProfilePage(tv))) await openProfilePage(tv, how);
   await tv.getByTestId(id)[how]();
 }
 
-/** The same, and on to "Connect a phone" in the library's menu, where the code to type on the phone is. */
 export async function openTv(browser: Browser, viewport = { width: 1280, height: 720 }, seed: Record<string, string> = {}): Promise<Page> {
   const page = await openLibrary(browser, undefined, viewport, seed);
   await pressMenuLine(page, "rail-connect");
   return page;
 }
 
-/**
- * A click as a hand makes it: the button is held down for a moment before it is let go. Playwright's own click lets go within a few
- * milliseconds, so anything that a press sets moving (the rows, the banner) has not moved yet when the button comes up; a hand's has.
- */
 export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
   const box = (await target.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -280,34 +203,25 @@ export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
   await page.mouse.up();
 }
 
-/**
- * What is on a TV's profile page: three places that are cards (what the profile rated, its friends, History), and two buttons in its top, which
- * are not places (Settings, and for a guest the way to sign in).
- */
 export type ProfilePlace = "ratings" | "friends" | "history" | "news" | "signin" | "settings";
 
-/** The button of the profile page's top that a place is, if it is one (the others are cards). */
 export const profileButton = (tv: Page, place: ProfilePlace): Locator | null =>
   place === "settings" ? tv.getByTestId("tv-profile-settings") : place === "signin" ? tv.getByTestId("tv-profile-signin") : null;
 
-/** The profile's page, opened by a click (or a tap) on the button in the corner (the page's first button or card has the remote). */
 export async function openProfilePage(tv: Page, how: "click" | "tap" = "click"): Promise<void> {
   await tv.getByTestId("tv-account-chip")[how]();
   await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
 }
 
-/** The profile's page of a TV, opened unless it is open already (signing in leaves a screen on it). */
 export async function showProfilePage(tv: Page): Promise<void> {
   if (!(await onProfilePage(tv))) await openProfilePage(tv);
 }
 
-/** A place on the profile's page, clicked as a mouse does it (the profile's page is opened first unless it is open). */
 export async function openProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
   if (!(await onProfilePage(tv))) await openProfilePage(tv);
   await (profileButton(tv, place) ?? tv.locator(`[data-entry="profile:${place}"]`)).click();
 }
 
-/** The corner's button of a TV that is on the library's first screen, reached with a remote: Up (the banner's buttons are on the way), and OK opens the profile's page. */
 export async function openProfileByRemote(tv: Page): Promise<void> {
   const chip = tv.getByTestId("tv-account-chip");
   for (let step = 0; step < 4 && !(await chip.evaluate((element) => element === document.activeElement)); step++) await tv.keyboard.press("ArrowUp");
@@ -316,19 +230,16 @@ export async function openProfileByRemote(tv: Page): Promise<void> {
   await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
 }
 
-/** The way to sign in of a TV that nobody is signed in on: the corner's button opens the profile's page, whose first button it is. */
 export async function openTvSignIn(tv: Page): Promise<void> {
   await tv.getByTestId("tv-account-chip").click();
   await tv.getByTestId("tv-profile-signin").click();
 }
 
-/** The settings page of a TV (signed in or not): the corner's button, then the Settings button of the profile's page. */
 export async function openTvSettings(tv: Page): Promise<void> {
   await openProfilePlace(tv, "settings");
   await expect(tv.getByTestId("tv-account")).toBeVisible();
 }
 
-/** The same with a remote: Up to the top and along it to Settings or the way to sign in, or Down and Right along the cards to a place, and OK. */
 export async function pressProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
   const button = profileButton(tv, place);
   const target = button ?? tv.locator(`[data-entry="profile:${place}"]`);
@@ -336,8 +247,6 @@ export async function pressProfilePlace(tv: Page, place: ProfilePlace): Promise<
   const there = () => target.evaluate((element) => element === document.activeElement);
   for (let step = 0; step < 8 && !(await there()); step++) {
     const onCard = await tv.evaluate(() => document.activeElement?.getAttribute("data-zone") === "rows");
-    // (to a button of the top: Up from the cards, then Right to Settings or Left to Sign in; to a card: Down from the top, then towards it along the cards,
-    // whichever side of it Down landed on: four across, Down from Settings lands on a card at the right, and under 800 px the cards are two rows of two)
     const towards = () =>
       target.evaluate((element) => {
         const from = document.activeElement!.getBoundingClientRect();
@@ -352,7 +261,6 @@ export async function pressProfilePlace(tv: Page, place: ProfilePlace): Promise<
   await tv.keyboard.press("Enter");
 }
 
-/** The first title of a library, played with OK: its own page opens, and OK on Play starts it. */
 export async function playFirst(tv: Page): Promise<void> {
   await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
   await tv.keyboard.press("Enter");
@@ -368,18 +276,16 @@ export async function readPairingCode(tv: Page): Promise<string> {
 export async function openPairedPhone(browser: Browser, tv: Page): Promise<Page> {
   const phone = await (await browser.newContext(PHONE)).newPage();
   await phone.goto("/");
-  await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
+  await phone.getByTestId("code-input").fill(await readPairingCode(tv));
   await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
   return phone;
 }
 
-/** One of the four places of the phone's bar: Home (what to watch, the box for a link), Search, My lists (the lists and the ratings) and You (the account). */
 export const place = (phone: Page, name: "home" | "search" | "list" | "you") => phone.getByTestId(`tab-${name}`).click();
 
 export const tvRoot = (tv: Page) => tv.getByTestId("tv");
 export const tvTime = async (tv: Page) => Number(await tvRoot(tv).getAttribute("data-time"));
 
-/** A phone speaking the raw protocol, to verify the exact command sequence without the UI in between. */
 export class RawPhone {
   readonly states: PlayerState[] = [];
   private constructor(private readonly ws: WebSocket) {
@@ -399,7 +305,6 @@ export class RawPhone {
   cmd(command: Command) {
     this.ws.send(JSON.stringify({ type: "CMD", command }));
   }
-  /** What the phone's "play" button sends: the server resolves the link, then tells the TV to load it. `hint` is what a library tile knew about the title. */
   playUrl(url: string, startAt?: number, hint?: PlayHint) {
     this.ws.send(JSON.stringify({ type: "PLAY_URL", url, ...(startAt === undefined ? {} : { startAt }), ...(hint ? { hint } : {}) }));
   }
@@ -408,10 +313,6 @@ export class RawPhone {
   }
 }
 
-/**
- * Hand a video to the TV the way a resolver would, from the phone page itself (a second socket on the phone's own
- * identity), then reload the page so it shows what the server now holds. For tests that need a series with an episode list.
- */
 export async function loadOnTv(phone: Page, media: NormalizedMedia): Promise<void> {
   await phone.evaluate(async (media) => {
     const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -424,29 +325,15 @@ export async function loadOnTv(phone: Page, media: NormalizedMedia): Promise<voi
   await phone.reload();
 }
 
-/**
- * Names a signed-in page's first profile, as its owner does when it is set up (a new account's is named after its picture, never after its login: the
- * owner, 18 Nov), and loads the page again to have it. The specs that find people by name use it to give each the name its login would suggest.
- */
-/** What a new account's first profile is called until it is set up: the name of its picture ("Fox"), whichever it got. */
 export const PICTURE_NAME = new RegExp(`^(${AVATAR_IDS.map(avatarName).join("|")})$`);
-/** The same, anywhere in a text (a button's label, "Account and profiles: Fox"). */
 export const PICTURE_NAMED = new RegExp(`\\b(${AVATAR_IDS.map(avatarName).join("|")})\\b`);
 
-/**
- * The name Kino gave a first profile until 18 Nov 2026, from the login: "viewer@kino.test" -> "Viewer", "Robert x1" -> "Robert x1". The tests that are about
- * something else name their profiles so (`nameFirstProfile`), and read them as before.
- */
 export function loginName(login: string): string {
   const own = login.includes("@") ? (login.split("@")[0]?.split(/[._+-]/)[0] ?? "") : login;
   const word = own.replace(/[._+-]+/g, " ").replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim();
   return word ? (word.charAt(0).toUpperCase() + word.slice(1)).slice(0, PROFILE_NAME_MAX).trim() : "Me";
 }
 
-/**
- * Names the first profile of the account this page has just signed in to (a new one is named after its picture), as the profile's settings would, and
- * opens the page again so that it shows the name. Waits for the sign-in to have happened first.
- */
 export async function nameFirstProfile(page: Page, name: string): Promise<void> {
   let id: string | undefined;
   await expect

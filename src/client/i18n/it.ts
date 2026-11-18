@@ -1,11 +1,23 @@
 import { chatIt } from "./chat.it";
-import { catIt } from "./cat.it";
-import { shellIt } from "./shell.it";
 import type { Dictionary } from "./en";
+import type { ShellDictionary } from "./shell.en";
 
-/** Italiano. Stesse chiavi di en.ts (le controlla il compilatore); le forme del plurale sono `_one` e `_other`. */
+const shellIt: ShellDictionary = {
+  "tabs.label": "Navigazione principale",
+  "tabs.home": "Home",
+  "tabs.search": "Cerca",
+  "tabs.list": "Le mie liste",
+  "tabs.you": "Tu",
+
+  "remote.open": "Apri il telecomando",
+
+  "lists.emptyTitle": "Ancora niente di salvato",
+  "lists.browse": "Trova qualcosa da guardare",
+
+  "rows.seeAll": "Vedi tutti",
+};
+
 export const it: Dictionary = {
-  /* common */
   "common.back": "Indietro",
   "common.cancel": "Annulla",
   "common.close": "Chiudi",
@@ -21,7 +33,6 @@ export const it: Dictionary = {
   "common.optional": "Facoltativo",
   "common.clear": "Cancella",
 
-  /* playing a link from the phone */
   "play.paste": "Incolla il link di un video o di una pagina",
   "play.pasteLabel": "Link del video o della pagina",
   "play.pasteButton": "Incolla",
@@ -29,7 +40,6 @@ export const it: Dictionary = {
   "play.finding": "Cerco il video…",
   "play.found": "Video trovato. Lo invio a {tv}…",
 
-  /* signing in */
   "auth.signIn": "Accedi",
   "auth.signUp": "Crea account",
   "auth.signOut": "Esci",
@@ -56,14 +66,12 @@ export const it: Dictionary = {
   "auth.google": "Continua con Google",
   "auth.or": "oppure",
 
-  /* how a round trip to Google ended */
   "google.denied": "Accesso con Google annullato.",
   "google.failed": "L'accesso con Google non è riuscito. Riprova.",
   "google.taken": "Questo account Google è già collegato a un altro account.",
   "google.unavailable": "L'accesso con Google non è disponibile qui.",
   "google.linked": "Google è collegato. Ora puoi accedere anche con Google.",
 
-  /* things the server says no to */
   "error.generic": "Qualcosa è andato storto. Riprova.",
   "error.offline": "Impossibile raggiungere il server. Controlla la connessione.",
   "error.invalid_credentials": "Nome utente o password errati.",
@@ -85,7 +93,6 @@ export const it: Dictionary = {
   "error.bad_response": "Questo server non ha gli account.",
   "error.reauth_required": "Prima conferma con Google.",
 
-  /* profiles */
   "profiles.title": "Chi sta guardando?",
   "profiles.manage": "Gestisci profili",
   "profiles.add": "Aggiungi profilo",
@@ -141,7 +148,6 @@ export const it: Dictionary = {
   "avatar.vampire": "Vampiro",
   "avatar.dragon": "Drago",
 
-  /* the account page on the phone */
   "account.title": "Account",
   "account.open": "Account e profili",
   "account.signInPrompt": "Accedi",
@@ -186,7 +192,6 @@ export const it: Dictionary = {
   "account.deleteWarnGoogle": "Account, profili, cronologia e liste vengono eliminati per sempre. Per confermare, accedi di nuovo con Google.",
   "account.deleteWithGoogle": "Conferma con Google",
 
-  /* signing another device in */
   "link.title": "Accedi con un altro dispositivo",
   "link.step1": "Apri Kino su un altro dispositivo e accedi.",
   "link.step2": "Tocca la tua immagine, poi “Fai accedere un altro dispositivo”.",
@@ -209,7 +214,6 @@ export const it: Dictionary = {
   "link.device.remote": "Un telefono",
   "link.device.browser": "Un browser",
 
-  /* settings that follow a profile */
   "settings.title": "Impostazioni",
   "settings.language": "Lingua",
   "settings.accent": "Colore",
@@ -241,7 +245,6 @@ export const it: Dictionary = {
   "accent.orange": "Arancione",
   "accent.pink": "Rosa",
 
-  /* rows and cards */
   "rows.continue": "Continua a guardare",
   "rows.myList": "Le mie liste",
   "rows.myListEmpty": "Tieni premuto un titolo, o tocca + nella sua pagina, per salvarlo qui.",
@@ -284,7 +287,6 @@ export const it: Dictionary = {
   "library.aboutLess": "Mostra di meno",
   "library.kindSeries": "Serie",
 
-  /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */
   "category.trending-movies": "Film di tendenza",
   "category.trending-tv": "Serie di tendenza",
   "category.popular-movies": "Film popolari",
@@ -415,7 +417,6 @@ export const it: Dictionary = {
   "category.world-zh-movies": "Cinema cinese",
   "category.world-ru-movies": "Cinema russo",
   "category.world-tr-movies": "Cinema turco",
-  /* the rows of the Cartoons and Anime pages */
   "category.cartoon-tv": "Serie di cartoni animati popolari",
   "category.cartoon-movies": "Film di cartoni animati popolari",
   "category.cartoon-top-tv": "Serie di cartoni animati più votate",
@@ -469,7 +470,6 @@ export const it: Dictionary = {
   "category.best-anime-tv": "Le migliori serie anime",
   "category.best-anime-movies": "I migliori film anime",
 
-  /* the account pages: settings, devices, signing another device in */
   "settings.playback": "Riproduzione",
   "settings.appearance": "Aspetto",
   "settings.subtitleDefaults": "Ora per prime: {languages}.",
@@ -485,7 +485,6 @@ export const it: Dictionary = {
   "link.scan": "Inquadra il codice dell'altro dispositivo",
   "link.codeOr": "oppure scrivi il codice",
   "link.codeLabel": "Codice sull'altro dispositivo",
-  /* the TV's start screens and account pages */
   "tv.welcome": "Benvenuto",
   "tv.welcomeStart": "Inizia a guardare",
   "tv.welcomeAbout": "Film e serie su questo schermo, con il telefono come telecomando, se vuoi.",
@@ -513,7 +512,6 @@ export const it: Dictionary = {
   "role.asRemote": "Usa questo schermo come telecomando",
   "tv.notSignedIn": "Accesso non effettuato",
   "tv.approveHelp": "Scrivi il codice che mostra l'altro dispositivo.",
-  /* the TV's library */
   "tv.library": "Libreria",
   "tv.menu": "Menu della libreria",
   "tv.search": "Cerca",
@@ -550,7 +548,6 @@ export const it: Dictionary = {
   "tv.caretLeft": "Sposta il cursore a sinistra",
   "tv.caretRight": "Sposta il cursore a destra",
 
-  /* the player: menus, sheets and the controls over the picture */
   "player.audioSubtitles": "Audio e sottotitoli",
   "player.audio": "Audio",
   "player.subtitles": "Sottotitoli",
@@ -886,7 +883,6 @@ export const it: Dictionary = {
   "ws.HAS_PHONE": "Scollega il telefono da questa TV prima di entrare in una visione condivisa.",
   "ws.ALREADY_IN_PARTY": "Esci prima da questa visione condivisa, poi entra in un'altra.",
 
-  /* a watch party on the TV: the menu line, the page, the panel over a film */
   "party.rail": "Visione condivisa",
   "party.size_one": "{count} dispositivo",
   "party.size_other": "{count} dispositivi",
@@ -929,10 +925,8 @@ export const it: Dictionary = {
   "resolve.unsupported": "Non ho trovato un video che si possa riprodurre qui.",
   "resolve.temporary": "Qualcosa è andato storto nella ricerca del video. Riprova tra poco.",
 
-  /* subtitle languages: the way out of a profile's own list */
   "player.showAll": "Mostra tutte le lingue",
 
-  /* the TV's library: its menu and the pages behind it */
   "tv.movies": "Film",
   "tv.series": "Serie TV",
   "tv.cartoons": "Cartoni animati",
@@ -1002,7 +996,6 @@ export const it: Dictionary = {
   "rows.moreLike": "Altri titoli come {title}",
   "rows.moreFailed": "Impossibile caricare altri titoli. Riprovo…",
 
-  /* ratings: a score out of ten, why, and what was watched */
   "rating.mine": "Le mie valutazioni",
   "rating.mineHelp": "I titoli e le stagioni a cui hai dato un voto.",
   "rating.all": "Vedi tutte",
@@ -1051,7 +1044,6 @@ export const it: Dictionary = {
   "rating.finishedOn": "Finito il {date}",
   "rating.lastWatchedOn": "Visto l'ultima volta il {date}",
 
-  /* amici: si vedono liste e valutazioni, si mandano titoli e inviti, sanno cosa guarda l'altro */
   "friends.title": "Amici",
   "friends.settings": "Amici",
   "friends.settingsHelp": "Gli amici vedono nome, immagine, liste e valutazioni di questo profilo e quando è online, e possono mandargli titoli, inviti e messaggi. Ciò che guardi si condivide solo se lo scegli tu, qui sotto.",
@@ -1237,7 +1229,6 @@ export const it: Dictionary = {
   "error.plan_full": "Hai già tutti i piani in attesa di risposta che puoi avere. Aspetta prima una risposta.",
   "error.plan_gone": "Questo piano non aspetta più una risposta.",
 
-  /* feedback: un modulo per dire al team cosa non ha funzionato, cosa potrebbe andare meglio o cosa manca (client/feedback) */
   "feedback.title": "Invia un feedback",
   "feedback.entry": "Feedback",
   "feedback.report": "Segnala questo problema",
@@ -1456,12 +1447,7 @@ export const it: Dictionary = {
   "feedback.leave.stay": "Continua a modificare",
   "feedback.leave.go": "Chiudi comunque",
 
-  /* la chat tra due amici (client/chat): in un file a parte, aggiunto qui */
   ...chatIt,
 
-  /* la shell del telefono, la barra in basso e le schermate al suo interno (client/controller/shell): in un file a parte, aggiunto qui */
   ...shellIt,
-
-  /* the cat companion (client/cat): kept in a file of its own, spread in here */
-  ...catIt,
 };

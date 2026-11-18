@@ -30,7 +30,6 @@ describe("row shapes", () => {
     expect(hasStills(row("b", 17, 3))).toBe(false);
     expect(hasStills(row("c", 5))).toBe(false);
     expect(hasStills(row("d", 6))).toBe(true);
-    // (Only the first twenty count: a row whose later titles have none keeps its shape as they come in.)
     expect(hasStills(row("e", 20, 40))).toBe(true);
   });
 

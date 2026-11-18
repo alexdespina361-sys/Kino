@@ -1,21 +1,15 @@
-// Shared pieces of the screenshot walk: a made-up catalogue with drawn posters, the way each device is opened, the step/snap helpers.
-// Run by run.mjs against a server on its own (accounts live in the server's memory). There is one look (the refined one), so nothing chooses it.
 import { chromium, devices } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { saveScan } from "./scan.mjs";
 
 export { chromium };
 
-/** The folder name the pictures and scans go under. There is one look now (it used to be two, compared); the name stays so the old folders and notes still read. */
 export const look = "polish";
 export const base = process.env.BASE ?? "http://127.0.0.1:8810";
 export const out = process.env.OUT ?? `.ui-polish/shots/${look}`;
-/** With SCAN=1 every picture is also measured (scan.mjs): one JSON of computed styles per picture, for drift.mjs. */
 const scanning = process.env.SCAN === "1";
 const scanOut = process.env.SCAN_OUT ?? `.ui-polish/scan/${look}`;
 export const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/* ------------------------------ the made-up catalogue ------------------------------ */
 
 const MOVIES = [
   ["The Long Harbour", 2019, "A dockworker's last winter in a town that is selling its piers one by one."],
@@ -75,7 +69,6 @@ const lines = (title, per) => {
 };
 const esc = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
-/** An upright poster (w x h) or a wide picture, drawn from the title: a gradient, a disc of light, the title. */
 export function artwork(kind, i) {
   const all = [...MOVIES, ...SERIES];
   const [title, year] = all[i] ?? ["Untitled", 2000];
@@ -87,7 +80,6 @@ export function artwork(kind, i) {
   const rows = lines(title, poster ? 13 : 24);
   const x = poster ? 34 : 90;
   const y0 = poster ? h - 70 - (rows.length - 1) * (size + 6) : h - 150 - (rows.length - 1) * (size + 8);
-  // (a wide picture is a still from the film: no title in it, where a poster has one)
   const text = !poster ? "" : rows.map((row, n) => `<text x="${x}" y="${y0 + n * (size + 6)}" font-family="Georgia,serif" font-size="${size}" font-weight="bold" fill="#fff">${esc(row)}</text>`).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},55%,40%)"/><stop offset="1" stop-color="hsl(${(hue + 50) % 360},62%,13%)"/></linearGradient></defs><rect width="${w}" height="${h}" fill="url(#g)"/><circle cx="${w * 0.74}" cy="${h * 0.3}" r="${Math.min(w, h) * 0.24}" fill="hsl(${(hue + 25) % 360},75%,62%)" opacity="0.32"/><rect x="0" y="${h * 0.62}" width="${w}" height="${h * 0.38}" fill="#000" opacity="0.28"/>${text}${poster ? `<text x="${x}" y="${h - 30}" font-family="Arial,sans-serif" font-size="22" fill="#fff" opacity="0.75">${year}</text>` : `<ellipse cx="${w * 0.3}" cy="${h * 0.78}" rx="${w * 0.35}" ry="${h * 0.18}" fill="#000" opacity="0.35"/><rect x="${w * 0.55}" y="${h * 0.52}" width="${w * 0.07}" height="${h * 0.3}" fill="#000" opacity="0.4"/>`}</svg>`;
 }
@@ -100,7 +92,6 @@ const movieItem = (entry, i) => ({
   image: `/img/p/${i}.svg`,
   backdrop: `/img/b/${i}.svg`,
   description: entry[2],
-  // the first four play for real (a long clip served by this server); the others have links that only lead to their pages
   url: i < 4 ? `${base}/fixtures/long.mp4?n=${i}` : `https://films.example/watch/${i}`,
 });
 const seriesItem = (entry, n) => {
@@ -120,7 +111,6 @@ export const library = {
   ],
 };
 
-/** Everything the page asks the server's library for, answered from the catalogue; pictures are drawn on the spot. */
 export async function withCatalogue(context) {
   await context.route(/\/img\/(p|b)\/\d+\.svg/, (route) => {
     const [, kind, number] = new URL(route.request().url()).pathname.match(/\/img\/(p|b)\/(\d+)\.svg/);
@@ -152,24 +142,19 @@ export async function withCatalogue(context) {
   });
 }
 
-/* ------------------------------ devices ------------------------------ */
-
 export const HD = { width: 1280, height: 720 };
 export const FULL_HD = { width: 1920, height: 1080 };
 export const QHD = { width: 2560, height: 1440 };
 export const DESKTOP = { width: 1440, height: 900 };
 export const LAPTOP = { width: 1366, height: 768 };
-// PHONE_SIZE=844x390 walks a phone of that size (held sideways, say) instead of the usual 390x844; its pictures go to phone-844x390/.
 const sized = (process.env.PHONE_SIZE ?? "").match(/^(\d+)x(\d+)$/);
 export const PHONE = sized ? { width: Number(sized[1]), height: Number(sized[2]) } : { width: 390, height: 844 };
 export const phoneName = sized ? `phone-${PHONE.width}x${PHONE.height}` : "phone-390";
 export const PHONE_SMALL = { width: 360, height: 800 };
 
-/** What a device that came back after leaving full screen once and turned the link box on looks like (the pages start like this in the tests too). */
 const kept = (first) => [...(first ? [] : [{ name: "kino.fullscreen.left", value: "1" }, { name: "kino.linkbox", value: "1" }])];
 const storageOf = (first) => ({ cookies: [], origins: kept(first).length > 0 ? [{ origin: base, localStorage: kept(first) }] : [] });
 
-// WALK_LOCALE=ro-RO walks the pages in Romanian (it-IT: Italian), the two languages whose words are the longest; write its pictures somewhere of their own (--out).
 export async function openContext(browser, viewport, { phone = false, first = false, seed = {}, locale = process.env.WALK_LOCALE ?? "en-US" } = {}) {
   const options = { baseURL: base, viewport, locale, storageState: storageOf(first) };
   if (phone) Object.assign(options, { screen: viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2, userAgent: devices["Pixel 7"].userAgent });
@@ -183,15 +168,11 @@ export async function openContext(browser, viewport, { phone = false, first = fa
   return context;
 }
 
-/** What a device keeps about its guest, in the form the page itself writes. */
 export const guestData = (data) => ({
   "kino.data.guest": JSON.stringify({ v: 1, data: { progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], ...data }, rev: 0, dirty: [] }),
 });
 
-/* ------------------------------ the walk ------------------------------ */
-
 export const log = [];
-/** With STEPS=02-home,04-rail-open only those steps run (the others are skipped, not failed): for looking at one screen while a stylesheet is being written. */
 const onlySteps = process.env.STEPS ? process.env.STEPS.split(",").filter(Boolean) : null;
 export async function step(device, name, fn) {
   if (onlySteps && !onlySteps.some((want) => name === want || name.startsWith(want))) return;
@@ -205,17 +186,11 @@ export async function step(device, name, fn) {
   console.log(log[log.length - 1]);
 }
 
-/** Held until the little messages that come and go (a friend started a film, asked to be friends) have gone, unless the picture is of one. */
 const quiet = (page) =>
   page
     .waitForFunction(() => !document.querySelector('[data-testid="account-toast"], [data-testid="toast"], [data-testid="tv-account-toast"]'), null, { timeout: 9_000 })
     .catch(() => {});
 
-/**
- * What changes from one run to the next without anybody touching the page - a code made at random (and the width it gives a centred block),
- * the pattern of a QR code, a frame of the film - is set to the same thing every time for the picture, so comparing two runs shows what the
- * *page* did. `live` keeps the film's frame (a picture to look at, not to compare). `unsteady` puts it all back.
- */
 const steady = (page, live) =>
   page.evaluate((keepFilm) => {
     const kept = (window.__steady = window.__steady ?? { texts: [], paths: [], style: null });
@@ -242,7 +217,7 @@ const steady = (page, live) =>
       const bit = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) >> 16) & 1;
       const finder = (r, c) => {
         const ring = Math.max(Math.abs(r - 3), Math.abs(c - 3));
-        return ring !== 2; // (a 7 x 7 square: dark edge, light ring, dark middle)
+        return ring !== 2;
       };
       let d = "";
       for (let r = 0; r < size; r++) {
@@ -272,10 +247,6 @@ const unsteady = (page) =>
     window.__steady = undefined;
   });
 
-/**
- * With TASTE_CSS=<file> every picture is taken with that style sheet added to the page, and with TASTE_ATTR=data-accent=blue with that attribute on
- * <html> (taste.mjs: one thing changed on the refined look, for the owner to choose between).
- */
 const tasteCss = process.env.TASTE_CSS ? readFileSync(process.env.TASTE_CSS, "utf8") : "";
 const tasteAttr = (process.env.TASTE_ATTR ?? "").split("=");
 const tasted = (page) =>
@@ -293,7 +264,6 @@ const tasted = (page) =>
       )
     : null;
 
-/** A picture of what the page shows, after the things that fade and slide have settled. */
 export async function snap(page, device, name, { settle = 500, keepToast = false, live = false, ...shot } = {}) {
   mkdirSync(`${out}/${device}`, { recursive: true });
   if (!keepToast) await quiet(page);
@@ -305,18 +275,12 @@ export async function snap(page, device, name, { settle = 500, keepToast = false
   await unsteady(page);
 }
 
-/**
- * A page that scrolls inside itself (an overlay over the library): the picture of its top, then of each part below it, as a hand scrolling it
- * would see them. `inside` is something in the page; the scrolling box around it is found from there.
- */
 export async function snapScrolled(page, inside, device, name, { max = 4, settle = 500 } = {}) {
   mkdirSync(`${out}/${device}`, { recursive: true });
   await quiet(page);
-  // (what is under the middle of the screen is what a hand would scroll)
   const box = inside ? await page.locator(inside).first().elementHandle() : await page.evaluateHandle(() => document.elementFromPoint(innerWidth / 2, innerHeight / 2));
   const sizes = await box.evaluate((element) => {
     const scrolls = (node) => /(auto|scroll)/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 4;
-    // the box itself, else the ones around it, else (for a box that was named) the largest inside it
     let node = element;
     while (node && node !== document.documentElement && !scrolls(node)) node = node.parentElement;
     if ((!node || node === document.documentElement) && element.querySelectorAll) node = [...element.querySelectorAll("*")].filter(scrolls).sort((a, b) => b.clientHeight - a.clientHeight)[0] ?? null;
@@ -338,5 +302,4 @@ export async function snapScrolled(page, inside, device, name, { max = 4, settle
   if (sizes) await page.evaluate(() => { const node = document.querySelector("[data-l-scroll]"); node.scrollTop = 0; node.removeAttribute("data-l-scroll"); });
 }
 
-/** Keeps the pointer where it hovers over nothing, so no tile or corner shows what a pointer at rest would. */
 export const pointerAway = (page, viewport) => page.mouse.move(viewport.width - 2, viewport.height - 2);

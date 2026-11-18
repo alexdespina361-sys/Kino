@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cleanCues } from "./clean";
 import type { VttCue } from "./vtt";
 
-// (Made-up lines only: the repo is public.)
 const at = (start: number, text: string): VttCue => ({ start, end: start + 2, text });
-/** A file of a film an hour and a half long, with these lines in it. */
 const film = (...lines: VttCue[]) => [...lines, at(5400, "The last line of the film.")];
 const texts = (cues: VttCue[]) => cues.map((cue) => cue.text);
 

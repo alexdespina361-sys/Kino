@@ -18,7 +18,6 @@ import {
   type SyncResponse,
 } from "../../shared";
 
-/** The server said no (or could not be reached: status 0). `code` is one of its short words, e.g. "invalid_credentials". */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -55,7 +54,6 @@ export async function request(method: string, url: string, body?: unknown): Prom
   return data;
 }
 
-/** The answer, checked: a server that answers with something else is an older one, and is told apart from one that said no. */
 export async function ask<T>(schema: z.ZodType<T>, method: string, url: string, body?: unknown): Promise<T> {
   const parsed = schema.safeParse(await request(method, url, body));
   if (!parsed.success) throw new ApiError(502, "bad_response");
@@ -65,7 +63,6 @@ export async function ask<T>(schema: z.ZodType<T>, method: string, url: string, 
 const link = (code: string) => `/api/link/${encodeURIComponent(code)}`;
 
 export const api = {
-  /** Who is signed in. A 404 means this server has no accounts (an older one). */
   session: (): Promise<SessionState> => ask(SessionStateSchema, "GET", "/api/me"),
   register: (email: string, password: string, device: DeviceKind, name?: string): Promise<Me> => ask(MeSchema, "POST", "/api/auth/register", { email, password, device, ...(name ? { name } : {}) }),
   login: (email: string, password: string, device: DeviceKind): Promise<Me> => ask(MeSchema, "POST", "/api/auth/login", { email, password, device }),
@@ -77,9 +74,7 @@ export const api = {
 
   changePassword: async (current: string, next: string): Promise<void> => void (await request("POST", "/api/me/password", { current, next })),
   deleteAccount: async (password: string): Promise<void> => void (await request("POST", "/api/me/delete", { password })),
-  /** The PIN of a child's profile, asked before it is left: answers nothing when it is right (401 `wrong_pin`; 404 `no_pin`: there is none any more; 429 slowed). */
   checkChildPin: async (pin: string): Promise<void> => void (await request("POST", "/api/me/child-pin/check", { pin })),
-  /** Set it, change it, or take it off (`next: null`). Once there is one: with the PIN, the password, or (an account made with Google) after confirming with Google. */
   changeChildPin: (change: ChildPinChange): Promise<Me> => ask(MeSchema, "POST", "/api/me/child-pin", change),
 
   sessions: (): Promise<SessionInfo[]> => ask(SessionInfoSchema.array(), "GET", "/api/sessions"),
@@ -89,16 +84,13 @@ export const api = {
 
   sync: (profileId: string, body: SyncRequest): Promise<SyncResponse> => ask(SyncResponseSchema, "POST", `/api/profiles/${encodeURIComponent(profileId)}/sync`, body),
 
-  /** A TV that is not signed in asks for a code to show, then asks (with the secret it was given) whether a phone approved it. */
   linkStart: (device: DeviceKind) => ask(LinkStartedSchema, "POST", "/api/link/start", { device }),
   linkPoll: (code: string, secret: string): Promise<LinkOutcome> => ask(LinkOutcomeSchema, "POST", "/api/link/poll", { code, secret }),
-  /** The signed-in phone looks at a request, then approves or refuses it. */
   linkView: (code: string) => ask(LinkViewSchema, "GET", link(code)),
   linkApprove: async (code: string): Promise<void> => void (await request("POST", `${link(code)}/approve`, {})),
   linkDeny: async (code: string): Promise<void> => void (await request("POST", `${link(code)}/deny`, {})),
 };
 
-/** The last thing the screen sends as it closes: what has not been sent yet. `sendBeacon` is the one request a closing page is allowed to finish. */
 export function beaconSync(profileId: string, body: SyncRequest): boolean {
   try {
     return navigator.sendBeacon(`/api/profiles/${encodeURIComponent(profileId)}/sync`, new Blob([JSON.stringify(body)], { type: "application/json" }));

@@ -16,7 +16,7 @@ describe("what's new: the versions", () => {
     expect(freshFor(undefined, "0.4.3")).toBe(false);
     expect(freshFor("0.4.2", "0.4.3")).toBe(true);
     expect(freshFor("0.4.3", "0.4.3")).toBe(false);
-    expect(freshFor("0.5.0", "0.4.3")).toBe(false); // (a screen that saw a later one, from a newer page, is not told of an older one)
+    expect(freshFor("0.5.0", "0.4.3")).toBe(false);
   });
 
   it("the tile's newest version is the list's first, and the list goes from the newest down, each a day not before the next one's", () => {
@@ -39,7 +39,6 @@ describe("what's new: the versions", () => {
         expect(line.length, line).toBeGreaterThan(8);
         expect(line.length, line).toBeLessThanOrEqual(160);
       }
-      // (Each line is its own key in the list: two the same would be one.)
       for (const lines of [note.en, note.ro, note.it]) expect(new Set(lines).size, note.version).toBe(lines.length);
     }
   });

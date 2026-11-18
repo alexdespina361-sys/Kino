@@ -1,8 +1,6 @@
-// A made-up film for tests: captions with invented words, the sound they would make, and what a recogniser would hear.
 import { SAMPLE_RATE, type Word } from "./signals";
 import type { Cue } from "./cues";
 
-/** A small deterministic random generator (mulberry32). */
 export function random(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -24,9 +22,7 @@ function invent(rand: () => number): string {
 }
 
 export interface Film {
-  /** What was really said, when. */
   truth: Cue[];
-  /** The words a recogniser would hear, in the video's time. */
   words: Word[];
   seconds: number;
 }
@@ -49,7 +45,6 @@ export function makeFilm(seed: number, seconds: number): Film {
   return { truth, words, seconds };
 }
 
-/** The sound: loud where the film says something (from the first word to the last), quiet elsewhere. */
 export function makeAudio(film: Film, from: number, to: number): Float32Array {
   const out = new Float32Array(Math.round((to - from) * SAMPLE_RATE));
   const rand = random(7 + Math.round(from));
@@ -65,7 +60,6 @@ export function makeAudio(film: Film, from: number, to: number): Float32Array {
   return out;
 }
 
-/** A voice detector for `makeAudio`: loud is speech. */
 export class LoudnessVad {
   step(audio: Float32Array, from: number): number {
     let sum = 0;
@@ -80,15 +74,10 @@ export class LoudnessVad {
   restore(): void {}
 }
 
-/** The track as downloaded: the real times moved by `offset(t)`. */
 export function misTimed(film: Film, offset: (t: number) => number): Cue[] {
   return film.truth.map((cue) => ({ start: cue.start - offset(cue.start), end: cue.end - offset(cue.start), text: cue.text }));
 }
 
-/**
- * The track of a dub: the lines of the film at the times `misTimed` gives, but the words are another translation's - none that the film's
- * speech has (each word turned around: the film's words all begin with a consonant, so none of them reads the same backwards).
- */
 export function dubbed(film: Film, offset: (t: number) => number): Cue[] {
   return misTimed(film, offset).map((cue) => ({
     ...cue,

@@ -18,7 +18,6 @@ afterEach(async () => {
   for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true });
 });
 
-/** A server's life: the limiters it makes while this keeper is the one, as `index.ts` and the routes do it. */
 function life(file: string, clock: { now: number }) {
   const keeper = LimitKeeper.open(file);
   keepLimitsIn(keeper);
@@ -47,20 +46,17 @@ describe("limits kept over a restart", () => {
     const waited = first.wrong.wait("alma@example.com");
     first.keeper.save();
 
-    clock.now += 30_000; // (a push: the server is away for half a minute)
+    clock.now += 30_000;
     const second = life(file, clock);
     expect(second.wrong.wait("alma@example.com")).toBe(waited - 30_000);
     expect(second.wrong.wait("boris@example.com")).toBe(0);
     expect(second.daily.wait("acc_1")).toBeGreaterThan(23 * HOUR);
     expect(second.work.wait()).toBeGreaterThan(0);
-    // (one that was given no name begins again, as all of them did before)
     expect(second.unnamed.wait("alma@example.com")).toBe(0);
 
-    // What was counted before and what is counted now are one count: two before, one after, of three.
     second.wrong.hit("carol@example.com");
     expect(second.wrong.wait("carol@example.com")).toBe(0);
 
-    // It ends when it would have ended.
     clock.now += 15 * MINUTE;
     expect(second.wrong.wait("alma@example.com")).toBe(0);
     expect(second.work.wait()).toBeGreaterThan(0);
@@ -80,7 +76,6 @@ describe("limits kept over a restart", () => {
     expect(second.wrong.wait("203.0.113.9")).toBe(0);
     second.wrong.hit("203.0.113.9");
     expect(second.wrong.wait("203.0.113.9")).toBeGreaterThan(0);
-    // ...and a success forgives what was counted before the restart as well
     second.wrong.reset("203.0.113.9");
     expect(second.wrong.wait("203.0.113.9")).toBe(0);
     second.keeper.save();
@@ -95,7 +90,7 @@ describe("limits kept over a restart", () => {
     for (let n = 0; n < 3; n++) first.wrong.hit("alma@example.com");
     first.keeper.save();
     clock.now += 10_000;
-    life(file, clock).keeper.save(); // (nobody asked about Alma during this life)
+    life(file, clock).keeper.save();
     clock.now += 10_000;
     expect(life(file, clock).wrong.wait("alma@example.com")).toBeGreaterThan(0);
   });
@@ -106,7 +101,7 @@ describe("limits kept over a restart", () => {
     const first = life(file, clock);
     first.wrong.hit("alma@example.com");
     first.wrong.hit("203.0.113.9");
-    clock.now += 16 * MINUTE; // (both have run out)
+    clock.now += 16 * MINUTE;
     first.wrong.hit("2001:db8::1");
     first.daily.hit("acc_secret_1");
     first.keeper.save();
@@ -116,7 +111,6 @@ describe("limits kept over a restart", () => {
     expect(written.v).toBe(1);
     expect(Object.keys(written.limits).sort()).toEqual(["login.failedByName", "stickers.madePerDay"]);
     expect(written.limits["login.failedByName"]).toHaveLength(1);
-    // (the same key is another code in another file: the codes of one say nothing about another's)
     const other = life(await fileIn(), clock);
     other.daily.hit("acc_secret_1");
     expect((other.keeper.view().limits["stickers.madePerDay"] as Array<[string, number[]]>)[0]![0]).not.toBe(written.limits["stickers.madePerDay"]![0]![0]);
@@ -175,7 +169,6 @@ describe("a day's count", () => {
     }
     expect(day.wait("a")).toBe(2 * HOUR);
     expect(day.wait("b")).toBe(0);
-    // (several at once: they fit or they wait)
     expect(day.wait("b", 4)).toBeGreaterThan(0);
     day.hit("b", 3);
     expect(day.count("b")).toBe(3);
@@ -212,7 +205,6 @@ describe("a day's count", () => {
     after.hit("203.0.113.7");
     expect(after.wait("203.0.113.7")).toBeGreaterThan(0);
     expect(after.count("203.0.113.8")).toBe(0);
-    // (written again before the key was asked about, it is still there)
     second.save();
     const third = LimitKeeper.open(file);
     clock.now = Date.parse("2026-11-19T00:00:01Z");

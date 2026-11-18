@@ -14,27 +14,13 @@ import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { Registry } from "./sessions/registry";
 import { VisitCounter } from "./stats/visits";
 
-/**
- * Who may reach what. Two people, Alma and Boris, each get a full set of things that are theirs: a profile with what it watched, rated and listed, a second
- * profile, a second device, a friend, somebody who asked to be a friend, a code to give out, a plan, a title and a watch-party invitation in the inbox, a chat,
- * a feedback report with its picture, a TV waiting to be signed in. Every route that takes the name of one of those, or acts for an account, is then tried by
- * the other one (signed in, with profiles of their own) and by a visitor who is not signed in: with the first one's names, with their own profile put in the
- * first one's place and the first one's profile put over their own names. In every case
- *   - the answer is a refusal in the server's own words (a 404 from the router, for a path that is wrong, does not count) and it holds nothing of the other's;
- *   - nothing was changed anywhere (all that is kept is compared before and after, and read back as the one it belongs to);
- *   - the same request made by the one it is for does work, and touches nobody else (so the refusals are not a path or a body that was wrong).
- * The routes themselves are read from the server (see `registered`): one that is added and is in none of the lists below fails `every route`.
- */
-
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 const T0 = Date.parse("2026-11-02T12:00:00Z");
 const DAY = 24 * 3600 * 1000;
 const TOKEN = "the-teams-token-is-at-least-24-characters";
-/** The key of the owner's page (stats/owner.ts): it reads counts and nothing else, and is no token of the team's. */
 const OWNER_KEY = "the-owners-key-is-its-own-24-characters";
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("not really a picture")]);
 const sha = (data: Buffer | undefined) => createHash("sha256").update(data ?? "").digest("hex");
-/** A picture of one colour, its own for each name (as base64, the way a page sends it to be made a personal sticker). */
 function sticker(name: string): string {
   const [r = 0, g = 0, b = 0] = createHash("sha256").update(name).digest();
   const png = new PngImage({ width: 32, height: 32 });
@@ -49,15 +35,11 @@ afterEach(async () => {
   while (folders.length) await rm(folders.pop()!, { recursive: true, force: true });
 });
 
-/* ------------------------------ browsers ------------------------------ */
-
 type Method = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
-/** `said` is the request as it was made (method, address and body): what an answer may repeat of it is not a leak. */
 type Reply = LightMyRequestResponse & { data: any; said: string };
 
 let nextAddress = 0;
 
-/** One browser: it keeps its cookie, and sends it back, from an address of its own (the limits that count by address then count each browser apart). */
 class Client {
   cookie = "";
   readonly address = `10.${Math.floor(++nextAddress / 250)}.${nextAddress % 250}.1`;
@@ -91,26 +73,21 @@ class Client {
   get = (url: string) => this.call("GET", url);
   post = (url: string, payload?: unknown) => this.call("POST", url, payload ?? {});
   delete = (url: string) => this.call("DELETE", url);
-  /** The same browser as it was: the same cookie, from an address of its own. */
   static copy(app: FastifyInstance, from: Client): Client {
     const copy = new Client(app);
     copy.cookie = from.cookie;
     return copy;
   }
-  /** What the cookie holds: the token that is the sign-in. */
   get token(): string {
     return this.cookie.split("=")[1] ?? "";
   }
 }
 
-/** What a call answered, when it has to be one of these (a setup that does not work should say so, not go on). */
 async function must(call: Promise<Reply>, statuses = [200, 201, 204]): Promise<any> {
   const reply = await call;
   expect(statuses, `${reply.said} was answered ${reply.statusCode} ${reply.body.slice(0, 200)}`).toContain(reply.statusCode);
   return reply.data;
 }
-
-/* ------------------------------ the people and what is theirs ------------------------------ */
 
 interface Person {
   login: string;
@@ -118,19 +95,15 @@ interface Person {
   client: Client;
   account: string;
   profile: { id: string; name: string; tag: number };
-  /** How the others find the profile: its name and its tag. */
   label: string;
 }
 type Slot = Record<string, string>;
-/** A person with everything that is theirs. `ids` names it all (a route's `:id`, `:fid`, `:code`... are filled from these). */
 interface Owner extends Person {
   tv: Client;
   friend: Person;
   asker: Person;
   ids: Record<string, string>;
-  /** The accounts and profiles around them: a document that is named by one of these is part of their world. */
   people: string[];
-  /** Words only their things hold, and names only they have: an answer that holds one of them has shown them. */
   words: string[];
   tokens: Array<{ text: string; pattern: RegExp }>;
 }
@@ -142,21 +115,17 @@ interface Bare {
   feedback: FeedbackStore;
   registry: Registry;
   clock: { now: number };
-  /** The team, with the token. */
   team: Client;
 }
 interface World extends Bare {
-  /** Somebody who is nobody's friend, and gives a code to each of the two. */
   tess: Person;
   a: Owner;
   b: Owner;
-  /** What a value is called (`alma.profile`), to say what an attempt was made of. */
   names: Map<string, string>;
 }
 
 const film = (name: string) => `https://filmpire.sc/watch/${name}`;
 
-/** Someone with an account, a profile with friends turned on (and told what the friends watch), and the means to talk to the server. */
 async function join(w: Bare, login: string): Promise<Person> {
   const client = new Client(w.app);
   const password = `the password of ${login}`;
@@ -169,7 +138,6 @@ async function join(w: Bare, login: string): Promise<Person> {
 
 const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Everything that is somebody's, made through the routes the way a person would. */
 async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
   const me = await join(w, login);
   const { client, profile } = me;
@@ -191,7 +159,6 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
   await must(tv.post("/api/auth/login", { email: login, password: me.password, device: "tv" }), [200]);
   const session = (await must(client.get("/api/sessions"))).find((each: { current: boolean }) => !each.current).id as string;
 
-  // a friend, somebody who asked to be one, a code still out, and a code from somebody else to take
   const friend = await join(w, `${login}-friend`);
   const invited = await must(client.post(mine("/invites")), [201]);
   await must(friend.client.post(`/api/profiles/${friend.profile.id}/friends/accept`, { code: invited.code }), [201]);
@@ -200,7 +167,6 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
   const code = (await must(client.post(mine("/invites")), [201])).code as string;
   const offered = (await must(tess.client.post(`/api/profiles/${tess.profile.id}/friends/invites`), [201])).code as string;
 
-  // what the friend sent: a plan, a title, an invitation to a party that is open
   const partyCode = w.registry.ensurePartyCode(w.registry.tvHello())!.code;
   const send = (body: object) => must(friend.client.post(`/api/profiles/${friend.profile.id}/friends/send`, { to: [profile.id], ...body }), [200]);
   await send({ kind: "plan", when: w.clock.now + DAY, note: `secret-${login}-plan` });
@@ -209,15 +175,13 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
   const inbox = (await must(client.get(mine()))).inbox as Array<{ id: string; kind: string }>;
   const item = (kind: string) => inbox.find((entry) => entry.kind === kind)!.id;
 
-  // a chat: the friend writes, the owner answers, the friend writes again (so one line waits unread)
   const write = async (from: Person, to: Person, text: string) => {
-    w.clock.now += 1000; // (a line is named by the time it was written: every one of these is told apart from everybody's)
+    w.clock.now += 1000;
     const view = await must(from.client.post(`/api/profiles/${from.profile.id}/friends/${to.profile.id}/chat`, { text }), [201]);
     return { id: String(view.lines.at(-1).id), rev: String(view.rev) };
   };
   await write(friend, me, `secret-${login}-hello`);
   const answer = await write(me, friend, `secret-${login}-answer`);
-  // (and each sends the other a personal sticker of their own: the owner's is in their collection, the friend's only in the chat)
   const made = async (who: Person) =>
     (await must(who.client.post(`/api/profiles/${who.profile.id}/stickers`, { data: sticker(`${who.login}-sticker`) }), [201])).id as string;
   const giveSticker = async (from: Person, to: Person, id: string) => {
@@ -230,7 +194,6 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
   await giveSticker(me, friend, ownSticker);
   const again = await write(friend, me, `secret-${login}-again`);
 
-  // a feedback report, with a picture, that the team has asked a question about; and a TV that waits to be signed in
   const reportKey = `${login}-report-key-`.padEnd(30, "x");
   const picture = { id: "pic1", name: "screen.png", mime: "image/png", role: "screenshot", data: PNG.toString("base64") };
   const filed = await must(client.post("/api/feedback", { key: reportKey, kind: "bug", area: "player", message: `secret-${login}-report`, attachments: [picture] }), [201]);
@@ -262,7 +225,6 @@ async function owner(w: Bare, tess: Person, login: string): Promise<Owner> {
     theirSticker,
   };
   const people = [me.account, profile.id, spare, friend.account, friend.profile.id, asker.account, asker.profile.id];
-  // (what only they have: not the numbers, which any answer may hold, and not the tag of somebody both of them know)
   const secrets = [...people, code, offered, ids.plan!, ids.recommend!, ids.party!, partyCode, session, reportKey, link.code, link.secret, client.token, tv.token, ownSticker, theirSticker];
   return {
     ...me,
@@ -293,12 +255,6 @@ async function world(): Promise<World> {
   return { ...bare, tess, a, b, names };
 }
 
-/* ------------------------------ what is kept, and what a person is shown of it ------------------------------ */
-
-/**
- * Everything that is kept, as text: every document the accounts keep (or those of one person's world), and the feedback reports with their pictures.
- * Comparing two of these says what was changed, added or taken away.
- */
 async function kept(w: World, only?: Owner): Promise<Map<string, string>> {
   await w.store.flush();
   const out = new Map<string, string>();
@@ -319,7 +275,6 @@ async function kept(w: World, only?: Owner): Promise<Map<string, string>> {
   return out;
 }
 
-/** What the person is shown of their own things, read the way their screens read it (none of it changes anything). */
 async function seen(w: World, o: Owner): Promise<Record<string, unknown>> {
   const profile = `/api/profiles/${o.ids.profile}`;
   const answers = {
@@ -339,16 +294,11 @@ interface Snapshot {
   kept: Map<string, string>;
   shown: Record<string, unknown>;
 }
-/**
- * (What is shown is read first: a screen that is told of a friend's messages gives them their one tick, "received", which is kept in the chat. That is
- * the reading's own doing and the same every time, so what is kept is looked at after it; a tick that anything else moved still shows as a change.)
- */
 const snapshot = async (w: World, o: Owner): Promise<Snapshot> => {
   const shown = await seen(w, o);
   return { kept: await kept(w, o), shown };
 };
 
-/** What differs between two states of what is kept. */
 function differences(before: Map<string, string>, after: Map<string, string>): string[] {
   return [...new Set([...before.keys(), ...after.keys()])].filter((key) => before.get(key) !== after.get(key)).map((key) => `${key} (${before.has(key) ? (after.has(key) ? "changed" : "gone") : "new"})`);
 }
@@ -357,7 +307,6 @@ const changes = (before: Snapshot, after: Snapshot): string[] => [
   ...Object.keys(before.shown).filter((name) => JSON.stringify(before.shown[name]) !== JSON.stringify(after.shown[name])).map((name) => `what is shown for "${name}"`),
 ];
 
-/** What an answer holds of somebody's: their words, and names that are theirs alone. (What the request itself said is not counted: an answer may repeat it.) */
 function leaks(text: string, o: Owner, sent = ""): string[] {
   return [
     ...o.words.filter((word) => text.includes(word) && !sent.includes(word)),
@@ -365,25 +314,16 @@ function leaks(text: string, o: Owner, sent = ""): string[] {
   ];
 }
 
-/* ------------------------------ the routes ------------------------------ */
-
 interface Row {
-  /** The route as the server has it: `METHOD /path/:with/:names`. */
   route: string;
   method: Method;
   path: string;
-  /** What fills each name of the path (and of the body): the owner's thing called so, then the others to try. The first is the one the owner's own request uses. */
   slots: Record<string, string | string[]>;
-  /** Slots that are a name anybody may know or a secret whoever holds is meant to use (a code, a tag): only the caller's own is tried. */
   open?: string[];
-  /** The body carries the password of the one who asks: the other's is tried as well. */
   secret?: boolean;
   body?: (slot: Slot, as: Owner) => unknown;
-  /** What the owner's own request is answered (a success unless this says what). */
   ok?: (reply: Reply) => boolean;
-  /** What a refusal looks like, when it is more than a 401, 403 or 404. */
   turned?: (reply: Reply) => boolean;
-  /** What a visitor who is not signed in is answered, when that is not a refusal. */
   anon?: (reply: Reply) => boolean;
 }
 
@@ -392,53 +332,41 @@ const row = (route: string, slots: Row["slots"] = {}, more: Partial<Row> = {}): 
   return { route, method, path, slots, ...more };
 };
 
-/** A refusal in the server's own words: not signed in, not allowed, or not there (the router's own 404 says "Not Found", with a space). */
 const refusal = (reply: Reply) => [401, 403, 404].includes(reply.statusCode) && /^[A-Za-z]+(_[A-Za-z]+)*$/.test(reply.data?.error ?? "");
 const succeeded = (reply: Reply) => reply.statusCode >= 200 && reply.statusCode < 300;
-/** `send` answers 200 with who it reached: a refusal is that nobody was. */
 const nobody = (reply: Reply) => refusal(reply) || (reply.statusCode === 200 && reply.data?.sent?.length === 0);
 
 const FRIENDS = "/api/profiles/:id/friends";
 const CHAT = `${FRIENDS}/:fid/chat`;
-/** The profiles of the owner that ask (the second has friends off), and the other end: a friend, somebody who asked, or the profile itself. */
 const asking = ["profile", "spare"];
 const other = ["friend", "profile", "requester"];
 const planted = { key: "url:planted", at: T0, id: "planted", title: "planted-by-somebody-else", url: film("planted") };
 
 const ROWS: Row[] = [
-  // the account
   row("GET /api/me", {}, { anon: (reply) => reply.statusCode === 200 && reply.data.me === null }),
   row("POST /api/me/password", {}, { secret: true, body: (_, as) => ({ current: as.password, next: "a new password" }) }),
   row("POST /api/me/delete", {}, { secret: true, body: (_, as) => ({ password: as.password }) }),
   row("POST /api/me/child-pin", {}, { body: () => ({ next: "1234" }) }),
-  // (The owner has no PIN to check: "no_pin" is its answer, and anybody else's too, about their own account.)
   row("POST /api/me/child-pin/check", {}, { body: () => ({ pin: "1234" }), ok: (reply) => [204, 404].includes(reply.statusCode) }),
   row("POST /api/auth/logout", {}, { anon: (reply) => reply.statusCode === 204 }),
-  // the Android app on this device: which profile it is told of (only one of the account's own) and that it is told of nothing any more
   row("PUT /api/push", { pid: asking }, { body: (slot) => ({ token: "device-token-of-the-owners-phone-0000", profileId: slot.pid }), ok: (reply) => reply.statusCode === 204 }),
   row("DELETE /api/push", {}, { ok: (reply) => reply.statusCode === 204 }),
-  // (The app's ticket for a round trip to Google is the session's own; the world here has no Google, which is a 400 for the owner as well.)
   row("POST /api/auth/google/app-ticket", {}, { body: () => ({ mode: "link", challenge: "c".repeat(43) }), ok: (reply) => [200, 400].includes(reply.statusCode) }),
-  // the devices it is signed in on
   row("GET /api/sessions"),
   row("PATCH /api/sessions/:id", { id: "session" }, { body: () => ({ label: "Somebody else's name" }) }),
   row("DELETE /api/sessions/:id", { id: "session" }),
   row("DELETE /api/sessions"),
-  // the profiles, and what they keep
   row("POST /api/profiles", {}, { body: () => ({ name: "Another" }) }),
   row("PATCH /api/profiles/:id", { id: ["spare", "profile"] }, { body: () => ({ name: "Taken over" }) }),
   row("DELETE /api/profiles/:id", { id: ["spare", "profile"] }),
   row("POST /api/profiles/:id/sync", { id: asking }, { body: () => ({ since: 0, list: [planted] }) }),
   row("POST /api/profiles/:id/screen", { id: asking }),
-  // what a profile is told of the titles it watches (new episodes, seasons, films): its own to read, to mark as looked at and to clear
   row("GET /api/profiles/:id/title-notices", { id: asking }),
   row("POST /api/profiles/:id/title-notices/seen", { id: asking }, { body: () => ({}) }),
   row("POST /api/profiles/:id/title-notices/dismiss", { id: asking }, { body: () => ({ id: "tv-1" }) }),
-  // signing a TV in from a phone (the code is what the TV shows: whoever holds it may look at it; see "signing a TV in")
   row("GET /api/link/:code", { code: "link" }, { open: ["code"] }),
   row("POST /api/link/:code/approve", { code: "link" }, { open: ["code"] }),
   row("POST /api/link/:code/deny", { code: "link" }, { open: ["code"] }),
-  // friends
   row(`GET ${FRIENDS}`, { id: asking }),
   row(`GET ${FRIENDS}/kept`, { id: asking }),
   row(`POST ${FRIENDS}/invites`, { id: asking }),
@@ -457,7 +385,6 @@ const ROWS: Row[] = [
   row(`POST ${FRIENDS}/plans/:itemId/decline`, { id: ["profile"], itemId: ["plan", "recommend", "party"] }),
   row(`POST ${FRIENDS}/inbox/read`, { id: asking }),
   row(`DELETE ${FRIENDS}/inbox/:itemId`, { id: ["profile"], itemId: ["recommend", "plan", "party"] }),
-  // chat
   row(`GET ${CHAT}`, { id: asking, fid: other }),
   row(`POST ${CHAT}`, { id: asking, fid: other }, { body: () => ({ text: "hello" }) }),
   row(`DELETE ${CHAT}/:n`, { id: ["profile"], fid: other, n: ["mine", "theirs"] }),
@@ -465,7 +392,6 @@ const ROWS: Row[] = [
   row(`PUT ${CHAT}/mute`, { id: asking, fid: other }, { body: () => ({ muted: true }) }),
   row(`GET ${CHAT}/report`, { id: asking, fid: other }),
   row(`POST ${CHAT}/report`, { id: asking, fid: other, rev: "chatRev" }, { open: ["rev"], body: (slot) => ({ rev: Number(slot.rev) }) }),
-  // personal stickers: a profile's own, and the ones sent in its chats (the other's names are tried as well as its own: a sticker of the friend's is the owner's to see)
   row(`POST ${CHAT}/sticker`, { id: asking, fid: other, sid: ["sticker", "theirSticker"] }, { body: (slot) => ({ id: slot.sid }) }),
   row(`GET ${CHAT}/stickers/:sid`, { id: asking, fid: other, sid: ["theirSticker", "sticker"] }),
   row(`POST ${CHAT}/stickers/:sid/save`, { id: asking, fid: other, sid: ["theirSticker", "sticker"] }),
@@ -473,13 +399,11 @@ const ROWS: Row[] = [
   row("POST /api/profiles/:id/stickers", { id: asking }, { body: (_, as) => ({ data: sticker(`${as.login}-another`) }) }),
   row("GET /api/profiles/:id/stickers/:sid", { id: asking, sid: ["sticker", "theirSticker"] }),
   row("DELETE /api/profiles/:id/stickers/:sid", { id: asking, sid: ["sticker", "theirSticker"] }),
-  // feedback reports that belong to an account (the ones that belong to a key are tried further down)
   row("POST /api/feedback/open", { report: "report" }, { body: (slot) => ({ id: slot.report }) }),
   row("POST /api/feedback/reply", { report: "report" }, { body: (slot) => ({ id: slot.report, text: "one more thing" }) }),
   row("GET /api/feedback/mine"),
 ];
 
-/** Routes anybody may call, and why that is all right. */
 const PUBLIC: Record<string, string> = {
   "GET /ws": "the socket of the watch parties and pairings: it reads no cookie, and a screen is known as a profile only by a proof that is good once (accounts/screens.ts)",
   "GET /api/features": "the cat's flag, the site's KLIPY key (KLIPY puts it in every visitor's request) and whether personal stickers are on, the same for everybody",
@@ -526,7 +450,6 @@ const PUBLIC: Record<string, string> = {
   "GET /*": "the website's own files",
 };
 
-/** The team's side: a token and nothing else (see "the team's side"). The names in the path are filled from Alma's report; the last one takes the report away. */
 const TEAM: Array<{ route: string; body?: object; query?: string; ok: number }> = [
   { route: "GET /api/admin/feedback", ok: 200 },
   { route: "GET /api/admin/feedback/changes", query: "?wait=0", ok: 200 },
@@ -547,17 +470,14 @@ const TEAM: Array<{ route: string; body?: object; query?: string; ok: number }> 
   { route: "DELETE /api/admin/feedback/:id", ok: 204 },
 ];
 
-/** The owner's page: its own key and nothing else (see "the owner's page has a key of its own"). */
 const OWNER = ["GET /api/owner/stats"];
 
-/** Every route the server has when it is made the way `index.ts` makes it, as `METHOD /path` (the HEAD that goes with each GET left out). */
 async function registered(): Promise<string[]> {
   const client = await mkdtemp(path.join(tmpdir(), "kino-authz-client-"));
   const fixtures = await mkdtemp(path.join(tmpdir(), "kino-authz-fixtures-"));
   folders.push(client, fixtures);
   await writeFile(path.join(client, "index.html"), "<!doctype html><title>Kino</title>");
   const routes = new Set<string>();
-  // (A route is told of while it is made, so the listener goes on to the server as it is born: Fastify says so on this channel.)
   const watch = (message: unknown) =>
     (message as { fastify: FastifyInstance }).fastify.addHook("onRoute", (route) => {
       for (const method of [route.method].flat()) routes.add(`${method} ${route.url}`);
@@ -573,11 +493,8 @@ async function registered(): Promise<string[]> {
   return [...routes].filter((route) => !(route.startsWith("HEAD ") && routes.has(`GET ${route.slice(5)}`))).sort();
 }
 
-/* ------------------------------ one request, made of what the row says ------------------------------ */
-
 interface Attempt {
   values: Slot;
-  /** Whose password the body carries (when it carries one). */
   as: Owner;
 }
 
@@ -585,10 +502,6 @@ const slotKeys = (each: Row, name: string): string[] => [each.slots[name] ?? []]
 const ownValues = (each: Row, o: Owner): Slot => Object.fromEntries(Object.keys(each.slots).map((name) => [name, o.ids[slotKeys(each, name)[0]!]!]));
 const theirValues = (each: Row, name: string, o: Owner): string[] => slotKeys(each, name).map((key) => o.ids[key]!);
 
-/**
- * What `by` (signed in, with their own things; or nobody) can try against `on`: every way of filling the names of the row with `on`'s things and `by`'s own, but
- * the one that is all `by`'s own, which is not an attack (it is `by` asking for what is theirs).
- */
 function attempts(each: Row, on: Owner, by?: Owner): Attempt[] {
   const mine = by && ownValues(each, by);
   const options = (name: string): string[] => {
@@ -609,7 +522,6 @@ function send(each: Row, client: Client, attempt: Attempt, method: Method = each
 const describeAttempt = (w: World, each: Row, attempt: Attempt): string =>
   `${Object.entries(attempt.values).map(([name, value]) => `${name}=${w.names.get(value) ?? value}`).join(" ")}${each.secret ? ` with ${attempt.as.login}'s password` : ""}`.trim();
 
-/** What is wrong with the answer to one try against `on`'s things, by someone signed in or not: it is no refusal, it shows something of `on`'s, or it changed something. */
 function judge(w: World, each: Row, who: string, signedIn: boolean, on: Owner, attempt: Attempt, reply: Reply, before: Map<string, string>, after: Map<string, string>): string[] {
   const head = reply.said.startsWith("HEAD ");
   const expected = !signedIn && each.anon ? each.anon : (each.turned ?? refusal);
@@ -621,7 +533,6 @@ function judge(w: World, each: Row, who: string, signedIn: boolean, on: Owner, a
   return problems;
 }
 
-/** Every row, asked in the name of `on`'s things by somebody who is not signed in (or whose sign-in is over): all of it is turned away and nothing changes. */
 async function turnedAway(w: World, client: Client, on: Owner, who: string): Promise<string[]> {
   const problems: string[] = [];
   let state = await kept(w);
@@ -636,7 +547,6 @@ async function turnedAway(w: World, client: Client, on: Owner, who: string): Pro
   return problems;
 }
 
-/** One row, in a world of its own: tried by the other one and by a visitor, then asked for by the ones it is for. What is wrong, as sentences. */
 async function probe(each: Row): Promise<string[]> {
   const w = await world();
   const { a, b } = w;
@@ -658,7 +568,6 @@ async function probe(each: Row): Promise<string[]> {
   const last = [await snapshot(w, a), await snapshot(w, b)];
   [a, b].forEach((o, n) => changes(first[n]!, last[n]!).forEach((changed) => problems.push(`after all the tries, ${changed} of ${o.login}'s was not as it was`)));
 
-  // the ones it is for can do it, and nobody else's things are touched or shown by it
   for (const [doer, others] of [[a, b], [b, a]] as const) {
     const before = await snapshot(w, others);
     const reply = await send(each, doer.client, { values: ownValues(each, doer), as: doer });
@@ -668,8 +577,6 @@ async function probe(each: Row): Promise<string[]> {
   }
   return problems;
 }
-
-/* ------------------------------ the tests ------------------------------ */
 
 describe("the routes of the server", () => {
   it("are every one in a row of the table, in the list of the public ones (with the reason) or in the team's: a route added later has to be put in one", async () => {
@@ -698,7 +605,6 @@ describe("what the other one is shown and cannot reach", () => {
   }
 });
 
-/** A server with nobody in it but what a question about the team's side needs. */
 async function lean(token?: string): Promise<FastifyInstance> {
   const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
   const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
@@ -710,11 +616,8 @@ async function lean(token?: string): Promise<FastifyInstance> {
 describe("a sign-in that is over opens nothing", () => {
   interface End {
     name: string;
-    /** Ends Alma's sign-in on a device (or all), and hands over copies of the cookies that were good until then. */
     end(w: World): Promise<Client[]>;
-    /** Alma's browser is still signed in after it. */
     browser: boolean;
-    /** Boris is still signed in, and nothing of his has changed. */
     boris: boolean;
   }
   const ends: End[] = [
@@ -722,7 +625,7 @@ describe("a sign-in that is over opens nothing", () => {
     { name: "ended from another device", browser: true, boris: true, end: async (w) => { const old = Client.copy(w.app, w.a.tv); await must(w.a.client.delete(`/api/sessions/${w.a.ids.session}`), [204]); return [old]; } },
     { name: "signed out everywhere else", browser: true, boris: true, end: async (w) => { const old = Client.copy(w.app, w.a.tv); await must(w.a.client.delete("/api/sessions"), [204]); return [old]; } },
     { name: "ended by a new password", browser: true, boris: true, end: async (w) => { const old = Client.copy(w.app, w.a.tv); await must(w.a.client.post("/api/me/password", { current: w.a.password, next: "another password" }), [204]); return [old]; } },
-    { name: "too old", browser: false, boris: false, end: async (w) => { const old = Client.copy(w.app, w.a.client); w.clock.now += SESSION_TTL_MS + 1; await old.get("/api/me"); return [old]; } }, // (one that is too old is let go the first time it is used)
+    { name: "too old", browser: false, boris: false, end: async (w) => { const old = Client.copy(w.app, w.a.client); w.clock.now += SESSION_TTL_MS + 1; await old.get("/api/me"); return [old]; } },
     { name: "gone with the account", browser: false, boris: true, end: async (w) => { const old = [w.a.client, w.a.tv].map((each) => Client.copy(w.app, each)); await must(w.a.client.post("/api/me/delete", { password: w.a.password }), [204]); return old; } },
   ];
   for (const { name, end, browser, boris } of ends) {
@@ -773,7 +676,7 @@ describe("the team's side", () => {
 
   it("takes the team's token as a Bearer and nothing else: not a sign-in, not the token of one", { timeout: 60_000 }, async () => {
     const w = await world();
-    const shown = await seen(w, w.a); // (read first: see `snapshot`)
+    const shown = await seen(w, w.a);
     const before = await kept(w);
     const sorts: Array<[string, Client, string?]> = [
       ["somebody signed in", w.b.client],
@@ -792,14 +695,13 @@ describe("the team's side", () => {
     expect(differences(before, await kept(w))).toEqual([]);
     expect(await seen(w, w.a)).toEqual(shown);
 
-    // with the token it is all there to read and to change, and the last route takes the report away
     for (const entry of TEAM) expect((await call(w, w.team, entry)).statusCode, entry.route).toBe(entry.ok);
     expect((await call(w, w.team, TEAM.find((entry) => entry.route === "GET /api/admin/feedback/:id")!)).statusCode).toBe(404);
   });
 
   it("the owner's page has a key of its own: no sign-in, no team's token opens it, it opens nothing of the team's, and what it shows is nobody's own", { timeout: 60_000 }, async () => {
     const w = await world();
-    const shown = await seen(w, w.a); // (read first: see `snapshot`)
+    const shown = await seen(w, w.a);
     const before = await kept(w);
     const sorts: Array<[string, Client]> = [
       ["somebody signed in", w.b.client],
@@ -819,7 +721,6 @@ describe("the team's side", () => {
     expect(view.statusCode).toBe(200);
     expect(view.data.accounts.total).toBeGreaterThanOrEqual(2);
     for (const o of [w.a, w.b]) expect(leaks(view.body, o), `${o.login}'s things in the owner's counts`).toEqual([]);
-    // (the key reads counts: it is no token of the team's)
     for (const entry of TEAM) expect((await call(w, owner, entry)).statusCode, entry.route).toBe(401);
     expect(differences(before, await kept(w))).toEqual([]);
     expect(await seen(w, w.a)).toEqual(shown);
@@ -854,20 +755,16 @@ describe("signing a TV in", () => {
   it("the code on the screen is for whoever reads it; the secret is the screen's alone", async () => {
     const w = await world();
     const { a, b } = w;
-    // somebody signed in who reads the code may look at it, and say yes or no (the phone says what is asking: that is the check)...
     expect(await must(b.client.get(`/api/link/${a.ids.link}`))).toMatchObject({ code: a.ids.link, kind: "tv" });
-    // ...but the code is not enough to be the screen: the answer is for the one with the secret
     for (const secret of [b.ids.linkSecret, "x".repeat(32)]) {
       expect((await new Client(w.app).post("/api/link/poll", { code: a.ids.link, secret })).data).toEqual({ status: "gone" });
     }
-    // saying yes signs the screen in as the one who said it, and nothing of the other's goes with it
     await must(b.client.post(`/api/link/${a.ids.link}/approve`), [204]);
     const screen = new Client(w.app);
     const polled = await screen.post("/api/link/poll", { code: a.ids.link, secret: a.ids.linkSecret });
     expect(polled.data).toMatchObject({ status: "approved", me: { account: { id: b.account } } });
     expect(leaks(polled.body, a)).toEqual([]);
     expect((await screen.get("/api/me")).data.me.account.id).toBe(b.account);
-    // that is given once; and saying no is the same, and is told once
     expect((await new Client(w.app).post("/api/link/poll", { code: a.ids.link, secret: a.ids.linkSecret })).data).toEqual({ status: "gone" });
     await must(a.client.post(`/api/link/${b.ids.link}/deny`), [204]);
     expect((await new Client(w.app).post("/api/link/poll", { code: b.ids.link, secret: b.ids.linkSecret })).data).toEqual({ status: "denied" });
@@ -881,7 +778,6 @@ describe("feedback that belongs to a key", () => {
     const key = "a-page-that-is-not-signed-in-key";
     const id = String((await must(new Client(w.app).post("/api/feedback", { key, kind: "idea", area: "unsure", message: "secret-page-report" }), [201])).id);
     const before = await kept(w);
-    // numbers go up one by one, so a number alone must not open anything (nor a key that is nobody's)
     for (const [who, client] of [["a visitor", new Client(w.app)], ["Boris", b.client], ["Alma", a.client]] as const) {
       for (const tried of [{ id }, { id, text: "more" }, { id, key: "not-a-key-of-any-report-at-all" }]) {
         for (const route of ["open", "reply"]) {
@@ -891,19 +787,15 @@ describe("feedback that belongs to a key", () => {
       }
     }
     expect(differences(before, await kept(w))).toEqual([]);
-    // Boris's own key with Alma's number is Boris's report, not hers
     const own = JSON.stringify(await must(b.client.post("/api/feedback/open", { key: b.ids.reportKey, id: a.ids.report })));
     expect(own).toContain("secret-boris-report");
     expect(leaks(own, a)).toEqual([]);
-    // the key is the report's owner, from any page; the account that sent one reads it on every device of its own
     expect(await must(new Client(w.app).post("/api/feedback/open", { key }))).toMatchObject({ id, message: "secret-page-report" });
     expect(await must(a.tv.post("/api/feedback/open", { id: a.ids.report }))).toMatchObject({ id: a.ids.report });
-    // what is listed for an account is its own, and a report sent from no account is on no list
     for (const o of [a, b]) {
       const listed = await must(o.client.get("/api/feedback/mine"));
       expect(listed.items.map((item: { id: string }) => item.id)).toEqual([o.ids.report]);
     }
-    // asking after keys tells of those keys only
     const checked = await must(b.client.post("/api/feedback/check", { keys: [b.ids.reportKey, "not-a-key-of-any-report-at-all"] }));
     expect(checked.items.map((item: { key: string }) => item.key)).toEqual([b.ids.reportKey]);
   });
@@ -914,7 +806,6 @@ describe("a profile of one cannot speak as a profile of the other", () => {
     const w = await world();
     const { a, b } = w;
     const mine = (o: Owner, rest: string) => `/api/profiles/${o.ids.profile}/friends${rest}`;
-    // as himself he may ask Alma's friend to be a friend: it arrives as his and as nobody else's
     await must(b.client.post(mine(b, "/requests"), { tag: a.friend.label }), [201]);
     const asked = await must(a.friend.client.get(`/api/profiles/${a.friend.profile.id}/friends`));
     expect(asked.requests.map((request: { from: { id: string } }) => request.from.id)).toEqual([b.ids.profile]);
@@ -931,7 +822,6 @@ describe("a profile of one cannot speak as a profile of the other", () => {
       const reply = await run();
       expect([reply.statusCode, reply.data.error], what).toEqual([status, error]);
     }
-    // a title as himself to a friend who is not his gets nowhere either, and says so the way it does for everybody
     expect(await must(b.client.post(mine(b, "/send"), { to: [a.ids.friend], kind: "together" }), [200])).toEqual({ sent: [], declined: [a.ids.friend] });
     expect(differences(before, await kept(w))).toEqual([]);
   });
@@ -946,19 +836,16 @@ describe("what a friendship gives", () => {
       w.clock.now += 5000;
       await must(a.client.post(`/api/profiles/${a.ids.profile}/sync`, { since: 0, settings: choices.map(([key, value]) => ({ key, at: w.clock.now, value })) }), [200]);
     };
-    // somebody who only asked, somebody Alma never met, and a friend of Boris's: nothing
     for (const who of [a.asker, w.tess, w.b.friend]) {
       for (const part of ["lists", "ratings", "chat", "chat/report"]) {
         const reply = await read(who, part);
         expect([reply.statusCode, reply.data.error], `${who.login} ${part}`).toEqual([404, "not_friends"]);
       }
     }
-    // a friend: what Alma shares (that is what friends are for), and not Boris's
     const lists = JSON.stringify(await must(read(a.friend, "lists")));
     expect(lists).toContain("secret-alma-list");
     expect(JSON.stringify(await must(read(a.friend, "ratings")))).toContain("secret-alma-opinion");
     expect(leaks(lists, w.b)).toEqual([]);
-    // inside the friendship too, a line is taken back by the one who wrote it, and a plan is answered and cleared by the one it was put to
     const before = await kept(w);
     const own = `/api/profiles/${a.ids.profile}/friends`;
     const theirs = `/api/profiles/${a.friend.profile.id}/friends`;
@@ -970,25 +857,21 @@ describe("what a friendship gives", () => {
     ];
     for (const [what, reply, status, error] of refused) expect([(await reply).statusCode, (await reply).data.error], what).toEqual([status, error]);
     expect(differences(before, await kept(w))).toEqual([]);
-    // what she turns off is not shown, one thing at a time
     await choose(["friendsLists", false]);
     expect((await read(a.friend, "lists")).data).toEqual({ error: "not_shared" });
     expect((await read(a.friend, "ratings")).statusCode).toBe(200);
     await choose(["friendsRatings", false]);
     expect((await read(a.friend, "ratings")).data).toEqual({ error: "not_shared" });
-    // with friends off altogether nothing of hers is shown, no word reaches her and nothing is sent
     await choose(["friendsLists", true], ["friendsRatings", true], ["friendsOff", true]);
     expect((await read(a.friend, "lists")).data).toEqual({ error: "not_shared" });
     const word = await a.friend.client.post(`/api/profiles/${a.friend.profile.id}/friends/${a.ids.profile}/chat`, { text: "hi" });
     expect([word.statusCode, word.data.error]).toEqual([403, "chat_off"]);
     const sent = await must(a.friend.client.post(`/api/profiles/${a.friend.profile.id}/friends/send`, { to: [a.ids.profile], kind: "together" }), [200]);
     expect(sent).toEqual({ sent: [], declined: [a.ids.profile] });
-    // she still sees who her friends are, and can take one off without turning anything on; and then it is over for both
     const friends = await must(a.client.get(`/api/profiles/${a.ids.profile}/friends/kept`));
     expect(friends.friends.map((friend: { id: string }) => friend.id)).toEqual([a.ids.friend]);
     await must(a.client.delete(`/api/profiles/${a.ids.profile}/friends/${a.ids.friend}`), [204]);
     for (const part of ["lists", "ratings", "chat"]) expect((await read(a.friend, part)).data, part).toEqual({ error: "not_friends" });
-    // and what they wrote to each other goes with the friendship
     expect(JSON.stringify([...(await kept(w, a)).values()])).not.toContain("secret-alma-hello");
   });
 });
@@ -1002,15 +885,12 @@ describe("a code that is given out", () => {
     const shown = await must(peek(w.tess, code));
     expect(Object.keys(shown).sort()).toEqual(["code", "from"]);
     expect(Object.keys(shown.from).sort()).toEqual(["avatar", "name"]);
-    // a code that is nobody's counts against whoever tried it, and ten of those close the door, to the right code too
     for (let n = 0; n < 10; n++) expect((await peek(b, `WRONG${n}ABC`)).data, `guess ${n}`).toEqual({ error: "invite_gone" });
     const locked = await peek(b, code);
     expect([locked.statusCode, locked.data.error]).toEqual([429, "rate_limited"]);
-    // somebody else is not kept waiting by it
     expect((await peek(w.tess, code)).statusCode).toBe(200);
   });
 
-  // (friends/send tells an open party from a closed one, so a code that no party is open with is a wrong guess, as it is for invite codes and tags)
   it("a party code that no party is open with counts as a wrong guess too, and ten of them make the account wait", async () => {
     const w = await world();
     const { a, b } = w;

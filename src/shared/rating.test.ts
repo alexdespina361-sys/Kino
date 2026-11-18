@@ -3,10 +3,10 @@ import { averageScore, filmFacts, isScore, percentWatched, showFacts, watchedAll
 
 describe("percentWatched", () => {
   it("counts the last five percent as all of it, since credits get skipped", () => {
-    expect(percentWatched(5700, 6000)).toBe(100); // 95% exactly
+    expect(percentWatched(5700, 6000)).toBe(100);
     expect(percentWatched(5699, 6000)).toBe(94);
     expect(percentWatched(6000, 6000)).toBe(100);
-    expect(percentWatched(7000, 6000)).toBe(100); // (a clock that ran on)
+    expect(percentWatched(7000, 6000)).toBe(100);
   });
   it("is whole percents, never rounded up to a hundred", () => {
     expect(percentWatched(0, 6000)).toBe(0);

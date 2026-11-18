@@ -1,21 +1,11 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { openDevice, openLibrary, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
 
-/**
- * What no source had: a film or an episode that found nothing on two separate plays is marked "Not available yet" on its title's page, on the TV and on the
- * phone (src/server/library/unavailable.ts). It is a label only: the episode is still a button, and Play is where it was. The server's answers are the test's
- * (the server these tests run against has no library).
- */
-
 const show = { id: "s1", title: "The Long Night", year: 2019, kind: "series", url: "https://shows.example/watch/7?s=1&e=1", description: "A show about a very long night." };
 const film = { id: "f1", title: "A Quiet Film", year: 2008, kind: "movie", url: "https://films.example/watch/1" };
 const other = { id: "f2", title: "A Film That Plays", year: 2010, kind: "movie", url: "https://films.example/watch/2" };
 const library = { updatedAt: Date.now(), rows: [{ id: "top", title: "Top", source: "Test Source", items: [show, film, other] }] };
 
-/**
- * The library, a show of three episodes, and what nobody could play: the show's second episode, and the first film. Every question about it is recorded; with
- * `held`, the answers wait for it, so a test can look at the page before the answer comes and after.
- */
 function answers(held?: Promise<void>) {
   const asked: string[] = [];
   const setup = async (context: BrowserContext) => {
@@ -36,7 +26,6 @@ function answers(held?: Promise<void>) {
   return { asked, setup };
 }
 
-/** Where something is once it has stopped moving (a page rises into place as it opens). */
 async function still(target: ReturnType<Page["getByTestId"]>) {
   let before = await target.boundingBox();
   for (;;) {
@@ -63,8 +52,8 @@ test.describe("what no source had, on the TV", () => {
       ["3", false, null],
     ]);
     await expect(page.getByTestId("tv-episode").nth(1)).toBeEnabled();
-    await expect(page.getByTestId("tv-detail-unavailable")).toHaveCount(0); // (a show is never marked itself: its episodes are)
-    expect(told.asked).toEqual([show.url]); // (one question for the show, not one for each episode)
+    await expect(page.getByTestId("tv-detail-unavailable")).toHaveCount(0);
+    expect(told.asked).toEqual([show.url]);
   });
 
   test("a film's page says that no source had it, and the answer does not move Play; a film that plays says nothing", async ({ browser }) => {
@@ -111,7 +100,7 @@ test.describe("what no source had, on the phone", () => {
   async function pairedPhone(browser: Browser, setup: (context: BrowserContext) => Promise<void>): Promise<Page> {
     const [tv, phone] = await Promise.all([openTv(browser), openDevice(browser, PHONE, {}, setup)]);
     await phone.goto("/");
-    await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveClass(/\bok\b/);
     await expect(phone.getByTestId("library-row").first()).toBeVisible();
     return phone;

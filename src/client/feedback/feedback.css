@@ -1,16 +1,9 @@
-/*
- * The feedback: a form over the whole page, on a phone, a TV or a computer (client/feedback). It is in a chunk of its own, loaded the first time it is opened,
- * so nothing here may lean on the sheets of the phone (controller/*.css) or the TV (tv/tv.css): they are not always there. The colours are the page's
- * (styles.css), the sizes are in em from the root of the form (1rem on a hand-held screen; on a TV, a share of the width, as the TV's own pages are).
- * Only what the oldest TV browsers understand: no :has(), :is(), @layer, color-mix() or dvh.
- */
-
-html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not reload the page behind it) */
+html.fb-open { overscroll-behavior-y: contain; }
 
 .fb-root {
   position: fixed;
   inset: 0;
-  z-index: 90; /* over the sheets (50) and the pages (40), under the question that asks before the site is left (100) */
+  z-index: 90;
   display: flex;
   justify-content: center;
   color: var(--text);
@@ -45,11 +38,8 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 }
 @media (prefers-reduced-motion: reduce) { .fb-scrim, .fb-panel { animation: none; } }
 
-/* While the form is out of the way (a picture of the screen is about to be taken): the page is used as usual, and only the bar at the bottom is the form's. */
 .fb-root.is-capturing { pointer-events: none; }
 .fb-root.is-capturing .fb-scrim, .fb-root.is-capturing .fb-panel { display: none; }
-
-/* ------------------------------ the top ------------------------------ */
 
 .fb-head { flex: none; display: flex; align-items: center; gap: 0.4em; padding: max(0.6em, env(safe-area-inset-top)) 0.6em 0.4em; }
 .fb-head h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; font-size: 1.15em; font-weight: 700; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
@@ -72,8 +62,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-icon-button:focus-visible { background: var(--surface-2); color: var(--text); }
 @media (hover: hover) { .fb-icon-button:hover:not(:disabled) { background: var(--surface-2); color: var(--text); } }
 
-/* ------------------------------ the body ------------------------------ */
-
 .fb-body { flex: 1; min-height: 0; padding: 0.5em 1em 1.5em; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .fb-lead { margin: 0.25em 0 1em; color: var(--muted); }
 .fb-hint { margin: 0; color: var(--muted); font-size: 0.85em; }
@@ -89,8 +77,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-section { display: flex; flex-direction: column; gap: 0.6em; margin: 0 0 1.4em; }
 .fb-section h3 { margin: 0; font-size: 0.95em; font-weight: 700; }
 .fb-section.fb-where-screen h3 { color: var(--muted); }
-
-/* ------------------------------ the buttons ------------------------------ */
 
 .fb-primary, .fb-secondary, .fb-send, .fb-done {
   display: inline-flex;
@@ -131,10 +117,8 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-root button:disabled { opacity: 0.4; cursor: default; }
 .fb-root button:focus-visible, .fb-root [data-nav]:focus-visible, .fb-root pre:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 
-/* ------------------------------ the first screen ------------------------------ */
-
 .fb-kinds { display: grid; gap: 0.65em; }
-@media (min-width: 720px) { .fb-kinds { grid-template-columns: 1fr 1fr; } } /* (four choices in two rows: a TV's screen is wide and not tall) */
+@media (min-width: 720px) { .fb-kinds { grid-template-columns: 1fr 1fr; } }
 .fb-kind { display: flex; align-items: center; gap: 0.9em; width: 100%; padding: 0.85em; border-radius: 1em; background: var(--surface); text-align: left; transition: background 0.12s ease, transform 0.12s ease; }
 .fb-kind:active { transform: scale(0.985); }
 .fb-kind:focus-visible { background: var(--surface-2); }
@@ -161,8 +145,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 
 .fb-badge { display: inline-grid; flex: none; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.45em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.8em; font-weight: 800; }
 
-/* ------------------------------ the form ------------------------------ */
-
 .fb-where-button { display: flex; align-items: center; justify-content: space-between; gap: 0.75em; width: 100%; padding: 0.85em 0.9em; border-radius: 1em; background: var(--surface); text-align: left; }
 .fb-where-button:focus-visible { background: var(--surface-2); }
 @media (hover: hover) { .fb-where-button:hover { background: var(--surface-2); } }
@@ -178,7 +160,7 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
   background: var(--surface);
   color: var(--text);
   font-family: inherit;
-  font-size: 1rem; /* (never less than 16px: a smaller one makes an iPhone zoom in on it) */
+  font-size: 1rem;
   line-height: 1.4;
   resize: vertical;
 }
@@ -217,8 +199,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-foot { flex: none; display: flex; flex-direction: column; gap: 0.5em; padding: 0.75em 1em max(0.75em, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
 .fb-needs { color: var(--muted); font-size: 0.85em; text-align: center; }
 
-/* ------------------------------ the pictures ------------------------------ */
-
 .fb-adds { display: flex; flex-wrap: wrap; gap: 0.5em; }
 .fb-add { display: inline-flex; align-items: center; gap: 0.5em; padding: 0.7em 0.95em; border-radius: 0.85em; background: var(--surface); font-weight: 600; }
 .fb-add svg { font-size: 1.25em; color: var(--muted); }
@@ -237,15 +217,11 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-attached { display: flex; flex-wrap: wrap; gap: 0.4em; margin: 0.5em 0 0; padding: 0; list-style: none; }
 .fb-attached li { display: inline-flex; align-items: center; gap: 0.4em; padding: 0.25em 0.55em; border-radius: 0.55em; background: rgba(255, 255, 255, 0.08); font-size: 0.8em; }
 
-/* ------------------------------ sent ------------------------------ */
-
 .fb-sent { display: flex; flex-direction: column; align-items: center; gap: 0.75em; padding-top: 2em; text-align: center; }
 .fb-sent-mark { display: grid; place-items: center; width: 4em; height: 4em; border-radius: 50%; background: rgb(70 211 105 / 0.16); color: var(--ok); font-size: 1.9em; }
 .fb-sent-title { margin: 0; font-size: 1.3em; line-height: 1.25; outline: none; }
 .fb-sent .fb-lead { margin: 0; max-width: 28em; }
 .fb-sent-actions { display: flex; flex-direction: column; gap: 0.5em; width: min(100%, 22em); margin-top: 0.75em; }
-
-/* ------------------------------ your messages ------------------------------ */
 
 .fb-rows { display: flex; flex-direction: column; gap: 0.5em; margin: 0; padding: 0; list-style: none; }
 .fb-row { display: flex; align-items: center; gap: 0.75em; width: 100%; padding: 0.7em; border-radius: 1em; background: var(--surface); text-align: left; }
@@ -273,8 +249,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-reply-actions { display: flex; flex-wrap: wrap; gap: 0.5em; }
 .fb-reply-actions .fb-send { flex: 1; width: auto; min-width: 8em; }
 
-/* ------------------------------ marking a picture ------------------------------ */
-
 .fb-annotate { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .fb-annotate-top { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 0.5em; padding: max(0.6em, env(safe-area-inset-top)) 0.7em 0.5em; }
 .fb-annotate-title { flex: 1; margin: 0; font-size: 1.05em; text-align: center; }
@@ -298,8 +272,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
 .fb-size { display: grid; place-items: center; width: 2.2em; height: 2.2em; border-radius: 50%; background: var(--surface); color: var(--text); }
 .fb-size span { display: block; border-radius: 50%; background: currentColor; }
 .fb-size.is-on { background: #fff; color: #000; }
-
-/* ------------------------------ taking the picture ------------------------------ */
 
 .fb-capture-bar {
   position: fixed;
@@ -325,8 +297,6 @@ html.fb-open { overscroll-behavior-y: contain; } /* (a pull on the form does not
   .fb-capture-bar { right: auto; bottom: 1.5em; left: 50%; width: min(36em, 94%); border: 1px solid var(--line); border-radius: 1.1em; transform: translateX(-50%); }
 }
 .fb-shutter { position: fixed; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; gap: 0.6em; background: var(--bg); color: var(--text); font-size: 1.1em; pointer-events: auto; }
-
-/* ------------------------------ closing without sending ------------------------------ */
 
 .fb-confirm { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 1.25em; background: rgba(0, 0, 0, 0.62); }
 .fb-confirm-box { display: flex; flex-direction: column; gap: 0.7em; width: min(100%, 24em); padding: 1.25em; border-radius: 1.2em; background: var(--surface-2); }

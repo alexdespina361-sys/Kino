@@ -2,18 +2,11 @@ import { expect, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { openLibrary, openTv, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
-/**
- * A screen that can only move a mouse and click (an air mouse, a TV in its pointer mode) has no wheel and no keys to scroll with, so a pointer that
- * rests against the bottom or the top edge of the screen for a second scrolls the page that way; a computer can too (the owner, 17 Nov 2026). Nobody
- * must meet it unasked: a key, the wheel, a press or a finger ends it, and it needs a page that has somewhere to go.
- */
-
 const film = (id: string, title: string) => ({ id, title, year: 2000, url: `/fixtures/sample.mp4?n=${id}` });
 const rowOf = (id: string, title: string) => ({ id, title, source: "Test Source", items: Array.from({ length: 8 }, (_, i) => film(`${id}-${i}`, `${title} ${i + 1}`)) });
 const tall = { updatedAt: Date.now(), rows: Array.from({ length: 14 }, (_, i) => rowOf(`r${i}`, `Row ${i + 1}`)) };
 const short = { updatedAt: Date.now(), rows: [rowOf("only", "Only row")] };
 
-/** The strip is 32 px on a 720 px screen (edgeScroll.ts `stripOf`). */
 const BOTTOM = 718;
 const TOP = 2;
 const MIDDLE = 400;
@@ -22,19 +15,16 @@ const X = 640;
 const edge = (tv: Page) => tv.getByTestId("tv-edge-scroll");
 const rows = (tv: Page) => tv.locator(".tv-rows");
 const scrolled = (tv: Page) => rows(tv).evaluate((element) => element.scrollTop);
-/** The page opens, and the welcome is gone from over it. */
 async function openTall(browser: Parameters<typeof openLibrary>[0]): Promise<Page> {
   const tv = await openLibrary(browser, withLibrary(tall));
   await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 8_000 });
-  expect(await rows(tv).evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(400); // (a page with somewhere to go)
+  expect(await rows(tv).evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(400);
   return tv;
 }
-/** The pointer comes into the strip from the middle of the screen, as a hand brings it. */
 async function restAtBottom(tv: Page, x = X) {
   await tv.mouse.move(x, MIDDLE);
   await tv.mouse.move(x, BOTTOM);
 }
-/** The pointer has not moved the page for as long as it takes to be sure of it. */
 async function staysPut(tv: Page, ms = 1_500) {
   const before = await scrolled(tv);
   await tv.waitForTimeout(ms);
@@ -48,7 +38,7 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
     await expect(edge(tv)).toHaveAttribute("data-edge", "bottom");
     await expect(edge(tv)).toHaveAttribute("data-phase", "waiting");
     await tv.waitForTimeout(500);
-    expect(await scrolled(tv)).toBe(0); // (not yet: a pointer that only stopped here for a moment moves nothing)
+    expect(await scrolled(tv)).toBe(0);
     await expect(edge(tv)).toHaveAttribute("data-phase", "waiting");
 
     await expect.poll(() => scrolled(tv), { timeout: 6_000 }).toBeGreaterThan(100);
@@ -84,9 +74,8 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
     const end = await scrolled(tv);
     await restAtBottom(tv);
     await tv.waitForTimeout(1_500);
-    await expect(edge(tv)).toHaveCount(0); // (the bottom edge of a page that is at its bottom)
+    await expect(edge(tv)).toHaveCount(0);
     expect(await scrolled(tv)).toBe(end);
-    // ...and the top edge of it has somewhere to go.
     await tv.mouse.move(X, MIDDLE);
     await tv.mouse.move(X, TOP);
     await expect(edge(tv)).toHaveAttribute("data-edge", "top");
@@ -118,13 +107,11 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
       await expect(edge(tv)).toHaveCount(0);
       await staysPut(tv, 1_600);
 
-      // Moving about inside the strip is not coming back.
       await tv.mouse.move(X + 40, BOTTOM - 3);
       await tv.mouse.move(X + 80, BOTTOM);
       await expect(edge(tv)).toHaveCount(0);
       await staysPut(tv);
 
-      // Out of it, and in again, is.
       await tv.mouse.move(X, MIDDLE);
       await tv.mouse.move(X, BOTTOM);
       await expect(edge(tv)).toHaveAttribute("data-phase", "waiting");
@@ -136,12 +123,11 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
   test("a wheel ends it as a key does, and a screen that has one still meets it when the pointer comes back to the edge (a computer, a TV remote with a wheel)", async ({ browser }) => {
     const tv = await openTall(browser);
     await restAtBottom(tv);
-    await expect.poll(() => scrolled(tv), { timeout: 6_000 }).toBeGreaterThan(50); // (it was moving)
+    await expect.poll(() => scrolled(tv), { timeout: 6_000 }).toBeGreaterThan(50);
     await tv.mouse.wheel(0, 30);
     await expect(edge(tv)).toHaveCount(0);
-    await tv.waitForTimeout(400); // (the wheel turns the page itself a little: it is where that stops that counts)
+    await tv.waitForTimeout(400);
     await staysPut(tv, 1_200);
-    // Out of the strip and in again: it waits and scrolls as before; the top strip too.
     await tv.mouse.move(X, MIDDLE);
     await tv.mouse.move(X, BOTTOM);
     await expect(edge(tv)).toHaveAttribute("data-phase", "waiting");
@@ -156,10 +142,10 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
 
   test("on a computer's page (a browser's window, the TV's pages as a computer has them), a pointer held a little short of the edge scrolls too", async ({ browser }) => {
     const tv = await openTall(browser);
-    await tv.mouse.wheel(0, 30); // (a computer's mouse has a wheel, and it was turned once)
+    await tv.mouse.wheel(0, 30);
     await tv.waitForTimeout(400);
     await tv.mouse.move(X, MIDDLE);
-    await tv.mouse.move(X, 720 - 28); // (28 px short of the edge: the strip is 32)
+    await tv.mouse.move(X, 720 - 28);
     await expect(edge(tv)).toHaveAttribute("data-phase", "waiting");
     const from = await scrolled(tv);
     await expect.poll(() => scrolled(tv), { timeout: 6_000 }).toBeGreaterThan(from + 100);
@@ -195,7 +181,7 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
   test("a pointer on the menu rail, or with a button held, is not waiting for the page", async ({ browser }) => {
     const tv = await openTall(browser);
     await tv.mouse.move(30, MIDDLE);
-    await tv.mouse.move(30, BOTTOM); // (the menu opens under a pointer that rests on it)
+    await tv.mouse.move(30, BOTTOM);
     await tv.waitForTimeout(1_500);
     await expect(edge(tv)).toHaveCount(0);
     expect(await scrolled(tv)).toBe(0);
@@ -217,7 +203,7 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
     const corner = tv.locator(".tv-browse-corner button").last();
     const box = (await corner.boundingBox())!;
     const x = box.x + box.width / 2;
-    expect(box.y + 4).toBeLessThan(64); // (still within the strip's slack: a pointer that was in it is in it there)
+    expect(box.y + 4).toBeLessThan(64);
     await tv.mouse.move(x, MIDDLE);
     await tv.mouse.move(x, TOP);
     await expect(edge(tv)).toHaveAttribute("data-edge", "top");
@@ -225,14 +211,12 @@ test.describe("scrolling with the pointer at the edge of the screen", () => {
     await expect(edge(tv)).toHaveCount(0);
     await tv.waitForTimeout(1_500);
     expect(await scrolled(tv)).toBe(800);
-    // (off the button, back against the edge, it scrolls up as before)
     await tv.mouse.move(X, MIDDLE);
     await tv.mouse.move(X, TOP);
     await expect.poll(() => scrolled(tv), { timeout: 6_000 }).toBeLessThan(700);
   });
 
   test("a page that has nowhere to go gets no hint, and nothing moves", async ({ browser }) => {
-    // (A screen so tall that the whole of the page fits.)
     const tv = await openLibrary(browser, withLibrary(short), { width: 1280, height: 2_400 });
     await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 8_000 });
     expect(await rows(tv).evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(12);
