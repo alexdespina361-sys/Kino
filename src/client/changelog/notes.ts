@@ -4,6 +4,25 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.16",
+    date: "2026-11-18",
+    en: [
+      "In Romanian and Italian, films, series, cartoons and anime have their name and description in that language, where there is one.",
+      "In the Android app, a page can no longer be zoomed with two fingers.",
+      "In the list of all categories, no card has a second line under its name any more.",
+    ],
+    ro: [
+      "În română, filmele, serialele, desenele și anime-urile au numele și descrierea în română, acolo unde există.",
+      "În aplicația de Android, pagina nu mai poate fi mărită cu două degete.",
+      "În lista tuturor categoriilor, niciun card nu mai are un al doilea rând sub nume.",
+    ],
+    it: [
+      "In italiano, film, serie, cartoni e anime hanno il nome e la descrizione in italiano, dove esistono.",
+      "Nell'app Android, la pagina non si può più ingrandire con due dita.",
+      "Nell'elenco di tutte le categorie, nessuna scheda ha più una seconda riga sotto il nome.",
+    ],
+  },
+  {
     version: "0.4.15",
     date: "2026-11-17",
     en: [

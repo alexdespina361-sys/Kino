@@ -677,7 +677,9 @@ export function gridOf(view: View, data: PageData): GridPage | null {
       const title = of === "movie" ? t("tv.movieCategories") : of === "series" ? t("tv.seriesCategories") : of === "cartoon" ? t("tv.cartoonCategories") : of === "anime" ? t("tv.animeCategories") : t("tv.allCategories");
       const ordered = of ? rows : SECTION_ORDER.flatMap((section) => rows.filter((row) => sectionOf(row) === section));
       const used = new Set<string>();
-      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, all, !of, used)), empty: "" };
+      // (No second line on a tile: only the few categories whose name did not say their section had one, "Popular Cartoon Series" with "Cartoons"
+      // under it, which read as a leftover among the others - the owner, 18 Nov. The category's own page still says its section.)
+      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, all, false, used)), empty: "" };
     }
     default:
       return null;

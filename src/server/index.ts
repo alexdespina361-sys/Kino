@@ -8,6 +8,7 @@ import { FcmSender, fcmFromEnv } from "./push/fcm";
 import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
+import { createNameBook } from "./library/names";
 import { UnavailableStore, unavailablePersistenceFor } from "./library/unavailable";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
@@ -84,6 +85,7 @@ const app = await buildApp({
   ...(isDeployed() ? {} : { fixturesDir: defaultFixturesDir() }),
   // LIBRARY=off: no browsing library (the e2e server, or anyone who would rather not fetch external library).
   librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource(), animeHeavenSource()],
+  ...(process.env.LIBRARY === "off" ? {} : { names: createNameBook() }),
   accounts,
   registry,
   pairings,

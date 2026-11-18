@@ -5,7 +5,7 @@ import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { AnimeHintSchema, isHttpUrl, LibraryKindSchema, LibrarySectionSchema, type Registration } from "../shared";
+import { AnimeHintSchema, isHttpUrl, isNameLanguage, LibraryKindSchema, LibrarySectionSchema, NAME_ID, NAMES_AT_ONCE, type Registration } from "../shared";
 import type { GoogleConfig } from "./accounts/google";
 import { createAnimeSkipLookup, type AnimeSkipLookup } from "./anime/skipTimes";
 import type { PasswordCost } from "./accounts/password";
@@ -18,6 +18,8 @@ import { feedbackRoutes, FEEDBACK_TOKEN_MIN, teamGuard } from "./feedback/routes
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
+import type { NameBook } from "./library/names";
+import { RateLimiter } from "./accounts/rateLimit";
 import { playKeyOf, UnavailableStore } from "./library/unavailable";
 import { MemoryPersistence } from "./accounts/persistence";
 import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
@@ -85,6 +87,10 @@ export interface AppOptions {
   resolve?: ResolveFn;
   /** Where the library's titles come from. None by default, so nothing here reaches the network unless asked. */
   librarySources?: LibrarySource[];
+  /** Where the names of titles in a viewer's language come from (library/names.ts). None by default: nothing here reaches the network unless asked. */
+  names?: NameBook;
+  /** How many titles an address may have looked up for their names in ten minutes, of those not kept yet (2400 unless set). */
+  nameLookupsPer10Min?: number;
   /** The clock the library keeps its time by; tests move it. */
   libraryNow?: () => number;
   /** Let the resolver fetch loopback/LAN pages (local fixtures). Default false; env ALLOW_PRIVATE_NETWORK=1. */
@@ -288,6 +294,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   if (!proxyVideo && proxyExemptHosts.length > 0) app.log.info(`The proxy carries no film, except from: ${proxyExemptHosts.join(", ")}.`);
   // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
   fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo });
+  const nameLookups = new RateLimiter(options.nameLookupsPer10Min ?? 2400, 10 * 60 * 1000);
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
   const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
@@ -426,6 +433,23 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     } catch {
       return reply.code(502).header("Cache-Control", "no-store").send({ error: "The library could not be reached" });
     }
+  });
+  // The names and descriptions of titles in the viewer's language (shared/names.ts): asked by a page in Romanian or Italian for the titles it shows,
+  // forty at most a question. What is kept answers at once; what is not is asked of the movie database, within the address's allowance of such
+  // look-ups. An answer with every title in it may be kept by a browser for a day; one with some left out (not reached in time) is not kept.
+  app.get<{ Querystring: { lang?: string; ids?: string } }>("/api/library/names", async (request, reply) => {
+    const { lang, ids } = request.query;
+    if (typeof lang !== "string" || !isNameLanguage(lang) || typeof ids !== "string" || ids.length > NAMES_AT_ONCE * 16) return reply.code(400).send({ error: "Bad 'lang' or 'ids' parameter" });
+    const asked = [...new Set(ids.split(","))];
+    if (asked.length === 0 || asked.length > NAMES_AT_ONCE || asked.some((id) => !NAME_ID.test(id))) return reply.code(400).send({ error: "Bad 'lang' or 'ids' parameter" });
+    const book = options.names;
+    if (!book) return reply.header("Cache-Control", "no-store").send({ names: {} });
+    const names = await book.of(lang, asked, () => {
+      if (nameLookups.wait(request.ip) > 0) return false;
+      nameLookups.hit(request.ip);
+      return true;
+    });
+    return reply.header("Cache-Control", Object.keys(names).length === asked.length ? "public, max-age=86400" : "no-store").send({ names });
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/similar", async (request, reply) => {
     const link = request.query.url ?? "";
