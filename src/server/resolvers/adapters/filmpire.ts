@@ -1310,7 +1310,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         };
       };
 
-      const buildVidLinkResult = async (vl: VidLinkResolvedStream): Promise<ResolveResult> => {
+      const buildVidLinkResult = async (vl: VidLinkResolvedStream, reqS: string | null = s, reqE: string | null = e): Promise<ResolveResult> => {
         const imdbId = tmdbImdbId;
         pendingExtras ??= askExtras(imdbId);
         const [listed, roSubs, dub] = pendingExtras
@@ -1371,6 +1371,28 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }
         }
 
+        // For hotlink-sensitive bcdnxw streams or H.265/HEVC MP4s, also attach VixSrc (H.264 HLS) as a backup server
+        // so browsers without HEVC or relays blocked by bcdnxw can seamlessly switch servers.
+        const needsVixBackup = /bcdnxw\.hakunaymatata\.com|\/h265\//i.test(primary.url);
+        if (needsVixBackup) {
+          try {
+            const vx = await resolveVixSrcStream(get, id, isTv, reqS, reqE, 2500);
+            if (vx) {
+              alternates.push({
+                label: "Server 2 (VixSrc)",
+                stream: {
+                  url: streamAddress(vx.streamUrl, vx.embedUrl, process.env, false),
+                  type: "hls",
+                  directUrl: vx.streamUrl,
+                },
+                ...(subList ? { subtitles: subList } : {}),
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         if (dub) alternates.unshift(dub);
         const cappedAlternates = alternates.slice(0, MAX_ALTERNATES);
 
@@ -1419,7 +1441,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           // Priority #2 for Anime: VidLink fallback
           try {
             const vl = await resolveVidLinkStream(get, id, isTv, playerS, playerE, VIDLINK_ANIME_TIMEOUT_MS);
-            if (vl) return await buildVidLinkResult(vl);
+            if (vl) return await buildVidLinkResult(vl, playerS, playerE);
           } catch {
             // ignore
           }
@@ -1438,7 +1460,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         // Priority #1 for Western Movies & Series: VidLink
         try {
           const vl = await resolveVidLinkStream(get, id, isTv, playerS, playerE);
-          if (vl) return await buildVidLinkResult(vl);
+          if (vl) return await buildVidLinkResult(vl, playerS, playerE);
         } catch {
           // ignore
         }
