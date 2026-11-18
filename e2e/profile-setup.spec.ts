@@ -221,6 +221,45 @@ test.describe("a new profile is set up before anything else", () => {
     expect(await tv.evaluate(() => document.activeElement !== null && document.activeElement !== document.body)).toBe(true);
   });
 
+  test("a nickname typed when the account is made is the name the first page offers; the longer form fits the narrowest phone in Romanian and a 720p TV", async ({ browser }) => {
+    const phone = await openDevice(
+      browser,
+      { viewport: { width: 320, height: 640 }, screen: { width: 320, height: 640 }, hasTouch: true, baseURL: ORIGIN, storageState: stored([{ name: "kino.lang", value: "ro" }]) },
+      {},
+      withLibrary(library),
+    );
+    await phone.goto("/");
+    await expect(phone.getByTestId("tv-browse")).toBeVisible();
+    await phone.getByTestId("tv-account-chip").tap();
+    await phone.getByTestId("tv-profile-signin").tap();
+    await phone.getByTestId("auth-switch").tap();
+    const account = fresh();
+    await phone.getByTestId("auth-email").fill(account.email);
+    await phone.getByTestId("auth-password").fill(account.password);
+    await phone.getByTestId("auth-nickname").fill("Ionuț");
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "nothing is off the side").toBe(true);
+    for (const id of ["auth-email", "auth-password", "auth-nickname", "auth-submit"]) {
+      const box = (await phone.getByTestId(id).boundingBox())!;
+      expect(box.x, id).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, id).toBeLessThanOrEqual(320 + 0.5);
+    }
+    await phone.getByTestId("auth-submit").tap();
+    await expect(step(phone)).toHaveAttribute("data-step", "who");
+    await expect(phone.getByTestId("profile-name-input")).toHaveValue("Ionuț");
+
+    const tv = await openScreen(browser);
+    await openTvSignIn(tv);
+    await tv.getByTestId("tv-signin-create").click();
+    const other = fresh();
+    await tv.getByTestId("auth-email").fill(other.email);
+    await tv.getByTestId("auth-password").fill(other.password);
+    await tv.getByTestId("auth-nickname").fill("Telly");
+    await fits(tv, "auth-submit");
+    await tv.getByTestId("auth-submit").click();
+    await expect(step(tv)).toHaveAttribute("data-step", "who");
+    await expect(tv.getByTestId("profile-name-input")).toHaveValue("Telly");
+  });
+
   test("on a phone held upright: the three pages fit it, and the library has buttons for its sections only", async ({ browser }) => {
     test.setTimeout(60_000);
     const phone = await openDevice(

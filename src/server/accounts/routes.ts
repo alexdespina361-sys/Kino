@@ -265,7 +265,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
       signUps.notMade();
       return reply.code(403).send({ error: "registration_closed" });
     }
-    const created = store.createAccount(parsed.data.email, hash);
+    const created = store.createAccount(parsed.data.email, hash, parsed.data.name);
     if (!created.ok) {
       signUps.notMade();
       return refused(reply, created.error);

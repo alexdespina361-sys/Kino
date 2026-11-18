@@ -37,6 +37,8 @@ export const it: Dictionary = {
   "auth.password": "Password",
   "auth.newPassword": "Nuova password",
   "auth.passwordHint": "Quello che vuoi, anche un solo carattere",
+  "auth.nickname": "Soprannome",
+  "auth.nicknameHint": "Quello che vedono gli amici. Facoltativo: puoi sceglierlo anche dopo.",
   "auth.noPasswordNote": "Lascialo vuoto per nessuna password. Allora chiunque scriva questo nome può aprire l'account.",
   "auth.warnNone": "Senza password, chiunque scriva questo nome utente può aprire il tuo account, quindi può essere condiviso con altri molto facilmente.",
   "auth.warnWeak": "Questa password è facile da indovinare, quindi qualcuno potrebbe aprire il tuo account provandola.",

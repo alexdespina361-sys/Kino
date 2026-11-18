@@ -57,7 +57,8 @@ export const NewPasswordSchema = z.string().min(PASSWORD_MIN, "weak_password").m
 export const DeviceKindSchema = z.enum(["tv", "remote", "browser"]);
 export type DeviceKind = z.infer<typeof DeviceKindSchema>;
 
-export const RegisterSchema = z.object({ email: LoginNameSchema, password: NewPasswordSchema, device: DeviceKindSchema.optional() });
+/** `name`: the nickname the first profile goes by (others see it; the login they never do). Left out, it is named after its picture. */
+export const RegisterSchema = z.object({ email: LoginNameSchema, password: NewPasswordSchema, device: DeviceKindSchema.optional(), name: z.lazy(() => ProfileNameSchema).optional() });
 export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string().max(200), device: DeviceKindSchema.optional() });
 
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");

@@ -39,6 +39,8 @@ export const en = {
   "auth.password": "Password",
   "auth.newPassword": "New password",
   "auth.passwordHint": "Anything you like, even one character",
+  "auth.nickname": "Nickname",
+  "auth.nicknameHint": "What friends see. Optional: you can choose it later.",
   "auth.noPasswordNote": "Leave it empty for no password. Then anyone who types this name can open the account.",
   "auth.warnNone": "With no password, anyone who types this username can open your account, so it can be shared with others very easily.",
   "auth.warnWeak": "This password is easy to guess, so someone could open your account by trying it.",
