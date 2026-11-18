@@ -49,7 +49,13 @@ export function answerUnroutable(error: FastifyError, request: FastifyRequest, r
 }
 
 /** The library's routes that take the address of a title and ask the place that lists it, and the player's question about an anime episode's opening and credits (AniList, AniSkip). */
-const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/title", "/api/library/episodes", "/api/library/seasons", "/api/anime/skip"];
+const TITLE_ASKS = ["/api/library/about", "/api/library/title", "/api/library/episodes", "/api/library/seasons", "/api/anime/skip"];
+
+/**
+ * What is like a title: asked by a title's page once, and by the rows a profile is given of its own ("Because you watched ...", shared/recommend.ts) many times as a
+ * page is scrolled. Counted by itself, so that those rows on two or three screens at one address cannot use up what the page of a title needs for its own questions.
+ */
+const LIKE_ASKS = ["/api/library/similar"];
 
 /** The library's routes that page through the shelves: more rows are asked for as a page is scrolled, and more titles of one row. Few answers are kept for as many as can be asked. */
 const BROWSE_ASKS = ["/api/library/rows", "/api/library/more", "/api/library/names"];
@@ -58,7 +64,7 @@ const BROWSE_ASKS = ["/api/library/rows", "/api/library/more", "/api/library/nam
  * The routes that make this server fetch from another site for whoever asks (the library's, when what it keeps has gone out of date), and Google's way back from a
  * sign-in, which takes the code it brings to Google's token endpoint: Google sends the browser there from its own site, which is a navigation, and nothing else does.
  */
-const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS, "/api/auth/google/callback"]);
+const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS, ...LIKE_ASKS, "/api/auth/google/callback"]);
 
 /**
  * The routes that only read, but for the visitor whose session they are asked with, and count or note something against it: everything of a profile (the Friends page being open is how its
@@ -124,8 +130,10 @@ export function sameSiteGate(app: FastifyInstance): void {
 export interface FetchesPerMinute {
   /** `/api/resolve` (60 unless set). */
   resolve?: number;
-  /** The library's questions about one title (`similar`, `about`, `episodes` and `seasons`, counted together; 120 unless set). */
+  /** The library's questions about one title (`about`, `title`, `episodes` and `seasons`, counted together; 120 unless set). */
   library?: number;
+  /** What is like a title (`similar`, counted by itself; 120 unless set). */
+  similar?: number;
   /** The library's search (60 unless set, counted by itself): one ask goes to the movie database, to the places that list titles and to a probe of each title found, and the page of the likeliest title is fetched ahead for the player. */
   search?: number;
   /** `/api/proxy`, while it carries no film (300 unless set). With film on, a player asks for one piece after another, and there is no limit here. */
@@ -140,12 +148,14 @@ export interface FetchesPerMinute {
  * with `Retry-After`, as everywhere else, and nothing is fetched. The count is of the route that answers (a path written another way reaches the same route and the
  * same count), and a request that the gate above turned away is not counted: it must not use up the allowance of the visitor whose browser it was sent from. A restart forgives everyone.
  */
-export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120, search = 60, proxy = 300, browse = 300 }: FetchesPerMinute, { video }: { video: boolean }): void {
+export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120, similar = 120, search = 60, proxy = 300, browse = 300 }: FetchesPerMinute, { video }: { video: boolean }): void {
   const limiters = new Map<string, RateLimiter>();
   limiters.set("/api/resolve", new RateLimiter(resolve, MINUTE));
   limiters.set("/api/library/search", new RateLimiter(search, MINUTE));
   const titles = new RateLimiter(library, MINUTE);
   for (const route of TITLE_ASKS) limiters.set(route, titles);
+  const likes = new RateLimiter(similar, MINUTE);
+  for (const route of LIKE_ASKS) limiters.set(route, likes);
   const shelves = new RateLimiter(browse, MINUTE);
   for (const route of BROWSE_ASKS) limiters.set(route, shelves);
   if (!video) limiters.set("/api/proxy", new RateLimiter(proxy, MINUTE));
