@@ -5,32 +5,19 @@ import { useLanguage, useT } from "../i18n";
 import { ChevronIcon, StarIcon, TrashIcon } from "../shared/icons";
 import type { Entry } from "../tv/pages";
 
-/** A note that is still being typed is kept this long after the last letter (and when the field loses the focus, and when the page closes). */
 const NOTE_SAVE_MS = 700;
-/** The counter of how much is left of a note shows once it is this close to the end. */
 const NOTE_COUNT_FROM = RATING_NOTE_MAX - 100;
 
 interface BoxProps {
   entry: Entry;
-  /** The title is a show: what was watched is counted in episodes. */
   isShow: boolean;
-  /** The season this box rates; absent: the title as a whole. */
   season?: number;
-  /** How many episodes that season has, when the page knows. */
   total?: number | undefined;
-  /** What the box is called ("Your rating", "Season 2 rating"). */
   title: string;
   testId: string;
-  /** The scores are there at once, a tap away (a title's own rating); the note and the watching are under More. Else the box is one line until it is opened (a season's). */
   quick?: boolean;
 }
 
-/**
- * A title's (or one of its seasons') rating on the phone: the ten scores to tap (that alone is a rating), the word for the score, a note
- * box for why, and what the phone knows of the watching behind it: when it was rated, how much was watched, when it was finished or last
- * watched. A title's own (`quick`) has the scores out at once and the note and the watching under More; a season's is folded to one line
- * (a star, what it is, and the score or "Rate") until it is opened.
- */
 export function RatingBox({ entry, isShow, season, total, title, testId, quick = false }: BoxProps) {
   const t = useT();
   const language = useLanguage();
@@ -125,17 +112,14 @@ export function RatingBox({ entry, isShow, season, total, title, testId, quick =
   );
 }
 
-/** The box where the person says why. What is typed is kept as it is typed; closing the box or the sheet does not lose it. */
 function NoteField({ value, disabled, label, placeholder, onSave, testId }: { value: string; disabled: boolean; label: string; placeholder: string; onSave: (note: string) => void; testId: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState(value);
-  /** What the profile has kept of it, to tell a change from a field that was only looked at. */
   const kept = useRef(value);
   const timer = useRef<number>(0);
   const latest = useRef({ draft, onSave });
   latest.current = { draft, onSave };
 
-  // The note changed under the field (on another screen, or by a sync): show it, unless it is being typed.
   useEffect(() => {
     kept.current = value;
     if (document.activeElement !== field.current) setDraft(value);

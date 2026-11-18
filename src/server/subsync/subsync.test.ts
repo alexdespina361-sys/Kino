@@ -12,18 +12,14 @@ import { FileSubsyncStore, MemorySubsyncStore, PostgresSubsyncStore, subsyncStor
 const key = (n: number) => n.toString(16).padStart(32, "0");
 const timing = (lines: number, ...placed: SharedPlacement[]): SharedTiming => ({ v: 1, lines, placed });
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-/** Waits (a little) for something that happens by itself a moment after the call that causes it. */
 async function until(done: () => Promise<boolean>): Promise<void> {
   for (let i = 0; i < 100 && !(await done()); i++) await wait(20);
 }
 
 interface Home {
   store: SubsyncStore;
-  /** How many timings are kept. */
   count(): Promise<number>;
-  /** Makes the timing look as if it was last used this long ago. */
   age(key: string, ms: number): Promise<void>;
-  /** How long ago the timing was last used. */
   unused(key: string): Promise<number>;
   done(): Promise<void>;
 }
@@ -59,7 +55,7 @@ const homes: Array<[string, (limit: number) => Promise<Home>]> = [
       return {
         store,
         count: async () => {
-          await store.get(key(0)); // (makes the table when nothing has)
+          await store.get(key(0));
           return ((await db.query("select count(*)::int as n from kino_subsync")).rows[0] as { n: number }).n;
         },
         age: async (name, ms) => void (await db.query("update kino_subsync set used = now() - make_interval(secs => $2) where key = $1", [name, ms / 1000])),
@@ -135,8 +131,8 @@ describe("what a read does", () => {
         await home.store.get(key(1));
         await home.store.get(key(2));
         await until(async () => (await home.unused(key(1))) < 60_000);
-        expect(await home.unused(key(1))).toBeLessThan(60_000); // (it had not been used for two hours)
-        expect(await home.unused(key(2))).toBeGreaterThan(19 * 60_000); // (it had, twenty minutes ago: not written to again for that)
+        expect(await home.unused(key(1))).toBeLessThan(60_000);
+        expect(await home.unused(key(2))).toBeGreaterThan(19 * 60_000);
       } finally {
         await home.done();
       }
@@ -158,11 +154,11 @@ describe("Postgres", () => {
       await store.merge(key(1), timing(9, [1, 10, 10, 1], [2, 20, 20, 0]));
       const inserts = () => statements.filter((text) => text.startsWith("insert")).length;
       expect(inserts()).toBe(1);
-      await store.merge(key(1), timing(9, [1, 10, 10, 1])); // (the same)
+      await store.merge(key(1), timing(9, [1, 10, 10, 1]));
       expect(inserts()).toBe(1);
-      await store.merge(key(1), timing(9, [2, 99, 99, 0])); // (a different time for line 2, neither with words: the newer one is kept)
+      await store.merge(key(1), timing(9, [2, 99, 99, 0]));
       expect(inserts()).toBe(2);
-      await store.merge(key(1), timing(9, [1, 77, 77, 0])); // (no words do not replace words)
+      await store.merge(key(1), timing(9, [1, 77, 77, 0]));
       expect(inserts()).toBe(2);
     } finally {
       await db.close();
@@ -195,7 +191,7 @@ describe("/api/subsync", () => {
   it("takes a timing and gives it back to the next screen", async () => {
     await open();
     const none = await app!.inject(`/api/subsync/${key(1)}`);
-    expect(none.statusCode).toBe(204); // (nobody has yet: not a 404, which a browser prints as an error in its console)
+    expect(none.statusCode).toBe(204);
     expect(none.body).toBe("");
     expect((await put(timing(9, [0, 1, -1, 0], [4, 40, 40, 1]))).statusCode).toBe(204);
     const reply = await app!.inject(`/api/subsync/${key(1)}`);
@@ -228,7 +224,7 @@ describe("/api/subsync", () => {
     for (const body of [{}, { v: 1, lines: 9, placed: [] }, { v: 1, lines: 9, placed: [[9, 0, 0, 0]] }, { v: 1, lines: 9, placed: [[1, 99999, 0, 0]] }, { v: 1, lines: 9, placed: "all" }]) {
       expect((await put(body)).statusCode, JSON.stringify(body)).toBe(400);
     }
-    expect((await app!.inject(`/api/subsync/${key(1)}`)).statusCode).toBe(204); // (and none of it was kept)
+    expect((await app!.inject(`/api/subsync/${key(1)}`)).statusCode).toBe(204);
   });
 
   it("keeps only the numbers, whatever else comes with them", async () => {

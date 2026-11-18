@@ -4,15 +4,12 @@ import { CloseIcon } from "../shared/icons";
 import { useBackToClose } from "../shared/backButton";
 import { codeFromScan } from "./scan";
 
-/** The browser's own QR reader (Chrome and Android WebViews). Not in TypeScript's DOM types yet. */
 interface BarcodeDetectorLike {
   detect(source: CanvasImageSource): Promise<{ rawValue: string }[]>;
 }
 declare const BarcodeDetector: (new (options: { formats: string[] }) => BarcodeDetectorLike) | undefined;
 
-/** Frames are shrunk to this width before decoding: a QR code on a TV is big, and this is much faster than full resolution. */
 const SCAN_WIDTH = 480;
-/** About ten looks a second is plenty for a code held in front of the camera. */
 const SCAN_EVERY_MS = 100;
 
 export const cameraAvailable = () => typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia);
@@ -25,15 +22,10 @@ function describeCameraError(error: unknown): string {
   return t("scan.failed");
 }
 
-/**
- * Full-screen camera that reads the TV's QR code and hands back the code in it. `read` says what counts as one: the six
- * digits of pairing (the default) or, with `linkFromScan`, the code on the TV's sign-in screen.
- */
 export function Scanner({ onCode, onClose, read = codeFromScan }: { onCode: (code: string) => void; onClose: () => void; read?: (text: string) => string | null }) {
   useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
-  // The latest callbacks, without restarting the camera whenever the parent re-renders.
   const handlers = useRef({ onCode, onClose, read });
   handlers.current = { onCode, onClose, read };
   useBackToClose(onClose);
@@ -64,9 +56,7 @@ export function Scanner({ onCode, onClose, read = codeFromScan }: { onCode: (cod
       try {
         native = typeof BarcodeDetector === "function" ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
       } catch {
-        /* the browser has the API but not for QR codes: use the library */
       }
-      // The library is only fetched when there is no (working) built-in reader, which is the case on iPhones.
       let decoder: ((data: Uint8ClampedArray, width: number, height: number) => { data: string } | null) | null = null;
 
       const look = async () => {
@@ -81,7 +71,7 @@ export function Scanner({ onCode, onClose, read = codeFromScan }: { onCode: (cod
               try {
                 text = (await native.detect(canvas))[0]?.rawValue;
               } catch {
-                native = null; // a reader that errors (service missing on this device) is not coming back: switch to the library
+                native = null;
               }
             }
             if (!native) {
@@ -89,7 +79,6 @@ export function Scanner({ onCode, onClose, read = codeFromScan }: { onCode: (cod
               text = decoder(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height)?.data;
             }
           } catch {
-            /* a frame that can't be read is just skipped */
           }
           const code = text ? handlers.current.read(text) : null;
           if (code && !stopped) {

@@ -6,13 +6,11 @@ import { animeHeavenSource, fetchTmdbAnimeSeasonDetails } from "./animeheaven";
 import { filmpireSource } from "./filmpire";
 import { internetArchive } from "./internet-archive";
 
-// (`providerFetch` is the real one unless a test hands out another for the next call: the sources take theirs from it when they are given none.)
 vi.mock("../resolvers/providerFetch", async (importOriginal) => {
   const original = await importOriginal<typeof import("../resolvers/providerFetch")>();
   return { ...original, providerFetch: vi.fn(original.providerFetch) };
 });
 
-/** A fetch for a test: `answer` makes the answers up, and every address asked is written down. Nothing goes anywhere. */
 function scripted(answer: (url: URL) => Response) {
   const asked: URL[] = [];
   const fake = (async (input: string | URL | Request) => {
@@ -134,11 +132,11 @@ describe("what AnimeHeaven's source keeps of the names its pages give it", () =>
     for (let i = 0; i < 600; i++) await ask(`bounded cache title ${i}`);
     expect(calls).toHaveLength(1200);
     await ask("bounded cache title 599");
-    expect(calls).toHaveLength(1200); // (the newest is still kept)
+    expect(calls).toHaveLength(1200);
     await ask("bounded cache title 100");
-    expect(calls).toHaveLength(1200); // (so is the five hundredth newest)
+    expect(calls).toHaveLength(1200);
     await ask("bounded cache title 99");
-    expect(calls).toHaveLength(1202); // (the one before it is not)
+    expect(calls).toHaveLength(1202);
   });
 
   it("keeps the shows it looked into for episodes for 1000 slugs at most", async () => {
@@ -157,10 +155,10 @@ describe("what AnimeHeaven's source keeps of the names its pages give it", () =>
       return new Response(`<a class='c' id="6f31e2ab5faa70eb14183e66185b46e3" href='gate.php'><div class='watch2'>1</div></a>`);
     });
     const source = animeHeavenSource({ fetch: net.fetch });
-    for (let n = 0; n < 67; n++) expect(await source.search!(`q${n}`)).toHaveLength(15); // (1005 shows)
+    for (let n = 0; n < 67; n++) expect(await source.search!(`q${n}`)).toHaveLength(15);
     await source.search!("edge");
-    expect(probes.get("a0b5")).toBe(1); // (the thousandth newest is kept)
-    expect(probes.get("a0b4")).toBe(2); // (the one before it is gone, and asked again)
+    expect(probes.get("a0b5")).toBe(1);
+    expect(probes.get("a0b4")).toBe(2);
     expect(probes.get("a66b14")).toBe(1);
   });
 });

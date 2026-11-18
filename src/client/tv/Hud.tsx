@@ -38,17 +38,10 @@ import { SKIP_SECONDS } from "./keys";
 import { freshSimilar } from "./pages";
 import type { SkipKind, SkipView } from "./skip";
 
-/** How long the Next episode button counts down for at the end of an episode, in seconds (it fills up as it does). */
 export const UP_NEXT_SECONDS = 15;
 
 const SKIP_WORDS: Record<SkipKind, "hud.skipIntro" | "hud.skipRecap" | "hud.skipCredits"> = { intro: "hud.skipIntro", recap: "hud.skipRecap", credits: "hud.skipCredits" };
 
-/**
- * The Skip button (skip.ts) and the Next episode button (Tv.tsx's Up Next), one look: a pill over the bottom right of the picture (the owner, 17 Nov: "semi
- * transparent, with full visible when hovered ... fit the theme without being annoying"). Bright while it is new or filling, when the remote's OK presses it
- * and Back turns it down (Tv.tsx); then see-through, whole again under the pointer, with the remote on it or with the controls up. Counting, it fills up from
- * the left (`seconds` of `total` left; a second ahead, so that it is full as it acts), and the count is said beside the words. The cross beside it turns it down.
- */
 function SkipPill({
   kind,
   label,
@@ -67,7 +60,6 @@ function SkipPill({
   seconds: number | null;
   total: number;
   fresh: boolean;
-  /** A Skip button that goes by itself: seconds left (of `shownFor`), shown as the bar running out. */
   goesIn?: number;
   shownFor?: number;
   onPress: () => void;
@@ -78,8 +70,6 @@ function SkipPill({
   const fading = !counting && goesIn !== undefined && (shownFor ?? 0) > 0;
   const next = kind === "next";
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
-  // (The bar goes to where it will be at the next second, in a second: it starts from where it was, also the first time, so it is never a jump. Counting, it
-  // fills up; going, it runs out.)
   const target = counting && total > 0 ? clamp((total - seconds + 1) / total) : fading ? clamp((goesIn! - 1) / shownFor!) : 0;
   const [fill, setFill] = useState(() => (counting && total > 0 ? clamp((total - seconds) / total) : fading ? clamp(goesIn! / shownFor!) : 0));
   useEffect(() => {
@@ -104,15 +94,10 @@ function SkipPill({
   );
 }
 
-/** What a screen that watches along with another is told on top of what any screen shows: whose film it is, how it keeps up with it, and its way out. */
 export interface FollowProps {
-  /** The name of the screen being followed. */
   host: string;
-  /** The picture is catching up with the host's (it is being moved, or sped up or slowed down, to meet it). */
   catchingUp: boolean;
-  /** The host made this screen an admin: the playback (play, the skips, the bar, the next episode, stop) is its to steer too, and each asks the host's screen. */
   admin: boolean;
-  /** The way out, which Back on a remote points at. */
   leaveRef: RefObject<HTMLButtonElement | null>;
   onLeave: () => void;
 }
@@ -121,88 +106,47 @@ export interface HudProps {
   visible: boolean;
   player: PlayerState;
   title: string;
-  /** "Season 1, Episode 3" */
   subTitle: string;
-  /** "S1:E3" */
   badge: string;
-  /** What this episode is called, when it is known and is more than its number. */
   episodeName?: string | undefined;
-  /** Label of the next episode, when there is one. */
   nextLabel: string | null;
-  /** Label of the episode before this one, when there is one. */
   prevLabel: string | null;
-  /** Which source is playing, when the video has more than one. */
   sourceLabel: string | null;
-  /** How many episodes the source listed (0 for movies); the Episodes button appears with two or more. */
   episodeCount: number;
-  /** A link is being looked up (the next episode, or one picked from the list). */
   resolving: boolean;
-  /** The film's own screen is up (see Starting.tsx), and says the wait itself: the wheel and its way out are not shown twice. */
   hideWait?: boolean;
-  /**
-   * Brief "+10s" / "-10s" flash after a skip (`side` puts it on the half of the picture the skip went towards), or a line
-   * of news ("Speed 1.5×"). `id` changes every time so the animation replays.
-   */
   toast: { id: number; text: string; notice?: boolean; side?: "back" | "forward" } | null;
-  /**
-   * The next episode is coming (the Next episode button, see `SkipPill`): `seconds` counts down to it out of `total`, or is null while it waits to be asked
-   * for (a profile that plays the next one only on request, or credits that have a while to go). `fresh`: it just came, and is bright.
-   */
   upNext: { seconds: number | null; total: number; label: string; fresh: boolean } | null;
-  /** The Skip button of an opening, a "previously on" or credits (see skip.ts), or null. */
   skip: SkipView | null;
   onSkipPart: () => void;
   onDismissSkip: () => void;
-  /** The controls row, so the remote's arrows can move focus along it (and the row can be kept on one line). */
   controlsRef: RefObject<HTMLDivElement | null>;
   onToggle: () => void;
   onSkip: (seconds: number) => void;
   onSeekTo: (time: number) => void;
-  /** A hand is dragging the bar: the controls stay up for as long as it does. */
   onScrub: () => void;
   onNext: () => void;
   onPrevious: () => void;
   onDismissUpNext: () => void;
   onOpenMenu: (kind: MenuKind) => void;
-  /** How many screens are in the watch party this TV hosts (itself included), 0 when there is none; and the button that opens it. */
   partySize: number;
-  /** None on a child's profile, which has no watch party (see Browse's `child`). */
   onParty: (() => void) | null;
-  /** This screen's own sound is off (the volume stays the device's; this is only the switch). */
   muted: boolean;
   onMute: () => void;
-  /** Null in a browser that has no full screen to give the page, or is never asked for it (see fullscreen.ts): then there is no button. */
   onFullscreen: (() => void) | null;
   onStop: () => void;
-  /** The wait for the picture has gone on too long: a way out is offered. */
   stuck: boolean;
   onCancel: () => void;
-  /** A finger is what is using the screen: the big button in the middle is there to pause with while the picture plays too (paused, it is there whoever is using the screen). */
   touch: boolean;
-  /** A finger is held on the picture and it plays faster for as long as it stays. */
   boosting: boolean;
-  /** Who held the film and why, in words ("Paused by Anna", "Waiting for Anna"), when it is held and that is known: said on the pause card. */
   heldLine?: string | null | undefined;
-  /**
-   * Set on a screen that watches along. It has the same bars as any screen, so that it is told what it watches and how far it is, but
-   * only its own things are pressed on them (its sound, the subtitles, the party, full screen, the way out): the playback is the host's, and an
-   * admin's too, whose play, skips, bar, next episode and stop (`onToggle`, `onSkip`, `onSeekTo`, `onNext`, `onStop`) ask the host's screen.
-   */
   follow?: FollowProps | undefined;
 }
 
-/** The picture is not there yet: a link is being looked up, the video is loading, or it stopped to fill up. */
 export const isBusy = (player: PlayerState, resolving: boolean) => resolving || player.state === "loading" || (player.state !== "error" && Boolean(player.buffering));
 
-/** How long a picture has to wait to fill before it says so (milliseconds). */
 export const SPINNER_AFTER_MS = 400;
 
-/**
- * Whether the screen says the picture is waiting. A lookup or a load says so at once; a picture that has stopped to fill (a jump to a
- * place that is not downloaded yet, or running dry) says so once it has gone on for a moment. One that finds its place again in a few
- * frames (a jump inside what is downloaded, a guest brought back in step with its host) is no wait, and a spinner that flashed for each
- * of them was all a guest could see of the sync.
- */
 export function useBusy(player: PlayerState, resolving: boolean): boolean {
   const filling = !resolving && player.state !== "loading" && player.state !== "error" && Boolean(player.buffering);
   const [late, setLate] = useState(false);
@@ -215,13 +159,10 @@ export function useBusy(player: PlayerState, resolving: boolean): boolean {
   return isBusy(player, resolving) && (!filling || late);
 }
 
-/** The video has subtitles to choose from, or more than one audio track. */
 export const hasTracks = (player: PlayerState) => Boolean(player.subtitles?.tracks.length) || hasAudioChoice(player);
 
-/** The browser would not start the video: it wants a press first (see PlayerEngine.play), and whatever asks again after one gets it going. */
 export const isBlocked = (player: PlayerState) => player.state === "error" && player.error === PlayerError.Blocked;
 
-/** One button for the whole screen: the press the browser wants before it plays video with sound. OK on a remote presses it too (Tv.tsx). */
 function TapToPlay({ onPlay }: { onPlay: () => void }) {
   const t = useT();
   return (
@@ -234,10 +175,6 @@ function TapToPlay({ onPlay }: { onPlay: () => void }) {
   );
 }
 
-/**
- * What a screen that watches along shows over its picture while the picture is not there: it is filling up, the browser wants a
- * press before it plays, or it can't play at all. Such a screen has no controls of its own, so without this it would only be black.
- */
 export function FollowStatus({ player, onPlay }: { player: PlayerState; onPlay: () => void }) {
   useT();
   const busy = useBusy(player, false);
@@ -261,19 +198,14 @@ export function FollowStatus({ player, onPlay }: { player: PlayerState; onPlay: 
   return null;
 }
 
-/** How long the bar's dot rests, held, before the film goes where it is (a drag across the bar would otherwise ask for a picture at every pixel of it). */
 export const SCRUB_REST_MS = 350;
 
-/** 0..1: how far along the bar a pointer event is. */
 const fractionAt = (event: { clientX: number; currentTarget: HTMLElement }) => {
   const rect = event.currentTarget.getBoundingClientRect();
   return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
 };
 
-/* The buttons that are the same on every screen, a screen that watches along included: what it reads and hears is its own choice. */
-
 function TracksButton({ p, player }: { p: HudProps; player: PlayerState }) {
-  // keep tracks button up at all times
   return (
     <button
       className={`tv-btn ${player.subtitles && player.subtitles.current !== -1 ? "tv-btn-on" : ""}`}
@@ -289,10 +221,6 @@ function TracksButton({ p, player }: { p: HudProps; player: PlayerState }) {
   );
 }
 
-/**
- * The quality, when the video comes in more than one or this screen offers a ✦ choice for it: a guest picks its own too (it is its own picture that is
- * downloaded, and drawn, whatever the host's).
- */
 function QualityButton({ p, player, label }: { p: HudProps; player: PlayerState; label: string }) {
   if (!hasPictureChoice(player)) return null;
   return (
@@ -352,7 +280,6 @@ interface ButtonsProps {
   qualityLabel: string;
 }
 
-/** The buttons of a screen with a picture of its own: playback, what is on it, the party, sound, full screen and the way out of the film. */
 function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: ButtonsProps) {
   return (
     <>
@@ -457,10 +384,6 @@ function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: Buttons
   );
 }
 
-/**
- * The buttons of a screen that watches along. Its picture is the host's, so the playback is not its to move, unless the host made it an admin:
- * then the play button, the skips, the next episode and stop lead the row, and each asks the host's screen, which does it for everyone.
- */
 function FollowButtons({ p, follow, player, playing, partyLabel, qualityLabel }: ButtonsProps & { follow: FollowProps }) {
   return (
     <>
@@ -522,7 +445,6 @@ function FollowButtons({ p, follow, player, playing, partyLabel, qualityLabel }:
         {p.onParty && <PartyButton p={p} partyLabel={partyLabel} />}
         <MuteButton p={p} />
         <FullscreenButton p={p} />
-        {/* Folds with the Episodes label, which a screen that watches along has none of. */}
         <button ref={follow.leaveRef} className="tv-btn" data-testid="tv-leave" data-fold="episodes" onClick={follow.onLeave} title={t("tv.leave")}>
           <CloseIcon />
           <span className="tv-btn-label">{t("tv.leave")}</span>
@@ -532,7 +454,6 @@ function FollowButtons({ p, follow, player, playing, partyLabel, qualityLabel }:
   );
 }
 
-/** The Netflix-style player overlay: title on top, progress and buttons at the bottom, fading away while you watch. */
 export function Hud(p: HudProps) {
   useT();
   const { player } = p;
@@ -542,33 +463,24 @@ export function Hud(p: HudProps) {
   const busy = useBusy(player, p.resolving);
   const paused = !busy && player.state === "paused";
   const follow = p.follow;
-  /** Whether the playback is this screen's to move: any screen's own picture, or an admin's, but not that of a guest who only watches. */
   const steers = !follow || follow.admin;
-  /** The end of the episode, with the Next episode button on it: that button is what is offered, not the last frame's pause card and Play. */
   const nextAtTheEnd = Boolean(p.upNext && player.ended);
-  /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the wait for the picture takes its place). */
   const centre = steers && !busy && !nextAtTheEnd && (paused || (p.touch && playing));
   const qualityLabel = pictureName(player);
   const endsAt = formatEndsAt(player.currentTime, duration, player.playbackRate ?? 1, new Date());
   const partyLabel = p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail");
-  /** What a screen that watches along is told about the held film: who held it when that is known, else only that it is held (the host's own pause card says nothing: it knows). */
   const held = p.heldLine ?? (follow ? t("hud.paused") : null);
-  // Mouse only: where on the bar the pointer is, and what time that is.
   const [hover, setHover] = useState<number | null>(null);
-  // Where the bar is held (0..1) while its dot is dragged: the dot, the fill and the times follow the pointer, and the film goes where it is let go.
   const [scrub, setScrub] = useState<number | null>(null);
   const scrubbing = scrub !== null;
   const shownTime = scrub !== null ? scrub * duration : player.currentTime;
   const seekRef = useRef(p.onSeekTo);
   seekRef.current = p.onSeekTo;
-  /** Where the film was last sent while the dot was held, so that letting go there does not ask for it twice. */
   const sentRef = useRef<number | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  /** Which pointer holds the dot, and where the dot is: what the window's listeners below need to end a drag the bar itself does not hear the end of. */
   const holderRef = useRef<number | null>(null);
   const scrubRef = useRef<number | null>(null);
   scrubRef.current = scrub;
-  // Held and resting, the film goes there too, so that the picture shows what is under the dot (not on a screen that watches along, nor in a party: a seek is told to all of them).
   const alone = !follow && p.partySize <= 1;
   useEffect(() => {
     if (scrub === null || !alone || !(duration > 0)) return;
@@ -578,13 +490,11 @@ export function Hud(p: HudProps) {
     }, SCRUB_REST_MS);
     return () => clearTimeout(timer);
   }, [scrub, alone, duration]);
-  // The drag ends where the button comes up, wherever that is (the bar asks to keep the pointer, but a browser can refuse, and then the bar never hears of it), and it
-  // ends at once if this screen stops steering the film in the middle of it (an admin whose admin the host takes away): the dot would stay where it was left.
   useEffect(() => {
     if (!scrubbing) return;
     if (!steers) return setScrub(null);
     const end = (event: PointerEvent) => {
-      if (event.pointerId !== holderRef.current || barRef.current?.contains(event.target as Node)) return; // (another finger; or on the bar, whose own handlers have it)
+      if (event.pointerId !== holderRef.current || barRef.current?.contains(event.target as Node)) return;
       const at = scrubRef.current;
       setScrub(null);
       if (event.type === "pointerup" && at !== null && sentRef.current !== at && duration > 0) {
@@ -603,7 +513,6 @@ export function Hud(p: HudProps) {
 
   return (
     <>
-      {/* Outside the overlay: a hold shows whether or not the controls are up. */}
       {p.boosting && (
         <div className="hud-boost" data-testid="tv-boost" role="status" aria-label={t("hud.boost")}>
           <FastForwardIcon />
@@ -622,7 +531,6 @@ export function Hud(p: HudProps) {
         </div>
       )}
 
-      {/* Outside the overlay on purpose: they stay up after the controls have faded away. (A screen that watches along has neither: the host's screen skips for all.) */}
       {p.upNext && (
         <SkipPill
           kind="next"
@@ -639,7 +547,6 @@ export function Hud(p: HudProps) {
         <SkipPill kind={p.skip.kind} label={t(SKIP_WORDS[p.skip.kind])} seconds={p.skip.seconds} total={p.skip.total} fresh={p.skip.fresh} goesIn={p.skip.goesIn} shownFor={p.skip.shownFor} onPress={p.onSkipPart} onDismiss={p.onDismissSkip} />
       )}
 
-      {/* Outside the overlay too: waiting is shown, and given up on, whether or not the controls are up. OK or Back does it from the remote (Tv.tsx). (A screen that watches along shows its wait as FollowStatus does.) */}
       {busy && !follow && !p.hideWait && (
         <div className="hud-busy" data-testid="tv-busy">
           <div className="spinner hud-spinner" data-testid="tv-buffering" />
@@ -654,10 +561,8 @@ export function Hud(p: HudProps) {
         </div>
       )}
 
-      {/* Outside the overlay as well: it is what the picture is waiting for, so it stays up whether or not the controls are. */}
       {isBlocked(player) && !follow && <TapToPlay onPlay={p.onToggle} />}
 
-      {/* The overlay sits on top of the video, so its empty part is the picture as far as a hand can tell (data-picture: see gestures.ts); the bars' own is the picture to a finger only. */}
       <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !nextAtTheEnd) || undefined} data-boosting={p.boosting || undefined}>
         <header className="hud-top" data-picture="bar">
           <div className="hud-titles">
@@ -691,7 +596,6 @@ export function Hud(p: HudProps) {
 
         <div className="hud-center">
           {paused && !nextAtTheEnd && (
-            /* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. (The Next episode button is a small one in the corner now, and stays beside it; at the very end it is what is offered.) */
             <div className="hud-pause-card" data-testid="tv-pause-card">
               <small>{follow ? t("tv.following", { name: follow.host }) : t("hud.watching")}</small>
               <b>{p.title}</b>
@@ -705,7 +609,6 @@ export function Hud(p: HudProps) {
             </div>
           )}
           {centre && (
-            /* Mouse and touch only: the remote's OK already pauses and resumes, so this stays out of the D-pad's way (tabIndex -1). */
             <button
               className="hud-paused"
               data-testid="tv-center-btn"
@@ -725,7 +628,6 @@ export function Hud(p: HudProps) {
             <span className="hud-time" data-testid="tv-elapsed">
               {formatTime(shownTime)}
             </span>
-            {/* Where the film is, for any screen; moved by a press or a drag of the dot only on one whose to steer (a guest that only watches is shown where it is). */}
             <div
               className="hud-bar"
               ref={barRef}
@@ -740,11 +642,9 @@ export function Hud(p: HudProps) {
                 steers
                   ? (event) => {
                       if (!(duration > 0) || (event.pointerType === "mouse" && event.button !== 0)) return;
-                      // (The bar keeps the pointer for as long as it is down, so the dot follows it past the bar's ends and off its line.)
                       try {
                         event.currentTarget.setPointerCapture(event.pointerId);
                       } catch {
-                        // (the pointer is gone already: the drag goes on as far as the bar sees it)
                       }
                       sentRef.current = null;
                       holderRef.current = event.pointerId;
@@ -774,7 +674,7 @@ export function Hud(p: HudProps) {
                   : undefined
               }
               onPointerCancel={steers ? () => setScrub(null) : undefined}
-              onClick={steers && typeof PointerEvent === "undefined" ? (event) => p.onSeekTo(fractionAt(event) * duration) : undefined} // (a browser from before pointer events has only the click)
+              onClick={steers && typeof PointerEvent === "undefined" ? (event) => p.onSeekTo(fractionAt(event) * duration) : undefined}
               onMouseMove={steers ? (event) => duration > 0 && setHover(fractionAt(event)) : undefined}
               onMouseLeave={steers ? () => setHover(null) : undefined}
             >
@@ -807,26 +707,18 @@ export function Hud(p: HudProps) {
 
 interface ErrorCardProps {
   title: string;
-  /** What went wrong, in words. */
   message: string;
   onRetry: () => void;
   onLibrary: () => void;
-  /** Tells the team (the feedback form, with the problem in it). */
   onReport: () => void;
 }
 
-/**
- * What the TV shows when a video would not play from any of its sources: what it was, what went wrong, and two ways on (OK is the
- * first, trying again; Back is the second, leaving), with a quieter third below them for telling the team. The player's controls are of
- * no use then, so this takes their place.
- */
 export function ErrorCard(p: ErrorCardProps) {
   useT();
   const rootRef = useRef<HTMLDivElement>(null);
   useDpad(rootRef);
   useBack(p.onLibrary);
 
-  // The first button has the focus as the card appears, so OK does what the card leads with.
   useEffect(() => {
     rootRef.current?.querySelector<HTMLElement>("[data-nav]")?.focus();
   }, []);
@@ -852,16 +744,12 @@ export function ErrorCard(p: ErrorCardProps) {
   );
 }
 
-/** How many titles "More like this" offers. */
 const MORE_LIKE_THIS = 5;
 
 interface EndCardProps {
   title: string;
-  /** "Season 1, Episode 3", empty for a film. */
   subTitle: string;
-  /** The link that plays it again: what the library knows its like by. */
   page: string | undefined;
-  /** The episode after this one, when there is one (the Up Next card was turned down, or does not wait for itself). */
   hasNext: boolean;
   onNext: () => void;
   onAgain: () => void;
@@ -869,10 +757,6 @@ interface EndCardProps {
   onPlay: (url: string, options: PlayOptions) => void;
 }
 
-/**
- * What the TV shows when a film has played to its end and nothing follows by itself: what it was, a way out (the library comes
- * first, so OK or Back leaves), and a few titles like it. It stands in for the picture frozen on the last frame.
- */
 export function EndCard(p: EndCardProps) {
   useT();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -881,7 +765,6 @@ export function EndCard(p: EndCardProps) {
   useDpad(rootRef);
   useBack(p.onLibrary);
 
-  // The first button has the focus as the card appears, so OK does what the card leads with.
   useEffect(() => {
     rootRef.current?.querySelector<HTMLElement>("[data-nav]")?.focus();
   }, []);
@@ -895,7 +778,7 @@ export function EndCard(p: EndCardProps) {
         const parsed = LibraryItemsSchema.safeParse(data);
         if (live && parsed.success) setLike(parsed.data.items);
       })
-      .catch(() => {}); // no suggestions is not a problem: the card is complete without them
+      .catch(() => {});
     return () => {
       live = false;
     };
@@ -937,7 +820,6 @@ export function EndCard(p: EndCardProps) {
   );
 }
 
-/** The time of day in the corner. It keeps its own state, so the minute changing redraws this line and not the whole TV screen with its rows of tiles. */
 function HudClock() {
   const [clock, setClock] = useState(() => formatClock(new Date()));
   useEffect(() => {

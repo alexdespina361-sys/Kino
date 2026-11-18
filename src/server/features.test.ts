@@ -12,7 +12,7 @@ describe("/api/features", () => {
   it("answers with nothing turned on by default, never from a cache, and offers no cat even where the host still has its old switch", async () => {
     const saved = process.env.CAT_COMPANION;
     try {
-      process.env.CAT_COMPANION = "on"; // (the cat is gone: a page of an older Kino reads the missing `cat` as off)
+      process.env.CAT_COMPANION = "on";
       const token = "features-test-team-token-0123456789";
       app = await buildApp({ feedbackAdminToken: token, klipyKey: "" });
       const answer = await app.inject("/api/features");

@@ -1,11 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { openLibrary, test, withLibrary } from "./helpers";
 
-/**
- * A mouse and the library's rows: a wheel scrolls the page, not a row, so a row that runs off the screen has an arrow at each end for a pointer
- * (the remote and the keyboard walk the titles, and a finger swipes).
- */
-
 const film = (id: string, title: string) => ({ id, title, year: 2000, url: `/fixtures/sample.mp4?n=${id}` });
 const library = {
   updatedAt: Date.now(),
@@ -18,7 +13,6 @@ const library = {
 
 const rowOf = (tv: Page, title: string) => tv.locator(".tv-row").filter({ has: tv.getByRole("heading", { name: title }) });
 const scrolled = (tv: Page, title: string) => rowOf(tv, title).locator(".tv-row-tiles").evaluate((element) => element.scrollLeft);
-/** A press slides the row (smoothly): the next look is after it has stopped, not while it is still on its way (an arrow that goes at the end is gone from under a click). */
 async function settled(tv: Page, title: string) {
   let was = -1;
   await expect
@@ -40,9 +34,9 @@ test("a long row has an arrow for the pointer on the side that has more, and the
   const row = rowOf(tv, "A long row");
   const next = row.getByTestId("tv-row-next");
   const back = row.getByTestId("tv-row-back");
-  await expect(next).toHaveCount(1); // more to the right, nothing to the left
+  await expect(next).toHaveCount(1);
   await expect(back).toHaveCount(0);
-  await expect(next).toHaveCSS("opacity", "0"); // (quiet until a pointer is over the row)
+  await expect(next).toHaveCSS("opacity", "0");
 
   await row.locator(".tv-tile").first().hover();
   await expect(next).toHaveCSS("opacity", "1");
@@ -50,10 +44,9 @@ test("a long row has an arrow for the pointer on the side that has more, and the
 
   await next.click();
   await expect.poll(() => scrolled(tv, "A long row")).toBeGreaterThan(300);
-  await expect(back).toHaveCount(1); // and now more to the left
-  await expect(first).toBeFocused(); // the click did not take the focus from the title the remote is on
+  await expect(back).toHaveCount(1);
+  await expect(first).toBeFocused();
 
-  // To the far end, where there is no more to the right.
   for (let step = 0; step < 12 && (await next.count()) > 0; step++) {
     await next.click({ timeout: 3_000 });
     await settled(tv, "A long row");
@@ -61,7 +54,6 @@ test("a long row has an arrow for the pointer on the side that has more, and the
   await expect(next).toHaveCount(0);
   await expect(back).toHaveCount(1);
 
-  // And back to the start.
   for (let step = 0; step < 12 && (await back.count()) > 0; step++) {
     await back.click({ timeout: 3_000 });
     await settled(tv, "A long row");
@@ -77,7 +69,6 @@ test("a row that fits has no arrows, and the arrows are not stops for the remote
 
   await expect(tv.locator(".tv-row-more").first()).toHaveAttribute("tabindex", "-1");
   await expect(tv.locator(".tv-row-more").first()).toHaveAttribute("aria-hidden", "true");
-  // The remote goes down the rows along the titles; it never lands on an arrow.
   for (let step = 0; step < 6; step++) {
     await tv.keyboard.press("ArrowDown");
     expect(await tv.evaluate(() => document.activeElement?.classList.contains("tv-row-more"))).toBe(false);

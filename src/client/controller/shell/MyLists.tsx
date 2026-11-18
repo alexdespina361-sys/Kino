@@ -5,10 +5,6 @@ import { ListIcon } from "../../shared/icons";
 import type { Entry } from "../../tv/pages";
 import { hasListRows, ListRows, RatingsRow } from "../Rows";
 
-/**
- * "My lists", a place of the phone's bar of its own: the lists this profile keeps and what it rated, as the rows they were on the home page. A tab is never
- * left blank or greyed out (R2): with nothing saved it says so, says how to save something, and offers the way to the titles.
- */
 export function MyLists({
   lists,
   items,

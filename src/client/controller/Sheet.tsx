@@ -3,19 +3,14 @@ import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
 import { useBackToClose } from "../shared/backButton";
 
-/** The sheets that are open, the one on top last: Escape closes that one, not all of them. */
 const open: object[] = [];
 
-/** Whether a sheet is open (over a page, say): Escape then belongs to the sheet, and the page under it is left as it is. */
 export const sheetIsOpen = () => open.length > 0;
 
-/** How far a sheet has to be pulled down, or how fast (pixels per millisecond), for the let-go to close it. */
 const CLOSE_DISTANCE = 120;
 const CLOSE_SPEED = 0.6;
-/** How far a finger has to travel before it is a pull (or a scroll) and not a tap. */
 const SLOP = 6;
 
-/** The list in the sheet that scrolls under this finger, if there is one. */
 function scrollerAt(target: EventTarget | null, sheet: HTMLElement): HTMLElement | null {
   for (let node = target instanceof HTMLElement ? target : null; node && node !== sheet.parentElement; node = node.parentElement) {
     if (node.scrollHeight > node.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(node).overflowY)) return node;
@@ -23,17 +18,11 @@ function scrollerAt(target: EventTarget | null, sheet: HTMLElement): HTMLElement
   return null;
 }
 
-/**
- * Pulling a sheet down closes it, the way a bottom sheet does on a phone: the sheet follows the finger and, let go past a short
- * distance (or with a flick), goes; let go sooner, it springs back. A pull that starts on a list that is scrolled down is the
- * list's own scrolling. Without this a pull down over the sheet is the browser's pull to refresh, which reloads the whole page.
- */
 function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefObject<HTMLDivElement | null>, close: RefObject<() => void>) {
   useEffect(() => {
     const shade = backdrop.current;
     const panel = sheet.current;
     if (!shade || !panel) return;
-    /** `free`: the finger may pull (it is not on a list that is part way down). `last`: where it was and when, for how fast it is going at the end. */
     let touch: { y: number; x: number; free: boolean; pulling: boolean; last: { y: number; at: number }; speed: number } | null = null;
     let offset = 0;
 
@@ -54,9 +43,7 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
 
     const onStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) return void (touch = null);
-      // A finger on a field is the field's (moving the caret, selecting what was typed), not a pull on the sheet. (The chat's box is an editable area, see chat/MessageBox.tsx.)
       if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return void (touch = null);
-      // A sheet that comes in from the side (a phone held sideways, see polish/shell.css) is not pulled down: its cross, Back and a tap beside it close it.
       if (getComputedStyle(panel).getPropertyValue("--sheet-side").trim() === "1") return void (touch = null);
       const finger = event.touches[0]!;
       const list = scrollerAt(event.target, panel);
@@ -72,26 +59,24 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
         touch.last = { y: finger.clientY, at: event.timeStamp };
       }
       if (!touch.pulling) {
-        if (!touch.free) return; // a list that is part way down: the finger scrolls it
-        if (Math.abs(finger.clientX - touch.x) > Math.abs(down) && Math.abs(finger.clientX - touch.x) > SLOP) return void (touch = null); // sideways is not a pull
-        if (down < -SLOP) return void (touch.free = false); // up scrolls the list (if there is one)
+        if (!touch.free) return;
+        if (Math.abs(finger.clientX - touch.x) > Math.abs(down) && Math.abs(finger.clientX - touch.x) > SLOP) return void (touch = null);
+        if (down < -SLOP) return void (touch.free = false);
         if (down < SLOP) return;
         touch.pulling = true;
       }
-      event.preventDefault(); // (the page under the sheet must not scroll or refresh)
+      event.preventDefault();
       follow(down - SLOP);
     };
     const onEnd = (event: TouchEvent) => {
       if (!touch?.pulling) return void (touch = null);
-      // How fast it was going as it was let go (a finger that rested before it left was going nowhere).
       const speed = event.timeStamp - touch.last.at > 100 ? 0 : touch.speed;
       touch = null;
-      // (A touch the browser took over was not let go by the finger: back it goes.)
       settle(event.type === "touchend" && (offset > Math.min(CLOSE_DISTANCE, panel.offsetHeight / 3) || speed > CLOSE_SPEED));
     };
 
     shade.addEventListener("touchstart", onStart, { passive: true });
-    shade.addEventListener("touchmove", onMove, { passive: false }); // not passive: a pull has to stop the page's own scrolling
+    shade.addEventListener("touchmove", onMove, { passive: false });
     shade.addEventListener("touchend", onEnd);
     shade.addEventListener("touchcancel", onEnd);
     return () => {
@@ -105,7 +90,6 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Tab goes round the sheet (from its last control to its first, and back with Shift), not out of it to the page under it. A full-screen page does the same. */
 export function keepFocusIn(panel: HTMLElement, event: KeyboardEvent) {
   const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((item) => item.offsetParent !== null);
   const first = items[0];
@@ -118,7 +102,6 @@ export function keepFocusIn(panel: HTMLElement, event: KeyboardEvent) {
   }
 }
 
-/** A bottom sheet: the phone's way of showing a short list of choices without leaving the remote. */
 export function Sheet({
   title,
   onClose,
@@ -138,15 +121,12 @@ export function Sheet({
   useEffect(() => {
     const me = {};
     open.push(me);
-    document.documentElement.classList.add("sheet-open"); // (no pull to refresh behind a sheet, see controller.css)
-    // The keyboard goes into the sheet (not left on the button behind it, where the next Tab would carry on under the sheet), and back to that button when it closes.
+    document.documentElement.classList.add("sheet-open");
     const opener = document.activeElement;
     if (panel.current && !panel.current.contains(opener)) panel.current.focus({ preventScroll: true });
     const onKey = (event: KeyboardEvent) => {
       if (open[open.length - 1] !== me) return;
       if (event.key === "Escape") {
-        // (Escape is the sheet's alone. The page under it listens on the window too, and when it was drawn again after this sheet opened it listens
-        // after it: it would find the sheet gone by then and go back a page as well.)
         event.stopImmediatePropagation();
         close.current();
       } else if (event.key === "Tab" && panel.current) keepFocusIn(panel.current, event);
@@ -160,7 +140,7 @@ export function Sheet({
     };
   }, []);
   usePullToClose(backdrop, panel, close);
-  useBackToClose(onClose); // (the phone's Back button closes it, not the page behind it)
+  useBackToClose(onClose);
 
   return (
     <div className="sheet-backdrop" ref={backdrop} onClick={onClose}>
@@ -195,7 +175,6 @@ export interface Choice {
   pick: () => void;
 }
 
-/** One-of-many list inside a sheet; `label` is what it is a choice of (a list of options is announced by its name). */
 export function ChoiceList({ choices, label }: { choices: Choice[]; label: string }) {
   return (
     <div className="choices" role="listbox" aria-label={label}>

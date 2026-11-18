@@ -1,9 +1,8 @@
 import qrcode from "qrcode-generator";
 import { useMemo } from "react";
 
-const QUIET_ZONE = 2; // modules of white around the code; scanners need some
+const QUIET_ZONE = 2;
 
-/** A QR code as one SVG path: crisp at any size, no canvas, no images. */
 export function QrCode({ value, label }: { value: string; label: string }) {
   const { size, path } = useMemo(() => {
     const qr = qrcode(0, "M");
@@ -12,7 +11,6 @@ export function QrCode({ value, label }: { value: string; label: string }) {
     const size = qr.getModuleCount();
     let path = "";
     for (let row = 0; row < size; row++) {
-      // One rectangle per horizontal run of dark modules keeps the path short.
       for (let col = 0; col < size; col++) {
         if (!qr.isDark(row, col)) continue;
         let end = col;

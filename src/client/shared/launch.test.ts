@@ -16,7 +16,7 @@ describe("readLaunchParams", () => {
     expect(readLaunchParams("?link=ABCD2345")).toEqual({ link: "ABCD2345" });
     expect(readLaunchParams("?link=abcd-2345")).toEqual({ link: "ABCD2345" });
     expect(readLaunchParams("?link=ABCD234")).toEqual({});
-    expect(readLaunchParams("?link=ABCD0123")).toEqual({}); // 0 and 1 are not in the alphabet
+    expect(readLaunchParams("?link=ABCD0123")).toEqual({});
   });
 
   it("reads the code in a friend's link the same way", () => {
@@ -59,7 +59,7 @@ describe("typedLinkCode", () => {
     expect(typedLinkCode("abcd")).toBe("ABCD");
     expect(typedLinkCode("abcd23")).toBe("ABCD-23");
     expect(typedLinkCode(" abcd - 2345 ")).toBe("ABCD-2345");
-    expect(typedLinkCode("abcd23456789")).toBe("ABCD-2345"); // nothing past eight
+    expect(typedLinkCode("abcd23456789")).toBe("ABCD-2345");
     expect(typedLinkCode("")).toBe("");
   });
 
@@ -136,8 +136,8 @@ describe("firstLink", () => {
 describe("linkOf", () => {
   it("leaves a link as it is, spaces around it apart", () => {
     expect(linkOf("  https://a.example/watch?v=1  ")).toBe("https://a.example/watch?v=1");
-    expect(linkOf("https://a.example/it's.mp4")).toBe("https://a.example/it's.mp4"); // (a link is not cut where the prose-reading firstLink would cut it)
-    expect(linkOf("https://a.example/x.")).toBe("https://a.example/x."); // (a link that is only a link is the person's)
+    expect(linkOf("https://a.example/it's.mp4")).toBe("https://a.example/it's.mp4");
+    expect(linkOf("https://a.example/x.")).toBe("https://a.example/x.");
   });
 
   it("takes the link out of the words around it, or the brackets", () => {

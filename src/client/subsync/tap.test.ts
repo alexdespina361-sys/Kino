@@ -22,11 +22,9 @@ class FakeHls {
 
 const EVENT = "hlsBufferAppending";
 const bytes = (...values: number[]) => Uint8Array.from(values);
-/** An MP4 header's first bytes: a box size, then its name. */
 const initSegment = (name: string, ...rest: number[]) => Uint8Array.from([0, 0, 0, 24, ...[...name].map((c) => c.charCodeAt(0)), ...rest]);
 const frag = (start: number, duration = 5, streams?: Record<string, { startPTS: number; endPTS: number }>) => ({ start, duration, elementaryStreams: streams });
 
-/** A tap with someone taking the pieces. */
 function setup() {
   const hls = new FakeHls();
   const pieces: Piece[] = [];
@@ -108,7 +106,7 @@ describe("the audio tap between one aligner and the next", () => {
     const hls = new FakeHls();
     const tap = new AudioTap(hls, EVENT);
     hls.emit(EVENT, { type: "audio", data: initSegment("ftyp", 3), frag: frag(0) });
-    hls.emit(EVENT, { type: "audio", data: media, frag: frag(0) }); // (nobody takes this one)
+    hls.emit(EVENT, { type: "audio", data: media, frag: frag(0) });
     const pieces: Piece[] = [];
     tap.connect((piece) => pieces.push(piece));
     expect(pieces).toHaveLength(0);
@@ -139,7 +137,6 @@ describe("the audio tap between one aligner and the next", () => {
     tap.connect((piece) => pieces.push(piece));
     hls.emit(EVENT, { type: "audio", data: media, frag: frag(10) });
     expect(pieces.map((piece) => piece.start)).toEqual([0, 5, 10]);
-    // (Nothing is kept any more once someone takes the pieces, and nothing is handed over twice.)
     tap.disconnect();
     hls.emit(EVENT, { type: "audio", data: media, frag: frag(15) });
     tap.connect((piece) => pieces.push(piece));
@@ -163,7 +160,6 @@ describe("the audio tap between one aligner and the next", () => {
     big.set([0, 0, 0, 9, 109, 111, 111, 102]);
     for (let i = 0; i < 5; i++) hls.emit(EVENT, { type: "audio", data: big, frag: frag(i * 5) });
     tap.connect((piece) => pieces.push(piece));
-    // (16 MB: the first two and a half of the pieces of 6 MB, so two. The later ones are let go.)
     expect(pieces.map((piece) => piece.start)).toEqual([0, 5]);
   });
 });

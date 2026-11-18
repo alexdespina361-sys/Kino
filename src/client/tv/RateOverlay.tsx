@@ -8,35 +8,23 @@ import { appendTo } from "./librarySearch";
 import { NameKeys } from "./NameKeys";
 import type { Entry } from "./pages";
 
-/** A score the remote starts on when the title has none yet: a little above the middle, where most of what is rated lands. */
 const START_SCORE = 7;
-/** The marks a note can use besides letters and digits. */
 const NOTE_MARKS = [".", ",", "!", "?", "'", "-"];
 
 interface RateProps {
   entry: Entry;
-  /** The title is a show: it can be rated as a whole and by season, and what was watched is counted in episodes. */
   isShow: boolean;
-  /** The seasons it has, the one its page was showing and how many episodes that one has (the size of the others is not known here). */
   seasons: readonly number[];
   shown: number | undefined;
   episodes: number | undefined;
   onClose: () => void;
 }
 
-/**
- * Rating a title on the TV, a page over the library: the ten scores and the word for the score. One press of a score is the rating, and
- * the page goes back to the title's (pressing the score it already has only goes back). Under More: a show's seasons, each rated on its
- * own, the note (typed on the keys of a page of its own) and the lines about the watching behind it; with More open a score is kept and
- * the page stays, for the season or the note that comes next. Back goes back to the title's page.
- */
 export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }: RateProps) {
   const t = useT();
   const language = useLanguage();
-  /** What is being rated: a season of the show, or (absent) the title as a whole. */
   const [scope, setScope] = useState<number | undefined>(undefined);
   const [noting, setNoting] = useState(false);
-  /** The seasons, the note and the watching are shown. */
   const [more, setMore] = useState(false);
   const { rating, facts, score, note, remove } = useRatingFor(entry, isShow, scope, scope !== undefined && scope === shown ? episodes : undefined);
   const name = scope === undefined ? entry.title : `${entry.title} · ${t("player.season", { n: scope })}`;
@@ -62,7 +50,6 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
   const start = rating?.score ?? START_SCORE;
   const press = (value: number) => {
     if (more) return score(value);
-    // (The score it already has is not given again: that would only change when it was last touched.)
     if (rating?.score !== value) score(value);
     onClose();
   };
@@ -126,7 +113,6 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
           className="tv-action"
           aria-expanded={more}
           onClick={() => {
-            // (Fewer again: what a press rates is the title as a whole, as the page says.)
             if (more) setScope(undefined);
             setMore(!more);
           }}
@@ -140,7 +126,6 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
             className="tv-action tv-action-danger"
             onClick={(event: MouseEvent<HTMLElement>) => {
               remove();
-              // (The button that was pressed goes with the rating: the remote lands on the scores again.)
               event.currentTarget.closest("[data-testid='tv-rate']")?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
             }}
             data-nav
@@ -157,7 +142,6 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
   );
 }
 
-/** The note, typed with the keys of the page (or a keyboard, when the TV has one). Saving an empty note takes the note away. */
 function NoteEditor({ value, onSave, onCancel }: { value: string; onSave: (note: string) => void; onCancel: () => void }) {
   const t = useT();
   const [text, setText] = useState(value);

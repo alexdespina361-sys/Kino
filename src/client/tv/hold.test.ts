@@ -3,7 +3,6 @@ import type { PartyView } from "../../shared";
 import { translate } from "../i18n";
 import { holdLine, partyName, resumeLine, sameHold } from "./hold";
 
-/** What a guest sees of a party of three: the host, itself (Sam, signed in as a profile), and another screen with no profile. */
 const party: PartyView = {
   role: "guest",
   you: "guest-sam",
@@ -15,7 +14,6 @@ const party: PartyView = {
   ],
 };
 
-/** The words, in English: `holdLine` and `resumeLine` take them as an argument, so that what is said can be looked at here. */
 const say = ((key, params) => translate("en", key, params)) as Parameters<typeof holdLine>[3];
 
 describe("partyName", () => {
@@ -55,13 +53,13 @@ describe("holdLine", () => {
   it("says the film is finished when it played to its end, whoever last paused it (nobody paused that)", () => {
     expect(holdLine({ by: "host-tv", waiting: false, ended: true }, party, null, say)).toBe("Finished");
     expect(holdLine({ by: "guest-anna", waiting: false, ended: true }, party, "TV 9E88", say)).toBe("Finished");
-    expect(holdLine({ by: null, waiting: false, ended: true }, null, null, say)).toBe("Finished"); // (and it needs nobody to name)
+    expect(holdLine({ by: null, waiting: false, ended: true }, null, null, say)).toBe("Finished");
   });
 
   it("has nothing to say when nobody is to be named, or nothing is held", () => {
     expect(holdLine(null, party, "TV 9E88", say)).toBeNull();
     expect(holdLine({ by: null, waiting: false }, party, "TV 9E88", say)).toBeNull();
-    expect(holdLine({ by: "gone", waiting: false }, party, "TV 9E88", say)).toBeNull(); // (a pause is nobody's but a person's: the card then says only "paused")
+    expect(holdLine({ by: "gone", waiting: false }, party, "TV 9E88", say)).toBeNull();
     expect(holdLine({ by: "host-tv", waiting: false }, null, "TV 9E88", say)).toBeNull();
   });
 });
@@ -89,7 +87,7 @@ describe("sameHold", () => {
   it("is false when it is held by someone else, or has gone from a pause to a wait, or is not held any more", () => {
     expect(sameHold({ by: "a", waiting: false }, { by: "b", waiting: false })).toBe(false);
     expect(sameHold({ by: "a", waiting: false }, { by: "a", waiting: true })).toBe(false);
-    expect(sameHold({ by: "a", waiting: false }, { by: "a", waiting: false, ended: true })).toBe(false); // (a pause that became the end)
+    expect(sameHold({ by: "a", waiting: false }, { by: "a", waiting: false, ended: true })).toBe(false);
     expect(sameHold({ by: "a", waiting: false, ended: true }, { by: "a", waiting: false, ended: true })).toBe(true);
     expect(sameHold({ by: "a", waiting: false }, null)).toBe(false);
     expect(sameHold(null, { by: "a", waiting: false })).toBe(false);

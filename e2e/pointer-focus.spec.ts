@@ -1,12 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { clickAsAHand, guestStorage, openDevice, openLibrary, openProfileByRemote, openProfilePage, openProfilePlace, PHONE, pressProfilePlace, test, withLibrary } from "./helpers";
 
-/**
- * A title that was clicked with a mouse, or tapped with a finger, is where the remote stands: its page closed again (by a mouse or a finger too)
- * leaves the ring on it, and the arrow keys go on from there, not from the title the remote was on before. And the pages of the profile (what it
- * rated, its History, and the profile's page itself) have a Back button in the corner, for the pointer that has no key for it.
- */
-
 const film = (id: string, title: string) => ({ id, title, year: 2000, kind: "movie", url: `/fixtures/sample.mp4?n=${id}` });
 const library = {
   updatedAt: Date.now(),
@@ -18,7 +12,6 @@ const library = {
 };
 
 const tileOf = (tv: Page, title: string) => tv.locator(`.tv-tile[title="${title}"]`);
-/** The ring a title wears while the remote is on it (the picture's shadow: a white ring and a lift), which no other title has. */
 const hasRing = (tile: Locator) => expect(tile.locator(".tv-tile-art")).toHaveCSS("box-shadow", /rgb\(255, 255, 255\)/);
 const hasNoRing = (tile: Locator) => expect(tile.locator(".tv-tile-art")).toHaveCSS("box-shadow", "none");
 
@@ -32,26 +25,25 @@ test.describe("a title opened with a pointer is where the remote stands when its
 
     await clickAsAHand(tv, tileOf(tv, "Long film 3"));
     await expect(tv.getByTestId("tv-detail")).toBeVisible();
-    await tv.getByTestId("tv-detail-close").click(); // (a click: the button takes the focus, and the focus a mouse gives is not the kind that shows a ring)
+    await tv.getByTestId("tv-detail-close").click();
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
 
     await expect(tileOf(tv, "Long film 3")).toBeFocused();
     await hasRing(tileOf(tv, "Long film 3"));
     await expect(tv.getByTestId("tv-hero-title")).toHaveText("Long film 3");
-    await hasNoRing(tileOf(tv, "Top film 5")); // (the ring is on one title only)
+    await hasNoRing(tileOf(tv, "Top film 5"));
 
-    await tv.keyboard.press("ArrowRight"); // the keys go on from the title that was clicked
+    await tv.keyboard.press("ArrowRight");
     await expect(tileOf(tv, "Long film 4")).toBeFocused();
     await hasRing(tileOf(tv, "Long film 4"));
   });
 
-  // (A phone held upright: a finger is shown no ring, and there is no banner to say which title the remote is on. The remote is where the finger was all the same, and the first key shows it.)
   test("a tap on a small screen, then the page's Close button tapped: the remote is on the title that was tapped, with no ring for a finger, and the first key lights it", async ({ browser }) => {
     const tv = await openDevice(browser, PHONE, {}, withLibrary(library));
     await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tileOf(tv, "Top film 1")).toBeFocused();
-    await hasNoRing(tileOf(tv, "Top film 1")); // (the page put the remote on the first title for a key to start from: nothing of that is drawn for a finger)
+    await hasNoRing(tileOf(tv, "Top film 1"));
 
     const target = tileOf(tv, "Long film 3");
     await target.scrollIntoViewIfNeeded();
@@ -62,7 +54,7 @@ test.describe("a title opened with a pointer is where the remote stands when its
 
     await expect(target).toBeFocused();
     await hasNoRing(target);
-    await tv.keyboard.press("ArrowRight"); // the keys go on from the title that was tapped, and light it
+    await tv.keyboard.press("ArrowRight");
     await expect(tileOf(tv, "Long film 4")).toBeFocused();
     await hasRing(tileOf(tv, "Long film 4"));
     await hasNoRing(target);
@@ -71,7 +63,7 @@ test.describe("a title opened with a pointer is where the remote stands when its
   test("a page opened with a click starts with the remote on its first title, ring and all, and a title of its grid clicked and closed keeps it", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await tv.getByTestId("rail-categories").click();
-    await tv.getByTestId("tv-category-tile").nth(1).click(); // (the second: "A long row")
+    await tv.getByTestId("tv-category-tile").nth(1).click();
     await expect(tv.getByTestId("tv-category")).toBeVisible();
     await expect(tileOf(tv, "Long film 1")).toBeFocused();
     await hasRing(tileOf(tv, "Long film 1"));
@@ -99,7 +91,7 @@ test.describe("the way back from the profile's pages", () => {
   test("My ratings, History and the profile's page each have a Back button in the corner, a click on it goes one step out, and the remote is on the card it came from", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
-    await expect(back(tv)).toHaveCount(0); // (Home is as far back as it goes)
+    await expect(back(tv)).toHaveCount(0);
 
     await openProfilePage(tv);
     await expect(back(tv)).toBeVisible();
@@ -117,7 +109,7 @@ test.describe("the way back from the profile's pages", () => {
     await expect(view(tv)).toHaveAttribute("data-view", "profile");
     await expect(place(tv, "history")).toBeFocused();
 
-    await back(tv).click(); // the profile's page goes back to Home, to the title the remote was on
+    await back(tv).click();
     await expect(view(tv)).toHaveAttribute("data-view", "home");
     await expect(back(tv)).toHaveCount(0);
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
@@ -128,7 +120,7 @@ test.describe("the way back from the profile's pages", () => {
     await openProfilePlace(tv, "history");
     await expect(tv.getByTestId("tv-view-empty")).toHaveText("Nothing watched yet.");
     await expect(back(tv)).toBeVisible();
-    await tv.keyboard.press("ArrowUp"); // (nowhere to stand on this page: Up goes to the top, whose first button is Back)
+    await tv.keyboard.press("ArrowUp");
     await expect(back(tv)).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(view(tv)).toHaveAttribute("data-view", "profile");
@@ -149,7 +141,7 @@ test.describe("the way back from the profile's pages", () => {
     await expect(tv.getByTestId("tv-account-chip")).toBeFocused();
     await tv.keyboard.press("ArrowLeft");
     await expect(back(tv)).toBeFocused();
-    await tv.keyboard.press("ArrowDown"); // back down to the title
+    await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await tv.keyboard.press("Enter");
@@ -158,7 +150,7 @@ test.describe("the way back from the profile's pages", () => {
 
     await pressProfilePlace(tv, "history");
     await expect(view(tv)).toHaveAttribute("data-view", "history");
-    await tv.keyboard.press("Escape"); // (the key does what the button does)
+    await tv.keyboard.press("Escape");
     await expect(view(tv)).toHaveAttribute("data-view", "profile");
     await expect(place(tv, "history")).toBeFocused();
   });

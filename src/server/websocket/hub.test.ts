@@ -14,11 +14,6 @@ import { toVtt } from "../subtitles/vtt";
 import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
 import { CLOSE_REPLACED, FRAME_BURST, Hub, KEEP_UNPAIRED_MS, MAX_BUFFERED_BYTES, MAX_UNPAIRED, STEER_ATTRIBUTION_MS, type HubOptions } from "./hub";
 
-/**
- * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
- * sockets inside one Node process crash that process now and then on Windows (exit code 0xC0000409, no message, even with
- * plain Node and no test runner). Nothing here needs a port.
- */
 class Client {
   private queue: ServerMessage[] = [];
   private waiting: (() => void)[] = [];
@@ -36,7 +31,6 @@ class Client {
     };
   }
 
-  /** `address` is where the connection claims to come from (what the server sees as the request's `ip`; without one it has none, as every test connection did). */
   static async open(server: FastifyInstance, address?: string): Promise<Client> {
     return new Client(await server.injectWS("/ws", address ? { socket: { remoteAddress: address } as Socket } : {}));
   }
@@ -45,12 +39,10 @@ class Client {
     this.ws.send(JSON.stringify(message));
   }
 
-  /** Next message of this type (earlier non-matching messages are skipped). */
   async next<T extends ServerMessage["type"]>(type: T, timeoutMs = 2000): Promise<Extract<ServerMessage, { type: T }>> {
     return this.nextWhere(type, () => true, timeoutMs);
   }
 
-  /** Next message of this type that `accept`s (earlier ones, of that type or not, are skipped): for waiting until a party looks a certain way. */
   async nextWhere<T extends ServerMessage["type"]>(type: T, accept: (message: Extract<ServerMessage, { type: T }>) => boolean, timeoutMs = 2000): Promise<Extract<ServerMessage, { type: T }>> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
@@ -65,19 +57,16 @@ class Client {
     }
   }
 
-  /** Wait a moment, then assert no queued message matches. */
   async expectNone(predicate: (message: ServerMessage) => boolean, waitMs = 150): Promise<void> {
     await new Promise((r) => setTimeout(r, waitMs));
     expect(this.queue.filter(predicate)).toEqual([]);
   }
 
-  /** Wait a moment for what is on its way, then say how many messages of this type have arrived (and not been taken with `next`). */
   async received(type: ServerMessage["type"], waitMs = 300): Promise<number> {
     await new Promise((r) => setTimeout(r, waitMs));
     return this.queue.filter((m) => m.type === type).length;
   }
 
-  /** Wait a moment for what is on its way, then let go of everything that has arrived: for looking only at what a next step brings. */
   async forget(waitMs = 100): Promise<void> {
     await new Promise((r) => setTimeout(r, waitMs));
     this.queue.length = 0;
@@ -91,13 +80,11 @@ class Client {
     return this.closeCode;
   }
 
-  /** The socket drops, as when a page is closed or the network goes. (A polite close never completes over `injectWS`'s in-memory streams.) */
   close(): void {
     this.ws.terminate();
   }
 }
 
-/** A page of a phone as the hub sees it, for a test that looks into the hub: it keeps what it is sent. */
 class FakePage extends EventEmitter {
   readyState = 1;
   bufferedAmount = 0;
@@ -117,7 +104,6 @@ class FakePage extends EventEmitter {
 let app: FastifyInstance;
 const clients: Client[] = [];
 
-/** Swapped per test; the hub only ever sees this function, never the real resolvers. */
 let resolveImpl: ResolveFn;
 
 beforeEach(async () => {
@@ -127,7 +113,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // Let every close handshake finish before the server goes.
   const open = clients.splice(0);
   open.forEach((c) => c.close());
   await Promise.all(open.map((c) => c.closed(1000)));
@@ -211,7 +196,6 @@ describe("pairing over WebSocket", () => {
 });
 
 describe("guessing pairing codes", () => {
-  /** A hub that tolerates `max` wrong codes per `windowMs` from one address (and `inAll` from all of them, if said), with one TV showing a code and one phone ready to try. */
   async function guessingSetup(max: number, windowMs: number, inAll?: number) {
     const strict = await buildApp({ hub: { maxFailedPairings: max, failedPairingWindowMs: windowMs, ...(inAll ? { maxFailedPairingsInAll: inAll } : {}) } });
     await strict.ready();
@@ -240,7 +224,6 @@ describe("guessing pairing codes", () => {
     }
   });
 
-  /** A phone that has said hello from this address, to the server `strict`. */
   async function phoneAt(strict: FastifyInstance, address: string): Promise<Client> {
     const phone = await Client.open(strict, address);
     phone.send({ type: "CTL_HELLO" });
@@ -257,7 +240,7 @@ describe("guessing pairing codes", () => {
         expect((await noisy.next("ERROR")).code).toBe("INVALID_CODE");
       }
       noisy.send({ type: "PAIR", code });
-      expect((await noisy.next("ERROR")).code).toBe("RATE_LIMITED"); // (this address is paused, the right code too)
+      expect((await noisy.next("ERROR")).code).toBe("RATE_LIMITED");
 
       const neighbour = await phoneAt(strict, "198.51.100.9");
       neighbour.send({ type: "PAIR", code });
@@ -282,7 +265,7 @@ describe("guessing pairing codes", () => {
         }
         guesser.close();
       }
-      const stranger = await phoneAt(strict, "198.51.100.9"); // (never guessed: but four wrong codes came from the others)
+      const stranger = await phoneAt(strict, "198.51.100.9");
       stranger.send({ type: "PAIR", code });
       expect((await stranger.next("ERROR")).code).toBe("RATE_LIMITED");
       stranger.close();
@@ -352,8 +335,8 @@ describe("a connection that sends too much", () => {
     for (let i = 0; i < FRAME_BURST + 40; i++) client.send({ type: "PING" });
     const answered = await client.received("PONG");
     expect(answered).toBeGreaterThanOrEqual(FRAME_BURST);
-    expect(answered).toBeLessThan(FRAME_BURST + 40); // (the rest was dropped, not answered)
-    expect(client.closeCode).toBeUndefined(); // (a short overshoot is no reason to hang up)
+    expect(answered).toBeLessThan(FRAME_BURST + 40);
+    expect(client.closeCode).toBeUndefined();
   });
 
   it("is closed when it keeps on, and the others are left alone", async () => {
@@ -369,14 +352,12 @@ describe("a connection that sends too much", () => {
 });
 
 describe("a connection that does not read what it is sent", () => {
-  /** A paired TV and phone, and the server's end of each connection (the sockets the hub holds; the TV was connected first). */
   async function pairedWithServerEnds() {
     const before = new Set(app.websocketServer.clients);
     const paired = await pairedSetup();
     const [tvEnd, phoneEnd] = [...app.websocketServer.clients].filter((socket) => !before.has(socket));
     return { ...paired, tvEnd: tvEnd!, phoneEnd: phoneEnd! };
   }
-  /** What the server's end reports when its peer has stopped reading: that much is waiting to be written. */
   const stall = (socket: WebSocket, buffered: number) => Object.defineProperty(socket, "bufferedAmount", { value: buffered, configurable: true });
   const report = { state: "playing" as const, currentTime: 1, duration: 60 };
 
@@ -385,10 +366,10 @@ describe("a connection that does not read what it is sent", () => {
     const queued = vi.spyOn(tvEnd, "send");
     stall(tvEnd, MAX_BUFFERED_BYTES + 1);
 
-    phone.send({ type: "CMD", command: { type: "PLAY" } }); // (relayed to the TV)
-    expect(await tv.closed()).toBe(1006); // (no goodbye: it would never be read)
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect(await tv.closed()).toBe(1006);
     expect(queued).not.toHaveBeenCalled();
-    expect((await phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false); // (tidied up as for any TV that goes)
+    expect((await phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false);
     expect(phone.closeCode).toBeUndefined();
     phone.send({ type: "CMD", command: { type: "PLAY" } });
     expect((await phone.next("ERROR")).code).toBe("TV_OFFLINE");
@@ -399,7 +380,7 @@ describe("a connection that does not read what it is sent", () => {
     const queued = vi.spyOn(phoneEnd, "send");
     stall(phoneEnd, MAX_BUFFERED_BYTES + 1);
 
-    tv.send({ type: "TV_STATE", state: report }); // (relayed to the phone)
+    tv.send({ type: "TV_STATE", state: report });
     expect(await phone.closed()).toBe(1006);
     expect(queued).not.toHaveBeenCalled();
     expect(tv.closeCode).toBeUndefined();
@@ -527,7 +508,6 @@ describe("reconnects", () => {
   });
 
   it("a server that was restarted still knows the pair: the TV and the phone carry on as before, in either order", async () => {
-    // The first server's pairs are written to a database when it stops; the second starts from it, with nobody connected.
     const persistence = new MemoryPersistence();
     const serverOn = async () => {
       const registry = new Registry();
@@ -551,7 +531,6 @@ describe("reconnects", () => {
 
     const second = await serverOn();
     try {
-      // The phone is back first: it has its TV, which is not here yet.
       const phone2 = await Client.open(second);
       clients.push(phone2);
       phone2.send({ type: "CTL_HELLO", controllerId });
@@ -559,7 +538,6 @@ describe("reconnects", () => {
       expect(welcome.controllerId).toBe(controllerId);
       expect(welcome.tv).toMatchObject({ online: false, controllerCount: 1 });
 
-      // The TV follows: still paired, nothing to show but its own screen, and the phone is told it is there.
       const tv2 = await Client.open(second);
       clients.push(tv2);
       tv2.send({ type: "TV_HELLO", deviceId });
@@ -603,11 +581,11 @@ describe("a connection is one TV or one phone for as long as it lasts", () => {
     const codes = new Set([first.pairing!.code]);
     for (let n = 0; n < FRAME_BURST - 10; n++) {
       tv.send(hellos[n % hellos.length]!);
-      const welcome = await tv.next("TV_WELCOME"); // (a page back from sleep is given a fresh picture each time)
+      const welcome = await tv.next("TV_WELCOME");
       given.add(welcome.deviceId);
       codes.add(welcome.pairing!.code);
     }
-    expect([...given]).toEqual([first.deviceId]); // (not one TV more, and so not one pairing code more)
+    expect([...given]).toEqual([first.deviceId]);
     expect(codes.size).toBe(1);
   });
 
@@ -621,7 +599,7 @@ describe("a connection is one TV or one phone for as long as it lasts", () => {
       given.add(welcome.controllerId);
       expect(welcome.tv).toMatchObject({ online: true, controllerCount: 1 });
     }
-    expect([...given]).toEqual([controllerId]); // (not one phone more)
+    expect([...given]).toEqual([controllerId]);
     phone.send({ type: "CMD", command: { type: "PAUSE" } });
     expect((await tv.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
   });
@@ -643,12 +621,10 @@ describe("a connection is one TV or one phone for as long as it lasts", () => {
     expect((await a.tv.next("ERROR")).code).toBe("ALREADY_HELLO");
     await a.tv.expectNone((m) => m.type === "TV_WELCOME");
 
-    // The other TV's page is not told to stand down, and its phone still reaches it.
     expect(b.tv.closeCode).toBeUndefined();
     b.phone.send({ type: "CMD", command: { type: "PAUSE" } });
     expect((await b.tv.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
 
-    // The first TV is still the first one: when its connection goes, its phone is told, and the other phone is not.
     a.tv.close();
     expect((await a.phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false);
     await b.phone.expectNone((m) => m.type === "TV_STATUS" && !m.online);
@@ -661,7 +637,6 @@ describe("a connection is one TV or one phone for as long as it lasts", () => {
     expect((await a.phone.next("ERROR")).code).toBe("ALREADY_HELLO");
     await a.phone.expectNone((m) => m.type === "CTL_WELCOME");
 
-    // What the other TV reports still reaches the other phone, and the first phone still controls its own TV.
     b.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 9, duration: 100 } });
     expect((await b.phone.next("STATE")).state.currentTime).toBe(9);
     await a.phone.expectNone((m) => m.type === "STATE");
@@ -673,7 +648,7 @@ describe("a connection is one TV or one phone for as long as it lasts", () => {
   it("turns away a hello of the other kind, and the connection goes on as what it was", async () => {
     const { tv, phone, deviceId, controllerId } = await pairedSetup();
     for (const hello of [{ type: "TV_HELLO" }, { type: "TV_HELLO", deviceId }]) {
-      phone.send(hello); // (the second would take the TV's place)
+      phone.send(hello);
       expect((await phone.next("ERROR")).code).toBe("ALREADY_HELLO");
     }
     for (const hello of [{ type: "CTL_HELLO" }, { type: "CTL_HELLO", controllerId }]) {
@@ -717,7 +692,7 @@ describe("PLAY_URL (phone pastes a link; server resolves; TV plays)", () => {
     const { tv, phone } = await pairedSetup();
 
     phone.send({ type: "PLAY_URL", url: "https://site.example/watch/1?s=1&e=2" });
-    await phone.next("RESOLVE_STATUS"); // resolving
+    await phone.next("RESOLVE_STATUS");
     expect((await phone.next("RESOLVE_STATUS")).status).toMatchObject({ phase: "found", media: { series: { episodes } } });
     expect((await tv.next("TV_CMD")).command).toMatchObject({ type: "LOAD", media: { series: { episodes } } });
   });
@@ -730,7 +705,7 @@ describe("PLAY_URL (phone pastes a link; server resolves; TV plays)", () => {
     resolveImpl = async () => result;
     const { tv, phone } = await pairedSetup();
     phone.send({ type: "PLAY_URL", url: "https://site.example/x" });
-    await phone.next("RESOLVE_STATUS"); // resolving
+    await phone.next("RESOLVE_STATUS");
     expect((await phone.next("RESOLVE_STATUS")).status).toEqual({ phase: "failed", reason, message });
     await tv.expectNone((m) => m.type === "TV_CMD");
   });
@@ -778,7 +753,7 @@ describe("PLAY_URL (phone pastes a link; server resolves; TV plays)", () => {
     phone.send({ type: "PLAY_URL", url: "https://s.example/fast" });
     expect(((await tv.next("TV_CMD")).command as { media: { title: string } }).media.title).toBe("https://s.example/fast");
     gate.release();
-    await tv.next("TV_CMD"); // the PLAY that follows the fast LOAD
+    await tv.next("TV_CMD");
     await tv.expectNone((m) => m.type === "TV_CMD");
   });
 
@@ -837,10 +812,6 @@ describe("TVs and phones that nobody has paired", () => {
   const servers: FastifyInstance[] = [];
   const opened: Client[] = [];
 
-  /**
-   * A server of its own, whose registry the tests look into. Its hub looks every 20 ms and keeps time by `Date`, which a test moves by hand (nothing else is
-   * faked, so a test waits for the hub in real time).
-   */
   async function serverWith(hub: HubOptions = {}) {
     vi.useFakeTimers({ toFake: ["Date"] });
     const registry = new Registry();
@@ -873,16 +844,13 @@ describe("TVs and phones that nobody has paired", () => {
     const welcome = await phone.next("CTL_WELCOME");
     return { phone, controllerId: welcome.controllerId };
   };
-  /** Another page of a phone that is open already (a second tab, a page that came back). */
   const anotherPage = async (open: Open, controllerId: string) => {
     const page = await open();
     page.send({ type: "CTL_HELLO", controllerId });
     expect((await page.next("CTL_WELCOME")).controllerId).toBe(controllerId);
     return page;
   };
-  /** Time passes by this much for the hub. */
   const jump = (ms: number) => vi.setSystemTime(Date.now() + ms);
-  /** Long enough for the hub to look a few times. */
   const sweeps = () => new Promise((resolve) => setTimeout(resolve, 150));
 
   describe("when they go away", () => {
@@ -951,7 +919,7 @@ describe("TVs and phones that nobody has paired", () => {
         const look = (now: number) => (hub as unknown as { forgetAbandoned(now: number): void }).forgetAbandoned(now);
         const tv = registry.tvHello(undefined);
         const phone = registry.controllerHello(undefined);
-        look(5000); // (first seen gone)
+        look(5000);
         look(5999);
         expect(registry.getDevice(tv.id)).toBeDefined();
         expect(registry.getController(phone.id)).toBeDefined();
@@ -969,7 +937,7 @@ describe("TVs and phones that nobody has paired", () => {
       try {
         const inside = hub as unknown as { forgetAbandoned(now: number): void; bumpResolveSeq(id: string): number; resolveSeq: Map<string, number> };
         const tv = registry.tvHello(undefined);
-        inside.bumpResolveSeq(tv.id); // (a stop, which a TV that was never paired is given too)
+        inside.bumpResolveSeq(tv.id);
         expect(inside.resolveSeq.has(tv.id)).toBe(true);
         inside.forgetAbandoned(5000);
         inside.forgetAbandoned(6000);
@@ -984,7 +952,7 @@ describe("TVs and phones that nobody has paired", () => {
       const { registry, open } = await serverWith();
       const { tv, deviceId } = await tvHello(open);
       const { phone, controllerId } = await phoneHello(open);
-      await sweeps(); // (the hub has looked at them, and counts from there)
+      await sweeps();
       jump(5 * KEEP);
       await sweeps();
       expect(registry.getDevice(deviceId)).toBeDefined();
@@ -1010,7 +978,7 @@ describe("TVs and phones that nobody has paired", () => {
       again.close();
       await sweeps();
 
-      jump(KEEP - 1); // (the whole time after it first went; not after it last went)
+      jump(KEEP - 1);
       await sweeps();
       expect(registry.getDevice(first.deviceId)).toBeDefined();
       jump(1);
@@ -1073,9 +1041,9 @@ describe("TVs and phones that nobody has paired", () => {
     it("does not make a new phone of a page whose phone is not here any more", async () => {
       const { registry, open } = await serverWith();
       const page = await phoneHello(open);
-      registry.forgetFree(page.controllerId); // (let go of for some other reason, with the page still open)
+      registry.forgetFree(page.controllerId);
 
-      page.phone.send({ type: "PAIR", code: "000000" }); // (anything a phone says)
+      page.phone.send({ type: "PAIR", code: "000000" });
       page.phone.send({ type: "PING" });
       await page.phone.next("PONG");
       expect(registry.freePhones()).toEqual([]);
@@ -1090,7 +1058,7 @@ describe("TVs and phones that nobody has paired", () => {
       jump(5 * KEEP);
       await sweeps();
       expect(registry.getController(older.controllerId)).toBeDefined();
-      older.phone.send({ type: "CMD", command: { type: "PAUSE" } }); // (a phone that has no TV is told so)
+      older.phone.send({ type: "CMD", command: { type: "PAUSE" } });
       expect((await older.phone.next("ERROR")).code).toBe("NOT_PAIRED");
     });
 
@@ -1112,7 +1080,7 @@ describe("TVs and phones that nobody has paired", () => {
       const first = await phoneHello(open);
       const second = await anotherPage(open, first.controllerId);
       const third = await anotherPage(open, first.controllerId);
-      const ask = () => first.phone.send({ type: "CMD", command: { type: "PAUSE" } }); // (an answer to a phone that has no TV)
+      const ask = () => first.phone.send({ type: "CMD", command: { type: "PAUSE" } });
       third.close();
       await sweeps();
       ask();
@@ -1149,13 +1117,13 @@ describe("TVs and phones that nobody has paired", () => {
           const b = hello(a.id);
           const c = hello(a.id);
           expect([b.id, c.id]).toEqual([a.id, a.id]);
-          expect([open(a.id), answering(a.id)]).toEqual([3, c.page]); // (the page opened last answers)
+          expect([open(a.id), answering(a.id)]).toEqual([3, c.page]);
           expect(say(a.page, a.id)).toBe(a.id);
-          expect([open(a.id), answering(a.id)]).toEqual([3, a.page]); // (a page that says hello again answers again, and is not a page more)
+          expect([open(a.id), answering(a.id)]).toEqual([3, a.page]);
           c.page.close();
-          expect([open(a.id), answering(a.id)]).toEqual([2, a.page]); // (one that does not answer going changes nothing)
+          expect([open(a.id), answering(a.id)]).toEqual([2, a.page]);
           a.page.close();
-          expect([open(a.id), answering(a.id)]).toEqual([1, b.page]); // (the one that answers going: one that is left takes its place)
+          expect([open(a.id), answering(a.id)]).toEqual([1, b.page]);
           b.page.close();
           expect([open(a.id), answering(a.id)]).toEqual([undefined, undefined]);
         }
@@ -1197,7 +1165,7 @@ describe("TVs and phones that nobody has paired", () => {
       await sweeps();
 
       const d = await tvHello(open);
-      expect(registry.getDevice(a.deviceId)).toBeUndefined(); // (it came before the other that went)
+      expect(registry.getDevice(a.deviceId)).toBeUndefined();
       expect(registry.getDevice(b.deviceId)).toBeDefined();
       expect(registry.getDevice(c.deviceId)).toBeDefined();
       expect(registry.getDevice(d.deviceId)).toBeDefined();
@@ -1221,7 +1189,7 @@ describe("TVs and phones that nobody has paired", () => {
       const again = await open();
       again.send({ type: "TV_HELLO", deviceId: a.deviceId });
       expect((await again.next("TV_WELCOME")).deviceId).toBe(a.deviceId);
-      expect(await a.tv.closed()).toBe(CLOSE_REPLACED); // (the page it had is told to stand down, as always)
+      expect(await a.tv.closed()).toBe(CLOSE_REPLACED);
       expect(registry.freeTvs()).toEqual([a.deviceId, b.deviceId]);
     });
 
@@ -1250,7 +1218,7 @@ describe("TVs and phones that nobody has paired", () => {
       const a = await phoneHello(open);
       const b = await phoneHello(open);
       a.phone.close();
-      await sweeps(); // (the server has seen it go)
+      await sweeps();
       const again = await open();
       again.send({ type: "CTL_HELLO", controllerId: a.controllerId });
       expect((await again.next("CTL_WELCOME")).controllerId).toBe(a.controllerId);
@@ -1282,7 +1250,6 @@ describe("TVs and phones that nobody has paired", () => {
       await phone.next("CTL_WELCOME");
       await tv.next("TV_PAIRED");
 
-      // The one TV and the one phone of the pair are not counted; each kind has the one place it was given.
       const free = await tvHello(open);
       const lone = await phoneHello(open);
       expect(registry.freeTvs()).toEqual([free.deviceId]);
@@ -1363,7 +1330,6 @@ describe("UNPAIR (the phone forgets its TV)", () => {
     expect((await other.next("CTL_WELCOME")).tv).toMatchObject({ online: true });
     await tv.next("TV_PAIRED");
 
-    // The first phone has no say over it any more.
     phone.send({ type: "CMD", command: { type: "PLAY" } });
     expect((await phone.next("ERROR")).code).toBe("NOT_PAIRED");
     await tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "PLAY");
@@ -1421,7 +1387,6 @@ describe("a film on its way to the TV", () => {
     const { tv, phone } = await pairedSetup();
     phone.send({ type: "PLAY_URL", url: "https://s.example/a", hint: { title: "Dune", backdrop: "https://img.example/dune.jpg" } });
     expect(await tv.next("TV_RESOLVING")).toMatchObject({ active: true, hint: { title: "Dune", backdrop: "https://img.example/dune.jpg" } });
-    // (What the source calls the film is what is kept: the name in the hint is only shown.)
     expect((await tv.nextWhere("TV_CMD", (m) => m.type === "TV_CMD" && m.command.type === "LOAD")).command).toMatchObject({ media: { title: "Sample" } });
   });
 
@@ -1435,9 +1400,9 @@ describe("a film on its way to the TV", () => {
     phone.send({ type: "PLAY_URL", url: "https://s.example/watch/1?token=secret" });
     await tv.nextWhere("TV_CMD", played);
     tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1430 });
-    tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1431 }); // (said twice: written once)
+    tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1431 });
     tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 30 } });
-    await phone.nextWhere("STATE", (m) => m.state.state === "playing"); // (the TV's messages before it have been read)
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing");
     expect(written.filter(([, message]) => message === "playback-started")).toEqual([[{ domain: "s.example", type: "mp4", lookupMs: 812, loadMs: 1430 }, "playback-started"]]);
     expect(JSON.stringify(written)).not.toContain("secret");
   });
@@ -1475,7 +1440,6 @@ describe("a film on its way to the TV", () => {
 });
 
 describe("a link that was handed to a TV and did not play", () => {
-  /** Every address the resolver is asked about, with whether the look was made afresh (not read from what was kept). */
   function looks() {
     const seen: Array<[string, boolean]> = [];
     resolveImpl = async (url, _prefetch, fresh) => (seen.push([url, Boolean(fresh)]), { status: "success", resolver: "test", media });
@@ -1484,13 +1448,12 @@ describe("a link that was handed to a TV and did not play", () => {
   const played = (m: ServerMessage) => m.type === "TV_CMD" && m.command.type === "PLAY";
   const wouldNotPlay ={ state: "error" as const, currentTime: 0, duration: 0, error: "SOURCE_UNAVAILABLE" };
 
-  /** A TV that was given `url`, reported that it would not play, and was asked for it again by `ask`: the connections, once the second look has been made. */
   async function askedAgain(url: string, ask: (tv: Client, phone: Client) => void) {
     const { tv, phone } = await pairedSetup();
     phone.send({ type: "PLAY_URL", url });
     await tv.nextWhere("TV_CMD", played);
     tv.send({ type: "TV_STATE", state: wouldNotPlay });
-    await phone.nextWhere("STATE", (m) => m.state.state === "error"); // (the report has been read)
+    await phone.nextWhere("STATE", (m) => m.state.state === "error");
     ask(tv, phone);
     await tv.nextWhere("TV_CMD", played);
     return { tv, phone };
@@ -1578,23 +1541,21 @@ describe("a link that was handed to a TV and did not play", () => {
       await phone.forget();
     }
     seen.length = 0;
-    tv.send({ type: "TV_PLAY_URL", url: links[0]! }); // the oldest was let go
+    tv.send({ type: "TV_PLAY_URL", url: links[0]! });
     await tv.nextWhere("TV_CMD", played);
-    tv.send({ type: "TV_PLAY_URL", url: links[2]! }); // the newest is still marked
+    tv.send({ type: "TV_PLAY_URL", url: links[2]! });
     await tv.nextWhere("TV_CMD", played);
     expect(seen.map(([, fresh]) => fresh)).toEqual([false, true]);
   });
 });
 
 describe("lookups asked for faster than a person chooses", () => {
-  /** A paired TV and phone on a server that looks up at most `max` videos for one TV in `windowMs`. */
   async function limited(max: number, windowMs = 60_000) {
     await app.close();
     app = await buildApp({ resolve: (url) => resolveImpl(url), hub: { maxResolves: max, resolveWindowMs: windowMs } });
     await app.ready();
     return pairedSetup();
   }
-  /** Every address the resolver is asked about, and the answer to each: a video. */
   function lookups() {
     const seen: string[] = [];
     resolveImpl = async (url) => (seen.push(url), { status: "success", resolver: "test", media });
@@ -1649,7 +1610,7 @@ describe("lookups asked for faster than a person chooses", () => {
     phone.send({ type: "PLAY_URL", url: "https://s.example/more" });
     expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
     gate.release();
-    expect((await tv.next("TV_RESOLVING")).active).toBe(false); // (the TV waited for one lookup and is told when it ends)
+    expect((await tv.next("TV_RESOLVING")).active).toBe(false);
     expect((await tv.next("TV_CMD")).command.type).toBe("LOAD");
     await tv.expectNone((m) => m.type === "TV_RESOLVING");
   });
@@ -1709,14 +1670,12 @@ describe("lookups asked for faster than a person chooses", () => {
   });
 
   describe("from one address", () => {
-    /** A server that looks up at most `max` videos for one TV, and `byAddress` for one address, in `windowMs`. */
     async function perAddress(max: number, byAddress: number, windowMs = 60_000) {
       await app.close();
       app = await buildApp({ resolve: (url) => resolveImpl(url), hub: { maxResolves: max, maxResolvesByAddress: byAddress, resolveWindowMs: windowMs } });
       await app.ready();
     }
 
-    /** A TV and a phone, paired, each connecting from the address it is given (a phone on mobile data is not where the TV is). */
     async function pairedAt(tvAddress: string, phoneAddress = tvAddress) {
       const tv = await Client.open(app, tvAddress);
       clients.push(tv);
@@ -1748,7 +1707,7 @@ describe("lookups asked for faster than a person chooses", () => {
       second.phone.send({ type: "PLAY_URL", url: "https://s.example/4" });
       const refused = await second.phone.next("ERROR");
       expect(refused.code).toBe("RATE_LIMITED");
-      expect(refused.message).toMatch(/Too many.*Try again/); // (as when a TV has asked for too many)
+      expect(refused.message).toMatch(/Too many.*Try again/);
       first.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/5" });
       expect((await first.tv.next("ERROR")).code).toBe("RATE_LIMITED");
       await first.tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
@@ -1780,10 +1739,10 @@ describe("lookups asked for faster than a person chooses", () => {
         await tv.nextWhere("TV_CMD", played);
       }
       phone.send({ type: "PLAY_URL", url: "https://s.example/phone-3" });
-      expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED"); // (the phone's address has had its two)
+      expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
       for (const n of [1, 2]) {
         tv.send({ type: "TV_PLAY_URL", url: `https://s.example/tv-${n}` });
-        await tv.nextWhere("TV_CMD", played); // (the TV's has had none)
+        await tv.nextWhere("TV_CMD", played);
       }
       tv.send({ type: "TV_PLAY_URL", url: "https://s.example/tv-3" });
       expect((await tv.next("ERROR")).code).toBe("RATE_LIMITED");
@@ -1813,7 +1772,7 @@ describe("lookups asked for faster than a person chooses", () => {
           await tv.nextWhere("TV_CMD", played);
         }
       }
-      expect(seen).toHaveLength(60); // (none of the three is past the 30 that one TV may ask for)
+      expect(seen).toHaveLength(60);
       homes[0]!.phone.send({ type: "PLAY_URL", url: "https://s.example/61" });
       expect((await homes[0]!.phone.next("ERROR")).code).toBe("RATE_LIMITED");
       expect(seen).toHaveLength(60);
@@ -1867,7 +1826,7 @@ describe("resume and skip", () => {
     const { tv, phone } = await pairedSetup();
     phone.send({ type: "PLAY_URL", url: "https://s.example/a", startAt: 754 });
     expect((await tv.next("TV_CMD")).command).toEqual({ type: "LOAD", media, startAt: 754 });
-    await tv.next("TV_CMD"); // PLAY
+    await tv.next("TV_CMD");
     phone.send({ type: "PLAY_URL", url: "https://s.example/a" });
     const load = (await tv.next("TV_CMD")).command;
     expect(load).toEqual({ type: "LOAD", media });
@@ -1901,8 +1860,8 @@ describe("resume and skip", () => {
         : { status: "success", resolver: "test", media: { ...media, title: "Show · S1 E1", series: { ...episode, next } } };
     const { tv, phone } = await pairedSetup();
     phone.send({ type: "PLAY_URL", url: episode.url, hint: { poster: "/show.jpg", year: 2008 } });
-    await tv.next("TV_CMD"); // LOAD
-    await tv.next("TV_CMD"); // PLAY
+    await tv.next("TV_CMD");
+    await tv.next("TV_CMD");
     tv.send({ type: "TV_NEXT_EPISODE" });
     const load = (await tv.next("TV_CMD")).command as { media: { title: string; poster?: string; year?: number } };
     expect(load.media).toMatchObject({ title: "Show · S1 E2", poster: "/show.jpg", year: 2008 });
@@ -1916,7 +1875,6 @@ describe("resume and skip", () => {
 });
 
 describe("watching together", () => {
-  /** A second TV that the phone adds to the party. */
   async function addTv(phone: Client) {
     const tv2 = await connect();
     tv2.send({ type: "TV_HELLO" });
@@ -1932,7 +1890,7 @@ describe("watching together", () => {
     const { tvs } = await phone.next("PARTY");
     expect(tvs).toHaveLength(1);
     expect(tvs[0]).toMatchObject({ online: true, name: expect.stringMatching(/^TV /) });
-    expect(JSON.stringify(tvs)).not.toContain("tv_"); // the TV's own id never reaches a phone
+    expect(JSON.stringify(tvs)).not.toContain("tv_");
     tv2.close();
     expect((await phone.next("PARTY")).tvs[0]?.online).toBe(false);
     await tv.expectNone((m) => m.type === "TV_UNPAIRED");
@@ -1986,11 +1944,11 @@ describe("watching together", () => {
     tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 12.5, duration: 600, playbackRate: 1.25, stream: "/a.mp4" } });
     const first = await tv2.next("TV_SYNC");
     expect(first).toEqual({ type: "TV_SYNC", playing: true, time: 12.5, rate: 1.25, stream: "/a.mp4", by: expect.any(String) });
-    expect(JSON.stringify(first)).not.toContain("tv_"); // (who it was is told by the public id, never the TV's own)
+    expect(JSON.stringify(first)).not.toContain("tv_");
     tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 13, duration: 600 } });
     expect(await tv2.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: false, time: 13, rate: 1, by: first.by });
     tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 14, duration: 600, buffering: true } });
-    expect((await tv2.next("TV_SYNC")).playing).toBe(false); // the leader is waiting for data, so the others wait
+    expect((await tv2.next("TV_SYNC")).playing).toBe(false);
   });
 
   it("does not let a follower's own position reach the phone or move the others", async () => {
@@ -2024,7 +1982,7 @@ describe("watching together", () => {
     phone.send({ type: "CMD", command: { type: "LOAD", media } });
     expect((await tv2.next("TV_CMD")).command.type).toBe("LOAD");
 
-    tv2.send({ type: "TV_CANCEL" }); // it has no say in what plays
+    tv2.send({ type: "TV_CANCEL" });
     await tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "STOP");
     await phone.expectNone((m) => m.type === "RESOLVE_STATUS");
 
@@ -2037,8 +1995,8 @@ describe("watching together", () => {
     const { tv, phone } = await pairedSetup();
     const first = await addTv(phone);
     const second = await addTv(phone);
-    let { tvs } = await phone.next("PARTY"); // after the first
-    ({ tvs } = await phone.next("PARTY")); // after the second
+    let { tvs } = await phone.next("PARTY");
+    ({ tvs } = await phone.next("PARTY"));
     expect(tvs).toHaveLength(2);
 
     phone.send({ type: "REMOVE_TV", id: tvs[0]!.id });
@@ -2090,7 +2048,6 @@ describe("watching together", () => {
     const invite = (await phone.nextWhere("PARTY", (message) => Boolean(message.code))).code!.code;
     phone.send({ type: "ADD_TV", code: invite });
     expect((await phone.next("ERROR")).code).toBe("ADD_PARTY_CODE");
-    // However many times it is typed, it never uses up the tries that a real wrong guess would.
     for (let i = 0; i < 12; i++) {
       phone.send({ type: "ADD_TV", code: invite });
       expect((await phone.next("ERROR")).code).toBe("ADD_PARTY_CODE");
@@ -2131,21 +2088,18 @@ describe("watching together", () => {
 });
 
 describe("a watch party started on a TV", () => {
-  /** A TV that has said hello and is on its own: no phone, no party. */
   async function newTv() {
     const tv = await connect();
     tv.send({ type: "TV_HELLO" });
     const welcome = await tv.next("TV_WELCOME");
     return { tv, welcome };
   }
-  /** A TV with no phone that opened a party, and the code it was given. */
   async function openParty() {
     const host = await newTv();
     host.tv.send({ type: "TV_PARTY_OPEN" });
     const view = (await host.tv.next("TV_PARTY")).party!;
     return { ...host, code: view.code!.code };
   }
-  /** A TV that typed `code` and is now in the party. */
   async function joinWith(code: string) {
     const guest = await newTv();
     guest.tv.send({ type: "TV_PARTY_JOIN", code });
@@ -2160,18 +2114,18 @@ describe("a watch party started on a TV", () => {
     expect(opened).toMatchObject({ role: "host", guests: [], host: { online: true } });
     expect(opened.code?.code).toMatch(/^\d{6}$/);
     expect(opened.you).toBe(opened.host.id);
-    expect(JSON.stringify(opened)).not.toContain("tv_"); // a TV's own id never reaches another screen
+    expect(JSON.stringify(opened)).not.toContain("tv_");
 
     const guest = await newTv();
     guest.tv.send({ type: "TV_PARTY_JOIN", code: opened.code!.code });
     expect(await guest.tv.next("TV_FOLLOWING")).toMatchObject({ leader: expect.stringMatching(/^TV /) });
     const seen = (await guest.tv.next("TV_PARTY")).party!;
     expect(seen).toMatchObject({ role: "guest", host: opened.host });
-    expect(seen.code).toBeUndefined(); // only the host is given the code to hand out
+    expect(seen.code).toBeUndefined();
     expect(seen.guests).toHaveLength(1);
     expect(seen.you).toBe(seen.guests[0]!.id);
 
-    const second = await joinWith(opened.code!.code); // the code serves everyone
+    const second = await joinWith(opened.code!.code);
     const twoGuests = (message: { party: { guests: unknown[] } | null }) => message.party?.guests.length === 2;
     expect((await second.tv.nextWhere("TV_PARTY", twoGuests)).party).toMatchObject({ role: "guest" });
     expect((await host.tv.nextWhere("TV_PARTY", twoGuests)).party).toMatchObject({ role: "host", code: { code: opened.code!.code } });
@@ -2183,11 +2137,10 @@ describe("a watch party started on a TV", () => {
       const host = await openParty();
       const guest = await joinWith(host.code);
       const guestId = guest.welcome.deviceId;
-      host.tv.close(); // (the host's tab is closed; the party is never ended)
+      host.tv.close();
       await guest.tv.nextWhere("TV_PARTY", (m) => m.party?.host.online === false);
       guest.tv.close();
 
-      // Opened again while the host is only just gone (a reload on its side, say): still in the party.
       const soon = await connect();
       soon.send({ type: "TV_HELLO", deviceId: guestId, opened: true });
       const stays = await soon.next("TV_WELCOME");
@@ -2196,13 +2149,11 @@ describe("a watch party started on a TV", () => {
       soon.close();
 
       vi.setSystemTime(Date.now() + 61_000);
-      // A connection that comes back (the page was open all along) is not let go either: the host may yet come back to it.
       const blip = await connect();
       blip.send({ type: "TV_HELLO", deviceId: guestId });
       expect((await blip.next("TV_WELCOME")).following).toMatch(/^TV /);
       blip.close();
 
-      // A page opened afresh a minute on is let go, and told whose party it left.
       const later = await connect();
       later.send({ type: "TV_HELLO", deviceId: guestId, opened: true });
       const welcome = await later.next("TV_WELCOME");
@@ -2210,7 +2161,6 @@ describe("a watch party started on a TV", () => {
       expect(welcome).not.toHaveProperty("following");
       await later.expectNone((m) => m.type === "TV_PARTY" || m.type === "TV_FOLLOWING");
 
-      // The host, back, has the party still, without that guest.
       const back = await connect();
       back.send({ type: "TV_HELLO", deviceId: host.welcome.deviceId, opened: true });
       await back.next("TV_WELCOME");
@@ -2235,10 +2185,9 @@ describe("a watch party started on a TV", () => {
     host.tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 62, duration: 600, stream: media.stream.url } });
     expect((await guest.tv.next("TV_SYNC")).playing).toBe(false);
 
-    host.tv.send({ type: "TV_STATE", state: { state: "idle", currentTime: 0, duration: 0 } }); // the host stops
+    host.tv.send({ type: "TV_STATE", state: { state: "idle", currentTime: 0, duration: 0 } });
     expect((await guest.tv.next("TV_CMD")).command).toEqual({ type: "STOP" });
 
-    // someone joining later gets nothing to play until the host starts something again
     const late = await joinWith(host.code);
     await late.tv.expectNone((m) => m.type === "TV_CMD");
   });
@@ -2251,7 +2200,7 @@ describe("a watch party started on a TV", () => {
     await guest.tv.next("TV_CMD");
 
     host.tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 300, duration: 600, stream: media.stream.url } });
-    expect(await guest.tv.next("TV_SYNC")).not.toHaveProperty("ended"); // a pause is only a pause
+    expect(await guest.tv.next("TV_SYNC")).not.toHaveProperty("ended");
     host.tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 600, duration: 600, stream: media.stream.url, ended: true } });
     expect(await guest.tv.next("TV_SYNC")).toMatchObject({ playing: false, time: 600, ended: true });
   });
@@ -2262,7 +2211,7 @@ describe("a watch party started on a TV", () => {
     host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
     await host.tv.next("TV_CMD");
     host.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 61, duration: 600, stream: media.stream.url } });
-    host.tv.send({ type: "TV_STATE", state: { state: "idle", currentTime: 0, duration: 0 } }); // Back on the host's own remote
+    host.tv.send({ type: "TV_STATE", state: { state: "idle", currentTime: 0, duration: 0 } });
 
     const late = await joinWith(host.code);
     await late.tv.expectNone((m) => m.type === "TV_CMD");
@@ -2276,17 +2225,17 @@ describe("a watch party started on a TV", () => {
       host.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: time, duration: 600, stream: media.stream.url } });
       return guest.tv.next("TV_SYNC");
     };
-    expect((await report(1)).lag).toBeUndefined(); // nobody has measured anything yet
+    expect((await report(1)).lag).toBeUndefined();
 
     host.tv.send({ type: "PING", rtt: 100 });
     await host.tv.next("PONG");
-    expect((await report(2)).lag).toBeCloseTo(0.1); // (only one has: the other is taken to be the same)
+    expect((await report(2)).lag).toBeCloseTo(0.1);
 
     guest.tv.send({ type: "PING", rtt: 60 });
     await guest.tv.next("PONG");
     expect((await report(3)).lag).toBeCloseTo(0.08);
 
-    guest.tv.send({ type: "PING", rtt: 59_000 }); // a link that is failing is not a measure to correct by
+    guest.tv.send({ type: "PING", rtt: 59_000 });
     await guest.tv.next("PONG");
     expect((await report(4)).lag).toBe(2);
   });
@@ -2312,7 +2261,7 @@ describe("a watch party started on a TV", () => {
     const first = (await guest.tv.next("TV_PARTY")).party!;
     expect(first.host.name).toBe("Alex the host");
     expect(first.guests[0]!.name).toMatch(/^TV /);
-    await host.tv.next("TV_PARTY"); // the guest arriving
+    await host.tv.next("TV_PARTY");
 
     guest.tv.send({ type: "TV_NAME", name: "Maria" });
     const renamed = (await host.tv.next("TV_PARTY")).party!;
@@ -2320,7 +2269,6 @@ describe("a watch party started on a TV", () => {
     guest.tv.send({ type: "TV_NAME", name: "" });
     expect((await host.tv.next("TV_PARTY")).party!.guests[0]!.name).toMatch(/^TV /);
 
-    // someone who comes back to a party is told the host by that name as well
     const back = await connect();
     back.send({ type: "TV_HELLO", deviceId: guest.welcome.deviceId });
     expect(await back.next("TV_WELCOME")).toMatchObject({ paired: true, following: "Alex the host" });
@@ -2329,7 +2277,7 @@ describe("a watch party started on a TV", () => {
   it("tells everyone when a screen goes offline, and gives it its place back when it returns", async () => {
     const host = await openParty();
     const guest = await joinWith(host.code);
-    await host.tv.next("TV_PARTY"); // the guest joining
+    await host.tv.next("TV_PARTY");
     guest.tv.close();
     expect((await host.tv.next("TV_PARTY")).party!.guests[0]!.online).toBe(false);
 
@@ -2381,15 +2329,15 @@ describe("a watch party started on a TV", () => {
     await phone.next("CTL_WELCOME");
     for (let i = 0; i < 25; i++) {
       phone.send({ type: "PAIR", code: host.code });
-      expect((await phone.next("ERROR")).code).toBe("PARTY_CODE"); // more than the wrong ones that would pause pairing
+      expect((await phone.next("ERROR")).code).toBe("PARTY_CODE");
     }
     phone.send({ type: "PAIR", code: "000000" });
-    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE"); // pairing is not paused, and this one is a wrong guess
+    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE");
 
     host.tv.send({ type: "TV_PARTY_CLOSE" });
     await host.tv.nextWhere("TV_PARTY", (message) => message.party === null);
     phone.send({ type: "PAIR", code: host.code });
-    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE"); // the code ended with the party
+    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE");
   });
 
   it("lets a guest leave, the host send one away, and the host end the party; each goes back to a TV of its own", async () => {
@@ -2397,31 +2345,31 @@ describe("a watch party started on a TV", () => {
     const a = await joinWith(host.code);
     const b = await joinWith(host.code);
     const c = await joinWith(host.code);
-    for (let i = 0; i < 3; i++) await host.tv.next("TV_PARTY"); // the three arriving
+    for (let i = 0; i < 3; i++) await host.tv.next("TV_PARTY");
     const gone = (message: { party: unknown }) => message.party === null;
 
-    a.tv.send({ type: "TV_UNPAIR" }); // leaves
+    a.tv.send({ type: "TV_UNPAIR" });
     expect((await a.tv.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
     await a.tv.nextWhere("TV_PARTY", gone);
     let view = (await host.tv.next("TV_PARTY")).party!;
     expect(view.guests).toHaveLength(2);
 
-    host.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id }); // sent away
+    host.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id });
     expect((await b.tv.next("TV_CMD")).command).toEqual({ type: "STOP" });
     await b.tv.nextWhere("TV_PARTY", gone);
     view = (await host.tv.next("TV_PARTY")).party!;
     expect(view.guests).toHaveLength(1);
 
-    c.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id }); // a guest cannot send anyone away, itself included
+    c.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id });
     await c.tv.expectNone((m) => m.type === "TV_UNPAIRED");
     await host.tv.expectNone((m) => m.type === "TV_PARTY");
 
-    host.tv.send({ type: "TV_PARTY_CLOSE" }); // ended
+    host.tv.send({ type: "TV_PARTY_CLOSE" });
     expect((await c.tv.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
     await host.tv.nextWhere("TV_PARTY", gone);
 
     const late = await newTv();
-    late.tv.send({ type: "TV_PARTY_JOIN", code: host.code }); // the code ended with the party
+    late.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
     expect((await late.tv.next("ERROR")).code).toBe("INVALID_CODE");
   });
 
@@ -2433,7 +2381,7 @@ describe("a watch party started on a TV", () => {
     const view = (await host.tv.nextWhere("TV_PARTY", guestCount(2))).party!;
     await host.tv.forget();
 
-    host.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id }); // (the first to come is the first in the list)
+    host.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id });
     const after = (await host.tv.nextWhere("TV_PARTY", guestCount(1))).party!;
     expect(after.code!.code).toMatch(/^\d{6}$/);
     expect(after.code!.code).not.toBe(host.code);
@@ -2444,12 +2392,10 @@ describe("a watch party started on a TV", () => {
       kicked.tv.send({ type: "TV_PARTY_JOIN", code });
       expect((await kicked.tv.next("ERROR")).code, code).toBe("INVALID_CODE");
     }
-    // Another screen is let in with the new code, and the guest that stayed was not touched.
     const newcomer = await newTv();
     newcomer.tv.send({ type: "TV_PARTY_JOIN", code: after.code!.code });
     await newcomer.tv.next("TV_FOLLOWING");
     await stays.tv.expectNone((m) => m.type === "TV_UNPAIRED");
-    // The old code is no good to anybody.
     const late = await newTv();
     late.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
     expect((await late.tv.next("ERROR")).code).toBe("INVALID_CODE");
@@ -2526,7 +2472,7 @@ describe("a watch party started on a TV", () => {
     await phone.nextWhere("PARTY", (message) => message.tvs.length === 0 && message.code === undefined);
 
     const late = await newTv();
-    late.tv.send({ type: "TV_PARTY_JOIN", code: opened.code!.code }); // the code ended with the party
+    late.tv.send({ type: "TV_PARTY_JOIN", code: opened.code!.code });
     expect((await late.tv.next("ERROR")).code).toBe("INVALID_CODE");
 
     const loner = await connect();
@@ -2537,11 +2483,9 @@ describe("a watch party started on a TV", () => {
   });
 
   describe("with admins among the guests", () => {
-    /** The id a screen has in the party's lists, as it is told it ("you"). */
     const idOf = async (guest: { tv: Client }) => (await guest.tv.next("TV_PARTY")).party!.you;
     const isAdminIn = (id: string) => (message: { party: { guests: { id: string; admin?: boolean }[] } | null }) => message.party?.guests.find((guest) => guest.id === id)?.admin === true;
     const aCommand = (command: Command["type"]) => (message: { command: Command }) => message.command.type === command;
-    /** The `admin` of every guest in the party view that comes next, in the order they joined. */
     const adminsNext = async (screen: { tv: Client }) => (await screen.tv.next("TV_PARTY")).party!.guests.map((guest) => guest.admin);
 
     it("is told to everyone in the party when the host makes a guest an admin, and takes that back", async () => {
@@ -2555,7 +2499,7 @@ describe("a watch party started on a TV", () => {
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       for (const screen of everyone) expect(await adminsNext(screen)).toEqual([true, undefined]);
 
-      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true }); // (already one: nothing to say)
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       await Promise.all(everyone.map((screen) => screen.tv.expectNone((m) => m.type === "TV_PARTY")));
 
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: false });
@@ -2573,14 +2517,12 @@ describe("a watch party started on a TV", () => {
       host.tv.send({ type: "TV_PARTY_ADMIN", id: adminId, admin: true });
       await admin.tv.nextWhere("TV_PARTY", isAdminIn(adminId));
 
-      // Play, pause and moving are done by the host's screen, and reach the others as the place it reports.
       for (const command of [{ type: "PAUSE" }, { type: "PLAY" }, { type: "SEEK", time: 120 }, { type: "SKIP", seconds: -10 }] as const) {
         admin.tv.send({ type: "TV_PARTY_CMD", command });
         expect((await host.tv.nextWhere("TV_CMD", aCommand(command.type))).command).toEqual(command);
       }
       await other.tv.expectNone((m) => m.type === "TV_CMD");
 
-      // Stopping is for everyone: the guest that asked is stopped too.
       admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
       for (const screen of [host, admin, other]) expect((await screen.tv.nextWhere("TV_CMD", aCommand("STOP"))).command).toEqual({ type: "STOP" });
     });
@@ -2611,13 +2553,11 @@ describe("a watch party started on a TV", () => {
       await host.tv.nextWhere("TV_CMD", aCommand("LOAD"));
       const toHost = (type: string) => host.tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === type);
 
-      // Not an admin (yet): ignored, and so is its trying to make itself one.
       guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
       await toHost("PAUSE");
       guest.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       await host.tv.expectNone((m) => m.type === "TV_PARTY" && m.party?.guests.some((g) => g.admin === true) === true);
 
-      // An admin: the playback only. What else is on a phone's remote is not for a guest, and the message is refused as it is read.
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
       const sendRaw = (command: object) => guest.tv.send({ type: "TV_PARTY_CMD", command } as { type: string });
@@ -2628,18 +2568,15 @@ describe("a watch party started on a TV", () => {
       await toHost("SET_SPEED");
       await toHost("LOAD");
 
-      // Taken back: ignored again.
       await guest.tv.forget();
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: false });
       expect(await adminsNext(guest)).toEqual([undefined]);
       guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
       await toHost("STOP");
 
-      // A screen that is nobody's guest has no film of anyone's to steer.
       const alone = await newTv();
       alone.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
       await toHost("STOP");
-      // And a host that is not there to do it is not asked.
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
       host.tv.close();
@@ -2655,7 +2592,7 @@ describe("a watch party started on a TV", () => {
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
 
-      guest.tv.send({ type: "TV_UNPAIR" }); // leaves
+      guest.tv.send({ type: "TV_UNPAIR" });
       await guest.tv.next("TV_UNPAIRED");
       await guest.tv.forget();
       guest.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
@@ -2664,7 +2601,7 @@ describe("a watch party started on a TV", () => {
 
       host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
       await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
-      host.tv.send({ type: "TV_PARTY_REMOVE", id: guestId }); // sent away
+      host.tv.send({ type: "TV_PARTY_REMOVE", id: guestId });
       await guest.tv.next("TV_UNPAIRED");
       await guest.tv.forget();
       guest.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
@@ -2697,7 +2634,6 @@ describe("a watch party started on a TV", () => {
     });
 
     describe("who held the film (the `by` of what the guests are told)", () => {
-      /** A party with an admin guest and one more guest, the film playing, and a way to say what the host's screen reports. */
       async function playingParty() {
         resolveImpl = async () => ({ status: "success", resolver: "test", media });
         const host = await openParty();
@@ -2710,7 +2646,6 @@ describe("a watch party started on a TV", () => {
         await admin.tv.nextWhere("TV_PARTY", isAdminIn(view.you));
         const report = (state: "playing" | "paused", time: number, buffering = false) =>
           host.tv.send({ type: "TV_STATE", state: { state, currentTime: time, duration: 600, stream: media.stream.url, ...(buffering ? { buffering } : {}) } });
-        /** What the report that was just made says to a guest. */
         const heard = async (screen: { tv: Client } = other) => {
           const { playing, by, waiting } = await screen.tv.next("TV_SYNC");
           return { playing, by, waiting };
@@ -2724,7 +2659,7 @@ describe("a watch party started on a TV", () => {
         expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined });
         report("paused", 2);
         expect(await heard()).toEqual({ playing: false, by: hostId, waiting: undefined });
-        report("paused", 2); // (the host says where it is every second, held or not)
+        report("paused", 2);
         expect(await heard()).toEqual({ playing: false, by: hostId, waiting: undefined });
         report("playing", 3);
         expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined });
@@ -2737,19 +2672,19 @@ describe("a watch party started on a TV", () => {
         await heard(admin);
 
         admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
-        expect(await host.tv.nextWhere("TV_CMD", aCommand("PAUSE"))).toMatchObject({ command: { type: "PAUSE" }, by: adminId }); // the host is told whose it is, too
+        expect(await host.tv.nextWhere("TV_CMD", aCommand("PAUSE"))).toMatchObject({ command: { type: "PAUSE" }, by: adminId });
         report("paused", 2);
         expect(await heard()).toMatchObject({ playing: false, by: adminId });
-        expect(await heard(admin)).toMatchObject({ playing: false, by: adminId }); // (the admin hears it like the others: its own screen follows the host's)
+        expect(await heard(admin)).toMatchObject({ playing: false, by: adminId });
         report("paused", 2);
-        expect(await heard()).toMatchObject({ playing: false, by: adminId }); // (and it stays the admin's until something changes)
+        expect(await heard()).toMatchObject({ playing: false, by: adminId });
 
         admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PLAY" } });
         await host.tv.nextWhere("TV_CMD", aCommand("PLAY"));
         report("playing", 3);
         expect(await heard()).toMatchObject({ playing: true, by: adminId });
 
-        report("paused", 4); // the host's own pause, with nobody having asked
+        report("paused", 4);
         expect(await heard()).toMatchObject({ playing: false, by: hostId });
       });
 
@@ -2758,7 +2693,7 @@ describe("a watch party started on a TV", () => {
         report("playing", 1);
         await heard();
         admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
-        await host.tv.nextWhere("TV_CMD", aCommand("PAUSE")); // (the host's screen never did it)
+        await host.tv.nextWhere("TV_CMD", aCommand("PAUSE"));
         const realNow = Date.now.bind(Date);
         const later = vi.spyOn(Date, "now").mockImplementation(() => realNow() + STEER_ATTRIBUTION_MS + 1000);
         try {
@@ -2773,14 +2708,14 @@ describe("a watch party started on a TV", () => {
         const { admin, report, heard, hostId } = await playingParty();
         report("playing", 1);
         await heard();
-        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } }); // (an admin's pause that lands as the host runs short of data is the host's wait, not a pause)
+        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
         await new Promise((resolve) => setTimeout(resolve, 50));
         report("playing", 2, true);
         expect(await heard()).toEqual({ playing: false, by: hostId, waiting: true });
         report("playing", 2, true);
         expect(await heard()).toEqual({ playing: false, by: hostId, waiting: true });
         report("playing", 3);
-        expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined }); // data came: nothing to wait for
+        expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined });
       });
 
       it("is told to a guest that comes in while the film is held, as it was before it came", async () => {
@@ -2820,7 +2755,6 @@ describe("a watch party started on a TV", () => {
     const alex = { name: "Alex", avatar: "fox", tag: 1 } as const;
     const sam = { name: "Sam", avatar: "fox", tag: 2 } as const;
     const cards: Record<string, typeof alex | typeof sam> = { alexId: alex, samId: sam };
-    /** What the accounts have given out and not yet been asked about: each proof is good once. */
     let proofs: Map<string, string>;
 
     beforeEach(async () => {
@@ -2849,7 +2783,7 @@ describe("a watch party started on a TV", () => {
     it("shows a screen as the profile the accounts vouched for, to everyone in the party: the host as well as the guests", async () => {
       const host = await openParty();
       const guest = await joinWith(host.code);
-      await host.tv.next("TV_PARTY"); // the guest joining
+      await host.tv.next("TV_PARTY");
       guest.tv.send({ type: "TV_PROFILE", proof: "proof-sam" });
       const seenByHost = await host.tv.nextWhere("TV_PARTY", (m) => m.party?.guests[0]?.profile !== undefined);
       expect(seenByHost.party!.guests[0]!.profile).toEqual(sam);
@@ -2863,7 +2797,6 @@ describe("a watch party started on a TV", () => {
       const host = await openParty();
       const guest = await joinWith(host.code);
       await host.tv.next("TV_PARTY");
-      /** What the party says of the guest right after the guest says something. */
       const said = async (proof?: string) => {
         await host.tv.forget();
         guest.tv.send(proof === undefined ? { type: "TV_PROFILE" } : { type: "TV_PROFILE", proof });
@@ -2871,11 +2804,11 @@ describe("a watch party started on a TV", () => {
       };
 
       expect(await said("nonsense")).toBeUndefined();
-      expect(await said("proof-gone")).toBeUndefined(); // (a profile that is gone, or keeps friends off, is not shown by name)
+      expect(await said("proof-gone")).toBeUndefined();
       expect(await said("proof-sam")).toEqual(sam);
-      expect(await said("proof-sam")).toBeUndefined(); // (spent: the screen is nobody's again until it proves it)
+      expect(await said("proof-sam")).toBeUndefined();
       expect(await said("proof-alex")).toEqual(alex);
-      expect(await said()).toBeUndefined(); // (signed out)
+      expect(await said()).toBeUndefined();
     });
 
     it("tells a phone that controls the host's screen too", async () => {
@@ -2901,7 +2834,6 @@ describe("several phones controlling one TV session", () => {
     expect(controlCode).toMatch(/^\d{6}$/);
     expect(phone1Welcome.tv?.controllerCount).toBe(1);
 
-    // Second phone connects using the controlCode
     const phone2 = await connect();
     phone2.send({ type: "CTL_HELLO" });
     await phone2.next("CTL_WELCOME");
@@ -2911,23 +2843,19 @@ describe("several phones controlling one TV session", () => {
     expect(phone2Welcome.tv?.online).toBe(true);
     expect(phone2Welcome.tv?.controllerCount).toBe(2);
 
-    // Phone 1 receives updated welcome reflecting 2 controllers
     const phone1Update = await phone.next("CTL_WELCOME");
     expect(phone1Update.tv?.controllerCount).toBe(2);
 
-    // TV reports playback state - both phones should receive it
     tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 42, duration: 300 } });
     const p1State = await phone.next("STATE");
     const p2State = await phone2.next("STATE");
     expect(p1State.state.currentTime).toBe(42);
     expect(p2State.state.currentTime).toBe(42);
 
-    // Phone 2 unpairs - TV remains paired to Phone 1
     phone2.send({ type: "UNPAIR" });
     const p2Unpaired = await phone2.next("CTL_WELCOME");
     expect(p2Unpaired.tv).toBeNull();
 
-    // Phone 1 updated back to 1 controller
     const p1After = await phone.next("CTL_WELCOME");
     expect(p1After.tv?.controllerCount).toBe(1);
     expect(p1After.tv?.online).toBe(true);
@@ -2941,7 +2869,7 @@ describe("several phones controlling one TV session", () => {
     tv.send({ type: "TV_NEW_CODE" });
     const answer = await tv.next("TV_CODE");
     expect(answer.control).toBe(true);
-    expect(answer.pairing.code).toBe(controlCode); // the one the first phone's menu shows, too
+    expect(answer.pairing.code).toBe(controlCode);
     expect(answer.pairing.expiresInMs).toBeGreaterThan(0);
 
     const second = await connect();
@@ -2949,7 +2877,7 @@ describe("several phones controlling one TV session", () => {
     await second.next("CTL_WELCOME");
     second.send({ type: "PAIR", code: answer.pairing.code });
     expect((await second.next("CTL_WELCOME")).tv?.controllerCount).toBe(2);
-    await tv.next("TV_PAIRED"); // another phone is news to the TV, not only the first
+    await tv.next("TV_PAIRED");
   });
 
   it("gives a TV without a phone a pairing code when it asks, never a control code", async () => {
@@ -2969,21 +2897,17 @@ describe("several phones controlling one TV session", () => {
     phone.send({ type: "UNPAIR" });
     await tv.next("TV_UNPAIRED");
     tv.send({ type: "TV_NEW_CODE" });
-    expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
+    expect((await tv.next("TV_CODE")).control).toBeUndefined();
   });
 
   const DAY = 24 * 3600 * 1000;
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 100)); // (for the server to take in that connections were dropped)
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
 
-  /**
-   * A server on a clock the test moves, and a TV with every one of its `MAX_PHONES_PER_TV` places taken by a phone that joined with its control code over
-   * a connection of its own (`phones[0]` is the one the TV was paired with).
-   */
   async function crowdedTv() {
     const clock = { now: Date.now() };
     const registry = new Registry({ now: () => clock.now });
     await app.close();
-    app = await buildApp({ registry, resolve: (url) => resolveImpl(url), hub: { maxFailedPairings: 1 } }); // (a single wrong code would pause this address)
+    app = await buildApp({ registry, resolve: (url) => resolveImpl(url), hub: { maxFailedPairings: 1 } });
     await app.ready();
     const { tv, phone, deviceId, controllerId } = await pairedSetup();
     phone.send({ type: "CTL_HELLO", controllerId });
@@ -3000,9 +2924,8 @@ describe("several phones controlling one TV session", () => {
     return { registry, clock, tv, device: registry.getDevice(deviceId)!, code, phones };
   }
 
-  /** A phone that has never been here types the control code the TV shows now. */
   async function lateComer(tv: Client) {
-    tv.send({ type: "TV_NEW_CODE" }); // (the code they joined with ran out with the days)
+    tv.send({ type: "TV_NEW_CODE" });
     const { pairing } = await tv.next("TV_CODE");
     const late = await connect();
     late.send({ type: "CTL_HELLO" });
@@ -3024,13 +2947,11 @@ describe("several phones controlling one TV session", () => {
     }
     expect(device.controllerIds).toEqual(phones.map((phone) => phone.controllerId));
 
-    // A phone that is one of them is never turned away from it.
     const { client: phone } = phones[0]!;
     await phone.forget();
     phone.send({ type: "PAIR", code });
     expect((await phone.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
 
-    // What the answer says works: the TV lets its phones go, and the one that was turned away connects with the TV's new code.
     tv.send({ type: "TV_UNPAIR" });
     const { pairing } = await tv.next("TV_UNPAIRED");
     late.send({ type: "PAIR", code: pairing!.code });
@@ -3042,7 +2963,6 @@ describe("several phones controlling one TV session", () => {
     phones.forEach(({ client }) => client.close());
     await Promise.all(phones.map(({ client }) => client.closed()));
 
-    // The phones come by again over the next days and leave again, all but the seventh (each hello is a day it was seen).
     clock.now += 3 * DAY;
     for (const [n, { controllerId }] of phones.entries()) {
       if (n === 6) continue;
@@ -3060,7 +2980,6 @@ describe("several phones controlling one TV session", () => {
     expect(joined.tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
     expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 6).map((phone) => phone.controllerId), joined.controllerId]);
 
-    // The phone that was let go is welcomed back with no TV (it pairs again with a code, like a phone that was never here); its id is still its own.
     const gone = await connect();
     gone.send({ type: "CTL_HELLO", controllerId: phones[6]!.controllerId });
     const welcome = await gone.next("CTL_WELCOME");
@@ -3070,7 +2989,6 @@ describe("several phones controlling one TV session", () => {
   it("lets go of a phone that is not connected and never of one that is, whenever each was seen", async () => {
     const { clock, registry, tv, device, phones } = await crowdedTv();
     clock.now += 2 * DAY;
-    // The only phone that has gone is the one seen most recently; the other thirty-one are connected, and were last seen longer ago.
     registry.markSeen(phones[20]!.controllerId);
     phones[20]!.client.close();
     await phones[20]!.client.closed();
@@ -3083,7 +3001,6 @@ describe("several phones controlling one TV session", () => {
 });
 
 describe("a phone with several TVs", () => {
-  /** A TV that has said hello and shows its code. */
   async function freeTv() {
     const tv = await connect();
     tv.send({ type: "TV_HELLO" });
@@ -3091,7 +3008,6 @@ describe("a phone with several TVs", () => {
     return { tv, code: welcome.pairing!.code, deviceId: welcome.deviceId };
   }
 
-  /** A phone that has connected to a TV and then to a second one: the second is the one it controls. */
   async function twoTvs() {
     const { tv: first, phone, controllerId, deviceId: firstDeviceId } = await pairedSetup();
     const next = await freeTv();
@@ -3111,7 +3027,6 @@ describe("a phone with several TVs", () => {
     ]);
     await first.expectNone((m) => m.type === "TV_UNPAIRED" || (m.type === "TV_CMD" && m.command.type === "STOP"));
 
-    // What the TV it left reports is not shown on the phone; what the other one reports is.
     first.send({ type: "TV_STATE", state: { state: "playing", currentTime: 10, duration: 100 } });
     second.send({ type: "TV_STATE", state: { state: "playing", currentTime: 20, duration: 100 } });
     expect((await phone.next("STATE")).state.currentTime).toBe(20);
@@ -3121,7 +3036,7 @@ describe("a phone with several TVs", () => {
   it("goes back to a TV of its list, and finds it as it was left", async () => {
     const { first, second, phone, firstId } = await twoTvs();
     first.send({ type: "TV_STATE", state: { state: "playing", currentTime: 42, duration: 300 }, media });
-    await first.expectNone(() => true, 50); // (let the server take it in)
+    await first.expectNone(() => true, 50);
 
     phone.send({ type: "SWITCH_TV", id: firstId });
     const back = await phone.next("CTL_WELCOME");
@@ -3129,7 +3044,7 @@ describe("a phone with several TVs", () => {
     expect(back.state.currentTime).toBe(42);
     expect(back.media?.title).toBe("Sample");
     expect(back.tvs!.map((tv) => tv.current)).toEqual([true, false]);
-    await first.next("TV_PAIRED"); // a phone has come back to it
+    await first.next("TV_PAIRED");
 
     phone.send({ type: "CMD", command: { type: "PAUSE" } });
     expect((await first.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
@@ -3145,7 +3060,7 @@ describe("a phone with several TVs", () => {
     phone.send({ type: "SWITCH_TV", id: theirs });
     expect((await phone.next("ERROR")).code).toBe("NOT_YOUR_TV");
     expect((await phone.next("TVS")).tvs).toHaveLength(2);
-    phone.send({ type: "CMD", command: { type: "PLAY" } }); // it still controls the one it did
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
     expect((await second.next("TV_CMD")).command).toEqual({ type: "PLAY" });
   });
 
@@ -3157,7 +3072,7 @@ describe("a phone with several TVs", () => {
 
     const list = await phone.nextWhere("TVS", (m) => m.tvs.length === 1);
     expect(list.tvs[0]).toMatchObject({ current: true });
-    await phone.expectNone((m) => m.type === "CTL_WELCOME"); // it did not go back to the code screen
+    await phone.expectNone((m) => m.type === "CTL_WELCOME");
     phone.send({ type: "CMD", command: { type: "PLAY" } });
     expect((await second.next("TV_CMD")).command).toEqual({ type: "PLAY" });
   });
@@ -3180,12 +3095,11 @@ describe("a phone with several TVs", () => {
     first.send({ type: "TV_UNPAIR" });
     await first.next("TV_UNPAIRED");
     expect((await phone.nextWhere("TVS", (m) => m.tvs.length === 1)).tvs[0]).toMatchObject({ current: true });
-    await phone.expectNone((m) => m.type === "CTL_WELCOME"); // (it was not the one in use: nothing changes on the phone's screen)
+    await phone.expectNone((m) => m.type === "CTL_WELCOME");
   });
 
   it("keeps a TV that another phone still has when one phone forgets it", async () => {
     const { first, phone, firstId } = await twoTvs();
-    // A second phone joins the first TV with its control code.
     phone.send({ type: "SWITCH_TV", id: firstId });
     const code = (await phone.next("CTL_WELCOME")).tv!.controlCode!;
     const other = await connect();
@@ -3193,9 +3107,9 @@ describe("a phone with several TVs", () => {
     await other.next("CTL_WELCOME");
     other.send({ type: "PAIR", code });
     expect((await other.next("CTL_WELCOME")).tv?.controllerCount).toBe(2);
-    expect((await phone.next("CTL_WELCOME")).tv?.controllerCount).toBe(2); // (the first phone is told one came)
+    expect((await phone.next("CTL_WELCOME")).tv?.controllerCount).toBe(2);
 
-    phone.send({ type: "UNPAIR" }); // the first phone lets go of it
+    phone.send({ type: "UNPAIR" });
     expect((await phone.next("CTL_WELCOME")).tv).toBeNull();
     await first.expectNone((m) => m.type === "TV_UNPAIRED");
     expect((await other.nextWhere("CTL_WELCOME", (m) => m.tv?.controllerCount === 1)).tv?.online).toBe(true);
@@ -3281,7 +3195,6 @@ describe("a TV page that is opened again while a video was on", () => {
   const loads = (message: ServerMessage) => message.type === "TV_CMD" && message.command.type === "LOAD";
   const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
-  /** A paired TV and phone with the film on at `time`, and the TV's page then closed (as when the browser is quit). `leave` is what happens before it closes. */
   async function leftMidFilm(time = 1234, leave?: (tv: Client, phone: Client) => Promise<unknown>) {
     resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
     const { tv, phone, deviceId } = await pairedSetup();
@@ -3289,7 +3202,6 @@ describe("a TV page that is opened again while a video was on", () => {
     await tv.nextWhere("TV_CMD", (m) => m.command.type === "PLAY");
     tv.send({ type: "TV_STATE", state: playing(time) });
     await phone.nextWhere("STATE", (m) => m.state.state === "playing");
-    // (What the phone was told while the film started is read, so that what it is told later is what is looked at.)
     await phone.next("MEDIA");
     await phone.nextWhere("STATE", (m) => m.state.state === "loading");
     await leave?.(tv, phone);
@@ -3298,7 +3210,6 @@ describe("a TV page that is opened again while a video was on", () => {
     return { phone, deviceId };
   }
 
-  /** The page is opened again (`opened`), or its socket only reconnects: it says hello, and reports what it is doing, which is nothing yet. */
   async function pageOf(deviceId: string, opened = true) {
     const tv = await connect();
     tv.send({ type: "TV_HELLO", deviceId, ...(opened ? { opened } : {}) });
@@ -3315,7 +3226,7 @@ describe("a TV page that is opened again while a video was on", () => {
     const tv = await pageOf(deviceId);
     expect((await tv.next("TV_RESOLVING")).active).toBe(true);
     expect((await tv.nextWhere("TV_CMD", (m) => m.command.type === "LOAD")).command).toEqual({ type: "LOAD", media: film, startAt: 1234 });
-    expect(looked).toEqual([film.page]); // looked up again, not loaded from what was kept: its own link may have run out
+    expect(looked).toEqual([film.page]);
     await tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "PLAY");
 
     expect((await phone.next("MEDIA")).media).toEqual(film);
@@ -3323,7 +3234,7 @@ describe("a TV page that is opened again while a video was on", () => {
     tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 1234, duration: 7200 } });
     expect((await phone.nextWhere("STATE", (m) => m.state.state === "paused")).state.currentTime).toBe(1234);
 
-    phone.send({ type: "CMD", command: { type: "PLAY" } }); // and a press on the phone carries on from there
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
     expect((await tv.next("TV_CMD")).command.type).toBe("PLAY");
   });
 
@@ -3331,7 +3242,7 @@ describe("a TV page that is opened again while a video was on", () => {
     const { deviceId } = await leftMidFilm(1234);
     const second = await pageOf(deviceId);
     await second.nextWhere("TV_CMD", loads);
-    second.send({ type: "TV_STATE", state: { state: "paused", currentTime: 0, duration: 7200 } }); // before it has found its place
+    second.send({ type: "TV_STATE", state: { state: "paused", currentTime: 0, duration: 7200 } });
     second.send({ type: "TV_STATE", state: { state: "paused", currentTime: 1234, duration: 7200 } });
     second.close();
     await settle();
@@ -3434,7 +3345,7 @@ describe("a TV page that is opened again while a video was on", () => {
     phone.send({ type: "PLAY_URL", url: film.page });
     await tv.nextWhere("TV_CMD", (m) => m.command.type === "PLAY");
     tv.send({ type: "TV_STATE", state: playing(2222) });
-    tv.send({ type: "TV_STATE", state: playing(2230) }); // (a few seconds on: not yet worth a write of its own)
+    tv.send({ type: "TV_STATE", state: playing(2230) });
     await phone.nextWhere("STATE", (m) => m.state.currentTime === 2230);
     tv.close();
     phone.close();
@@ -3456,11 +3367,10 @@ describe("a TV page that is opened again while a video was on", () => {
 
   it("tells a server that has forgotten what is on: the phone is shown it, and the place is kept from then on", async () => {
     resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
-    const { tv, phone, deviceId } = await pairedSetup(); // (the server knows of no video, as after a restart)
+    const { tv, phone, deviceId } = await pairedSetup();
     tv.send({ type: "TV_STATE", state: playing(50), media: film });
     expect((await phone.next("MEDIA")).media).toEqual(film);
 
-    // What the server already knows is not replaced by what a TV says: only a server that knows nothing is told.
     tv.send({ type: "TV_STATE", state: playing(60), media: { ...film, title: "Another", page: "https://site.example/watch/2" } });
     await phone.expectNone((m) => m.type === "MEDIA");
 
@@ -3514,7 +3424,7 @@ describe("what playing teaches the library", () => {
     phone.send({ type: "PLAY_URL", url: dead.url });
     await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
     expect(await listed()).toEqual(["dead", "alive"]);
-    phone.send({ type: "PLAY_URL", url: dead.url }); // straight away: the same bad moment
+    phone.send({ type: "PLAY_URL", url: dead.url });
     await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
     expect(await listed()).toEqual(["dead", "alive"]);
     time += STRIKE_GAP_MS;
@@ -3523,7 +3433,7 @@ describe("what playing teaches the library", () => {
     expect(await listed()).toEqual(["alive"]);
 
     resolveImpl = async () => ({ status: "unsupported", reason: "nothing" });
-    await app.inject({ url: `/api/resolve?url=${encodeURIComponent(alive.url)}` }); // (anyone can ask this route: it must not hide titles for everyone)
+    await app.inject({ url: `/api/resolve?url=${encodeURIComponent(alive.url)}` });
     expect(await listed()).toEqual(["alive"]);
   });
 });
@@ -3545,7 +3455,7 @@ describe("what nobody could play is marked for the screens and listed for the te
     resolveImpl = async () => ({ status: "unsupported", reason: "no source has it" });
     app = await buildApp({ resolve: (url) => resolveImpl(url), librarySources: [show], unavailable, feedbackAdminToken: TOKEN });
     await app.ready();
-    await app.inject({ url: "/api/library" }); // (the library has met the show, so the team's list can call it by its name)
+    await app.inject({ url: "/api/library" });
 
     const { phone } = await pairedSetup();
     const play = async (link: string, phase: "failed" | "found") => {
@@ -3553,7 +3463,7 @@ describe("what nobody could play is marked for the screens and listed for the te
       await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === phase);
     };
     await play(episode(23, 3), "failed");
-    await play(episode(23, 3), "failed"); // (Try again, straight away: the same occasion)
+    await play(episode(23, 3), "failed");
     expect(await marks(episode(1, 1))).toEqual({ title: false, episodes: [] });
     time += OCCASION_GAP_MS;
     await play(episode(23, 3), "failed");
@@ -3596,7 +3506,6 @@ describe("what nobody could play is marked for the screens and listed for the te
 });
 
 describe("connections that would hold the hub's room", () => {
-  /** Waits until `client` was closed, and says how. */
   async function closedCode(client: Client, timeoutMs = 2_000): Promise<number | undefined> {
     const deadline = Date.now() + timeoutMs;
     while (client.closeCode === undefined && Date.now() < deadline) await new Promise((wake) => setTimeout(wake, 10));
@@ -3642,7 +3551,7 @@ describe("connections that would hold the hub's room", () => {
       first.close();
       expect(await closedCode(first)).toBeDefined();
       await new Promise((wake) => setTimeout(wake, 50));
-      const again = await Client.open(app, "203.0.113.7"); // (one went: there is room again)
+      const again = await Client.open(app, "203.0.113.7");
       again.send({ type: "TV_HELLO" });
       await again.next("TV_WELCOME");
       [second, neighbour, again].forEach((client) => client.close());
@@ -3697,7 +3606,6 @@ describe("connections that would hold the hub's room", () => {
       const neighbour = await Client.open(app, "198.51.100.9");
       neighbour.send({ type: "TV_HELLO" });
       await neighbour.next("TV_WELCOME");
-      // (phones are counted apart from TVs)
       const phone = await Client.open(app, "203.0.113.7");
       phone.send({ type: "CTL_HELLO" });
       await phone.next("CTL_WELCOME");
@@ -3732,7 +3640,7 @@ describe("connections that would hold the hub's room", () => {
       another.send({ type: "PAIR", code: two.code });
       expect((await another.next("ERROR")).code).toBe("RATE_LIMITED");
       const neighbour = await phoneAt("198.51.100.9");
-      neighbour.send({ type: "PAIR", code: two.code }); // (the code was not used up by the one turned away)
+      neighbour.send({ type: "PAIR", code: two.code });
       expect((await neighbour.nextWhere("CTL_WELCOME", (m) => m.tv !== null)).tv).toMatchObject({ online: true });
       [one.tv, two.tv, phone, another, neighbour].forEach((client) => client.close());
     } finally {
@@ -3743,7 +3651,6 @@ describe("connections that would hold the hub's room", () => {
 
 describe("Kino Official subtitles: a screen's timing of a listed file is what the next Play is sent", () => {
   const TOKEN = "team-token-for-the-official-counts".padEnd(32, "-");
-  // (Made-up lines only: the repo is public.)
   const link = "https://filmpire.sc/watch/60572?s=2&e=3";
   const track = `/api/proxy?url=${encodeURIComponent("https://subs5.strem.io/en/download/file/1")}&format=vtt`;
   const cues = Array.from({ length: 60 }, (_, i) => ({ start: 60 + i * 10, end: 62 + i * 10, text: `Line number ${i}.` }));
@@ -3756,7 +3663,7 @@ describe("Kino Official subtitles: a screen's timing of a listed file is what th
     app = await buildApp({
       resolve: (url) => resolveImpl(url),
       officialFetch: async (asked) => (fetched.push(asked), asked === track ? toVtt(cues) : undefined),
-      feedbackAdminToken: TOKEN, // (the team's /api/health has the counters, below)
+      feedbackAdminToken: TOKEN,
     });
     await app.ready();
     const { tv, phone } = await pairedSetup();

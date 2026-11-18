@@ -19,23 +19,13 @@ import { useListToggle } from "./Round";
 import { Still } from "./Sheets";
 
 interface TitleSheetProps {
-  /** The title as the library, a list or a card has it. */
   entry: Entry;
-  /** Start something on the TV: a link, where to pick it up, and the picture and year the title is known by. A phone with no TV has none: the page is for the list, the rating and the rest. */
   onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
-  /** With more than one list: ask which one the title goes in ("Other lists", or the list button of a title that is in another list). */
   onPick: (entry: ListEntry) => void;
-  /** A tap on a title of the rows under the page (the other parts of its collection, titles like it): that title's page opens in place of this one. */
   onOpenTitle: (entry: Entry) => void;
   onClose: () => void;
 }
 
-/**
- * A title's own page on the phone, the way the TV has one: its picture, what it is about, Play (or Resume) and a list to keep it in,
- * and for a show its seasons and episodes. A tap on a title in the library or a list opens this instead of starting it at once.
- * It is a page (the whole screen, a round way back over its picture), not a sheet that leaves a strip of the page behind it showing.
- * What the movie database knows of the title (its genres and age rating, who made it, who is in it, and the rows of the titles that go with it) is asked for when the page opens, and added under what it is about when it comes.
- */
 export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose }: TitleSheetProps) {
   const t = useT();
   const { progress, watched, lists, settings } = useProfileData();
@@ -45,7 +35,6 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
   const entry = resumable(given, progress);
   const series = useSeriesPage(given, progress, watched);
   const about = useAbout(!entry.opens && entry.url !== "" ? entry.url : undefined);
-  // (A child's profile is shown, of the titles that go with this one, only those for children.)
   const child = settings.child === true;
   const related = aboutRows(about)
     .map((row) => (child ? { ...row, items: row.items.filter((item) => forChildren(item)) } : row))
@@ -53,15 +42,12 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
   const hint = hintOf(entry);
   const play = onPlay ? (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint) : undefined;
 
-  // One tap for the main list (in it, or out of it); with several lists, "Other lists" beside it opens the picker, whatever lists the title is in, so that nothing moves.
   const toggle = toggleFor(listEntryOf(entry));
   const several = lists.length > 1;
 
   const at = series.isShow ? series.start : undefined;
-  // (Play waits while the episode a friend's message asked for is looked up: it would start another one.)
   const holding = series.isShow && series.holding;
   const label = playLabel(entry, series.isShow ? series.said : undefined);
-  // The button says which list it is about, short enough to share a line with Play (the icon says whether the title is in it); what a tap does is its name for a screen reader.
   const listLabel = toggle.asks ? t("rows.inLists") : t(toggle.inList ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
   const listText = toggle.asks ? t("rows.myList") : listName(lists[0]!);
   const kind = entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined;
@@ -69,7 +55,6 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
 
   return (
     <Page title={entry.title} onBack={onClose} testId="title-sheet" backTestId="title-back" bare>
-      {/* (the picture over a column of what is done with the title; held sideways, the picture beside it: see the wrappers in the style sheets) */}
       <div className="title-top">
         <Poster className="title-art" title={entry.title} image={entry.backdrop ?? entry.image} seed={entry.id} />
         <div className="title-main">
@@ -104,7 +89,6 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
               <RecommendButton entry={entry} />
             </div>
           </div>
-          {/* (Under the buttons: the answer comes after the page has opened, and must not move Play.) */}
           {series.unavailable && (
             <p className="title-gone" data-testid="title-unavailable">
               {t("library.unavailableFilm")}
@@ -141,12 +125,10 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
   );
 }
 
-/** A show's seasons (when there is a choice) and the episodes of the one that is shown, each a card the way the episode sheet lists them. */
-function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None on a phone with no TV: the episodes are then only to read. */ onPlay?: (episode: PageEpisode) => void; /** The rating box of the season that is shown. */ seasonRating?: ReactNode }) {
+function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; onPlay?: (episode: PageEpisode) => void; seasonRating?: ReactNode }) {
   const t = useT();
   const { seasons, season, shown: episodes, earlier, later } = page;
   const Row = onPlay ? "button" : "div";
-  // (24 at a time, from the one Play leads to: see `SeriesPage.shown`. Show earlier adds the ones before above, and the page keeps its place under the finger.)
   return (
     <section className="title-episodes" aria-label={t("player.episodes")} data-testid="title-episodes">
       <h3 className="sheet-section">{t("player.episodes")}</h3>

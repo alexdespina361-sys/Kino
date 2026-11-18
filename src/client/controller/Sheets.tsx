@@ -74,7 +74,6 @@ export function SpeedSheet({ player, onPick, onClose }: Close & { player: Player
   );
 }
 
-/** The qualities the film comes in, and under their own line the ✦ choices the TV offers for it (what that screen adds to the picture: see `PlayerState.enhance`). */
 export function QualitySheet({ player, onPick, onEnhance, onClose }: Close & { player: PlayerState; onPick: (level: number) => void; onEnhance: (mode: EnhanceMode) => void }) {
   useT();
   const quality = player.quality;
@@ -146,9 +145,7 @@ export function TracksSheet({
   onAudio: (track: number) => void;
   onStyle: () => void;
   onDelay?: (delay: number) => void;
-  /** Turn the timing of the subtitles to the sound, by itself, on or off. */
   onSync?: (on: boolean) => void;
-  /** The way it times them (see `SubtitleSyncModeSchema`). */
   onSyncMode?: (mode: SubtitleSyncMode) => void;
 }) {
   useT();
@@ -156,11 +153,9 @@ export function TracksSheet({
   const audio = player.audio;
   const delay = player.subtitleDelay ?? 0;
   const nudge = (by: number) => onDelay?.(Math.round((delay + by) * 10) / 10);
-  // A TV without the aligner reports nothing about it, and then there is nothing to switch. While it is on, the line under the switch says how it is going.
   const sync = player.subtitleSync;
   const syncHint = sync === undefined || sync === "off" || sync === "ready" ? t("player.autoSyncHelp") : syncWords(sync, player.subtitleShift);
 
-  // The profile's own languages first; the rest are one tap away, and "Show all" lifts a profile's "only these".
   const tracks = subtitles?.tracks ?? NO_TRACKS;
   const [all, setAll] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -169,9 +164,7 @@ export function TracksSheet({
   const playing = groupOf(visible, subtitles?.current);
   const [language, setLanguage] = useState<string | undefined>(undefined);
   const shown = visible.find((group) => group.key === language) ?? playing ?? visible[0];
-  // One list while every language has a single track; otherwise the languages as chips and the releases of one below them.
   const flat = visible.every((group) => group.tracks.length === 1);
-  // With nothing of the profile's own to show first, the others are not "more" and need no tap; the language on now is never hidden away.
   const moreOpen = opened || pinned.length === 0 || more.some((group) => group.key === playing?.key || group.key === language);
 
   const off: Choice = { key: -1, label: t("common.off"), active: (subtitles?.current ?? -1) === -1, testId: "subtitle--1", pick: () => onSubtitle(-1) };
@@ -209,7 +202,7 @@ export function TracksSheet({
         data-testid={`subtitle-lang-${group.key}`}
         onClick={() => {
           setLanguage(group.key);
-          if (!active) onSubtitle((defaultTrack(group.tracks) ?? group.tracks[0]!).id); // the best-fitting release of it
+          if (!active) onSubtitle((defaultTrack(group.tracks) ?? group.tracks[0]!).id);
         }}
       >
         {group.name}
@@ -242,7 +235,6 @@ export function TracksSheet({
           <ChoiceList choices={audioChoices} label={t("player.audioLanguage")} />
         </>
       ) : (
-        // (What the title does not promise, and what a viewer who looks for the film's language is told: the stream has no other.)
         <p className="muted small" data-testid="no-audio-choice">
           {t("player.noAudioChoice")}
         </p>
@@ -280,7 +272,6 @@ export function TracksSheet({
           <Switch label={t("player.autoSyncLabel")} hint={syncHint} checked={sync !== "off"} onChange={onSync} testId="subtitle-sync" />
         </Rows>
       )}
-      {/* (While it is on and can work on this film, the way it times them; a TV of an older build says nothing of it.) */}
       {onSyncMode && sync !== undefined && sync !== "off" && sync !== "unavailable" && player.subtitleSyncMode && (
         <>
           <div className="cap-choices" role="listbox" aria-label={t("player.syncMode")} data-testid="subtitle-sync-mode">
@@ -325,10 +316,6 @@ export function TracksSheet({
   );
 }
 
-/**
- * How subtitles look: a small picture of the TV with a sample line that follows every change, three looks to pick in one tap, and the
- * eight settings folded under "More options" (open from the start when the look is the viewer's own).
- */
 export function CaptionStyleSheet({
   style,
   onChange,
@@ -340,7 +327,6 @@ export function CaptionStyleSheet({
   const [more, setMore] = useState(preset === null);
   return (
     <Sheet title={t("player.captionStyle")} onClose={onClose} testId="captions-sheet">
-      {/* (held sideways, the picture stays on one side while the choices scroll on the other: see the style sheets) */}
       <div className="cap-layout">
         <div className="cap-frame" aria-hidden="true" data-testid="caption-preview">
           <span className="cap-sample" style={{ ...captionTextStyle(current, "cqh"), bottom: captionBottom(current, "cqh") }}>
@@ -400,7 +386,6 @@ export function CaptionStyleSheet({
   );
 }
 
-/** A picture from an episode; without one (or when it does not load) a colour made from its name with a fallback icon. */
 export function Still({ src, name }: { src: string | undefined; name: string }) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(name);
@@ -418,10 +403,6 @@ export function Still({ src, name }: { src: string | undefined; name: string }) 
   );
 }
 
-/**
- * Every episode the source knows about, by season. The one playing is marked; tap any other to jump there. When the library knows more
- * about the season (a picture, a line, how long each runs) each episode is a card, the way the TV lists them; otherwise a plain row.
- */
 export function EpisodesSheet({
   series,
   show,
@@ -436,10 +417,8 @@ export function EpisodesSheet({
   const listRef = useRef<HTMLUListElement>(null);
   const details = useEpisodeDetails(shown?.episodes[0]?.url, shown?.season);
   const marks = useUnavailable(shown?.episodes[0]?.url);
-  // Nothing known beyond the names: the plain list. While it is being asked the cards are already there, so the list does not change shape.
   const rich = details !== null;
 
-  // Open on the episode you're watching, not at the top of a 24-episode season.
   useEffect(() => {
     listRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "center" });
   }, [season]);
@@ -543,17 +522,14 @@ export function MenuSheet({
   tvName: string;
   online: boolean;
   partySize: number;
-  /** How many TVs this phone has on its list (this one included). */
   tvCount: number;
   controlCode?: string;
   controllerCount?: number;
-  /** None on a child's profile, which has no watch party. */
   onParty: (() => void) | null;
   onTvs: () => void;
   onDisconnect: () => void;
 }) {
   useT();
-  /** The code for another phone: a card as tall as a third of the screen, so it is behind its own row (what is used more is above it). */
   const [codeOpen, setCodeOpen] = useState(false);
   return (
     <Sheet title={tvName} onClose={onClose} testId="menu-sheet">
@@ -612,10 +588,6 @@ export function MenuSheet({
   );
 }
 
-/**
- * The TVs this phone has connected to: choose the one to control (the others carry on as they were, still paired), forget one, name
- * the one in use, and connect another by its code. A TV can only be got back to from here if it was connected to before, with its code.
- */
 export function TvsSheet({
   tvs,
   error,
@@ -629,9 +601,7 @@ export function TvsSheet({
   error: string | null;
   onSwitch: (id: string) => void;
   onForget: (id: string) => void;
-  /** Name the TV in use; empty gives it its own name back. */
   onName: (name: string) => void;
-  /** The code of another TV, typed or scanned. */
   onAdd: (code: string) => void;
 }) {
   useT();
@@ -639,11 +609,9 @@ export function TvsSheet({
   const [code, setCode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [name, setName] = useState(current?.name ?? "");
-  /** The TV that Forget was pressed for, and that is being asked about. */
   const [asking, setAsking] = useState<string | null>(null);
   const full = tvs.length >= MAX_PHONE_TVS;
 
-  // A code that was refused has been used up; a TV that was named (or switched to) shows its name.
   useEffect(() => setCode(""), [error, tvs.length]);
   useEffect(() => setName(current?.name ?? ""), [current?.id, current?.name]);
 
@@ -768,15 +736,13 @@ export function TvsSheet({
   );
 }
 
-/** The code that brings another screen into this phone's party, and when it runs out: "asking" until the TV has answered, null when none is open. */
 export type PartyInvite = { code: string; endsAt: number } | "asking" | null;
 
-/** The code and link that let a screen in: a TV types the code, a phone or computer scans it or opens the link, which can be copied into a chat (or shared, where the phone has a share sheet). */
 function Invite({ code, endsAt }: { code: string; endsAt: number }) {
   useT();
   const link = partyLink(code);
   const canShare = typeof navigator.share === "function";
-  const share = () => navigator.share({ title: t("party.title"), url: link }).catch(() => undefined); // (a share sheet that was closed is no error)
+  const share = () => navigator.share({ title: t("party.title"), url: link }).catch(() => undefined);
 
   return (
     <div className="code-card" data-testid="party-invite">
@@ -800,7 +766,6 @@ function Invite({ code, endsAt }: { code: string; endsAt: number }) {
   );
 }
 
-/** The short button beside a guest who is signed in as a profile: asks them to be friends (they have to say yes). Nothing for a friend already. */
 function PartyAdd({ profile }: { profile: PartyProfile | undefined }) {
   const t = useT();
   const addable = useAddable(profile);
@@ -828,10 +793,6 @@ function PartyAdd({ profile }: { profile: PartyProfile | undefined }) {
   );
 }
 
-/**
- * The watch party of this phone's TV: how to bring another screen in (the code and link of the party, or typing the code that a
- * TV shows), who is in, and a way to send a screen away. What plays here plays on all of them.
- */
 export function PartySheet({
   tvName,
   party,
@@ -848,13 +809,10 @@ export function PartySheet({
   party: PartyTv[];
   invite: PartyInvite;
   error: string | null;
-  /** Ask the TV for the party's code (that opens the party when there is none). */
   onInvite: () => void;
   onAdd: (code: string) => void;
   onRemove: (id: string) => void;
-  /** Make a screen of the party an admin (it can then play, pause, move and stop the film for everyone), or take that back. */
   onAdmin: (id: string, admin: boolean) => void;
-  /** End the party for everyone: the code stops working too. */
   onEnd: () => void;
 }) {
   useT();
@@ -863,9 +821,7 @@ export function PartySheet({
   const full = party.length >= MAX_FOLLOWERS;
   const endsAt = typeof invite === "object" && invite ? invite.endsAt : null;
 
-  // A TV that joined (or a code that was refused) has used the code up.
   useEffect(() => setCode(""), [party.length, error]);
-  // Opening the sheet asks for the code; one that has run out is asked for again while the sheet is still open.
   useEffect(() => onInvite(), []);
   useEffect(() => {
     if (endsAt === null) return;
@@ -967,7 +923,7 @@ export function PartySheet({
       )}
       {scanning && (
         <Scanner
-          read={(text) => codeFromScan(text, ["code"])} // the code of a TV that has a phone already cannot join a party
+          read={(text) => codeFromScan(text, ["code"])}
           onCode={(digits) => {
             setScanning(false);
             onAdd(digits);
@@ -979,7 +935,6 @@ export function PartySheet({
   );
 }
 
-/** A phone that has a TV scanned the code of another one: that TV joins the watch party, or the phone moves over to it (the first stays on its list). */
 export function OtherTvSheet({
   tvName,
   canAdd,
@@ -991,7 +946,6 @@ export function OtherTvSheet({
   return (
     <Sheet title={t("other.title")} onClose={onClose} testId="other-tv-sheet">
       <p className="muted">{t("other.help", { tv: tvName })}</p>
-      {/* A TV that already has a phone has nothing to join a party with: only moving over to it is offered. */}
       {canAdd && (
         <>
           <button className="btn btn-red btn-block" data-testid="other-add" onClick={onAdd}>

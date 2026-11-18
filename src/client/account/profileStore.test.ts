@@ -21,7 +21,6 @@ const episode = (n: number, next?: number): NormalizedMedia => ({
   series: { season: 1, episode: n, ...(next ? { next: { season: 1, episode: next, url: `https://site.example/show?e=${next}` } } : {}) },
 });
 
-/** A device: its own storage and clock. */
 function device(start: number, storage = new MemoryStorage()) {
   const clock = { now: start };
   const store = new ProfileStore(storage, () => clock.now);
@@ -124,7 +123,7 @@ describe("named lists", () => {
     expect(titlesIn(d, weekend)).toEqual(["Film 1", "Film 2"]);
 
     d.advance(1000);
-    d.store.setInList(title(1), false, weekend); // out of one list, still in the other
+    d.store.setInList(title(1), false, weekend);
     expect(titlesIn(d, weekend)).toEqual(["Film 2"]);
     expect(titlesIn(d, DEFAULT_LIST)).toEqual(["Film 1"]);
   });
@@ -132,9 +131,9 @@ describe("named lists", () => {
   it("keeps a show as one entry whichever of its episodes it was found by, and takes it off by any of them", () => {
     const d = device(1_000_000);
     const show = (season: number, episode: number) => ({ id: "show:Show", title: "Show", url: `https://site.example/watch/9?s=${season}&e=${episode}` });
-    d.store.setInList(show(3, 5), true); // from a card that continues the show
+    d.store.setInList(show(3, 5), true);
     d.advance(1000);
-    d.store.setInList(show(1, 1), true); // from the library's tile for it
+    d.store.setInList(show(1, 1), true);
     expect(d.store.getSnapshot().list).toMatchObject([{ key: "url:https://site.example/watch/9?s=1&e=1", url: "https://site.example/watch/9?s=1&e=1" }]);
     expect(d.store.getSnapshot().list).toHaveLength(1);
     d.advance(1000);
@@ -148,7 +147,7 @@ describe("named lists", () => {
     older.setItem("kino.data.guest", JSON.stringify({ v: 1, rev: 0, dirty: [], data: { list: [{ key: `url:${link}`, at: 1, id: "show:Show", title: "Show", url: link }] } }));
     const d = device(1_000_000, older);
     expect(d.store.getSnapshot().list).toHaveLength(1);
-    d.store.removeFromList("https://site.example/watch/9?s=1&e=1"); // as the library's tile does
+    d.store.removeFromList("https://site.example/watch/9?s=1&e=1");
     expect(d.store.getSnapshot().list).toEqual([]);
   });
 
@@ -182,13 +181,13 @@ describe("named lists", () => {
     expect(order()).toEqual([DEFAULT_LIST, weekend, kids, dateNight]);
 
     d.advance(1000);
-    d.store.moveList(dateNight, -1); // lists that were never placed keep the order they were shown in
+    d.store.moveList(dateNight, -1);
     expect(order()).toEqual([DEFAULT_LIST, weekend, dateNight, kids]);
     d.store.moveList(dateNight, -1);
     expect(order()).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
-    d.store.moveList(dateNight, -1); // already the first of the others: nothing happens
-    d.store.moveList(kids, 1); // already the last
-    d.store.moveList(DEFAULT_LIST, 1); // the first list does not move
+    d.store.moveList(dateNight, -1);
+    d.store.moveList(kids, 1);
+    d.store.moveList(DEFAULT_LIST, 1);
     d.store.moveList("nope", 1);
     expect(order()).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
 
@@ -197,7 +196,7 @@ describe("named lists", () => {
     expect(order()).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
     d.advance(1000);
     d.store.createList("Newest");
-    expect(order().slice(0, 4)).toEqual([DEFAULT_LIST, dateNight, weekend, kids]); // a new list goes last
+    expect(order().slice(0, 4)).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
     expect(order()).toHaveLength(5);
   });
 
@@ -273,7 +272,7 @@ describe("named lists", () => {
     tv.advance(2000);
     tv.store.deleteList(id);
     phone.advance(1000);
-    phone.store.setInList(title(2), true, id); // saved on the phone before it heard the list was gone
+    phone.store.setInList(title(2), true, id);
     sync(tv);
     sync(phone);
     sync(tv);
@@ -387,7 +386,6 @@ describe("ratings", () => {
     sync(tv);
     expect(tv.store.getSnapshot().ratings).toEqual([]);
 
-    // A guest's rating comes into the profile when the guest signs in.
     const guest = device(Date.now() - 50_000);
     guest.store.setRating(show, 1, { score: 7 });
     guest.store.openScope(profile.id);
@@ -472,7 +470,7 @@ describe("signing in on a screen that was used as a guest", () => {
     const snapshot = d.store.getSnapshot();
     expect(snapshot.progress.map((card) => card.title).sort()).toEqual(["Film 1", "Film 2"]);
     expect(snapshot.list.map((item) => item.title)).toEqual(["Guest pick"]);
-    expect(snapshot.settings).toEqual({ lang: "ro" }); // the visitor's language does not replace the profile's
+    expect(snapshot.settings).toEqual({ lang: "ro" });
 
     d.store.openScope(GUEST);
     expect(d.store.getSnapshot().progress).toEqual([]);
@@ -533,7 +531,6 @@ describe("the chat's saved pictures", () => {
     const created = accounts.createAccount("s@example.com", "hash");
     if (!created.ok) throw new Error("no account");
     const profile = accounts.profilesOf(created.value.id)[0]!;
-    // (Through the schemas, as the route and the page read them.)
     const sync = (d: ReturnType<typeof device>) => {
       const { request, sent } = d.store.pending();
       d.store.accept(SyncResponseSchema.parse(accounts.sync(profile.id, SyncRequestSchema.parse(request))), sent);
@@ -579,7 +576,6 @@ describe("staying in step with the server", () => {
     return { accounts, profile };
   }
 
-  /** One round trip for a device, as the app makes it. */
   function sync(d: ReturnType<typeof device>, accounts: AccountStore, profileId: string) {
     const { request, sent } = d.store.pending();
     const response = accounts.sync(profileId, request);
@@ -605,7 +601,6 @@ describe("staying in step with the server", () => {
     expect(phone.store.getSnapshot().progress[0]).toMatchObject({ season: 1, episode: 1, position: 900 });
     expect(phone.store.getSnapshot().watched).toMatchObject([{ show: "Show", episode: 1 }]);
 
-    // nothing new on either side: nothing to send, nothing comes back
     expect(phone.store.pending().request).toMatchObject({ progress: [], watched: [], list: [], settings: [] });
     expect(sync(tv, accounts, profile.id)).toMatchObject({ progress: [], watched: [] });
   });
@@ -622,7 +617,7 @@ describe("staying in step with the server", () => {
     phone.store.setInList({ id: "2", title: "B", url: "https://site.example/b" }, true);
     phone.store.setSetting("accent", "blue");
     tv.advance(1000);
-    tv.store.setSetting("accent", "green"); // later than the phone's
+    tv.store.setSetting("accent", "green");
     sync(phone, accounts, profile.id);
     sync(tv, accounts, profile.id);
     sync(phone, accounts, profile.id);
@@ -636,7 +631,7 @@ describe("staying in step with the server", () => {
   it("keeps a screen's change over what it had seen of the thing, even when its clock runs behind the screen that made that", async () => {
     const { accounts, profile } = await server();
     const phone = device(Date.now() - 100_000);
-    const tv = device(Date.now() - 100_000 - 180_000); // three minutes behind
+    const tv = device(Date.now() - 100_000 - 180_000);
     tv.store.openScope(profile.id);
     phone.store.openScope(profile.id);
     phone.store.setSetting("friends", true);
@@ -644,7 +639,7 @@ describe("staying in step with the server", () => {
     sync(tv, accounts, profile.id);
     expect(tv.store.getSnapshot().settings).toEqual({ friends: true });
 
-    tv.advance(60_000); // a minute later by its own clock, and still earlier than the phone's change
+    tv.advance(60_000);
     tv.store.setSetting("friends", false);
     sync(tv, accounts, profile.id);
     sync(phone, accounts, profile.id);
@@ -654,15 +649,15 @@ describe("staying in step with the server", () => {
   it("takes the server's word on a change it held back because the clock that made it runs ahead, so that later changes from other screens are not ignored for ever", async () => {
     const { accounts, profile } = await server();
     const phone = device(Date.now() - 100_000);
-    const tv = device(Date.now() + 10 * 60_000); // ten minutes ahead
+    const tv = device(Date.now() + 10 * 60_000);
     tv.store.openScope(profile.id);
     phone.store.openScope(profile.id);
 
     tv.store.setSetting("friends", false);
-    sync(tv, accounts, profile.id); // (the server keeps it, but not as far ahead as the TV's clock says)
-    expect(tv.store.pending().request.settings).toEqual([]); // ...and there is nothing left to send
+    sync(tv, accounts, profile.id);
+    expect(tv.store.pending().request.settings).toEqual([]);
 
-    phone.advance(100_000 + 2 * 60_000); // two minutes after that, by a clock that is right
+    phone.advance(100_000 + 2 * 60_000);
     phone.store.setSetting("friends", true);
     sync(phone, accounts, profile.id);
     sync(tv, accounts, profile.id);
@@ -677,7 +672,7 @@ describe("staying in step with the server", () => {
     const { request, sent } = tv.store.pending();
     const response = accounts.sync(profile.id, request)!;
     tv.advance(1000);
-    tv.store.setSetting("friends", false); // changed again before the answer came
+    tv.store.setSetting("friends", false);
     tv.store.accept(response, sent);
     expect(tv.store.getSnapshot().settings).toEqual({ friends: false });
     expect(tv.store.pending().request.settings).toMatchObject([{ key: "friends", value: false }]);
@@ -708,7 +703,6 @@ describe("staying in step with the server", () => {
     tv.store.playbackStarted(film(1));
     sync(tv, accounts, profile.id);
     tv.advance(1000);
-    // a fresh server, as after a restart on a host that forgets its disk
     const lost = await server();
     const first = sync(tv, lost.accounts, lost.profile.id);
     expect(first.reset).toBe(true);
@@ -719,7 +713,7 @@ describe("staying in step with the server", () => {
   it("brings a guest's history to the account on the first sync after signing in", async () => {
     const { accounts, profile } = await server();
     const tv = device(Date.now() - 100_000);
-    tv.store.playbackStarted(film(1)); // as a guest
+    tv.store.playbackStarted(film(1));
     tv.store.flush();
     tv.store.openScope(profile.id);
     tv.advance(1000);
@@ -749,10 +743,10 @@ describe("a profile new to this screen (`waiting`)", () => {
   it("waits until the server's first answer, even when its copy was written before that answer came, and not after it", async () => {
     const { profile, sync } = await world();
     const tv = device(1_000_000);
-    expect(tv.store.getSnapshot().waiting).toBe(false); // (the browser's own copy has no server to wait for)
+    expect(tv.store.getSnapshot().waiting).toBe(false);
     tv.store.openScope(profile.id);
     expect(tv.store.getSnapshot().waiting).toBe(true);
-    tv.store.flush(); // (written as the page goes away, before any answer)
+    tv.store.flush();
 
     const reopened = device(1_000_000, tv.storage);
     reopened.store.openScope(profile.id);
@@ -760,7 +754,7 @@ describe("a profile new to this screen (`waiting`)", () => {
 
     let told = 0;
     reopened.store.subscribe(() => told++);
-    sync(reopened); // (an answer with nothing new in it is news all the same)
+    sync(reopened);
     expect(reopened.store.getSnapshot().waiting).toBe(false);
     expect(told).toBeGreaterThan(0);
     reopened.store.flush();

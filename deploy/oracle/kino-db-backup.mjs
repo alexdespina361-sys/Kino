@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// A copy of the website's database once a night: everything of the site's own (the `public` schema: accounts, profiles, friends, chats,
-// feedback, personal stickers, visits), as one `pg_dump` file a day in /var/backups/kino-db, readable by root alone. The last 14 are kept.
-// A copy that cannot be read back is no copy: each is listed with `pg_restore --list` before it is kept. Run by kino-db-backup.timer, as root,
-// with the website's own settings (/etc/kino-web.env); the database's certificate is checked against DATABASE_CA_FILE, as the website does.
-// The address of the database never goes on a command line (where every user of the box could read it): it is handed to pg_dump in its env.
-// Bringing one back: deploy/oracle/README.md, "Backups".
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";

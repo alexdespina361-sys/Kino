@@ -8,7 +8,6 @@ describe("which messages are pictures that can be saved", () => {
     expect(pictureOf({ text: GIF })).toEqual({ kind: "gif", key: `gif:${GIF}`, text: GIF });
     expect(pictureOf({ text: ` ${GIF} ` })?.key).toBe(`gif:${GIF}`);
     expect(pictureOf({ text: "\u{1F37F}" })).toMatchObject({ kind: "sticker", key: "sticker:popcorn", text: "\u{1F37F}" });
-    // (A heart typed without the mark is the same heart, kept as the sticker sends it.)
     expect(pictureOf({ text: "\u{2764}" })).toMatchObject({ key: "sticker:heart", text: "\u{2764}\u{FE0F}" });
   });
 
@@ -22,7 +21,7 @@ describe("which messages are pictures that can be saved", () => {
   it("shows a kept one only when what it says it is agrees with what it is", () => {
     expect(savedPicture({ key: `gif:${GIF}`, text: GIF })?.kind).toBe("gif");
     expect(savedPicture({ key: "sticker:popcorn", text: "\u{1F37F}" })?.kind).toBe("sticker");
-    expect(savedPicture({ key: "sticker:heart", text: "\u{2764}" })).toBeNull(); // (not as the sticker sends it: a copy made by hand)
+    expect(savedPicture({ key: "sticker:heart", text: "\u{2764}" })).toBeNull();
     expect(savedPicture({ key: "sticker:popcorn", text: "\u{1F3AC}" })).toBeNull();
     expect(savedPicture({ key: "gif:https://static.klipy.com/other.webp", text: GIF })).toBeNull();
     expect(savedPicture({ key: "gif:https://evil.example/x.gif", text: "https://evil.example/x.gif" })).toBeNull();

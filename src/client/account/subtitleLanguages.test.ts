@@ -5,7 +5,7 @@ describe("the subtitle languages a profile chooses", () => {
   it("adds a language pressed at the end of the order, and takes it out when it is pressed again", () => {
     expect(toggleLanguage([], "nl")).toEqual(["nl"]);
     expect(toggleLanguage(["nl"], "fr")).toEqual(["nl", "fr"]);
-    expect(toggleLanguage(["nl", "fr", "ro"], "fr")).toEqual(["nl", "ro"]); // (the ones after it move up a place)
+    expect(toggleLanguage(["nl", "fr", "ro"], "fr")).toEqual(["nl", "ro"]);
   });
 
   it("holds twelve at most: a thirteenth is not added, and taking one out makes room again", () => {

@@ -1,4 +1,3 @@
-/** What to call a device in the list of places somebody is signed in: "Chrome on Windows", "Safari on iPhone". */
 export function describeDevice(userAgent: string | undefined): string {
   const ua = userAgent ?? "";
   const browser = /Edg(e|A|iOS)?\//.test(ua)

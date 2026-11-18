@@ -11,8 +11,8 @@ describe("defaultSyncMode", () => {
   });
   it("is Thorough on the others, and when the browser says nothing", () => {
     expect(defaultSyncMode({ cores: 8, memoryGb: 8 })).toBe("full");
-    expect(defaultSyncMode({ cores: 6 })).toBe("full"); // (no memory figure: Firefox, Safari)
-    expect(defaultSyncMode({ cores: 0 })).toBe("full"); // (a browser that hides it)
+    expect(defaultSyncMode({ cores: 6 })).toBe("full");
+    expect(defaultSyncMode({ cores: 0 })).toBe("full");
     expect(defaultSyncMode({})).toBe("full");
   });
   it("a viewer's own pick is kept in the prefs and comes before it", () => {
@@ -44,8 +44,8 @@ describe("pickTrack", () => {
       { id: 2, label: "English (3) · The.Boondocks.S01E10.Eng-Songs.WEB", lang: "en" },
     ];
     expect(pickTrack(releases, { lang: "en", label: "English · Boondocks S01E10 The Itis.DVD.NonHI.cc.en.SNY" })).toBe(0);
-    expect(pickTrack(releases, { lang: "en", label: "English · Boondocks S01E09 The Itis.DVD.NonHI.cc.en.SNY" })).toBe(1); // (the next episode)
-    expect(pickTrack([releases[2]!], { lang: "en", label: "English" })).toBeUndefined(); // (never the songs by themselves)
+    expect(pickTrack(releases, { lang: "en", label: "English · Boondocks S01E09 The Itis.DVD.NonHI.cc.en.SNY" })).toBe(1);
+    expect(pickTrack([releases[2]!], { lang: "en", label: "English" })).toBeUndefined();
   });
 
   it("finds nothing rather than guessing", () => {
@@ -75,14 +75,13 @@ describe("pickBaseSubtitleTrack", () => {
     const noEn = [{ id: 5, label: "Japanese", lang: "ja" }];
     expect(pickBaseSubtitleTrack(noEn, { lang: "ro", label: "Română" })).toBeUndefined();
     expect(pickBaseSubtitleTrack(noEn)).toBeUndefined();
-    // (Nor a release that is only the songs, though it is English.)
     expect(pickBaseSubtitleTrack([{ id: 2, label: "English (3) · The.Boondocks.S01E10.Eng-Songs.WEB", lang: "en" }])).toBeUndefined();
   });
 
   it("starts with the first of the profile's own languages that the film has, before English", () => {
-    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl", "ro"] })).toBe(1); // (no Dutch here: Romanian is next)
-    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl"] })).toBe(0); // (none of them: English)
-    expect(pickBaseSubtitleTrack(tracks, { lang: "en", label: "English" }, { chosen: ["ro"] })).toBe(0); // (what was picked last time still comes first)
+    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl", "ro"] })).toBe(1);
+    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl"] })).toBe(0);
+    expect(pickBaseSubtitleTrack(tracks, { lang: "en", label: "English" }, { chosen: ["ro"] })).toBe(0);
   });
 
   it("does not start with English for a profile that asked for its own languages only", () => {

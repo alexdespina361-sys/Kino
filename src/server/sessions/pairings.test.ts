@@ -7,7 +7,6 @@ import { KEEP_PAIRINGS_DAYS, Registry } from "./registry";
 
 const DAY = 24 * 3600 * 1000;
 
-/** A server that starts on `persistence` at time `clock.now`. */
 async function start(persistence: Persistence, clock: { now: number }, log?: { warn(message: string): void }) {
   const registry = new Registry({ now: () => clock.now });
   const store = await PairingStore.open({ registry, persistence, flushMs: 0, ...(log ? { log } : {}) });
@@ -38,7 +37,6 @@ describe("pairings kept between restarts", () => {
     expect(sameTv.controllerId).toBe(phone.id);
     expect(samePhone.id).toBe(phone.id);
     expect(after.registry.deviceForController(samePhone)).toBe(sameTv);
-    // A paired TV has no pairing code to show, and none was kept from before.
     expect(after.registry.ensureCode(sameTv)).toBeNull();
     expect(sameTv.media).toBeNull();
   });
@@ -59,8 +57,8 @@ describe("pairings kept between restarts", () => {
     expect(samePhone.deviceId).toBe(second.id);
     const sameFirst = after.registry.tvHello(first.id);
     expect(after.registry.phonesOf(sameFirst)).toEqual([samePhone]);
-    expect(after.registry.controllersOf(sameFirst)).toEqual([]); // it is on the list, not the one in use
-    expect(after.registry.ensureCode(sameFirst)).toBeNull(); // and still paired: no code to show
+    expect(after.registry.controllersOf(sameFirst)).toEqual([]);
+    expect(after.registry.ensureCode(sameFirst)).toBeNull();
     expect(after.registry.switchTo(samePhone, sameFirst.publicId)).toBe(sameFirst);
   });
 
@@ -71,7 +69,7 @@ describe("pairings kept between restarts", () => {
     const { tv: first, phone } = pairUp(before.registry);
     const second = before.registry.tvHello();
     before.registry.pair(phone, before.registry.ensureCode(second)!.code);
-    before.registry.unpair(phone); // forgets the second, which it controlled
+    before.registry.unpair(phone);
     await before.store.flush();
     expect(persistence.docs.get(`phone:${phone.id}`)).toMatchObject({ deviceId: null, deviceIds: [first.id] });
     expect(persistence.docs.has(`tv:${second.id}`)).toBe(false);
@@ -130,7 +128,6 @@ describe("pairings kept between restarts", () => {
     expect(after.registry.followersOf(hostAgain)).toEqual([guestAgain]);
     expect(after.registry.leaderOf(guestAgain)).toBe(hostAgain);
     expect(guestAgain.publicId).toBe(guest.publicId);
-    // No code, party or control code survives: they are asked for again.
     expect(hostAgain.controlCode).toBeNull();
     expect(hostAgain.partyCode).toBeNull();
   });
@@ -151,7 +148,6 @@ describe("pairings kept between restarts", () => {
     const after = await start(persistence, clock);
     expect([after.registry.tvHello(admin.id).admin, after.registry.tvHello(ordinary.id).admin]).toEqual([true, false]);
 
-    // Taken back, it is not written any more.
     after.registry.setAdmin(after.registry.tvHello(host.id), admin.publicId, false);
     await after.store.flush();
     expect(persistence.docs.get(`tv:${admin.id}`)).not.toHaveProperty("admin");
@@ -172,7 +168,7 @@ describe("pairings kept between restarts", () => {
     expect(saves).toHaveLength(1);
     expect(saves[0]!.put).toHaveLength(2);
 
-    await store.flush(); // nothing changed
+    await store.flush();
     expect(saves).toHaveLength(1);
 
     registry.setLabel(tv, "Bedroom");
@@ -199,7 +195,7 @@ describe("what a TV was playing, kept with its pair", () => {
     const before = await start(persistence, clock);
     const tv = filmOn(before.registry);
     before.registry.noteProgress(tv, playingAt(2000));
-    before.registry.checkpoint(tv); // the page was closed
+    before.registry.checkpoint(tv);
     await before.store.flush();
 
     const after = await start(persistence, clock);
@@ -220,7 +216,7 @@ describe("what a TV was playing, kept with its pair", () => {
     await store.flush();
     const first = writes;
 
-    for (let at = 1; at <= 25; at++) registry.noteProgress(tv, playingAt(at)); // a TV reports every second
+    for (let at = 1; at <= 25; at++) registry.noteProgress(tv, playingAt(at));
     await store.flush();
     expect(writes).toBe(first);
 
@@ -287,7 +283,6 @@ describe("pairings nobody uses any more", () => {
     const { tv, phone } = pairUp(first.registry);
     await first.store.flush();
 
-    // Two months on the TV says hello again; another two months later the server starts.
     clock.now += 60 * DAY;
     const second = await start(persistence, clock);
     second.registry.tvHello(tv.id);
@@ -369,8 +364,8 @@ describe("pairings that disagree", () => {
   it("keeps in a phone's list only the TVs that list the phone, and in a TV only the phones that list the TV", async () => {
     const { registry } = await startWith({
       "tv:tv_a": device(),
-      "tv:tv_b": device({ id: "tv_b", publicId: "bbbb", controllerId: null, controllerIds: [] }), // does not list the phone
-      "tv:tv_c": device({ id: "tv_c", publicId: "cccc", controllerId: "ctl_a", controllerIds: ["ctl_a"] }), // lists a phone that does not list it
+      "tv:tv_b": device({ id: "tv_b", publicId: "bbbb", controllerId: null, controllerIds: [] }),
+      "tv:tv_c": device({ id: "tv_c", publicId: "cccc", controllerId: "ctl_a", controllerIds: ["ctl_a"] }),
       "phone:ctl_a": phone({ deviceIds: ["tv_a", "tv_b", "tv_gone"] }),
     });
     const samePhone = registry.controllerHello("ctl_a");
@@ -446,7 +441,6 @@ describe("what is in the database besides pairings", () => {
     expect(warnings).toHaveLength(2);
     expect(persistence.docs.has("account:acc_1")).toBe(true);
     expect(persistence.docs.has("session:abc")).toBe(true);
-    // The two it could not read are not "pairings that went away": they are not touched either.
     expect(persistence.docs.has("tv:broken")).toBe(true);
     expect(persistence.docs.has("phone:broken")).toBe(true);
   });
@@ -457,7 +451,6 @@ describe("what is in the database besides pairings", () => {
     const first = await start(persistence, clock);
     pairUp(first.registry);
     await first.store.flush();
-    // Postgres keeps JSON in an order of its own (shortest field names first).
     for (const [key, value] of [...persistence.docs]) {
       const reversed = Object.fromEntries(Object.entries(value as Record<string, unknown>).reverse());
       persistence.docs.set(key, reversed);

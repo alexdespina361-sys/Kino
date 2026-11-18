@@ -19,7 +19,7 @@ describe("linkFromScan", () => {
     expect(linkFromScan("123456")).toBeNull();
     expect(linkFromScan("https://example.com/")).toBeNull();
     expect(linkFromScan("https://example.com/?link=SHORT")).toBeNull();
-    expect(linkFromScan("https://example.com/?link=ABCD0OI1")).toBeNull(); // 0, O, I and 1 are never in a code
+    expect(linkFromScan("https://example.com/?link=ABCD0OI1")).toBeNull();
     expect(linkFromScan("WIFI:S:home;T:WPA;P:secret;;")).toBeNull();
     expect(linkFromScan("")).toBeNull();
   });
@@ -37,9 +37,9 @@ describe("codeFromScan", () => {
 
   it("reads the code a TV with a phone shows for another one, unless only a TV to pair is wanted", () => {
     expect(codeFromScan("https://tv.example.com/?control=123456")).toBe("123456");
-    expect(codeFromScan("https://tv.example.com/?control=123456", ["code"])).toBeNull(); // no use in a watch party
+    expect(codeFromScan("https://tv.example.com/?control=123456", ["code"])).toBeNull();
     expect(codeFromScan("https://tv.example.com/?code=654321", ["code"])).toBe("654321");
-    expect(codeFromScan("https://tv.example.com/?control=12345&code=654321")).toBe("654321"); // the first that is a code
+    expect(codeFromScan("https://tv.example.com/?control=12345&code=654321")).toBe("654321");
   });
 
   it("ignores anything else a camera might pick up", () => {
@@ -58,10 +58,10 @@ describe("the decoder", () => {
     qr.addData("https://kino.example.com/?code=123456");
     qr.make();
     const modules = qr.getModuleCount();
-    const scale = 6; // pixels per module
-    const quiet = 4; // modules of white around the code
+    const scale = 6;
+    const quiet = 4;
     const side = (modules + quiet * 2) * scale;
-    const pixels = new Uint8ClampedArray(side * side * 4).fill(255); // opaque white
+    const pixels = new Uint8ClampedArray(side * side * 4).fill(255);
     for (let row = 0; row < modules; row++) {
       for (let col = 0; col < modules; col++) {
         if (!qr.isDark(row, col)) continue;

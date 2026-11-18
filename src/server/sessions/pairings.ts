@@ -3,8 +3,6 @@ import { PlayHintSchema } from "../../shared";
 import type { Persistence } from "../accounts/persistence";
 import type { ControllerRecord, DeviceRecord, Records, Registry } from "./registry";
 
-// The order of the fields is the order they are written in: a database that keeps JSON in a form of its own (Postgres does) still reads back as the same text.
-// (A field added later is optional, so a record written before it is read as it was, and an older server that reads a newer one ignores what it does not know.)
 const DeviceDoc = z.object({
   v: z.literal(1),
   id: z.string(),
@@ -16,42 +14,29 @@ const DeviceDoc = z.object({
   leaderId: z.string().nullable(),
   followerIds: z.array(z.string()),
   seenDay: z.number(),
-  /** What the TV was playing: the link that plays it again, its picture, and how far it had got. One that cannot be read is let go of, and the pair with it is not. */
   resume: z.object({ url: z.string().max(2048), hint: PlayHintSchema.optional(), time: z.number().min(0).max(86_400), day: z.number() }).optional().catch(undefined),
-  /** A TV that watches along and that its host made an admin (written only when it is one). */
   admin: z.boolean().optional(),
 });
 const ControllerDoc = z.object({
   v: z.literal(1),
   id: z.string(),
-  /** The TV the phone controls; none when it has moved on from all of its TVs (it keeps them on its list). */
   deviceId: z.string().nullable(),
   seenDay: z.number(),
-  /** Every TV the phone has connected to and not let go of. A record from before the list existed has none, and its one TV is the list. */
   deviceIds: z.array(z.string()).optional(),
 });
 
 const TV = "tv:";
 const PHONE = "phone:";
-/** When a write fails (the database is waking up, the network blinked), try again after this. */
 const RETRY_MS = 10_000;
 
 export interface PairingStoreOptions {
   registry: Registry;
   persistence: Persistence;
-  /** How long a change waits before it is written; it is also written when the server stops. `0` leaves the writing to `flush` (tests). */
   flushMs?: number;
   log?: { warn(message: string): void };
 }
 
-/**
- * Keeps which phone goes with which TV (and which TVs watch along with which) through a `Persistence`, so a server that
- * restarts, or a free host that sleeps and wakes, does not make every pair start over. Codes are not kept (a TV asks for a new one
- * when it needs one), and neither is what a TV is doing, except the one thing a closed page needs: the video it was on and how far
- * it had got, so that opening the page again puts it back (see `Registry.resumeOf`).
- */
 export class PairingStore {
-  /** What is in the database right now: key -> its JSON. A change is written only if it differs from this. */
   private readonly written = new Map<string, string>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private flushing: Promise<void> = Promise.resolve();
@@ -90,7 +75,7 @@ export class PairingStore {
       }
     }
     this.registry.restore(records);
-    this.schedule(); // what was too old, or no longer agreed, is cleared out of the database soon
+    this.schedule();
   }
 
   private schedule(delay = this.flushMs): void {
@@ -99,7 +84,6 @@ export class PairingStore {
     this.timer.unref?.();
   }
 
-  /** What should be in the database now. */
   private wanted(): Map<string, { doc: unknown; json: string }> {
     const { devices, controllers } = this.registry.records();
     const wanted = new Map<string, { doc: unknown; json: string }>();
@@ -112,7 +96,6 @@ export class PairingStore {
     return wanted;
   }
 
-  /** Write what changed. Resolves when it is written; a failure is kept to try again with the next change. */
   flush(): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
@@ -134,7 +117,6 @@ export class PairingStore {
     return this.flushing;
   }
 
-  /** Writes what has not been written. The database itself is closed by whoever opened it. */
   async close(): Promise<void> {
     this.registry.onChange = undefined;
     await this.flush();

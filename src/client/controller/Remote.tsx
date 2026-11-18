@@ -25,7 +25,6 @@ export type SheetKind = "menu" | "tracks" | "captions" | "speed" | "quality" | "
 
 interface RemoteProps {
   tv: TvInfo;
-  /** The phone is connected to the server and the TV is connected to the server. */
   online: boolean;
   media: NormalizedMedia;
   player: PlayerState;
@@ -34,11 +33,9 @@ interface RemoteProps {
   onNext: () => void;
   onPrevious: () => void;
   onOpen: (sheet: SheetKind) => void;
-  /** "Change video": the remote steps aside, to the page where a link is pasted and a title is picked. */
   onChangeVideo: () => void;
 }
 
-/** What the title is called on the remote (a show without the episode, which has a line of its own). */
 export function mediaTitle(media: NormalizedMedia): string {
   const raw = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
   return media.series && raw.includes("·") ? raw.split("·")[0]!.trim() : raw;
@@ -48,7 +45,7 @@ export function stateLabel(player: PlayerState, tvName: string): string {
   if (player.state === "error") return friendlyError(player.error);
   if (player.state === "loading") return t("common.loading");
   if (player.buffering) return t("remote.buffering");
-  if (player.upNext && player.upNext.seconds !== null) return t("remote.upNextIn", { seconds: player.upNext.seconds }); // the TV's Up Next card, counting down
+  if (player.upNext && player.upNext.seconds !== null) return t("remote.upNextIn", { seconds: player.upNext.seconds });
   if (player.state === "playing") return t("remote.playingOn", { tv: tvName });
   if (player.ended) return t("end.finished");
   if (player.state === "paused") return t("remote.paused");
@@ -68,17 +65,14 @@ export function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode
   );
 }
 
-/** The remote: what's playing, a seek bar, transport buttons, and the extras that apply to this video. */
 export function Remote({ tv, online, media, player, send, onStop, onNext, onPrevious, onOpen, onChangeVideo }: RemoteProps) {
   useT();
-  // It takes the place of the library, which may have been scrolled far down: it starts at its own top (the title, and the TV's menu, are there).
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
   }, []);
   const series = media.series;
   const title = mediaTitle(media);
   const playing = player.state === "playing";
-  // A TV can't be sent into full screen without a press on the TV itself; if it hasn't gone in shortly after the tap, say so.
   const [fsHint, setFsHint] = useState(false);
   const fullscreenRef = useRef(player.fullscreen);
   fullscreenRef.current = player.fullscreen;
@@ -106,7 +100,6 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
   return (
     <div className="remote">
       <section className="now-playing">
-        {/* The picture fills what would be blank between the header and the title; a screen that is not tall enough for it has none (shell.css). */}
         <div className="remote-art" data-testid="remote-art">
           <Poster title={title} image={media.poster ?? media.backdrop} />
         </div>
@@ -124,19 +117,16 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
             {busy && <span className="spinner" />}
             {stateLabel(player, tv.name)}
           </p>
-          {/* The video would not play: telling the team is one press away (the form begins with what the line says). */}
           {player.state === "error" && (
             <button className="state-action" data-testid="remote-report" aria-label={t("feedback.report")} onClick={() => reportWontPlay(friendlyError(player.error))}>
               {t("feedback.reportShort")}
             </button>
           )}
-          {/* The TV is about to start the next episode by itself: the way to say no is here too, not only on the TV's remote. */}
           {player.upNext && player.upNext.seconds !== null && (
             <button className="state-action" data-testid="upnext-cancel" onClick={() => send({ type: "DISMISS_UP_NEXT" })} disabled={!online}>
               {t("common.cancel")}
             </button>
           )}
-          {/* The TV shows its Skip button (an opening, a "previously on", credits): it is pressed from here too. */}
           {player.skip && !(player.upNext && player.upNext.seconds !== null) && (
             <button className="state-action" data-testid="remote-skip" onClick={() => send({ type: "SKIP_SEGMENT" })} disabled={!online}>
               {t(player.skip.kind === "intro" ? "hud.skipIntro" : player.skip.kind === "recap" ? "hud.skipRecap" : "hud.skipCredits")}

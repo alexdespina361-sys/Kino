@@ -37,7 +37,7 @@ describe("what a chat knows of the titles it names", () => {
     const failedAt = Date.now();
     expect(knownTitle("filmpire-movie-2", failedAt).status).toBe("failed");
     await askAbout("filmpire-movie-2");
-    expect(fetch).toHaveBeenCalledTimes(2); // (not again at once)
+    expect(fetch).toHaveBeenCalledTimes(2);
     expect(knownTitle("filmpire-movie-2", failedAt + RETRY_MS + 1).status).toBe("loading");
   });
 

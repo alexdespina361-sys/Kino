@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import { livePcm, SAMPLE_RATE, Stamper } from "./capture";
 import { SAMPLE_RATE as ALIGNER_RATE } from "./signals";
 
-const RATE = 1000; // (a round rate, so that the times are easy to read)
+const RATE = 1000;
 
-/** A stamper at `RATE` with no delay, and what it gave. */
 const stamper = (delay = 0) => {
   const given: Array<{ start: number; length: number }> = [];
   const stamp = new Stamper(RATE, (start, samples) => given.push({ start, length: samples.length }), delay);
@@ -19,8 +18,7 @@ describe("the times of the sound taken from a playing film", () => {
 
   it("makes pieces of 5 s that follow on from each other exactly, counted in samples, from the time of the first block", () => {
     const { stamp, given } = stamper();
-    stamp.block(block(), 10); // (sets the clock only: the stretch begins at 10)
-    // (the picture's clock wobbles as it is read in a callback: it does not move the pieces)
+    stamp.block(block(), 10);
     for (let i = 1; i <= 100; i++) stamp.block(block(), 10 + i * 0.1 + (i % 2 ? 0.03 : -0.03));
     expect(given.map((piece) => piece.length)).toEqual([5000, 5000]);
     expect(given[0]!.start).toBeCloseTo(10, 9);
@@ -29,7 +27,7 @@ describe("the times of the sound taken from a playing film", () => {
 
   it("takes where a stretch begins from all the blocks of its first piece, not from one reading of the clock", () => {
     const { stamp, given } = stamper();
-    stamp.block(block(), 10.05); // (read 50 ms late)
+    stamp.block(block(), 10.05);
     for (let i = 1; i <= 50; i++) stamp.block(block(), 10 + i * 0.1);
     expect(given[0]!.start).toBeCloseTo(10, 2);
   });
@@ -44,13 +42,13 @@ describe("the times of the sound taken from a playing film", () => {
   it("ends a stretch at a pause or a jump: what is long enough goes, and the next begins at the picture", () => {
     const { stamp, given } = stamper();
     stamp.block(block(), 10);
-    for (let i = 1; i <= 20; i++) stamp.block(block(), 10 + i * 0.1); // 2 s
+    for (let i = 1; i <= 20; i++) stamp.block(block(), 10 + i * 0.1);
     stamp.flush();
     expect(given).toHaveLength(1);
     expect(given[0]!.length).toBe(2000);
     expect(given[0]!.start).toBeCloseTo(10, 9);
-    stamp.block(block(), 300); // (a jump)
-    for (let i = 1; i <= 5; i++) stamp.block(block(), 300 + i * 0.1); // 0.5 s: too little
+    stamp.block(block(), 300);
+    for (let i = 1; i <= 5; i++) stamp.block(block(), 300 + i * 0.1);
     stamp.flush();
     expect(given).toHaveLength(1);
     stamp.block(block(), 40);
@@ -63,7 +61,7 @@ describe("the times of the sound taken from a playing film", () => {
     const { stamp, given } = stamper();
     stamp.block(block(), 10);
     for (let i = 1; i <= 20; i++) stamp.block(block(), 10 + i * 0.1);
-    stamp.block(block(), 12.5); // 0.4 s later than the count says
+    stamp.block(block(), 12.5);
     for (let i = 1; i <= 50; i++) stamp.block(block(), 12.5 + i * 0.1);
     expect(given[0]!.length).toBe(2000);
     expect(given[0]!.start).toBeCloseTo(10, 9);

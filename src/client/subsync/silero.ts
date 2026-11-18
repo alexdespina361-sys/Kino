@@ -7,18 +7,16 @@
  * from silero_vad.onnx, MIT licence); tests compare this port with onnxruntime's output on real speech.
  */
 
-/** Audio samples consumed per step (32 ms at 16 kHz). */
 export const SILERO_STEP = 512;
 
-const CONTEXT = 64; // samples carried over from the previous step
-const PAD = 64; // reflect padding added after the step
-const WINDOW = 256; // DFT length
+const CONTEXT = 64;
+const PAD = 64;
+const WINDOW = 256;
 const HOP = 128;
-const BINS = WINDOW / 2 + 1; // 129
-const FRAMES = (CONTEXT + SILERO_STEP + PAD - WINDOW) / HOP + 1; // 4
+const BINS = WINDOW / 2 + 1;
+const FRAMES = (CONTEXT + SILERO_STEP + PAD - WINDOW) / HOP + 1;
 const HIDDEN = 128;
 
-/** Name, element count of every tensor in the weights file, in file order. */
 const LAYOUT = [
   ["basis", 2 * BINS * WINDOW],
   ["conv0w", 128 * BINS * 3],
@@ -52,12 +50,11 @@ function split(all: Float32Array): Weights {
   return out as Weights;
 }
 
-/** Convolution with kernel 3 and padding 1, then ReLU. Input is [inC][inT], output [outC][outT]. Returns outT. */
 function conv3(input: Float32Array, inC: number, inT: number, w: Float32Array, b: Float32Array, outC: number, stride: number, out: Float32Array): number {
   const outT = Math.floor((inT + 2 - 3) / stride) + 1;
   for (let o = 0; o < outC; o++) {
     for (let t = 0; t < outT; t++) {
-      const first = t * stride - 1; // input index under the kernel's first tap
+      const first = t * stride - 1;
       const kFrom = first < 0 ? -first : 0;
       const kTo = first + 3 > inT ? inT - first : 3;
       let sum = b[o] as number;
@@ -74,7 +71,7 @@ function conv3(input: Float32Array, inC: number, inT: number, w: Float32Array, b
 
 export class Silero {
   private readonly w: Weights;
-  private readonly bias: Float32Array; // lstm input and recurrent biases, added once
+  private readonly bias: Float32Array;
   private readonly h = new Float32Array(HIDDEN);
   private readonly c = new Float32Array(HIDDEN);
   private readonly context = new Float32Array(CONTEXT);
@@ -92,14 +89,12 @@ export class Silero {
     for (let i = 0; i < this.bias.length; i++) this.bias[i] = (this.w.lstmBi[i] as number) + (this.w.lstmBh[i] as number);
   }
 
-  /** Forget the previous audio (call between unrelated stretches). */
   reset(): void {
     this.h.fill(0);
     this.c.fill(0);
     this.context.fill(0);
   }
 
-  /** The detector's memory, so that several stretches of audio can take turns. */
   save(): Float32Array {
     const out = new Float32Array(2 * HIDDEN + CONTEXT);
     out.set(this.h, 0);
@@ -114,7 +109,6 @@ export class Silero {
     this.context.set(memory.subarray(2 * HIDDEN, 2 * HIDDEN + CONTEXT));
   }
 
-  /** Speech probability (0..1) for the next `SILERO_STEP` samples of a continuous stretch; a short last chunk is zero padded. */
   step(audio: Float32Array, from: number): number {
     const { x, w } = this;
     x.set(this.context, 0);
@@ -123,9 +117,8 @@ export class Silero {
     for (let i = n; i < SILERO_STEP; i++) x[CONTEXT + i] = 0;
     this.context.set(x.subarray(SILERO_STEP, SILERO_STEP + CONTEXT));
     const end = CONTEXT + SILERO_STEP;
-    for (let j = 0; j < PAD; j++) x[end + j] = x[end - 2 - j] as number; // reflect, edge sample not repeated
+    for (let j = 0; j < PAD; j++) x[end + j] = x[end - 2 - j] as number;
 
-    // windowed DFT magnitude: mag[bin][frame]
     const basis = w.basis;
     for (let f = 0; f < FRAMES; f++) {
       const at = f * HOP;
@@ -143,13 +136,11 @@ export class Silero {
       }
     }
 
-    // encoder
     let t = conv3(this.mag, BINS, FRAMES, w.conv0w, w.conv0b, 128, 1, this.a0);
     t = conv3(this.a0, 128, t, w.conv1w, w.conv1b, 64, 2, this.a1);
     t = conv3(this.a1, 64, t, w.conv2w, w.conv2b, 64, 2, this.a2);
     conv3(this.a2, 64, t, w.conv3w, w.conv3b, 128, 1, this.a3);
 
-    // one LSTM step (gate rows: input, forget, cell, output)
     const { gates, a3, h, c, bias } = this;
     for (let g = 0; g < 4 * HIDDEN; g++) {
       const ih = g * HIDDEN;
@@ -176,7 +167,6 @@ export class Silero {
   }
 }
 
-/** Speech probability per 10 ms for a whole stretch of 16 kHz audio (32 ms steps, linearly resampled), as the aligner wants it. */
 export function sileroProbability(vad: Silero, audio: Float32Array): Float32Array {
   vad.reset();
   const steps = Math.ceil(audio.length / SILERO_STEP);
@@ -185,7 +175,6 @@ export function sileroProbability(vad: Silero, audio: Float32Array): Float32Arra
   return resampleProbability(values, Math.floor(audio.length / 160));
 }
 
-/** 32 ms values to 10 ms values: value i is centred at (i + 0.5) * 10 ms, step s at (s + 0.5) * 32 ms. */
 export function resampleProbability(values: Float32Array, count: number): Float32Array {
   const out = new Float32Array(count);
   const last = values.length - 1;

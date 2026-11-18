@@ -5,15 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openTv, readPairingCode, test, withLibrary } from "./helpers";
 
-/**
- * The phone's Back as Chrome presses it. `page.goBack()` (android-back.spec.ts) walks the history one entry at a time and knows nothing of the
- * rule Chrome keeps about entries a page makes (the "history manipulation intervention"): an entry made when the person has not touched the page
- * since their last Back is held against it, and the next Back runs past every entry the page made, out of the site. That is how Back took a tester
- * "out of the website entirely". Here the Back is `chrome.tabs.goBack` from a tiny extension (e2e/fixtures/back-extension), which keeps that rule.
- *
- * The page is only looked at through CDP, with no gesture: a Playwright `evaluate`, a locator and a trace all count as a touch for Chrome, and a
- * touch lets go of everything it holds against the page, which is what these tests are about.
- */
 declare const chrome: { tabs: { query(query: object): Promise<{ id?: number; url?: string }[]>; goBack(tabId: number): Promise<void> } };
 
 test.use({ trace: "off", video: "off", screenshot: "off" });
@@ -57,11 +48,9 @@ class Phone {
     try {
       rmSync(this.dir, { recursive: true, force: true });
     } catch {
-      /* (a folder that is still in use is left for the system to clear) */
     }
   }
 
-  /** An expression evaluated without a user gesture. */
   async ev<T>(expression: string): Promise<T> {
     const { result, exceptionDetails } = await this.cdp.send("Runtime.evaluate", { expression, returnByValue: true, userGesture: false });
     if (exceptionDetails) throw new Error(exceptionDetails.text);
@@ -74,7 +63,6 @@ class Phone {
     await expect.poll(() => this.has(testId), { message: testId, timeout: 10_000 }).toBe(present);
   }
 
-  /** The middle of an element, got from the DOM domain (which runs no script on the page). */
   private async center(testId: string): Promise<{ x: number; y: number }> {
     const { root } = await this.cdp.send("DOM.getDocument", { depth: 0 });
     const { nodeId } = await this.cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: `[data-testid="${testId}"]` });
@@ -86,13 +74,12 @@ class Phone {
 
   async tap(testId: string): Promise<void> {
     await this.waitFor(testId);
-    await this.page.waitForTimeout(700); // (a title's page lets nothing through for its first half second)
+    await this.page.waitForTimeout(700);
     const { x, y } = await this.center(testId);
     await this.page.touchscreen.tap(x, y);
     await this.page.waitForTimeout(500);
   }
 
-  /** The browser's own Back (what the button and the swipe from the edge do); the page that was before the site is where it lands when it leaves. */
   async back(): Promise<void> {
     await this.sw.evaluate(async (origin) => {
       const tab = (await chrome.tabs.query({})).find((t) => (t.url ?? "").startsWith(origin));
@@ -101,10 +88,8 @@ class Phone {
     await this.page.waitForTimeout(700);
   }
 
-  /** The phone is still on the site (a Back that leaves it lands on the page that was before). */
   stays = () => new URL(this.page.url()).origin === new URL(this.site).origin && !this.page.url().endsWith("/api/health");
 
-  /** The view of the screen, whether a title's page is up, and whether the question at the bottom is; what the player is doing, and the remote's tab. */
   async look() {
     return this.ev<{ view: string; detail: boolean; hint: boolean; state: string; tab: string }>(`({
       view: document.querySelector('[data-testid="tv-browse"]')?.getAttribute("data-view") ?? "",
@@ -116,7 +101,6 @@ class Phone {
   }
 }
 
-/** A phone on the library of the screen, as it is on a first visit: the welcome greets and fades by itself (a phone's waits for no tap since 16 Nov), untouched. */
 async function library(baseURL: string): Promise<Phone> {
   const phone = await Phone.open(baseURL);
   await phone.page.goto(`${baseURL}/api/health`);
@@ -136,22 +120,22 @@ test.describe("Chrome's own Back on a phone", () => {
       await phone.tap("tv-profile-feedback");
       await phone.waitFor("feedback");
 
-      await phone.back(); // the sheet
+      await phone.back();
       await phone.waitFor("feedback", false);
       expect((await phone.look()).view).toBe("profile");
-      await phone.back(); // the page, with nothing touched since the last Back
+      await phone.back();
       expect((await phone.look()).view).toBe("home");
       expect((await phone.look()).hint).toBe(false);
-      await phone.back(); // the bottom: the question
-      expect(phone.stays()).toBe(true);
-      expect((await phone.look()).hint).toBe(true);
-
-      await phone.waitFor("exit-hint", false); // nobody answers: the question is over, and the next Back asks again instead of leaving
       await phone.back();
       expect(phone.stays()).toBe(true);
       expect((await phone.look()).hint).toBe(true);
-      await phone.back(); // the answer
-      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
+
+      await phone.waitFor("exit-hint", false);
+      await phone.back();
+      expect(phone.stays()).toBe(true);
+      expect((await phone.look()).hint).toBe(true);
+      await phone.back();
+      await expect.poll(() => phone.stays()).toBe(false);
     } finally {
       await phone.close();
     }
@@ -167,17 +151,17 @@ test.describe("Chrome's own Back on a phone", () => {
       await phone.tap("tv-browse-tile");
       expect((await phone.look()).detail).toBe(true);
 
-      await phone.back(); // the title's page
+      await phone.back();
       expect(await phone.look()).toMatchObject({ detail: false, view: expect.stringMatching(/^category:/) });
-      await phone.back(); // the category, which goes up to the categories and stays (no touch since the Back, so no entry may be made for it)
+      await phone.back();
       expect((await phone.look()).view).toMatch(/^categories/);
-      await phone.back(); // the categories
+      await phone.back();
       expect((await phone.look()).view).toBe("home");
-      await phone.back(); // the bottom
+      await phone.back();
       expect(phone.stays()).toBe(true);
       expect((await phone.look()).hint).toBe(true);
       await phone.back();
-      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
+      await expect.poll(() => phone.stays()).toBe(false);
     } finally {
       await phone.close();
     }
@@ -189,20 +173,19 @@ test.describe("Chrome's own Back on a phone", () => {
       await phone.tap("tv-browse-tile");
       expect((await phone.look()).detail).toBe(true);
       await phone.tap("tv-detail-play");
-      // (the title's page goes when the film is chosen, and the film opens before the history has arrived where the page sent it: it stays)
       await expect.poll(async () => (await phone.look()).state, { timeout: 15_000 }).toBe("playing");
       await phone.page.waitForTimeout(1_500);
       expect((await phone.look()).state).toBe("playing");
 
-      await phone.back(); // the film
+      await phone.back();
       await expect.poll(async () => (await phone.look()).state).toBe("idle");
       expect((await phone.look()).view).toBe("home");
       expect(phone.stays()).toBe(true);
-      await phone.back(); // the bottom
+      await phone.back();
       expect(phone.stays()).toBe(true);
       expect((await phone.look()).hint).toBe(true);
       await phone.back();
-      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
+      await expect.poll(() => phone.stays()).toBe(false);
     } finally {
       await phone.close();
     }
@@ -214,21 +197,21 @@ test.describe("Chrome's own Back on a phone", () => {
     const phone = await Phone.open(baseURL!);
     try {
       await phone.page.goto(`${baseURL}/api/health`);
-      await phone.page.goto(`${baseURL}/?code=${code}`); // (the TV's QR code: this phone is its remote)
+      await phone.page.goto(`${baseURL}/?code=${code}`);
       await phone.waitFor("tv-online");
       await phone.tap("tab-search");
       expect((await phone.look()).tab).toBe("tab-search");
       await phone.tap("tab-you");
       expect((await phone.look()).tab).toBe("tab-you");
 
-      await phone.back(); // a tab goes to Home, whichever it is (a tab is not a page on top of another)
+      await phone.back();
       expect((await phone.look()).tab).toBe("tab-home");
       expect(phone.stays()).toBe(true);
-      await phone.back(); // the bottom
+      await phone.back();
       expect(phone.stays()).toBe(true);
       expect((await phone.look()).hint).toBe(true);
       await phone.back();
-      await expect.poll(() => phone.stays()).toBe(false); // (the page before the site takes its time to load)
+      await expect.poll(() => phone.stays()).toBe(false);
     } finally {
       await phone.close();
     }

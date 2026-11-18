@@ -1,11 +1,4 @@
-/* Accounts, profiles and the pages around them: the pictures and forms both screens share, then the phone's pages. */
-
-/* ------------------------------ pictures ------------------------------ */
-
-/* A profile picture is as big as the text around it, so a parent sets the size with font-size. */
 .avatar { display: block; flex: none; width: 1em; height: 1em; border-radius: 14%; overflow: hidden; }
-
-/* ------------------------------ forms ------------------------------ */
 
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
 .auth-field { display: flex; flex-direction: column; gap: 6px; }
@@ -13,17 +6,16 @@
 .auth-field > small { color: var(--muted); font-size: 0.78rem; }
 .auth-field input {
   width: 100%;
-  min-height: 44px; /* a thumb's size, where the text is smaller (a small phone used as the screen) */
+  min-height: 44px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
-  font-size: 1rem; /* 16px: anything smaller makes iPhones zoom in on focus */
+  font-size: 1rem;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .auth-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25); }
-/* The eye in a password field. */
 .secret { position: relative; display: block; }
 .auth-field .secret input { padding-right: 52px; }
 .secret-eye { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: var(--muted); font-size: 1.25rem; transform: translateY(-50%); transition: color 0.15s ease, background 0.15s ease; }
@@ -35,7 +27,6 @@
 .auth-ok { background: rgb(70 211 105 / 0.12); color: var(--ok); }
 .auth-ok svg { flex: none; margin-top: 0.15em; }
 .auth-note { margin: 0; color: var(--muted); font-size: 0.85rem; text-align: center; }
-/* The PIN of a child's profile (controller/Pin.tsx): four digits as big dots, in the middle. */
 .pin-field input { max-width: 12em; align-self: center; font-size: 1.6rem; letter-spacing: 0.5em; text-align: center; padding-left: calc(14px + 0.5em); }
 .pin-field > span:first-child { align-self: center; }
 .pin-masked { -webkit-text-security: disc; }
@@ -57,8 +48,6 @@
 .auth-switch:focus-visible { color: var(--text); }
 @media (hover: hover) { .auth-switch:hover { color: var(--text); } }
 .auth-switch.danger { color: var(--bad); text-decoration: none; }
-/* "Continue with Google" on the phone: Google's own look for it (light, dark words, its four-colour G), as tall as the phone's other buttons. On the TV it is a button
-   like the others there (light while the remote is on it, as every one is), with the G. */
 .google-btn { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; }
 .google-btn:not(.tv-action) {
   min-height: 48px;
@@ -77,12 +66,9 @@
 .google-mark { flex: none; width: 20px; height: 20px; }
 .tv-action .google-mark, .tv-hero-button .google-mark { width: 1.1em; height: 1.1em; }
 .tv-line-icon .google-mark { width: 1em; height: 1em; }
-/* The line between Google and the form. */
 .auth-or { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--muted); font-size: 0.85rem; }
 .auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .tv .auth-tv .auth-or { gap: 0.6em; font-size: 1.4em; }
-
-/* ------------------------------ profiles ------------------------------ */
 
 .profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 20px 14px; margin: 0; padding: 0; list-style: none; }
 .profile-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; color: var(--muted); font-weight: 600; transition: color 0.15s ease; }
@@ -93,7 +79,7 @@
 .profile-tile[aria-current="true"] .profile-picture { box-shadow: 0 0 0 3px var(--accent); }
 .profile-tile:focus-visible { color: var(--text); outline: none; }
 @media (hover: hover) { .profile-tile:hover { color: var(--text); outline: none; } }
-.profile-name { display: -webkit-box; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; font-size: 0.95rem; line-height: 1.25; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; } /* up to two lines, then an ellipsis: a name can be sixteen letters */
+.profile-name { display: -webkit-box; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; font-size: 0.95rem; line-height: 1.25; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .profile-pencil { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 14%; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 0.34em; }
 .profile-add .profile-picture { display: grid; place-items: center; width: 1em; height: 1em; border: 2px dashed rgba(255, 255, 255, 0.28); }
 .profile-plus { display: grid; place-items: center; color: var(--muted); font-size: 0.42em; }
@@ -112,14 +98,12 @@
 .editor-confirm { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: rgb(255 107 107 / 0.1); }
 .editor-confirm p { margin: 0; line-height: 1.4; }
 
-/* ------------------------------ the phone's pages ------------------------------ */
-
 .flip { transform: scaleX(-1); }
 .turn-up { transform: rotate(-90deg); }
 .turn-down { transform: rotate(90deg); }
 .page { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--bg); animation: page-in 0.22s ease; }
 @keyframes page-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
-.page:focus { outline: none; } /* (the keyboard is put on the page when it opens: the page itself needs no ring) */
+.page:focus { outline: none; }
 .page-head { display: flex; align-items: center; gap: 6px; padding: max(10px, env(safe-area-inset-top)) 10px 6px; }
 .page-head h2 { margin: 0; font-size: 1.15rem; }
 .page-body { flex: 1; width: 100%; max-width: 520px; margin: 0 auto; padding: 8px 16px max(32px, env(safe-area-inset-bottom)); overflow-y: auto; }
@@ -155,13 +139,10 @@
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); }
 .segmented button { padding: 11px 6px; border-radius: 9px; font-weight: 600; transition: background 0.15s ease, color 0.15s ease; }
 .segmented button[aria-checked="true"] { background: #fff; color: #000; }
-/* On the first screens: small, and out of the way of the main button. */
 .segmented.compact { width: min(100%, 300px); margin: 0 auto; font-size: 0.85rem; }
 .segmented.compact button { padding: 8px 6px; }
-/* Two choices share the width (the grid is made for three: with two, the third place would stand empty). */
 .segmented.pair { grid-template-columns: repeat(2, 1fr); }
 
-/* All six in one row, whatever the width: the gap gives a little first, then the swatches themselves (never a second line with one left over). */
 .swatches { display: flex; align-items: flex-start; gap: 14px; }
 .swatch { display: grid; place-items: center; flex: 0 1 42px; min-width: 0; aspect-ratio: 1; border-radius: 50%; color: #fff; font-size: 1.2rem; transition: transform 0.12s ease, box-shadow 0.12s ease; }
 @media (max-width: 380px) { .swatches { gap: 8px; } }
@@ -184,7 +165,6 @@
 .device-icon { display: grid; place-items: center; color: var(--muted); font-size: 1.4rem; }
 .device-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .device-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The name is the button that renames it (a pencil after it says so); under a finger it is as wide as the row's text. */
 .device-name-button { display: flex; align-items: center; gap: 6px; min-width: 0; margin: -4px 0; padding: 4px 0; text-align: left; transition: color 0.12s ease; }
 .device-name-button b { min-width: 0; }
 .device-name-button svg { flex: none; color: var(--muted); font-size: 0.9rem; transition: color 0.12s ease; }
@@ -193,7 +173,7 @@
 .device-name-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .device-name { width: 100%; min-width: 0; margin: -4px 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-weight: 700; }
 .device-name:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-.device-name + small { margin-top: 10px; } /* the box has a negative margin of 4px and its ring reaches 3px past it: the words under it are not left touching either */
+.device-name + small { margin-top: 10px; }
 .device-text small { color: var(--muted); }
 .device-list li[data-current="true"] .device-text small { color: var(--ok); font-weight: 600; }
 
@@ -206,7 +186,6 @@
 .link-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .link-code-input { font-size: 1.6rem; letter-spacing: 0.18em; text-transform: uppercase; }
 
-/* The corner of the phone's pages: who is signed in, or a way to sign in. */
 .avatar-button { flex: none; font-size: 36px; line-height: 0; border-radius: 14%; transition: transform 0.15s ease, box-shadow 0.15s ease; }
 .avatar-button:active { transform: scale(0.92); }
 .avatar-button:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff; }
@@ -219,7 +198,6 @@
 .choose .profile-grid { grid-template-columns: repeat(auto-fit, 104px); justify-content: center; width: 100%; }
 .choose .profile-editor { width: 100%; text-align: left; }
 
-/* A short message from the account (what was brought across at sign-in), over everything. At the bottom, as the remote's own are: a page's title is at the top. */
 .account-toast { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 80; width: max-content; max-width: min(92vw, 420px); margin: 0; padding: 11px 18px; border-radius: 14px; background: rgba(245, 245, 245, 0.97); color: #111; font-size: 0.9rem; font-weight: 600; line-height: 1.3; text-align: center; transform: translateX(-50%); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); animation: account-toast 4.5s ease-out forwards; pointer-events: none; }
 @keyframes account-toast {
   0% { opacity: 0; transform: translate(-50%, 10px); }
@@ -230,11 +208,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .page { animation-duration: 0.01s; }
-  .account-toast { animation: none; } /* (it fades out at the end: a quick animation would leave it where it ends, gone, before it is read) */
+  .account-toast { animation: none; }
   .profile-picture, .avatar-choice, .switch::after, .swatch { transition: none; }
 }
 
-/* Setting a profile up, and the sections it watches (ProfileSetup.tsx), on the phone. */
 .section-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .section-choice { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); color: var(--muted); font-weight: 700; text-align: left; box-shadow: inset 0 0 0 2px transparent; }
 .section-choice-icon { display: flex; font-size: 1.35rem; }

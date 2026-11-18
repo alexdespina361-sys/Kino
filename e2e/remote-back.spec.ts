@@ -2,35 +2,20 @@ import { expect, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { guestStorage, openLibrary, openProfilePlace, openTvSignIn, PICTURE_NAMED, sleepingServer, test, tvRoot, withLibrary, showProfilePage } from "./helpers";
 
-/**
- * The remote's Back key on the TV. Every page, menu and window that opens over the library or the film is opened (with the mouse, which is
- * quicker than walking there) and Back is pressed (Escape: it is the key a remote's Back arrives as, see tv/keys.ts). Each one goes out one step,
- * to the page it was opened from, and a window on a window is walked out of the same way. The Close and Back buttons stay for those with a mouse.
- * (The end card, the error card and the countdown to the next episode keep their Back with the player's tests in tv-screens.spec.ts.)
- */
-
-test.use({ actionTimeout: 15_000 }); // (a wrong id fails in seconds, not when the test runs out of time)
+test.use({ actionTimeout: 15_000 });
 
 const HD = { width: 1280, height: 720 };
 
 const id = (testId: string) => `[data-testid="${testId}"]`;
-/** The library, on the page of one view (home, the profile's...). */
 const viewing = (view: string) => `[data-testid="tv-browse"][data-view="${view}"]`;
-/** ...or on a list (the first is "list", any other "list:" and its name). */
 const LISTS = `[data-testid="tv-browse"][data-view^="list"]`;
 
-/** A page, menu or window that opens over what is there: how it is opened, and what shows that it is up. */
 interface Level {
   open: () => Promise<unknown>;
   shown: string;
-  /** What shows again after Back, where that is not the level before this one. */
   then?: string;
 }
 
-/**
- * Opens each level over the one before, then presses Back once for each and holds that the one on top went, and the one under it is there:
- * after the last it is the library, with the remote on something (a Back that lost it would leave the TV with nothing to press).
- */
 async function backOut(tv: Page, levels: Level[], library = id("tv-browse")) {
   for (const level of levels) {
     await level.open();
@@ -49,7 +34,6 @@ const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", s
 
 test("the remote's Back goes one step out of every page, menu and window of the TV", async ({ browser }) => {
   test.setTimeout(240_000);
-  // A guest with two lists (so that a title's page has Other lists, which asks which one).
   const tv = await openLibrary(browser, withLibrary(library), HD, guestStorage({ listNames: [{ key: "lweekend", at: Date.now() - 5000, name: "Weekend" }] }));
   await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 6_000 });
   const tiles = tv.getByTestId("tv-browse-tile");
@@ -78,7 +62,7 @@ test("the remote's Back goes one step out of every page, menu and window of the 
       { open: click("rail-list"), shown: LISTS },
       {
         open: async () => {
-          await tv.locator('[data-testid^="list-chip-l"]').click(); // (Weekend: the first list can't be removed)
+          await tv.locator('[data-testid^="list-chip-l"]').click();
           await tv.getByTestId("list-edit").click();
         },
         shown: id("tv-list-edit"),
@@ -117,7 +101,7 @@ test("the remote's Back goes one step out of every page, menu and window of the 
     await tv.getByTestId("tv-detail-play").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
     for (const [button, menu] of [["tv-speed-btn", "audio-subtitles-modal"], ["tv-party-btn", "tv-party-panel"]] as const) {
-      await tv.mouse.move(60, 60); // (wakes the controls)
+      await tv.mouse.move(60, 60);
       await tv.getByTestId(button).click();
       await expect(tv.locator(id(menu))).toBeVisible();
       await tv.keyboard.press("Escape");
@@ -126,7 +110,7 @@ test("the remote's Back goes one step out of every page, menu and window of the 
     }
     await tv.mouse.move(70, 70);
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
-    await tv.keyboard.press("Escape"); // with the controls up, Back leaves the film
+    await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
   });
@@ -158,14 +142,14 @@ test("the remote's Back goes one step out of every page, menu and window of the 
 
     await guest.keyboard.press("Escape");
     await expect(guest.getByTestId("tv-leave")).toBeFocused();
-    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing"); // Back alone leaves nothing
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing");
     await guest.keyboard.press("Enter");
     await expect(guest.getByTestId("tv-leave")).toHaveCount(0);
-    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // and the host carries on
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
   });
 
   await test.step("a screen that is still waiting for its code", async () => {
-    const waiting = await openLibrary(browser, sleepingServer(), HD); // (the server does not answer: there is no code to show yet)
+    const waiting = await openLibrary(browser, sleepingServer(), HD);
     await waiting.getByTestId("rail-connect").click();
     await expect(waiting.getByTestId("tv-connecting")).toBeVisible();
     await waiting.keyboard.press("Escape");
@@ -183,14 +167,14 @@ test("the remote's Back, on a screen with a profile and friends", async ({ brows
   await tv.getByTestId("auth-switch").click();
   await expect(tv.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
   await tv.getByTestId("auth-email").fill(name);
-  await tv.getByTestId("auth-password").fill("kino-test-pass-1"); // (a password that is not asked about)
+  await tv.getByTestId("auth-password").fill("kino-test-pass-1");
   await tv.getByTestId("auth-submit").click();
-  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED); // (a new profile is named after its picture)
-  await showProfilePage(tv); // (friends are on for everybody: the profile's page has them at once)
+  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
+  await showProfilePage(tv);
   await expect(tv.locator('[data-entry="profile:friends"]')).toBeVisible();
   await tv.getByTestId("rail-home").click();
   const click = (testId: string) => () => tv.getByTestId(testId).click();
-  const panel: Level = { open: () => openProfilePlace(tv, "settings"), shown: id("tv-account") }; // (the settings: the corner's button, then the one in the profile's corner)
+  const panel: Level = { open: () => openProfilePlace(tv, "settings"), shown: id("tv-account") };
 
   await test.step("the bell", () => backOut(tv, [{ open: click("tv-bell"), shown: id("tv-bell-page") }]));
 

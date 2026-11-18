@@ -2,7 +2,6 @@ import type { TitleAbout } from "../../shared";
 import { useLanguage, useT } from "../i18n";
 import { ageOf } from "./about";
 
-/** The age rating and the genres of a title, as a line. */
 export function AboutFacts({ about, hasRoDub }: { about: TitleAbout; hasRoDub?: boolean }) {
   const t = useT();
   const age = ageOf(about.ages, useLanguage());
@@ -11,7 +10,6 @@ export function AboutFacts({ about, hasRoDub }: { about: TitleAbout; hasRoDub?: 
   return (
     <p className="about-facts" data-testid="about-facts">
       {age && (
-        // (The country is the badge's small word: a rating is read as the country that gives it writes it.)
         <span className="about-age" data-testid="about-age" title={t("about.age")}>
           {age.rating}
           <small>{age.country}</small>
@@ -31,7 +29,6 @@ export function AboutFacts({ about, hasRoDub }: { about: TitleAbout; hasRoDub?: 
   );
 }
 
-/** Who directed a film or created a show, and who is in it: a line for each that is known. */
 export function AboutPeople({ about }: { about: TitleAbout }) {
   const t = useT();
   const lines = [

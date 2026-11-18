@@ -1,7 +1,3 @@
-/**
- * Puts `text` on the clipboard. False when the browser would not: a page that is not secure has no clipboard to write to, and some
- * refuse it without a press. (Called from a press, as every browser wants.)
- */
 export async function copyText(text: string): Promise<boolean> {
   try {
     if (typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function") {
@@ -9,15 +5,12 @@ export async function copyText(text: string): Promise<boolean> {
       return true;
     }
   } catch {
-    /* refused: the old way below may still be let through */
   }
   return copyFromField(text);
 }
 
-/** Whether this browser has a clipboard a page may ask to read (a TV's browser, or a page that is not secure, has none): the Paste buttons are there only then. */
 export const canPaste = (): boolean => typeof navigator !== "undefined" && typeof navigator.clipboard?.readText === "function";
 
-/** What is on the clipboard, or null when the browser will not say (it was refused, or there is no clipboard to read). Called from a press, as every browser wants. */
 export async function pasteText(): Promise<string | null> {
   try {
     return canPaste() ? await navigator.clipboard.readText() : null;
@@ -26,7 +19,6 @@ export async function pasteText(): Promise<string | null> {
   }
 }
 
-/** The old way, for a page with no clipboard of its own to write to (a TV's browser, a page that is not secure): select a hidden field and copy from it. */
 function copyFromField(text: string): boolean {
   if (typeof document === "undefined") return false;
   const before = document.activeElement as HTMLElement | null;
@@ -41,10 +33,8 @@ function copyFromField(text: string): boolean {
   try {
     copied = document.execCommand("copy");
   } catch {
-    /* not allowed here either */
   }
   field.remove();
-  // (Selecting the field took the focus off the button the remote was on, and a page with the focus nowhere does not answer its arrow keys.)
   before?.focus?.({ preventScroll: true });
   return copied;
 }

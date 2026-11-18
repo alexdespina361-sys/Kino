@@ -28,23 +28,19 @@ const clock = { now: Date.now() };
 
 async function start(persistence = new MemoryPersistence()) {
   const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
-  // (The watch parties keep the same time as the accounts, so a code can be made to run out.)
   const registry = new Registry({ now: () => clock.now });
   const app = await buildApp({ accounts: store, passwordCost: cheap, registry });
   apps.push(app);
   return { app, store, persistence, registry };
 }
 
-/** A TV with a party open: the screen, and the code that brings others in. */
 function openParty(registry: Registry) {
   const host = registry.tvHello();
   return { host, code: registry.ensurePartyCode(host)!.code };
 }
 
-/** One browser: it keeps its cookie, and sends it back. */
 class Client {
   cookie = "";
-  /** The address this browser is on (what its calls say they came to), when a test needs to say. */
   host = "";
   constructor(private readonly app: FastifyInstance) {}
 
@@ -74,16 +70,12 @@ class Client {
   delete = (url: string) => this.call("DELETE", url);
 }
 
-/** Somebody with an account, their first profile, and the means to change what that profile keeps and chooses. */
 interface Person {
   client: Client;
   id: string;
   name: string;
-  /** The number that goes with the name (see `tagLabel`). */
   tag: number;
-  /** Change what the profile chooses (as its settings sync does). */
   choose(choices: Record<string, boolean>): Promise<void>;
-  /** Put things in the profile's collections. */
   keep(items: Record<string, unknown[]>): Promise<void>;
   friends(): Promise<LightMyRequestResponse & { data: any }>;
   state(): Promise<FriendsState>;
@@ -93,13 +85,11 @@ async function person(app: FastifyInstance, login: string): Promise<Person> {
   const client = new Client(app);
   const registered = await client.post("/api/auth/register", { email: login, password: "x" });
   expect(registered.statusCode).toBe(201);
-  // (Its owner names it at setup, here as the login goes: "alex" -> "Alex". A new profile is named after its picture.)
   const named = await client.call("PATCH", `/api/profiles/${registered.data.profiles[0].id}`, { name: login.charAt(0).toUpperCase() + login.slice(1) });
   expect(named.statusCode).toBe(200);
   return profileOf(client, named.data.profiles[0]);
 }
 
-/** One of the profiles of a signed-in account. */
 function profileOf(client: Client, profile: { id: string; name: string; tag: number }): Person {
   const sync = (body: Record<string, unknown>) => client.post(`/api/profiles/${profile.id}/sync`, { since: 0, ...body });
   const me: Person = {
@@ -128,7 +118,6 @@ function profileOf(client: Client, profile: { id: string; name: string; tag: num
 const url = (id: number) => `https://filmpire.sc/watch/${id}`;
 const mine = (who: Person, path = "") => `/api/profiles/${who.id}/friends${path}`;
 
-/** Two people with friends on, who are not yet friends. */
 async function pair(choices: Record<string, boolean> = {}) {
   const world = await start();
   const alex = await person(world.app, "alex");
@@ -138,7 +127,6 @@ async function pair(choices: Record<string, boolean> = {}) {
   return { ...world, alex, sam };
 }
 
-/** Two people with friends on, who are friends. */
 async function friends(choices: Record<string, boolean> = {}) {
   const world = await pair(choices);
   const made = await world.alex.client.post(mine(world.alex, "/invites"));
@@ -150,11 +138,10 @@ async function friends(choices: Record<string, boolean> = {}) {
 
 describe("friends are on for everybody, and off only where `friendsOff` says so", () => {
   it("answers a new profile at once; one that friends are turned off for, nothing, and it tells why", async () => {
-    // (The owner, 15 Nov 2026: "remove the ratings and friends and turn it on for all accounts". `friendsOff` is kept for the child profile to come.)
     const { app } = await start();
     const alex = await person(app, "alex");
     expect(await alex.state()).toEqual({ friends: [], inbox: [], activity: [], invites: [], requests: [], sent: [] });
-    await alex.choose({ friends: false }); // (the old master switch is not read for it any more)
+    await alex.choose({ friends: false });
     expect((await alex.friends()).statusCode).toBe(200);
 
     await alex.choose({ friendsOff: true });
@@ -168,14 +155,12 @@ describe("friends are on for everybody, and off only where `friendsOff` says so"
   });
 
   it("turns friends off for a child's profile, keeps the friendship, and gives it back when the profile is not a child's any more", async () => {
-    // (The owner, 15 Nov 2026: a child's profile has only cartoons, and friends are off for it.)
     const { alex, sam } = await friends();
     await alex.choose({ child: true });
     const refused = await alex.friends();
     expect(refused.statusCode).toBe(403);
     expect(refused.data).toEqual({ error: "friends_off" });
     expect((await alex.client.post(mine(alex, "/invites"))).statusCode).toBe(403);
-    // (Their friend still has them, as off: nothing of theirs is shown, and nothing can be sent to them.)
     expect((await sam.state()).friends).toMatchObject([{ id: alex.id, on: false, activity: false, lists: false, ratings: false }]);
     await alex.choose({ child: false });
     expect((await alex.friends()).statusCode).toBe(200);
@@ -184,7 +169,6 @@ describe("friends are on for everybody, and off only where `friendsOff` says so"
 
   it("keeps what a profile chose before as it was, and does not share what it watches or its ratings until it says so", async () => {
     const { alex, sam, store } = await friends();
-    // (Alex had friends turned off, with sharing on from before that, and ratings turned off: the friendship was kept.)
     await alex.choose({ friendsGive: true, friends: false, ratings: false });
     await sam.choose({ friendsGive: true });
     const watched = { key: `url:${url(1)}`, at: clock.now - 60_000, title: "Film 1", url: url(1), position: 600, duration: 7200 };
@@ -193,10 +177,8 @@ describe("friends are on for everybody, and off only where `friendsOff` says so"
     expect(seen).toMatchObject({ id: alex.id, on: true, lists: true, ratings: false, activity: false });
     expect((await sam.state()).activity).toEqual([]);
     expect((await sam.client.get(mine(sam, `/${alex.id}/ratings`))).statusCode).toBe(403);
-    // Nothing was written over or taken away behind its back.
     expect(store.settingsOf(alex.id)).toMatchObject({ friendsGive: true, friends: false, ratings: false });
 
-    // Sharing turned on again says friends are on as well (the phone and the TV write both); ratings shown to friends, that ratings are on.
     await alex.choose({ friendsGive: true, friends: true });
     expect((await sam.state()).activity).toMatchObject([{ friend: alex.id, title: "Film 1" }]);
     await alex.choose({ friendsRatings: true, ratings: true });
@@ -223,14 +205,12 @@ describe("friends are on for everybody, and off only where `friendsOff` says so"
     await alex.keep({ list: [{ key: `url:${url(1)}`, at: 5000, id: "1", title: "Dune", url: url(1) }] });
 
     await alex.choose({ friendsOff: true });
-    // The page of friends and everything that adds to them or shares stays shut...
     expect((await alex.friends()).data).toEqual({ error: "friends_off" });
     expect((await alex.client.post(mine(alex, "/invites"))).statusCode).toBe(403);
     expect((await alex.client.post(mine(alex, "/accept"), { code: "ABCD2345" })).statusCode).toBe(403);
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: "123456", endsAt: 1 })).statusCode).toBe(403);
     expect((await alex.client.get(mine(alex, `/${sam.id}/lists`))).statusCode).toBe(403);
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).toEqual({ error: "not_shared" });
-    // ...but who the friends are can be seen, and nothing else of them: not even what they have switched on or off.
     const kept = await alex.client.get(mine(alex, "/kept"));
     expect(kept.statusCode).toBe(200);
     expect(Object.keys(kept.data)).toEqual(["friends"]);
@@ -241,7 +221,6 @@ describe("friends are on for everybody, and off only where `friendsOff` says so"
     expect((await alex.client.delete(mine(alex, `/${sam.id}`))).statusCode).toBe(204);
     expect((await alex.client.get(mine(alex, "/kept"))).data).toEqual({ friends: [] });
 
-    // Friends back on afterwards: Sam is not one of them any more, and has not seen a thing in between.
     await alex.choose({ friendsOff: false });
     expect((await alex.state()).friends).toEqual([]);
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).statusCode).toBe(404);
@@ -270,7 +249,6 @@ describe("making friends", () => {
     expect(seenBySam.friends.map((friend) => friend.id)).toEqual([alex.id]);
     expect(seenByAlex.friends.map((friend) => friend.id)).toEqual([sam.id]);
     expect(seenByAlex.invites).toEqual([]);
-    // The code is spent.
     expect((await sam.client.post(mine(sam, "/accept"), { code: made.data.code })).data).toEqual({ error: "invite_gone" });
   });
 
@@ -291,7 +269,7 @@ describe("making friends", () => {
   it("takes back a code, and keeps only a few out at a time", async () => {
     const { alex, sam } = await pair();
     const { data: made } = await alex.client.post(mine(alex, "/invites"));
-    expect((await sam.client.delete(mine(sam, `/invites/${made.code}`))).statusCode).toBe(404); // not hers to take back
+    expect((await sam.client.delete(mine(sam, `/invites/${made.code}`))).statusCode).toBe(404);
     expect((await alex.client.delete(mine(alex, `/invites/${made.code}`))).statusCode).toBe(204);
     expect((await sam.client.post(mine(sam, "/accept"), { code: made.code })).statusCode).toBe(404);
 
@@ -357,7 +335,6 @@ describe("asking to be friends by tag", () => {
   const tagOf = (who: Person) => `${who.name}#${who.tag}`;
   const peek = (from: Person, text: string) => from.client.get(mine(from, `/tags/${encodeURIComponent(text)}`));
   const ask = (from: Person, text: string) => from.client.post(mine(from, "/requests"), { tag: text });
-  /** Somebody as it is shown to one who is not their friend. */
   const shown = (who: Person) => ({ id: who.id, name: who.name, avatar: expect.any(String), tag: who.tag });
 
   it("gives every profile a tag, and finds the profile a tag names however it is typed, showing who it is and no more", async () => {
@@ -382,7 +359,6 @@ describe("asking to be friends by tag", () => {
     const slowed = await peek(alex, "Nobody#9");
     expect(slowed.statusCode).toBe(429);
     expect(Number(slowed.headers["retry-after"])).toBeGreaterThan(0);
-    // (asking shares the allowance: guessing by asking is no way round it)
     expect((await ask(alex, "Nobody#9")).statusCode).toBe(429);
   });
 
@@ -413,7 +389,6 @@ describe("asking to be friends by tag", () => {
     expect((await alex.state()).friends).toEqual([]);
     expect((await alex.state()).requests).toEqual([]);
 
-    // Asking again does not ask twice.
     expect((await ask(alex, tagOf(sam))).statusCode).toBe(201);
     expect((await sam.state()).requests).toHaveLength(1);
   });
@@ -441,7 +416,6 @@ describe("asking to be friends by tag", () => {
     expect((await alex.state()).sent).toEqual([]);
     expect((await sam.client.delete(mine(sam, `/requests/${alex.id}`))).statusCode).toBe(404);
     expect((await sam.client.post(mine(sam, `/requests/${alex.id}/accept`))).statusCode).toBe(404);
-    // (and the one who was turned down may ask again)
     expect((await ask(alex, tagOf(sam))).statusCode).toBe(201);
     expect((await sam.state()).requests).toHaveLength(1);
   });
@@ -462,7 +436,7 @@ describe("asking to be friends by tag", () => {
     await alex.choose({ friendsOff: true });
     expect((await sam.state()).requests).toEqual([]);
     expect((await sam.client.post(mine(sam, `/requests/${alex.id}/accept`))).statusCode).toBe(404);
-    expect((await ask(alex, tagOf(sam))).data).toEqual({ error: "friends_off" }); // (nor can they ask while they are off)
+    expect((await ask(alex, tagOf(sam))).data).toEqual({ error: "friends_off" });
     await alex.choose({ friendsOff: false });
     expect((await sam.state()).requests).toEqual([{ from: shown(alex), at: expect.any(Number) }]);
     expect((await sam.client.post(mine(sam, `/requests/${alex.id}/accept`))).statusCode).toBe(201);
@@ -576,7 +550,6 @@ describe("what a friend lets be seen", () => {
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).statusCode).toBe(403);
     expect((await sam.client.get(mine(sam, `/${alex.id}/ratings`))).statusCode).toBe(403);
     expect((await sam.state()).friends[0]).toMatchObject({ on: false, lists: false, ratings: false, activity: false, inbox: false });
-    // (They are still friends: turning friends back on brings it all back.)
     await alex.choose({ friendsOff: false });
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).statusCode).toBe(200);
   });
@@ -607,7 +580,6 @@ describe("what a friend lets be seen", () => {
 
 describe("what comes from a friend is made fit to show", () => {
   const own = "kino.example";
-  /** What a friend could put in the pictures of their things: one that is fine, and ones that would make the browser of whoever looks call this site or something else. */
   const pictures = { fine: "https://image.tmdb.org/t/p/w342/a.jpg", ours: "https://kino.example/api/link/ABCD2345", oursAgain: "https://KINO.example:8443/api/me", path: "/api/profiles/x/friends/invites/AAAAAAAA", script: "javascript:alert(1)" };
 
   it("cleans the words and keeps only the pictures of other sites in a friend's lists, ratings and activity", async () => {
@@ -622,14 +594,14 @@ describe("what comes from a friend is made fit to show", () => {
     await alex.keep({ list: [dune, alien, hollow], listNames: names, ratings: [rated], progress: [watched] });
 
     const shown = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data;
-    expect(shown.listNames.map((list: { name: string }) => list.name).sort()).toEqual(["?", "Scary"]); // (a name that is nothing to see is still a name)
+    expect(shown.listNames.map((list: { name: string }) => list.name).sort()).toEqual(["?", "Scary"]);
     const lists = shown.list as Array<Record<string, unknown>>;
     const byTitle = (title: string) => lists.find((item) => item.title === title);
     expect(byTitle("enuD")).toMatchObject({ backdrop: pictures.fine });
     expect(byTitle("enuD")).not.toHaveProperty("image");
     expect(byTitle("Alien")).not.toHaveProperty("image");
     expect(byTitle("Alien")).not.toHaveProperty("backdrop");
-    expect(byTitle("?")).toMatchObject({ id: "4" }); // (a title that is nothing to see is still a title)
+    expect(byTitle("?")).toMatchObject({ id: "4" });
 
     const rating =(await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data.ratings[0];
     expect(rating).toMatchObject({ note: "Huge.", backdrop: pictures.fine });
@@ -639,7 +611,6 @@ describe("what comes from a friend is made fit to show", () => {
     expect(activity).toMatchObject({ title: `x${"́".repeat(4)} film`, backdrop: pictures.fine });
     expect(activity).not.toHaveProperty("image");
 
-    // (What Alex keeps of his own is his: he is shown it as it is.)
     const alexsOwn = (await alex.client.post(`/api/profiles/${alex.id}/sync`, { since: 0 })).data;
     expect(alexsOwn.list.find((item: { key: string }) => item.key === dune.key)).toMatchObject({ title: "‮enuD​", image: pictures.ours });
   });
@@ -651,7 +622,6 @@ describe("what comes from a friend is made fit to show", () => {
     const shown = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.list as Array<{ url: string }>;
     expect(shown.map((item) => item.url)).toEqual(["https://example.com/�"]);
     expect(() => encodeURIComponent(shown[0]!.url)).not.toThrow();
-    // (and one cannot be sent to a friend in the first place)
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "recommend", title: "Dune", url: bad })).statusCode).toBe(400);
   });
 
@@ -667,7 +637,6 @@ describe("what comes from a friend is made fit to show", () => {
     expect(inbox).toMatchObject([{ title: "enuD", note: "Loud.", backdrop: pictures.fine }]);
     expect(inbox[0]).not.toHaveProperty("image");
     expect(list[0]!.name).toBe("Alex");
-    // (...and so is the name that a code shows to whoever has it.)
     const { data: made } = await alex.client.post(mine(alex, "/invites"));
     expect((await sam.client.get(mine(sam, `/invites/${made.code}`))).data).toMatchObject({ from: { name: "Alex" } });
   });
@@ -698,7 +667,7 @@ describe("recommendations and invitations to a party", () => {
 
     expect((await sam.client.post(mine(sam, "/inbox/read"))).statusCode).toBe(204);
     expect((await sam.state()).inbox[0]).toMatchObject({ read: true });
-    expect((await alex.client.delete(mine(alex, `/inbox/${inbox[0]!.id}`))).statusCode).toBe(404); // not hers
+    expect((await alex.client.delete(mine(alex, `/inbox/${inbox[0]!.id}`))).statusCode).toBe(404);
     expect((await sam.client.delete(mine(sam, `/inbox/${inbox[0]!.id}`))).statusCode).toBe(204);
     expect((await sam.state()).inbox).toEqual([]);
   });
@@ -710,7 +679,7 @@ describe("recommendations and invitations to a party", () => {
     expect(invited.data.sent).toEqual([sam.id]);
     const [item] = (await sam.state()).inbox;
     expect(item).toMatchObject({ kind: "party", from: alex.id, code, open: true, endsAt: clock.now + 600_000, read: false });
-    expect(item).not.toHaveProperty("host"); // (which screen it is on is for the server)
+    expect(item).not.toHaveProperty("host");
   });
 
   it("refuses an invitation to a code no party is open with, and delivers nothing", async () => {
@@ -729,7 +698,7 @@ describe("recommendations and invitations to a party", () => {
     expect(registry.joinParty(registry.tvHello(), code).ok).toBe(true);
     await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
 
-    clock.now += 11 * 60_000; // (the code ran out; the party did not)
+    clock.now += 11 * 60_000;
     expect(registry.partyCodeOf(host)).toBeNull();
     const [item] = (await sam.state()).inbox;
     expect(item).toMatchObject({ kind: "party", open: true });
@@ -741,12 +710,11 @@ describe("recommendations and invitations to a party", () => {
   it("is to the party it was sent for: once the screen hosts another party, an old invitation does not open it, and a new one does", async () => {
     const { alex, sam, registry } = await friends();
     const first = openParty(registry);
-    registry.joinParty(registry.tvHello(), first.code); // (somebody came)
+    registry.joinParty(registry.tvHello(), first.code);
     const invite = (code: string) => alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
     expect((await invite(first.code)).statusCode).toBe(200);
     expect((await sam.state()).inbox[0]).toMatchObject({ kind: "party", open: true, code: first.code });
 
-    // The host ends it, and two hours later opens another one on the same screen for somebody else.
     registry.closeParty(first.host);
     clock.now += 2 * 3600_000;
     const second = registry.ensurePartyCode(first.host)!.code;
@@ -756,7 +724,6 @@ describe("recommendations and invitations to a party", () => {
     expect(JSON.stringify(stale)).not.toContain(second);
     expect(registry.hostOfPartyCode(second)).toBe(first.host);
 
-    // An invitation to the new one opens, with its code.
     expect((await invite(second)).statusCode).toBe(200);
     expect((await sam.state()).inbox[0]).toMatchObject({ kind: "party", open: true, code: second });
   });
@@ -772,13 +739,13 @@ describe("recommendations and invitations to a party", () => {
     }
     const { host, code } = openParty(registry);
     const samTv = registry.tvHello();
-    registry.setProfile(samTv, sam.id); // (as the accounts proved it: this screen is Sam's)
+    registry.setProfile(samTv, sam.id);
     expect(registry.joinParty(samTv, code).ok).toBe(true);
     const endsAt = clock.now + 600_000;
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id, erin.id], kind: "party", code, endsAt })).statusCode).toBe(200);
     expect((await sam.state()).inbox[0]).toMatchObject({ open: true, code });
 
-    expect(registry.removeGuest(host, samTv.publicId)).toBe(samTv); // (the host's screen sends him away)
+    expect(registry.removeGuest(host, samTv.publicId)).toBe(samTv);
     const fresh = registry.partyCodeOf(host)!.code;
     expect(fresh).not.toBe(code);
     const sams = (await sam.state()).inbox;
@@ -786,11 +753,9 @@ describe("recommendations and invitations to a party", () => {
     expect(JSON.stringify(sams)).not.toContain(fresh);
     expect((await erin.state()).inbox[0]).toMatchObject({ open: true, code: fresh });
 
-    // He knows the code he had, which is no party's now: he cannot invite his own friends to the party with it.
     const forwarded = await sam.client.post(mine(sam, "/send"), { to: [dave.id], kind: "party", code, endsAt });
     expect([forwarded.statusCode, forwarded.data]).toEqual([409, { error: "party_closed" }]);
     expect((await dave.state()).inbox).toEqual([]);
-    // And his screen, which has the new code from nobody, is turned away from it too.
     expect(registry.joinParty(samTv, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
   });
 
@@ -798,11 +763,10 @@ describe("recommendations and invitations to a party", () => {
     const { alex, sam, registry, store } = await friends();
     const { host, code } = openParty(registry);
     registry.joinParty(registry.tvHello(), code);
-    // (What an older server kept: the screen, and no party. The party that screen has now is not the one it was sent for, as far as anything can tell.)
     store.friends.load(`inbox:${sam.id}`, { v: 1, items: [{ id: "old", kind: "party", code, endsAt: clock.now + 600_000, host: host.publicId, at: clock.now, from: alex.id, read: false }] });
     expect((await sam.state()).inbox[0]).toMatchObject({ kind: "party", open: false });
     expect(JSON.stringify((await sam.state()).inbox)).not.toContain(host.publicId);
-    expect(registry.runningParty(host)?.code).toBe(code); // (the party goes on: it is the invitation that is no good)
+    expect(registry.runningParty(host)?.code).toBe(code);
   });
 
   it("says an invitation's party is over once nobody is in it and its code has run out (or it was ended), and keeps what was sent", async () => {
@@ -815,9 +779,8 @@ describe("recommendations and invitations to a party", () => {
     const [over] = (await sam.state()).inbox;
     expect(over).toMatchObject({ kind: "party", open: false, code, from: alex.id });
     expect(registry.hostOfPartyCode(code)).toBeUndefined();
-    expect(registry.partyCodeOf(host)).toBeNull(); // (looking at the invitation did not open the party again)
+    expect(registry.partyCodeOf(host)).toBeNull();
 
-    // An ended party is over too, even with the code still in date.
     const second = openParty(registry);
     await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: second.code, endsAt: clock.now + 600_000 });
     registry.closeParty(second.host);
@@ -831,11 +794,9 @@ describe("recommendations and invitations to a party", () => {
     expect((await sam.state()).inbox).toMatchObject([{ kind: "together", from: alex.id, read: false }]);
     expect((await sam.state()).friends[0]).toMatchObject({ activity: true, inbox: true });
 
-    // Asking again does not pile requests up.
     await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" });
     expect((await sam.state()).inbox).toHaveLength(1);
 
-    // Sam answers by inviting Alex to a party: Alex has the invitation and Sam no longer has the request.
     const { code } = openParty(registry);
     const invited = await sam.client.post(mine(sam, "/send"), { to: [alex.id], kind: "party", code, endsAt: clock.now + 600_000 });
     expect(invited.data.sent).toEqual([alex.id]);
@@ -844,7 +805,7 @@ describe("recommendations and invitations to a party", () => {
   });
 
   it("takes a request to watch together to any friend who takes things, though they tell nothing of what they watch, and not to one who does not take things", async () => {
-    const { alex, sam } = await friends(); // (what they watch is not told by default)
+    const { alex, sam } = await friends();
     expect((await alex.state()).friends[0]).toMatchObject({ activity: false, inbox: true });
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [sam.id], declined: [] });
     expect((await sam.state()).inbox).toMatchObject([{ kind: "together", from: alex.id, read: false }]);
@@ -910,13 +871,10 @@ describe("recommendations and invitations to a party", () => {
 
 describe("plans to watch together", () => {
   const HOUR = 3_600_000;
-  /** `from` puts a plan to `to` for a time `hours` from now (with a few words, if there are any). */
   const put = (from: Person, to: Person, hours: number, note?: string) =>
     from.client.post(mine(from, "/send"), { to: [to.id], kind: "plan", when: clock.now + hours * HOUR, ...(note ? { note } : {}) });
-  /** The ids of what is in a bell, newest first. */
   const idsOf = async (who: Person) => (await who.state()).inbox.map((item) => item.id);
   const reply = (who: Person, itemId: string, yes: boolean) => who.client.post(mine(who, `/plans/${itemId}/${yes ? "accept" : "decline"}`));
-  /** What the plans in a bell say, newest first: when (in hours from `start`) and the answer, if there is one. */
   const plansOf = async (who: Person, start: number) =>
     (await who.state()).inbox.map((item) => (item.kind === "plan" ? [(item.when - start) / HOUR, item.answer] : item.kind));
 
@@ -932,7 +890,6 @@ describe("plans to watch together", () => {
     expect(inbox[0]).not.toHaveProperty("host");
     expect((await alex.state()).inbox).toEqual([]);
 
-    // The same time again takes the place of the plan, and is not announced twice.
     expect((await put(alex, sam, 2, "Or later.")).statusCode).toBe(200);
     const [again, ...rest] = (await sam.state()).inbox;
     expect(rest).toEqual([]);
@@ -940,13 +897,13 @@ describe("plans to watch together", () => {
   });
 
   it("goes to any friend who takes invitations, though they tell nothing of what they watch, and to nobody else", async () => {
-    const { app, alex, sam } = await friends(); // (what they watch is not told by default)
+    const { app, alex, sam } = await friends();
     expect((await put(alex, sam, 2)).data).toEqual({ sent: [sam.id], declined: [] });
     await sam.client.delete(mine(sam, `/inbox/${(await sam.state()).inbox[0]!.id}`));
 
     const stranger = await person(app, "stranger");
     await stranger.choose({ friendsOff: false });
-    expect((await put(alex, stranger, 2)).data).toEqual({ sent: [], declined: [stranger.id] }); // (not a friend)
+    expect((await put(alex, stranger, 2)).data).toEqual({ sent: [], declined: [stranger.id] });
     expect((await alex.client.post(mine(alex, "/send"), { to: ["nobody"], kind: "plan", when: clock.now + 2 * HOUR })).data).toEqual({ sent: [], declined: ["nobody"] });
 
     await sam.choose({ friendsInbox: false });
@@ -1006,7 +963,6 @@ describe("plans to watch together", () => {
     expect((await reply(sam, (await sam.state()).inbox[0]!.id, false)).statusCode).toBe(204);
     expect((await put(alex, sam, 10)).statusCode).toBe(200);
 
-    // Ten in all, over several friends.
     const others: Person[] = [];
     for (const name of ["b", "c", "d"]) {
       const other = await person(app, name);
@@ -1022,7 +978,7 @@ describe("plans to watch together", () => {
     expect(waiting).toBe(PLAN_OPEN_PER_SENDER);
     const [, , last] = others as [Person, Person, Person];
     expect((await put(alex, last, 40)).data).toEqual({ error: "plan_full" });
-    expect((await put(alex, last, 20 + PLAN_OPEN_PER_SENDER - 1, "Changed.")).statusCode).toBe(200); // (the same time: not one more)
+    expect((await put(alex, last, 20 + PLAN_OPEN_PER_SENDER - 1, "Changed.")).statusCode).toBe(200);
   });
 
   it("is answered by the friend it was put to: yes makes it a plan that is on and seen, no takes it away; the one who put it is told either way, in their bell", async () => {
@@ -1030,7 +986,7 @@ describe("plans to watch together", () => {
     const start = clock.now;
     await put(alex, sam, 2);
     await put(alex, sam, 3);
-    const [no, yes] = await idsOf(sam); // (the newest first: the plan for three hours from now)
+    const [no, yes] = await idsOf(sam);
 
     expect((await reply(sam, yes!, true)).statusCode).toBe(204);
     expect((await reply(sam, no!, false)).statusCode).toBe(204);
@@ -1057,18 +1013,18 @@ describe("plans to watch together", () => {
     }
     const robin = await person(app, "robin");
     await robin.choose({ friendsOff: false });
-    expect((await reply(robin, planId, true)).statusCode).toBe(404); // (it is not in Robin's bell)
-    expect((await robin.client.post(mine(sam, `/plans/${planId}/accept`))).statusCode).toBe(404); // (nor is Sam's profile Robin's to answer for)
+    expect((await reply(robin, planId, true)).statusCode).toBe(404);
+    expect((await robin.client.post(mine(sam, `/plans/${planId}/accept`))).statusCode).toBe(404);
     expect((await new Client(app).post(mine(sam, `/plans/${planId}/accept`))).statusCode).toBe(401);
     expect(await plansOf(sam, 0)).toHaveLength(2);
 
     expect((await reply(sam, planId, true)).statusCode).toBe(204);
-    for (const yes of [true, false]) expect((await reply(sam, planId, yes)).data).toEqual({ error: "plan_gone" }); // (answered once)
+    for (const yes of [true, false]) expect((await reply(sam, planId, yes)).data).toEqual({ error: "plan_gone" });
     expect((await sam.state()).inbox.find((item) => item.id === planId)).toMatchObject({ answer: "yes" });
 
     await put(alex, sam, 1, "A second one.");
     const second = (await sam.state()).inbox.find((item) => item.kind === "plan" && item.answer === undefined)!;
-    clock.now += HOUR; // (its time has come: nobody can say yes to a time that is here)
+    clock.now += HOUR;
     expect((await reply(sam, second.id, true)).data).toEqual({ error: "plan_gone" });
   });
 
@@ -1084,7 +1040,6 @@ describe("plans to watch together", () => {
     expect((await alex.state()).inbox).toEqual([]);
     expect((await sam.state()).inbox).toEqual([]);
 
-    // A profile that turned friends off answers nothing.
     await put(alex, sam, 3);
     const [again] = await idsOf(sam);
     await sam.choose({ friendsOff: true });
@@ -1140,7 +1095,7 @@ describe("plans to watch together", () => {
     expect(await plansOf(sam, start)).toEqual(["party", [2, "yes"]]);
     expect(await plansOf(alex, start)).toEqual([[2, "yes"]]);
 
-    clock.now = start + 2 * HOUR + 60_000; // (the time has come)
+    clock.now = start + 2 * HOUR + 60_000;
     const party = openParty(registry);
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: party.code, endsAt: clock.now + 600_000 })).statusCode).toBe(200);
     expect(await plansOf(sam, start)).toEqual(["party"]);
@@ -1191,7 +1146,6 @@ describe("what friends watch", () => {
     await alex.keep({ progress: [card(1, 600), card(2, 900, { done: true }), card(3, 20)] });
     const { activity, friends: list } = await sam.state();
     expect(list[0]).toMatchObject({ activity: true });
-    // (The third was tried for twenty seconds and left: that is not watching it.)
     expect(activity).toMatchObject([{ friend: alex.id, title: "Film 1", url: url(1) }, { friend: alex.id, title: "Film 2", done: true }]);
     expect(activity.every((item) => item.friend === alex.id)).toBe(true);
   });
@@ -1202,18 +1156,18 @@ describe("what friends watch", () => {
     await sam.keep({ progress: [card(5, 600)] });
 
     await alex.choose({ friendsGive: true });
-    expect((await sam.state()).activity).toEqual([]); // told, but Sam tells nothing, so Sam hears nothing
+    expect((await sam.state()).activity).toEqual([]);
     expect((await sam.state()).friends[0]).toMatchObject({ activity: false });
     await sam.choose({ friendsGet: true });
-    expect((await sam.state()).activity).toEqual([]); // (the old switch for hearing is not read any more)
+    expect((await sam.state()).activity).toEqual([]);
     await sam.choose({ friendsGive: true });
     expect((await sam.state()).activity).toMatchObject([{ friend: alex.id, title: "Film 1" }]);
     expect((await sam.state()).friends[0]).toMatchObject({ activity: true });
-    expect((await alex.state()).activity).toMatchObject([{ friend: sam.id, title: "Film 5" }]); // ...and Alex hears Sam
+    expect((await alex.state()).activity).toMatchObject([{ friend: sam.id, title: "Film 5" }]);
 
     await alex.choose({ friendsGive: false });
     expect((await sam.state()).activity).toEqual([]);
-    expect((await alex.state()).activity).toEqual([]); // (Alex tells nothing now, and is told nothing)
+    expect((await alex.state()).activity).toEqual([]);
   });
 
   it("is off to begin with: nothing is given or got until it is turned on", async () => {
@@ -1234,7 +1188,7 @@ describe("what friends watch", () => {
     const episode = card(3, 1500, { key: "show:The Long Night", title: "The Long Night", url: "https://shows.example/watch/7?s=2&e=5", season: 2, episode: 5, duration: 2400 });
     await alex.keep({ progress: [card(1, 600), card(2, 900, { done: true }), episode, card(4, 100, { duration: 0 })] });
     const byTitle = Object.fromEntries((await sam.state()).activity.map((item) => [item.title, item]));
-    expect(byTitle["Film 1"]).toMatchObject({ percent: 8 }); // (600 of 7200 seconds)
+    expect(byTitle["Film 1"]).toMatchObject({ percent: 8 });
     expect(byTitle["Film 2"]).toMatchObject({ percent: 100, done: true });
     expect(byTitle["The Long Night"]).toMatchObject({ percent: 63, season: 2, episode: 5 });
     expect(byTitle["Film 4"]).not.toHaveProperty("percent");
@@ -1258,7 +1212,7 @@ describe("how far a friend got in the titles they keep and rate", () => {
     const lists = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data;
     expect(lists.progress).toHaveLength(2);
     expect(lists.progress).toContainEqual({ link: url(1), percent: 8 });
-    expect(lists.progress).toContainEqual({ link: first, season: 2, episode: 5, percent: 63 }); // (the show is found by its first episode's address, whichever episode the card is of)
+    expect(lists.progress).toContainEqual({ link: first, season: 2, episode: 5, percent: 63 });
     const ratings = (await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data;
     expect(ratings.progress).toEqual([{ link: first, season: 2, episode: 5, percent: 63 }]);
   });
@@ -1275,9 +1229,9 @@ describe("how far a friend got in the titles they keep and rate", () => {
     await alex.keep({
       list: [saved(url(1), "Film 1"), saved(url(2), "Film 2"), saved(url(3), "Film 3")],
       progress: [
-        { ...film, position: 20 }, // (20 seconds of the first film)
-        { ...watched({ key: `url:${url(2)}`, title: "Film 2", url: url(2) }), position: 40, done: true }, // (the second was finished: all of it)
-        { ...watched({ key: `url:${url(3)}`, title: "Film 3", url: url(3) }), position: 30, at: film.at - 1000 }, // (the third: also a few seconds)
+        { ...film, position: 20 },
+        { ...watched({ key: `url:${url(2)}`, title: "Film 2", url: url(2) }), position: 40, done: true },
+        { ...watched({ key: `url:${url(3)}`, title: "Film 3", url: url(3) }), position: 30, at: film.at - 1000 },
       ],
     });
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toEqual([{ link: url(2), percent: 100, done: true }]);
@@ -1289,7 +1243,7 @@ describe("how far a friend got in the titles they keep and rate", () => {
     for (const path of ["lists", "ratings"]) expect((await sam.client.get(mine(sam, `/${alex.id}/${path}`))).data, path).not.toHaveProperty("progress");
 
     await alex.choose({ friendsGive: true });
-    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).not.toHaveProperty("progress"); // (told, but Sam tells nothing)
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).not.toHaveProperty("progress");
     await sam.choose({ friendsGive: true });
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toHaveLength(1);
     await alex.choose({ friendsGive: false });
@@ -1302,14 +1256,14 @@ describe("who is online", () => {
 
   it("is a friend whose screen has looked at its friends lately, and not before it has, or once it has not for a while", async () => {
     const { alex, sam } = await friends();
-    expect(await onlineIn(sam)).toEqual([false]); // (alex has not looked yet; sam's own look is no sign of alex)
+    expect(await onlineIn(sam)).toEqual([false]);
     await alex.state();
     expect(await onlineIn(sam)).toEqual([true]);
-    expect(await onlineIn(alex)).toEqual([true]); // (sam looked a moment ago)
+    expect(await onlineIn(alex)).toEqual([true]);
 
     clock.now += ONLINE_MS - 1000;
     expect(await onlineIn(sam)).toEqual([true]);
-    clock.now += 2000; // (alex's last look is past ONLINE_MS now; sam's own was just made)
+    clock.now += 2000;
     expect(await onlineIn(sam)).toEqual([false]);
     await alex.state();
     expect(await onlineIn(sam)).toEqual([true]);
@@ -1320,8 +1274,8 @@ describe("who is online", () => {
     await alex.choose({ friendsPresence: false });
     await alex.state();
     await sam.state();
-    expect(await onlineIn(sam)).toEqual([false]); // alex looks, but does not show
-    expect(await onlineIn(alex)).toEqual([false]); // sam is there, but alex does not see
+    expect(await onlineIn(sam)).toEqual([false]);
+    expect(await onlineIn(alex)).toEqual([false]);
     await alex.choose({ friendsPresence: true });
     await alex.state();
     expect(await onlineIn(sam)).toEqual([true]);
@@ -1333,10 +1287,10 @@ describe("who is online", () => {
     await alex.state();
     expect(await onlineIn(sam)).toEqual([true]);
     await alex.choose({ friendsPresence: false });
-    expect(await onlineIn(sam)).toEqual([false]); // (the switch alone hides it)
-    await alex.state(); // (the first look after it is off drops what was known)
+    expect(await onlineIn(sam)).toEqual([false]);
+    await alex.state();
     await alex.choose({ friendsPresence: true });
-    expect(await onlineIn(sam)).toEqual([false]); // (not a screen of alex's has looked since)
+    expect(await onlineIn(sam)).toEqual([false]);
     await alex.state();
     expect(await onlineIn(sam)).toEqual([true]);
   });
@@ -1356,7 +1310,7 @@ describe("when a friend was last online", () => {
 
   it("is the moment their screen last looked, told while they are online too, and nothing before it ever has", async () => {
     const { alex, sam } = await friends();
-    expect(await lastIn(sam)).toEqual([undefined]); // (sam's own look is no sign of alex)
+    expect(await lastIn(sam)).toEqual([undefined]);
     await alex.state();
     const looked = clock.now;
     expect((await sam.state()).friends[0]).toMatchObject({ online: true, lastOnline: looked });
@@ -1368,22 +1322,22 @@ describe("when a friend was last online", () => {
 
     clock.now += 30_000;
     await alex.state();
-    expect(await lastIn(sam)).toEqual([clock.now]); // (every look counts, not only the ones that are written down)
+    expect(await lastIn(sam)).toEqual([clock.now]);
   });
 
   it("is told on the same terms as online: not of a profile that hides it, not to one that does, and a look made before it was hidden is forgotten", async () => {
     const { alex, sam } = await friends();
     await alex.state();
     await alex.choose({ friendsPresence: false });
-    expect(await lastIn(sam)).toEqual([undefined]); // (the switch alone hides it)
-    await alex.state(); // (the first look after it is off forgets what was known)
+    expect(await lastIn(sam)).toEqual([undefined]);
+    await alex.state();
     await alex.choose({ friendsPresence: true });
-    expect(await lastIn(sam)).toEqual([undefined]); // (not a screen of alex's has looked since)
+    expect(await lastIn(sam)).toEqual([undefined]);
     await alex.state();
     expect(await lastIn(sam)).toEqual([clock.now]);
 
     await sam.choose({ friendsPresence: false });
-    expect(await lastIn(sam)).toEqual([undefined]); // (sam hides it, and is shown nobody's)
+    expect(await lastIn(sam)).toEqual([undefined]);
     await sam.choose({ friendsPresence: true });
     expect(await lastIn(sam)).toEqual([expect.any(Number)]);
     await alex.choose({ friendsOff: true });
@@ -1408,27 +1362,26 @@ describe("when a friend was last online", () => {
     await alex.state();
     const written = clock.now;
     clock.now += 3 * 60_000;
-    await alex.state(); // (only in memory: it is not ten minutes newer than what was written)
+    await alex.state();
     const last = clock.now;
     await first.store.flush();
-    expect(await seenBy(await start(persistence))).toBe(written); // (a server that died)
+    expect(await seenBy(await start(persistence))).toBe(written);
 
     clock.now += SEEN_WRITE_MS;
     await alex.state();
     await first.store.flush();
-    expect(await seenBy(await start(persistence))).toBe(clock.now); // (ten minutes on, a look is written down)
+    expect(await seenBy(await start(persistence))).toBe(clock.now);
 
     clock.now += 60_000;
     await alex.state();
     const stopped = clock.now;
     await first.store.close();
-    expect(await seenBy(await start(persistence))).toBe(stopped); // (a server that stopped as servers do)
+    expect(await seenBy(await start(persistence))).toBe(stopped);
     expect(stopped).toBeGreaterThan(last);
   });
 });
 
 describe("what a link from another site, or a page of a sibling name, can do with a visitor's session", () => {
-  // (The cookie of a session goes along with a link, and with every request of a page of a sibling name; the browser says where a request comes from, and the server believes that word.)
   const from = (who: Person, how: { site: "cross-site" | "same-site"; mode: "navigate" | "cors" }) => ({ cookie: who.client.cookie, "sec-fetch-site": how.site, "sec-fetch-mode": how.mode });
   const link = { site: "cross-site", mode: "navigate" } as const;
   const sibling = { site: "same-site", mode: "cors" } as const;
@@ -1441,7 +1394,6 @@ describe("what a link from another site, or a page of a sibling name, can do wit
       expect((await look(tag(n + 2), link)).statusCode).toBe(403);
       expect((await look(`/invites/ABCD23${n + 10}`, sibling)).statusCode).toBe(403);
     }
-    // All ten of its own wrong guesses are still its own.
     for (let n = 0; n < 10; n++) expect((await alex.client.get(mine(alex, tag(n + 2)))).statusCode).toBe(404);
     expect((await alex.client.get(mine(alex, tag(99)))).statusCode).toBe(429);
   });
@@ -1476,12 +1428,10 @@ describe("keeping friends", () => {
 
     const second = await start(persistence);
     const back = new Client(second.app);
-    // (Sessions are kept too, so the same cookie still opens the same account.)
     back.cookie = sam.client.cookie;
     const state = (await back.get(mine(sam))).data as FriendsState;
     expect(state.friends.map((friend) => friend.name)).toEqual(["Alex"]);
     expect(state.inbox).toMatchObject([{ title: "Dune", from: alex.id }]);
-    // A request that waits for an answer, and the tags, are kept too.
     expect(state.requests).toMatchObject([{ from: { id: robin.id, name: "Robin", tag: robin.tag } }]);
     const backRobin = new Client(second.app);
     backRobin.cookie = robin.client.cookie;
@@ -1491,7 +1441,6 @@ describe("keeping friends", () => {
     expect(((await backAlex.get(mine(alex))).data as FriendsState).invites.map((invite) => invite.code)).toEqual([open.code]);
   });
 
-  /** Somebody's friend, who has sent them something. */
   async function befriend(of: Person, who: Person, title: string) {
     await who.choose({ friendsOff: false });
     const { data: made } = await who.client.post(mine(who, "/invites"));
@@ -1502,7 +1451,6 @@ describe("keeping friends", () => {
   it("lets go of a profile that is deleted, with everything it had to do with friends", async () => {
     const { app, alex, sam, store } = await friends();
     await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "recommend", title: "Dune", url: url(1) });
-    // One account, two profiles: the second is the one that goes, and the first stays Sam's friend.
     const robin = await person(app, "robin");
     const added = await robin.client.post("/api/profiles", { name: "Second" });
     const second = profileOf(robin.client, added.data.profiles.find((profile: { name: string }) => profile.name === "Second"));

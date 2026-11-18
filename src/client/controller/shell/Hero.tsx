@@ -7,11 +7,6 @@ import { Poster, sharper } from "../../shared/Poster";
 import { entryOfItem, resumable, type Entry } from "../../tv/pages";
 import type { ListToggle } from "../Round";
 
-/**
- * The title that opens Home on a phone held upright: its poster across the width of the screen, its name, and the two things to do with it (the way the phone
- * apps of the big services open). A film plays from here (Resume, if it was left part way); a show has its episodes to choose from, and opens its page; the
- * button for the lists is the one the title's own page has. The picture opens the page too.
- */
 export function Hero({
   item,
   toggle,
@@ -21,7 +16,6 @@ export function Hero({
   item: LibraryItem;
   toggle: ListToggle;
   onOpen: (entry: Entry) => void;
-  /** Start something on the TV (a phone with no TV has none: its hero only opens the page). */
   onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
 }) {
   const t = useT();

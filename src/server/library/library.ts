@@ -1,32 +1,21 @@
 import { CLOSEST_MAX, guessesFor, normalizeQuery, rankByQuery, spelledOut, TitleIndex, titleLink, withoutNoise, type EpisodeDetail, type Library, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
 
-/** A place that offers video openly and can list some of it as rows of titles. Each one is asked as seldom as the cache allows. */
 export interface LibrarySource {
   id: string;
   name: string;
-  /** Collect the rows. Throws when the place cannot be reached. */
   load(): Promise<LibraryRow[]>;
   search?(query: string): Promise<LibraryItem[]>;
-  /** Titles like the one a link plays, when the link is one of this place's own (anything else: none). */
   similar?(link: string): Promise<LibraryItem[]>;
-  /** What is known about the title a link plays besides its tile (genres, people, age rating, the other parts of its collection, titles like it), when the link is one of this place's own (anything else: none). Throws when the place cannot be reached. */
   about?(link: string): Promise<TitleAbout | null>;
-  /** One title as its tile, by its id (the link to a title's page carries it), when the id is one of this place's own (anything else, and a title the place does not know: none). Throws when the place cannot be reached. */
   title?(id: string): Promise<LibraryItem | null>;
-  /** What is known about each episode of one season of the show a link plays, when the link is one of this place's own (anything else: none). */
   episodes?(link: string, season: number): Promise<EpisodeDetail[]>;
-  /** The seasons that can be watched of the show a link plays, in order (none for a film or a link that is not this place's own). Throws when the place cannot be reached. */
   seasons?(link: string): Promise<number[]>;
-  /** The rows that come after the ones `load` lists, a few at a time from `cursor` 0 (those of one page, Movies, Series, Cartoons or Anime, when `section` says); `next` is where the following ones begin, none at the end. Throws when the place cannot be reached. */
   shelves?(section: LibrarySection | undefined, cursor: number): Promise<{ rows: LibraryRow[]; next: number | null }>;
-  /** More titles of one of this place's rows, from page 2 on (the first page is in the row), and whether there are no more after them (a row this place does not have: none, and no more). Throws when the place cannot be reached. */
   more?(rowId: string, page: number): Promise<{ items: LibraryItem[]; last: boolean }>;
 }
 
-/** How a try at playing a link went: it played, the place has no video of it, or the video could not be reached this time. */
 export type PlayOutcome = "found" | "none" | "failed";
 
-/** What a search found: the titles, the likeliest first, of which the first `exact` have all the words that were typed and the rest are the closest others. */
 export interface SearchAnswer {
   items: LibraryItem[];
   exact: number;
@@ -35,34 +24,21 @@ export interface SearchAnswer {
 export interface LibraryService {
   get(): Promise<Library>;
   search(query: string): Promise<SearchAnswer>;
-  /** The next rows of the library for a page that is scrolled (see `LibrarySource.shelves`). Throws when no place could be reached. */
   rows(section: LibrarySection | undefined, cursor: number): Promise<{ rows: LibraryRow[]; next: number | null }>;
-  /** More titles of a row (see `LibrarySource.more`). Throws when no place could be reached. */
   more(rowId: string, page: number): Promise<{ items: LibraryItem[]; last: boolean }>;
   similar(link: string): Promise<LibraryItem[]>;
-  /** What the places know of one title besides its tile (see `LibrarySource.about`): asked once for each title that is opened, and none for one nobody knows. */
   about(link: string): Promise<TitleAbout | null>;
-  /** One title as its tile, by its id, for the link to a title's page: one the library has listed is answered from memory, any other is asked of the places (see `LibrarySource.title`). None for a title nobody knows, or one that would not play. */
   title(id: string): Promise<LibraryItem | null>;
-  /** A title the library has met, by its id, from memory only (nothing is asked of a place), whether or not it would play: what the list of what nobody could play calls it. */
   known(id: string): LibraryItem | undefined;
   episodes(link: string, season: number): Promise<EpisodeDetail[]>;
   seasons(link: string): Promise<number[]>;
-  /**
-   * Hears how a try at playing a link went. The places list far more than they can play, so a title whose video was not there
-   * (or could not be reached on two separate tries) is left out of what the library lists for a while, and out of what it finds
-   * too unless it was only out of reach; one that plays is back for good.
-   */
   played(link: string, outcome: PlayOutcome): void;
 }
 
 export interface LibraryOptions {
   sources: LibrarySource[];
-  /** How long what was collected stays good. */
   ttlMs?: number;
-  /** After a failed attempt, how long before the place is asked again. */
   retryMs?: number;
-  /** How long a title with no video to play stays out of the lists. */
   noVideoMs?: number;
   now?: () => number;
   log?: { warn: (details: object, message: string) => void };
@@ -70,41 +46,25 @@ export interface LibraryOptions {
 
 export const LIBRARY_TTL_MS = 6 * 60 * 60 * 1000;
 export const LIBRARY_RETRY_MS = 2 * 60 * 1000;
-/** What is asked about a link ("titles like this one", "this show's episodes") is remembered for this many links, for as long as the library is. */
 const ANSWERS_REMEMBERED = 200;
-/** ...and "titles like this one" for many more: the rows a profile is given of its own ask it for every title it watched, loved or saved (150 an hour a browser), and an answer is a few thousand characters. */
 const LIKES_REMEMBERED = 2000;
-/** A search that found this many titles is not asked again in other words. */
 const ENOUGH_ANSWERS = 3;
-/** ...and one that found fewer than this many looks further, among titles that have only some of the words. */
 const WANTED_ANSWERS = 6;
-/** No more than this many titles answer one search. */
 const MAX_ANSWERS = 120;
-/** The pages of rows asked for as a page is scrolled are remembered for this many questions, for as long as the library is. */
 const PAGES_REMEMBERED = 600;
-/** Of what is typed in a search, this much is looked for (a title's name is shorter). */
 const MAX_QUERY_LENGTH = 100;
-/** A link is left out of the lists at this many strikes: a place that has no video of it is two, a video that could not be reached just now is one. */
 const STRIKES_TO_HIDE = 2;
-/** A video that could not be reached counts as another strike only when the try comes this long after the one before: a bad moment fails every try at once. */
 export const STRIKE_GAP_MS = 2 * 60 * 1000;
-/** The links that failed to play are remembered for this many of them (a link that is not a title costs a place here too), the oldest going first. */
 const FAILURES_REMEMBERED = 500;
 
 interface Entry {
   source: LibrarySource;
   rows: LibraryRow[];
   collectedAt: number;
-  /** Not asked again before this. */
   nextAttempt: number;
   inflight: Promise<void> | null;
 }
 
-/**
- * Remembers what each source listed. Once something is remembered a request never waits for the place: an old list is
- * served at once while a fresh one is collected, and a place that is down leaves its last list in view. Requests that
- * arrive while a place is being asked share that one question.
- */
 export function createLibrary(options: LibraryOptions): LibraryService {
   const now = options.now ?? Date.now;
   const ttlMs = options.ttlMs ?? LIBRARY_TTL_MS;
@@ -112,12 +72,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
   const noVideoMs = options.noVideoMs ?? ttlMs;
   const entries: Entry[] = options.sources.map((source) => ({ source, rows: [], collectedAt: 0, nextAttempt: 0, inflight: null }));
 
-  /**
-   * The links that failed to play, with their strikes and when the last one came: at two the title is left out of the lists until
-   * `noVideoMs` has passed. `hard` is for a place that has no video of it at all, as against one that could not be reached.
-   */
   const failures = new Map<string, { strikes: number; at: number; hard: boolean }>();
-  /** Whether a title is offered. A search leaves out less: a title that was only out of reach is still found when it is asked for by name. */
   const listed = (item: LibraryItem, asked = false): boolean => {
     const failure = failures.get(item.url);
     if (!failure) return true;
@@ -127,10 +82,6 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     }
     return failure.strikes < STRIKES_TO_HIDE || (asked && !failure.hard);
   };
-  /**
-   * A stable key for a title so that search results and rows from different sources
-   * do not produce duplicate tiles for the same movie or series.
-   */
   const canonicalItemKey = (item: LibraryItem): string => {
     const idMatch = /(?:tmdb|filmpire)-(movie|tv|series)-(\d+)/i.exec(item.id);
     if (idMatch?.[1] && idMatch[2]) {
@@ -150,7 +101,6 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     return `meta:${item.kind ?? ""}:${normTitle}:${item.year ?? ""}`;
   };
 
-  /** The rows without the titles that are left out; duplicate titles within a row are deduplicated. A row left with nothing goes too. */
   const listedRows = (rows: LibraryRow[]): LibraryRow[] =>
     rows.flatMap((row) => {
       const rowSeen = new Set<string>();
@@ -176,14 +126,8 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       return items.length === row.items.length ? [row] : items.length > 0 ? [{ ...row, items }] : [];
     });
 
-  /**
-   * A question about a link, put to the places in turn: the first one that knows the link answers. An empty answer is
-   * remembered too, so a link nobody knows is not asked about again and again (but not when a place could not be reached, which
-   * is not an answer: it is asked again); when the memory is full the oldest goes.
-   */
   const answers = <T>(remembered = ANSWERS_REMEMBERED) => {
     const known = new Map<string, { at: number; items: T[] }>();
-    /** The questions that are on their way: whoever asks the same one meanwhile waits for that answer, and the place is asked once. */
     const asking = new Map<string, Promise<T[]>>();
     const find = async (key: string, ask: (source: LibrarySource) => Promise<T[]> | undefined): Promise<T[]> => {
       let items: T[] = [];
@@ -213,13 +157,10 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       return mine;
     };
   };
-  /** Every title the places have listed, to look for a title among (it grows as pages are scrolled and searches are made). */
   const pool = new TitleIndex();
   const learn = (items: readonly LibraryItem[]) => pool.add(items);
-  /** The titles looked up by their id (a card, a link), the latest so many: what `known` says of them, apart from the pool a search reads. */
   const lookedUp = new Map<string, LibraryItem>();
   const LOOKED_UP_KEPT = 2000;
-  /** What a question about the next rows or the next titles of a row was answered, kept as the library is and shared by those who ask at once; a question that failed is not kept. */
   const pages = new Map<string, { at: number; value: unknown }>();
   const asking = new Map<string, Promise<unknown>>();
   const remember = <T>(key: string, ask: () => Promise<T>): Promise<T> => {
@@ -240,7 +181,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     return pending;
   };
   const similarTo = answers<LibraryItem>(LIKES_REMEMBERED);
-  const aboutTitle = answers<TitleAbout>(); // (an answer is one thing: it is kept as a list of one, and a title nobody knows as a list of none)
+  const aboutTitle = answers<TitleAbout>();
   const titleById = answers<LibraryItem>();
   const episodesOf = answers<EpisodeDetail>();
   const seasonsOf = answers<number>();
@@ -270,7 +211,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       for (const entry of entries) {
         if (now() < entry.nextAttempt) continue;
         const attempt = collect(entry);
-        if (entry.rows.length === 0) waiting.push(attempt); // nothing to show meanwhile
+        if (entry.rows.length === 0) waiting.push(attempt);
       }
       await Promise.all(waiting);
       const collected = entries.filter((entry) => entry.collectedAt > 0);
@@ -283,7 +224,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const text = spelledOut(query.slice(0, MAX_QUERY_LENGTH));
       if (!normalizeQuery(text)) return { items: [], exact: 0 };
       const quiet = withoutNoise(text);
-      const noisy = quiet !== normalizeQuery(text); // (it has words that say what is wanted and are no part of a title: "full movie dune" is looked for as "dune" too)
+      const noisy = quiet !== normalizeQuery(text);
 
       const seen = new Set<string>();
       const seenTitles = new Map<string, Array<{ year?: number }>>();
@@ -319,25 +260,21 @@ export function createLibrary(options: LibraryOptions): LibraryService {
         return (await Promise.all(answers)).flat();
       };
 
-      // What has been listed here and matches, then what the places answer to the words as typed (and without the words that are no part of a title).
       take(pool.find(text));
       const answered = (await Promise.all(noisy ? [ask(text), ask(quiet)] : [ask(text)])).flat();
       learn(answered);
       take(answered);
       if (noisy) take(pool.find(quiet));
-      const rank = noisy && pool.find(text).length === 0 ? quiet : text; // (a title that has the noise words in its name is what was asked for; if there is none, the shorter words are)
+      const rank = noisy && pool.find(text).length === 0 ? quiet : text;
 
-      // A place does not forgive a slip ("strager things" finds nothing there): with little to show, ask it the words on their own, and
-      // let the titles that come back be matched against what was typed.
       if (exact.length < ENOUGH_ANSWERS) {
         learn((await Promise.all(guessesFor(quiet).map(ask))).flat());
         take(pool.find(quiet));
       }
-      // Still little: a letter more forgiven, then the titles that have some of the words (the closest others).
       if (exact.length < WANTED_ANSWERS) take(pool.find(quiet, "relaxed"));
       if (exact.length < WANTED_ANSWERS) take(pool.find(quiet, "loose"), closest);
 
-      const ranked = rankByQuery(exact, rank); // (what was listed and what the places answered, the likeliest first)
+      const ranked = rankByQuery(exact, rank);
       return { items: [...ranked, ...rankByQuery(closest, rank).slice(0, CLOSEST_MAX)].slice(0, MAX_ANSWERS), exact: Math.min(ranked.length, MAX_ANSWERS) };
     },
     async rows(section: LibrarySection | undefined, cursor: number) {
@@ -358,7 +295,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
           asked++;
           try {
             const got = await source.more(rowId, page);
-            if (got.items.length > 0 || !got.last) return got; // (a page of nothing but rubbish, with more pages after it, is an answer)
+            if (got.items.length > 0 || !got.last) return got;
           } catch {
             failed++;
           }
@@ -375,14 +312,12 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       return found.filter((item) => listed(item));
     },
     about: async (link: string) => {
-      // (Every episode of a show is one title: the answer is kept under the link of the show.)
       const [found] = await aboutTitle(titleLink(link), async (source) => {
         const about = await source.about?.(link);
         return about ? [about] : [];
       });
       if (!found) return null;
       learn([...found.parts, ...found.similar]);
-      // (A title that would not play is left out of these as it is of the rows, however long ago the answer was kept.)
       return { ...found, parts: found.parts.filter((item) => listed(item)), similar: found.similar.filter((item) => listed(item)) };
     },
     title: async (id: string) => {
@@ -392,8 +327,6 @@ export function createLibrary(options: LibraryOptions): LibraryService {
         return item ? [item] : [];
       });
       if (!found) return null;
-      // (Not learnt into the pool that a search reads: a title looked up by its id is not sifted as the lists are, and a soap opened from a
-      // card would then be in everybody's search. The judge, 17 Nov. It is kept apart for `known`, so what is said of it keeps its name.)
       if (!known) {
         lookedUp.delete(id);
         lookedUp.set(id, found);
@@ -412,14 +345,13 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       if (link.length > 2048) return;
       const before = failures.get(link);
       const kept = before && now() - before.at < noVideoMs ? before : undefined;
-      // No video at the place is final; one that could not be reached counts only as a separate try (two at once are one bad moment).
       const next =
         outcome === "none"
           ? { strikes: STRIKES_TO_HIDE, at: now(), hard: true }
           : kept && (kept.hard || now() - kept.at < STRIKE_GAP_MS)
             ? kept
             : { strikes: (kept?.strikes ?? 0) + 1, at: now(), hard: false };
-      failures.delete(link); // (set again below, so the map stays in the order the links last failed)
+      failures.delete(link);
       failures.set(link, next);
       if (failures.size > FAILURES_REMEMBERED) failures.delete(failures.keys().next().value!);
     },

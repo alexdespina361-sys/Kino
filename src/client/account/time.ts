@@ -1,4 +1,3 @@
-/** "12 Oct 2026": the day something happened, in the language of the site (whose English is spelt the British way, so the day comes first). */
 export function formatDay(at: number, language: string): string {
   const options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
   try {
@@ -8,9 +7,8 @@ export function formatDay(at: number, language: string): string {
   }
 }
 
-/** "now", "5 minutes ago", "yesterday": how long ago something was, in the language of the site. */
 export function ago(then: number, now: number, language: string): string {
-  const seconds = Math.round((then - now) / 1000); // negative: in the past
+  const seconds = Math.round((then - now) / 1000);
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
     ["day", 86_400],
     ["hour", 3_600],
@@ -29,10 +27,6 @@ export function ago(then: number, now: number, language: string): string {
 const localeOf = (language: string): string => (language === "en" ? "en-GB" : language);
 const startOfDay = (at: number): number => new Date(at).setHours(0, 0, 0, 0);
 
-/**
- * The day something is planned for, as the viewer's own calendar has it: "today", "tomorrow", "yesterday", a weekday within the coming week
- * ("Saturday"), else the date ("Sat 14 Nov"). The days are those of the viewer's time zone, whoever proposed the time.
- */
 export function dayWord(at: number, now: number, language: string): string {
   const days = Math.round((startOfDay(at) - startOfDay(now)) / 86_400_000);
   const dated: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" };
@@ -45,7 +39,6 @@ export function dayWord(at: number, now: number, language: string): string {
   }
 }
 
-/** A short name for a day, for a button: "Today", "Tomorrow", then "Sat 14". */
 export function dayChip(at: number, now: number, language: string): string {
   const days = Math.round((startOfDay(at) - startOfDay(now)) / 86_400_000);
   if (days === 0 || days === 1) {
@@ -60,7 +53,6 @@ export function dayChip(at: number, now: number, language: string): string {
   }
 }
 
-/** "20:00": the time of day in the viewer's own time zone. */
 export function clockTime(at: number, language: string): string {
   const options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
   try {

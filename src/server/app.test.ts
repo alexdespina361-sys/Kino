@@ -20,7 +20,6 @@ afterEach(async () => {
   dir = undefined;
 });
 
-/** The app with a built page, a file of the page and a folder of test media, which is every way a file is served. */
 async function served(options: AppOptions = {}): Promise<FastifyInstance> {
   dir = await mkdtemp(path.join(tmpdir(), "kino-app-"));
   await mkdir(path.join(dir, "assets"));
@@ -32,7 +31,6 @@ async function served(options: AppOptions = {}): Promise<FastifyInstance> {
   return app;
 }
 
-/** The app with accounts that are kept in memory, as the tests of the account routes have it. */
 async function withAccounts(options: AppOptions = {}): Promise<FastifyInstance> {
   const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
   app = await buildApp({ accounts, passwordCost: { N: 1024, r: 8, p: 1 }, ...options });
@@ -61,7 +59,6 @@ describe("what every answer tells the browser", () => {
     ["a file that is not there", { url: "/assets/missing.js" }],
     ["the proxy turning a request away", { url: "/api/proxy" }],
   ];
-  // (The router turns these away before any hook has run, with a request of its own making: see `answerUnroutable`.)
   const UNREADABLE: Array<[string, InjectOptions]> = [
     ["a path that cannot be read", { url: "/%zz" }],
     ["a path of the api that cannot be read", { method: "POST", url: "/api/%zz" }],
@@ -72,9 +69,8 @@ describe("what every answer tells the browser", () => {
     for (const [name, request] of [...KINDS, ...UNREADABLE]) {
       const answer = await site.inject(request);
       for (const [header, value] of Object.entries(SAFE)) expect(answer.headers[header], `${name}: ${header}`).toBe(value);
-      expect(answer.headers["strict-transport-security"], name).toBeUndefined(); // (this visit was over http)
+      expect(answer.headers["strict-transport-security"], name).toBeUndefined();
     }
-    // (...and a page the browser already has comes back in a few bytes with them as well)
     const tag = String((await site.inject("/")).headers.etag);
     const kept = await site.inject({ url: "/", headers: { "if-none-match": tag } });
     expect(kept.statusCode).toBe(304);
@@ -83,8 +79,6 @@ describe("what every answer tells the browser", () => {
 
   it("tells a browser, whatever it is sent, what no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame, run a script not its own", async () => {
     const site = await served();
-    // (Scripts only from the site's own files, with `'unsafe-eval'` kept for the aligner's WebAssembly in the Chromium of a Hisense; nothing about styles or pictures.
-    // The proxy's own policy is below.)
     for (const [name, request] of [...KINDS, ...UNREADABLE].filter(([name]) => !name.startsWith("the proxy"))) {
       expect((await site.inject(request)).headers["content-security-policy"], name).toBe(
         "base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'",
@@ -124,7 +118,6 @@ describe("what every answer tells the browser", () => {
   });
 
   it("leaves the proxy's own protection of what comes through it as it is", async () => {
-    // (What the proxy passes on goes out under this site's address: it says itself that no script may run in it, and a hook may not weaken that.)
     const answer = await (await served()).inject({ url: "/api/proxy" });
     expect(answer.statusCode).toBe(400);
     expect(answer.headers["content-security-policy"]).toBe("default-src 'none'; sandbox");
@@ -150,7 +143,6 @@ describe("where a request to the api comes from", () => {
     const site = await withAccounts();
     const registered = await site.inject({ method: "POST", url: "/api/auth/register", payload: { email: "alex@example.com", password: "correct horse" } });
     const cookie = String(registered.headers["set-cookie"]).split(";")[0]!;
-    // A TV waits for a phone to approve its code; the approval needs no body, only the visitor's cookie, and that goes along with a page of any name of the site.
     const { code, secret } = (await site.inject({ method: "POST", url: "/api/link/start", payload: { device: "tv" } })).json<{ code: string; secret: string }>();
     const approve = (headers: Record<string, string>) => sentTo(site, "POST", `/api/link/${code}/approve`, { cookie, ...headers });
     const waiting = async () => (await site.inject({ method: "POST", url: "/api/link/poll", payload: { code, secret } })).json<{ status: string }>().status;
@@ -165,14 +157,13 @@ describe("where a request to the api comes from", () => {
       "this name at another port": { origin: `https://${HOST}:8443` },
       "a page with no origin of its own": { origin: "null" },
       "a page with no origin of its own, as a browser words it": { "sec-fetch-site": "cross-site", origin: "null" },
-      // (Only `same-origin` is believed over the origin that comes with a request: an address that was typed is no such word.)
       "an address that was typed, with the origin of another site": { "sec-fetch-site": "none", origin: "https://other.example" },
     };
     for (const [name, headers] of Object.entries(foreign)) {
       const answer = await approve(headers);
       expect([answer.statusCode, answer.json()], name).toEqual([403, { error: "cross_site" }]);
     }
-    expect(await waiting()).toBe("waiting"); // (none of them approved it)
+    expect(await waiting()).toBe("waiting");
     expect((await approve({ "sec-fetch-site": "same-origin", origin: `https://${HOST}` })).statusCode).toBe(204);
     expect(await waiting()).toBe("approved");
   });
@@ -183,7 +174,6 @@ describe("where a request to the api comes from", () => {
       "a page of this site": { host: HOST, origin: `https://${HOST}`, "sec-fetch-site": "same-origin" },
       "a page of the site's other address": { host: "kino4tv.com", origin: "https://kino4tv.com", "sec-fetch-site": "same-origin" },
       "a page on this machine, with its port": { host: "127.0.0.1:8788", origin: "http://127.0.0.1:8788", "sec-fetch-site": "same-origin" },
-      // (A page that asked for no referrer, which is every page of this site, has the browser write `null` for the origin of a request that is not a fetch: a beacon, a form.)
       "a page of this site that asked for no referrer, as a browser words its post": { host: HOST, origin: "null", "sec-fetch-site": "same-origin" },
       "a page on this machine, by an address in brackets": { host: "[::1]:8788", origin: "http://[::1]:8788" },
       "an origin that leaves out the port the host spells": { host: `${HOST}:443`, origin: `https://${HOST}` },
@@ -204,7 +194,7 @@ describe("where a request to the api comes from", () => {
 
   it("leaves what only reads alone, whoever asks, and gives no other site leave to read it either", async () => {
     const site = await withAccounts();
-    site.options("/api/preflight", async (_request, reply) => reply.code(204).send()); // (nothing in the api answers one; a question before a request is no change either)
+    site.options("/api/preflight", async (_request, reply) => reply.code(204).send());
     const foreign = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors", origin: "https://other.example" };
     for (const url of ["/api/health", "/api/me", "/api/features"]) {
       const answer = await sentTo(site, "GET", url, foreign);
@@ -239,7 +229,6 @@ describe("where a request to the api comes from", () => {
     };
     for (const [name, headers] of Object.entries(refused)) expect(await asked("GET", headers), name).toBe(403);
     expect(await asked("HEAD", refused["a script of another site"]!)).toBe(403);
-    // (What a request that is let in is answered is the route's own: a 400 where there is no address to go to, an empty list where there is nothing to ask for. A page of this site shows it.)
     const own = await asked("GET", { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" });
     expect(own).not.toBe(403);
     const allowed: Record<string, Record<string, string>> = {
@@ -294,7 +283,6 @@ describe("where a request to the api comes from", () => {
     };
     for (const [name, headers] of Object.entries(refused)) expect(await asked("GET", headers), name).toBe(403);
     expect(await asked("HEAD", refused["a link from another site"]!)).toBe(403);
-    // (Nobody is signed in here: the route's own answer is a 401, so the request was let in.)
     const allowed: Record<string, Record<string, string>> = {
       "a page of this site": { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" },
       "an address that was typed": { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" },
@@ -330,7 +318,6 @@ describe("where a request to the api comes from", () => {
 
 describe("how often an address may ask for what makes the server fetch from another site", () => {
   const PAGE = "https://example.com/film";
-  /** A resolver that answers at once and keeps what it was asked: what a refused ask must never reach. */
   const resolver = () => {
     const calls: string[] = [];
     const resolve: ResolveFn = async (url) => {
@@ -354,7 +341,6 @@ describe("how often an address may ask for what makes the server fetch from anot
     for (let n = 1; n <= 5; n++) answers.push(await site.inject(`/api/resolve?url=${PAGE}/${n}`));
     expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200, 200, 429, 429]);
     expect(calls).toEqual([`${PAGE}/1`, `${PAGE}/2`, `${PAGE}/3`]);
-    // (The same words as every other limit of the site, and the answer is as safe as any other.)
     const refused = answers[3]!;
     expect(refused.json()).toEqual({ error: "rate_limited", retryAfter: expect.any(Number) });
     expect(refused.headers["retry-after"]).toBe(String(refused.json<{ retryAfter: number }>().retryAfter));
@@ -374,14 +360,14 @@ describe("how often an address may ask for what makes the server fetch from anot
       now += 10_500;
       expect((await ask()).statusCode).toBe(200);
       const refused = await ask();
-      expect([refused.statusCode, refused.headers["retry-after"], refused.json()]).toEqual([429, "50", { error: "rate_limited", retryAfter: 50 }]); // (49.5 seconds to the first ask's end)
+      expect([refused.statusCode, refused.headers["retry-after"], refused.json()]).toEqual([429, "50", { error: "rate_limited", retryAfter: 50 }]);
       now += 40_000;
-      expect((await ask()).statusCode).toBe(429); // (a try that is turned away is no reason to wait longer)
+      expect((await ask()).statusCode).toBe(429);
       now += 9_499;
       const nearly = await ask();
       expect([nearly.statusCode, nearly.headers["retry-after"]]).toEqual([429, "1"]);
       now += 1;
-      expect((await ask()).statusCode).toBe(200); // (a minute after the first ask, which is the only one that has gone out of the count)
+      expect((await ask()).statusCode).toBe(200);
       expect((await ask()).statusCode).toBe(429);
     } finally {
       clock.mockRestore();
@@ -394,9 +380,8 @@ describe("how often an address may ask for what makes the server fetch from anot
     app = behind;
     const from = (address: string): InjectOptions => ({ url: `/api/resolve?url=${PAGE}`, headers: { "x-forwarded-for": address } });
     expect(await codes(behind, [from("198.51.100.7"), from("198.51.100.7"), from("198.51.100.7")])).toEqual([200, 200, 429]);
-    expect(await codes(behind, [from("198.51.100.8"), from("198.51.100.8"), from("198.51.100.8")])).toEqual([200, 200, 429]); // (another visitor: its own two)
-    expect(await codes(behind, [from("203.0.113.9, 198.51.100.7")])).toEqual([429]); // (the proxy saw 198.51.100.7: what is written before it is not believed)
-    // With no proxy in front of the server, a header says nothing at all.
+    expect(await codes(behind, [from("198.51.100.8"), from("198.51.100.8"), from("198.51.100.8")])).toEqual([200, 200, 429]);
+    expect(await codes(behind, [from("203.0.113.9, 198.51.100.7")])).toEqual([429]);
     await behind.close();
     const alone = await buildApp({ resolve, fetchesPerMinute: { resolve: 2 } });
     app = alone;
@@ -408,12 +393,9 @@ describe("how often an address may ask for what makes the server fetch from anot
     const behind = await buildApp({ resolve, trustProxy: 1, fetchesPerMinute: { resolve: 2 } });
     app = behind;
     const from = (address: string): InjectOptions => ({ url: `/api/resolve?url=${PAGE}`, headers: { "x-forwarded-for": address } });
-    // (A machine can send from any address of its network: each one it makes up is not another visitor.)
     expect(await codes(behind, [from("2001:db8:1:2::1"), from("2001:db8:1:2:aaaa::2"), from("2001:db8:1:2:bbbb:cccc:dddd:3")])).toEqual([200, 200, 429]);
-    expect(await codes(behind, [from("2001:db8:1:3::1"), from("2001:db8:1:3::2"), from("2001:db8:1:3::3")])).toEqual([200, 200, 429]); // (the next network: its own two)
-    // An IPv4 address written as IPv6 is the IPv4 one.
+    expect(await codes(behind, [from("2001:db8:1:3::1"), from("2001:db8:1:3::2"), from("2001:db8:1:3::3")])).toEqual([200, 200, 429]);
     expect(await codes(behind, [from("198.51.100.7"), from("::ffff:198.51.100.7"), from("::ffff:c633:6407")])).toEqual([200, 200, 429]);
-    // Where no proxy is in front it is the connection's own address that is cut, and nothing a header says.
     await behind.close();
     const alone = await buildApp({ resolve, fetchesPerMinute: { resolve: 2 } });
     app = alone;
@@ -428,17 +410,13 @@ describe("how often an address may ask for what makes the server fetch from anot
     app = site;
     const title = `url=${encodeURIComponent(PAGE)}`;
     const like = `/api/library/similar?${title}`;
-    // What is like a title is counted by itself: the rows a profile is given of its own ask it many times, and must not use up what a title's page needs.
     expect(await codes(site, [{ url: like }, { url: like }, { url: like }])).toEqual([200, 200, 429]);
     const questions = [`/api/library/about?${title}`, `/api/library/title?id=filmpire-movie-603`, `/api/library/episodes?${title}&season=1`, `/api/library/seasons?${title}`];
     for (const each of await codes(site, questions.map((url) => ({ url })))) expect(each).not.toBe(429);
-    // Whichever of them is asked next is the fifth.
     for (const url of questions) expect((await site.inject(url)).statusCode, url).toBe(429);
-    // What takes no address of a title is not counted, nor is the rest of the api (the rows have an allowance of their own, below).
     for (const url of ["/api/library", "/api/library/rows", "/api/library/more?row=a&page=2", "/api/health", "/api/features"]) {
       for (let n = 0; n < 4; n++) expect((await site.inject(url)).statusCode, url).not.toBe(429);
     }
-    // (...and a question about a title does not use up the resolver's allowance, nor the other way round.)
     expect((await site.inject(`/api/resolve?url=${encodeURIComponent(PAGE)}`)).statusCode).not.toBe(429);
   });
 
@@ -459,10 +437,9 @@ describe("how often an address may ask for what makes the server fetch from anot
     const refused = await site.inject(search("charlie"));
     expect([refused.statusCode, refused.json()]).toEqual([429, { error: "rate_limited", retryAfter: expect.any(Number) }]);
     expect(await codes(site, [search("delta"), search("echo")])).toEqual([429, 429]);
-    await new Promise((done) => setTimeout(done, 400)); // (the page of the likeliest title is fetched ahead 200 ms after the answer)
+    await new Promise((done) => setTimeout(done, 400));
     expect(searched).toHaveLength(asked);
     expect(calls).toEqual(["https://x.example/alpha", "https://x.example/bravo"]);
-    // (...and a question about a title does not use up the search's allowance, nor the other way round.)
     expect((await site.inject(`/api/library/about?url=${encodeURIComponent(PAGE)}`)).statusCode).toBe(200);
     expect((await site.inject(`/api/library/about?url=${encodeURIComponent(PAGE)}`)).statusCode).toBe(429);
     expect((await site.inject(search("foxtrot"))).statusCode).toBe(429);
@@ -484,16 +461,16 @@ describe("how often an address may ask for what makes the server fetch from anot
     const from = (remoteAddress: string, words: string) => site.inject({ url: `/api/library/search?q=${words}`, remoteAddress });
     const under = [from("203.0.113.7", "alpha"), from("203.0.113.7", "bravo")];
     await new Promise((done) => setTimeout(done, 20));
-    const third = await from("203.0.113.7", "charlie"); // (two of this address are under way)
+    const third = await from("203.0.113.7", "charlie");
     expect([third.statusCode, third.headers["retry-after"], third.json()]).toEqual([429, "2", { error: "rate_limited", retryAfter: 2 }]);
-    const neighbour = from("198.51.100.9", "delta"); // (another address is let through...)
+    const neighbour = from("198.51.100.9", "delta");
     await new Promise((done) => setTimeout(done, 20));
-    expect((await from("192.0.2.1", "echo")).statusCode).toBe(429); // (...until everyone's together are as many as there may be)
+    expect((await from("192.0.2.1", "echo")).statusCode).toBe(429);
     const askedWhileFull = asked;
     open();
     expect((await Promise.all([...under, neighbour])).map((answer) => answer.statusCode)).toEqual([200, 200, 200]);
-    expect(askedWhileFull).toBe(3); // (a search turned away asks no place: the three under way asked once each so far)
-    expect((await from("203.0.113.7", "foxtrot")).statusCode).toBe(200); // (over: room again)
+    expect(askedWhileFull).toBe(3);
+    expect((await from("203.0.113.7", "foxtrot")).statusCode).toBe(200);
   });
 
   it("counts the library's rows and the titles of a row together, by themselves, and does not ask the places that list titles for one it turns away", async () => {
@@ -511,18 +488,15 @@ describe("how often an address may ask for what makes the server fetch from anot
       const { resolve } = resolver();
       const site = await buildApp({ resolve, librarySources: [places], fetchesPerMinute: { browse: 3, library: 1, search: 1 } });
       app = site;
-      // (A row and a title of a row are asked for in turn as a page is scrolled: one allowance for both, three here.)
       expect(await codes(site, [{ url: "/api/library/rows?cursor=0" }, { url: "/api/library/more?row=a&page=2" }, { url: "/api/library/rows?cursor=1" }])).toEqual([200, 200, 200]);
       const kept = asked.length;
       const refused = await site.inject("/api/library/more?row=b&page=3");
       expect([refused.statusCode, refused.json()]).toEqual([429, { error: "rate_limited", retryAfter: expect.any(Number) }]);
       expect(await codes(site, [{ url: "/api/library/rows?cursor=2" }, { url: "/api/library/more?row=c&page=4" }])).toEqual([429, 429]);
       expect(asked).toHaveLength(kept);
-      // (...and the questions about a title and the search do not use it up, nor the other way round.)
       expect((await site.inject(`/api/library/about?url=${encodeURIComponent(PAGE)}`)).statusCode).toBe(200);
       expect((await site.inject("/api/library/search?q=alpha")).statusCode).toBe(200);
       expect((await site.inject("/api/library/rows?cursor=3")).statusCode).toBe(429);
-      // It is a minute's allowance: a page that is scrolled goes on when the minute is over.
       now += 59_999;
       expect((await site.inject("/api/library/rows?cursor=3")).statusCode).toBe(429);
       now += 1;
@@ -549,19 +523,15 @@ describe("how often an address may ask for what makes the server fetch from anot
       app = site;
       const about = { url: `/api/library/about?url=${encodeURIComponent(PAGE)}` };
       const like = { url: `/api/library/similar?url=${encodeURIComponent(PAGE)}` };
-      // The minute's allowances are far from used up here: it is the day's that turns them away.
       expect(await codes(site, [{ url: "/api/library/search?q=alpha" }, { url: "/api/library/search?q=bravo" }])).toEqual([200, 200]);
       const refused = await site.inject({ url: "/api/library/search?q=charlie" });
-      expect([refused.statusCode, refused.headers["retry-after"], refused.json()]).toEqual([429, String(2 * 60 * 60), { error: "rate_limited", retryAfter: 2 * 60 * 60 }]); // (until midnight)
-      // The questions about a title and what is like one share their day; the rows have their own, and the search's is not touched by them.
+      expect([refused.statusCode, refused.headers["retry-after"], refused.json()]).toEqual([429, String(2 * 60 * 60), { error: "rate_limited", retryAfter: 2 * 60 * 60 }]);
       expect(await codes(site, [about, like, about, like])).toEqual([200, 200, 200, 429]);
       expect(await codes(site, [{ url: "/api/library/rows?cursor=0" }, { url: "/api/library/more?row=a&page=2" }, { url: "/api/library/rows?cursor=1" }])).toEqual([200, 200, 429]);
-      // Another address has its own day. The look-up of a link has none (it is the playing of a film).
       expect((await site.inject({ ...about, remoteAddress: "198.51.100.9" })).statusCode).toBe(200);
       const looked = calls.length;
       expect((await site.inject(`/api/resolve?url=${PAGE}/day`)).statusCode).toBe(200);
       expect(calls.length).toBe(looked + 1);
-      // A minute before midnight, still no; at midnight, a new day.
       now = Date.parse("2026-11-18T23:59:00Z");
       const late = await site.inject({ url: "/api/library/search?q=delta" });
       expect([late.statusCode, late.headers["retry-after"]]).toEqual([429, "60"]);
@@ -596,7 +566,7 @@ describe("how often an address may ask for what makes the server fetch from anot
     await site.close();
     const without = await buildApp({ proxyVideo: false, fetchesPerMinute: { proxy: 2 } });
     app = without;
-    expect(await codes(without, times(4, { url: "/api/proxy" }))).toEqual([400, 400, 429, 429]); // (the first two reach the proxy itself, which wants an address)
+    expect(await codes(without, times(4, { url: "/api/proxy" }))).toEqual([400, 400, 429, 429]);
   });
 
   it("counts a path written another way and a request for the headers alone as the asks they are", async () => {

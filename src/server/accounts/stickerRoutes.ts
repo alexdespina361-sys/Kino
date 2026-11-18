@@ -7,9 +7,7 @@ import { pictureType } from "./stickerImage";
 import type { StickerBook } from "./stickers";
 
 const MINUTE = 60_000;
-/** How long a picture let in has to arrive (a quarter of a megabyte: a slow phone's mobile data takes a few seconds). */
 const UPLOAD_MS = 30_000;
-/** What a megabyte of a body is counted as taking to arrive and be put together (ms): more than twice what the box was measured to take (3.8 ms for 5.3 MB). */
 const BODY_MS_PER_MB = 2;
 const STATUS: Record<StickerProblem | "gone" | "friends_off", number> = {
   off: 404,
@@ -22,16 +20,11 @@ const STATUS: Record<StickerProblem | "gone" | "friends_off", number> = {
   friends_off: 403,
 };
 
-/** Why a sticker was refused, as the page is told it. */
 export function stickerRefusal(reply: FastifyReply, error: StickerProblem | "gone" | "friends_off", waitMs?: number): FastifyReply {
   if (error === "too_many") reply.header("Retry-After", Math.max(1, Math.ceil((waitMs ?? MINUTE) / 1000)));
   return reply.code(STATUS[error]).send({ error });
 }
 
-/**
- * A sticker's picture, as it is sent: a PNG, or an animated WebP for one that moves (either way one this server made), never guessed at by the browser, nothing
- * in it run or embedded elsewhere, kept by the browser of the one who asked for a few minutes only (a sticker taken down is gone from screens soon after).
- */
 export function sendStickerPicture(reply: FastifyReply, data: Buffer): FastifyReply {
   return reply
     .header("Content-Type", pictureType(data))
@@ -45,37 +38,17 @@ export function sendStickerPicture(reply: FastifyReply, data: Buffer): FastifyRe
 
 type Asked = FastifyRequest & { params: { id: string } };
 
-/**
- * A profile's own personal stickers, under /api/profiles/:id/stickers (the profile is the one asking, and one of the signed-in account's, with friends on):
- *
- *   GET    /stickers          the collection, the newest first
- *   POST   /stickers          make one of a picture the page made ({ data }: a PNG as base64; one that moves says `delays` too): answers with the collection and
- *                             the new one's name
- *   GET    /stickers/:sid     the picture of one in the collection
- *   DELETE /stickers/:sid     let one go: answers with the collection
- *
- * While the host has them off, every one of these says so (404, `off`), and nothing that was made is touched.
- */
 export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, stickers: StickerBook): void {
   const { store } = helpers;
   const readsByAccount = new RateLimiter(120, MINUTE);
   const writesByAccount = new RateLimiter(30, MINUTE);
   const base = "/api/profiles/:id/stickers";
 
-  /**
-   * A picture on its way in is let in before its body is read, not after (the judge, 17 Nov: a body of a quarter of a megabyte was read, then refused, for
-   * anybody): the account is signed in, owns the profile, has not made too many, and has no other on its way; and the whole site has so many on their way at
-   * most (`PERSONAL_STICKER.uploadsAtOnce`). Who was let in is kept here for the handler, and let go however the request ends: its answer sent, refused, or the
-   * asker gone at any moment. The picture has `UPLOAD_MS` to arrive, a slow phone's many times over: one sent a byte at a time is let go then, and its request
-   * ended, so a few such cannot keep everybody else's out (the server itself has no such limit: Fastify's `requestTimeout` is 0).
-   */
   const uploadMs = stickers.options.uploadMs ?? UPLOAD_MS;
   const uploading = new Set<string>();
   const letIn = new WeakMap<FastifyRequest, { accountId: string; profileId: string; deadline: ReturnType<typeof setTimeout>; making?: boolean }>();
   const done = (request: FastifyRequest) => {
     const me = letIn.get(request);
-    // (While what it sent is being made its place is kept, whether or not its asker is still there: the making goes on without them, and a place let go then
-    // was room for the next, and the next, all of them being made at once, the judge, 17 Nov. The handler lets it go when the making has ended.)
     if (!me || me.making) return;
     clearTimeout(me.deadline);
     letIn.delete(request);
@@ -91,7 +64,6 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
     if (wait > 0) return void helpers.tooMany(reply, wait);
     limiter.hit(auth.accountId);
     if (!stickers.on) return void stickerRefusal(reply, "off");
-    // (A child's profile has no friends, so no chat, so no stickers of its own.)
     if (!friendChoices(store.settingsOf(profileId)).friends) return void stickerRefusal(reply, "friends_off");
     return { accountId: auth.accountId, profileId };
   }
@@ -102,19 +74,12 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
     return reply.header("Cache-Control", "no-store").send(stickers.of(me.profileId));
   });
 
-  // (A still picture's body, and the most one that moves may be: only while those are on. While they are, a picture has three times as long to arrive, one
-  // that moves being bigger: whether this one is, is not asked of what the request says of its own length, which not every request says, the judge, 17 Nov.)
   const stillBody = Math.ceil((PERSONAL_STICKER.sentBytes * 4) / 3) + 4096;
   const movingBody = Math.ceil((MOVING_STICKER.sentBytes * 4) / 3) + 4096;
   const arriveMs = stickers.moving ? uploadMs * 3 : uploadMs;
   const bodyLimit = stickers.moving ? movingBody : stillBody;
-  // (In a place of its own: there, and nowhere else, a body is read as text and taken apart by hand (`readStickerMake`), never unpacked as JSON whatever it
-  // holds. A body that is not what the page sends is a bad request, as one that is not JSON at all always was. Fastify lets its own JSON reader be replaced
-  // like this without it being removed first (only a second reader of the site's own would be refused); stickerWiring.test.ts starts the whole site with it.)
   void app.register(async (scope) => {
     scope.addContentTypeParser("application/json", { parseAs: "string" }, (_request, body, parsed) => {
-      // (What reading the body takes is the site's time as well, whatever comes of it (the judge, 17 Nov: a body refused here had cost nothing of the hour's):
-      // taking it apart is timed. Its arriving was counted as it was let in, at the most it may be: see `onRequest`.)
       const began = performance.now();
       const read = readStickerMake(body as string);
       stickers.worked(performance.now() - began);
@@ -131,18 +96,13 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
           if (uploading.has(me.accountId) || uploading.size >= PERSONAL_STICKER.uploadsAtOnce) {
             return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
           }
-          // (And the whole site takes so many a minute, and gives their making so much of an hour, whoever sends them: counted here, before the body is read.)
           const wait = stickers.arriving();
           if (wait > 0) {
             const after = Math.min(3600, Math.max(5, Math.ceil(wait / 1000)));
             return reply.code(503).header("Retry-After", after).send({ error: "busy", retryAfter: after });
           }
-          // (Its body's arriving is the site's time, counted now, at the most a body may be, whatever then comes: one that is not JSON, or longer than it may
-          // be, or never all sent, reaches no reader of the site's own, and one of letters that take more than a byte each is no shorter for it: the judge's
-          // fifth round, 17 Nov.)
           stickers.worked((bodyLimit / 1_000_000) * BODY_MS_PER_MB);
           uploading.add(me.accountId);
-          // (A picture that has not come by then is let go, and its request ended.)
           const deadline = setTimeout(() => {
             done(request);
             request.raw.destroy();
@@ -151,15 +111,13 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
           reply.raw.once("close", () => done(request));
           return undefined;
         },
-        // (Each of these, and the answer's `close`, lets it go: whichever comes first; letting go twice is nothing.)
         onResponse: async (request) => done(request),
         onRequestAbort: async (request) => done(request),
       },
       async (request, reply) => {
         const me = letIn.get(request);
-        if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 }); // (never: the hook let it in)
-        clearTimeout(me.deadline); // (it has come: what is done with it takes what it takes)
-        // (Checking it and unpacking its picture is timed too, refused or not.)
+        if (!me) return reply.code(503).header("Retry-After", 5).send({ error: "busy", retryAfter: 5 });
+        clearTimeout(me.deadline);
         const began = performance.now();
         const parsed = StickerMakeSchema.safeParse(request.body);
         const sent = parsed.success ? Buffer.from(parsed.data.data, "base64") : undefined;
@@ -171,7 +129,7 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
           made = await stickers.make(me.profileId, me.accountId, sent, parsed.data.delays);
         } finally {
           me.making = false;
-          done(request); // (made or not, and its asker there or gone: nothing of it is left to do but the answer)
+          done(request);
         }
         if (!made.ok) return stickerRefusal(reply, made.error, made.waitMs);
         return reply.code(201).send({ ...stickers.of(me.profileId), id: made.value });
@@ -197,14 +155,6 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
   });
 }
 
-/**
- * The team's side (scripts/stickers.mjs), with the feedback token as a Bearer, whether the stickers are on or off:
- *
- *   GET    /api/admin/stickers            every sticker, the newest first: its name, when, how big, who made it (profile and account), how many have it
- *   GET    /api/admin/stickers/:sid       its picture
- *   DELETE /api/admin/stickers/:sid       take it down everywhere
- *   DELETE /api/admin/stickers?by=<id>    take down every one a profile or an account made
- */
 export function stickerAdminRoutes(app: FastifyInstance, options: { stickers: StickerBook; adminToken: string | undefined }): void {
   const team = teamGuard(options.adminToken, "team.stickers");
   const { stickers } = options;

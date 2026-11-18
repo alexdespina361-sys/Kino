@@ -5,10 +5,6 @@ import { TABS, type Tab } from "./useTabs";
 
 const ICONS: Record<Tab, ReactNode> = { home: <HomeIcon />, search: <SearchIcon />, list: <ListIcon />, you: <UserIcon /> };
 
-/**
- * The phone's bar: four places, an icon over a word each, always there (R1, R2). The one you are in has a pill behind its icon and a brighter word, and says so to a
- * screen reader as well (`aria-current`). On a screen that is wide or short (a phone on its side, a tablet) the same bar is a rail down the left edge: shell.css.
- */
 export function TabBar({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
   const t = useT();
   return (

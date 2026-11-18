@@ -6,7 +6,6 @@ test.describe("phone UI -> server -> TV player", () => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
 
-    // The TV leaves the pairing screen once paired.
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
 
     await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
@@ -18,18 +17,16 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "paused");
 
-    // Seek forward with +10 s from the paused position; the phone must show the TV's reported time.
     const before = await tvTime(tv);
     await phone.getByRole("button", { name: "Forward 10 seconds" }).click();
     await expect.poll(() => tvTime(tv)).toBeGreaterThan(before + 9);
-    await expect(phone.getByTestId("time")).toHaveAttribute("data-duration", /^(29|30)$/); // a 30 s clip
+    await expect(phone.getByTestId("time")).toHaveAttribute("data-duration", /^(29|30)$/);
     await expect.poll(async () => Number(await phone.getByTestId("time").getAttribute("data-current"))).toBeGreaterThanOrEqual(10);
 
     await phone.getByTestId("play").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await expect.poll(() => tvTime(tv)).toBeGreaterThan(before + 10.5);
 
-    // Speed controls live in a sheet
     await phone.getByTestId("chip-speed").click();
     await phone.getByTestId("speed-1.5").click();
     await expect(phone.getByTestId("speed-1.5")).toHaveClass(/active/);
@@ -38,7 +35,7 @@ test.describe("phone UI -> server -> TV player", () => {
 
     await phone.getByTestId("stop").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
-    await expect(phone.getByTestId("url-input")).toBeVisible(); // back to the picker
+    await expect(phone.getByTestId("url-input")).toBeVisible();
   });
 
   test("the phone's own Back button closes a sheet, then a page of the account, then the place, and does not leave the app", async ({ browser, baseURL }) => {
@@ -48,7 +45,6 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.getByTestId("play-url").click();
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "playing");
     const address = phone.url();
-    // (How many things are open on the page, as the history says: the remote is one of them, a sheet over it another. The exit guard under them is none.)
     const layers = () => phone.evaluate(() => (history.state as { layers?: number } | null)?.layers ?? 0);
     const remote = await layers();
 
@@ -59,14 +55,11 @@ test.describe("phone UI -> server -> TV player", () => {
     expect(phone.url()).toBe(address);
     await expect(phone.getByTestId("player-state")).toBeVisible();
 
-    // A sheet closed by its own button leaves nothing behind: the next Back is not wasted on an entry that is already gone.
     await phone.getByTestId("chip-speed").click();
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByTestId("speed-sheet")).toHaveCount(0);
     await expect.poll(layers).toBe(remote);
 
-    // The remote steps aside by its own Back (the film plays on, as a line above the bar); the account is a place of the bar, and its pages go back one at a time:
-    // the last Back takes the place to Home, where the line is, and the address is the one it was.
     await phone.getByTestId("remote-back").click();
     await expect(phone.getByTestId("mini-remote")).toBeVisible();
     await place(phone, "you");
@@ -87,9 +80,8 @@ test.describe("phone UI -> server -> TV player", () => {
     const tv = await openTv(browser);
     const raw = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     await expect(tv.getByTestId("tv-join-code")).toBeVisible();
-    const control = (await tv.getByTestId("tv-join-code").textContent())!.replace(/\s/g, ""); // the code that lets a second phone in
+    const control = (await tv.getByTestId("tv-join-code").textContent())!.replace(/\s/g, "");
     const episode = (n: number) => ({ season: 1, episode: n, title: `Part ${n}`, url: `${baseURL}/fixtures/pages/${n === 1 ? "video" : "hls"}.html` });
-    // (fixtures/long.mp4 is forty seconds: the card keeps away from anything of thirty or less.)
     raw.cmd({ type: "LOAD", media: { title: "Parts · S1 E1", stream: { url: "/fixtures/long.mp4", type: "mp4" }, series: { season: 1, episode: 1, episodes: [episode(1), episode(2)], next: episode(2) } } });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
 
@@ -105,7 +97,7 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(line).toHaveText(/^Next episode in \d+s$/);
     await expect(tv.getByTestId("netflix-upnext")).toBeVisible();
     await phone.getByTestId("upnext-cancel").click();
-    await expect(tv.getByTestId("netflix-upnext")).toHaveCount(0); // turned down on the TV too, so nothing starts by itself
+    await expect(tv.getByTestId("netflix-upnext")).toHaveCount(0);
     await expect(line).toHaveText(/^Playing on /);
     await expect(phone.getByTestId("upnext-cancel")).toHaveCount(0);
 
@@ -121,7 +113,6 @@ test.describe("phone UI -> server -> TV player", () => {
     const raw = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     await expect(tv.getByTestId("tv-join-code")).toBeVisible();
     const control = (await tv.getByTestId("tv-join-code").textContent())!.replace(/\s/g, "");
-    // (fixtures/episode.mp4 is two and a half minutes: times for anything under two are not believed.)
     raw.cmd({ type: "LOAD", media: { title: "Parts · S1 E1", stream: { url: "/fixtures/episode.mp4", type: "mp4" }, skip: { intro: { start: 6, end: 40 } } } });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
 
@@ -169,7 +160,7 @@ test.describe("phone UI -> server -> TV player", () => {
 
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "error");
     await expect(tvRoot(tv)).toHaveAttribute("data-error", "SOURCE_NOT_DIRECTLY_PLAYABLE");
-    await expect(phone.getByTestId("player-state")).toContainText("This video can't be played on the TV."); // in words, not as the code the TV reported
+    await expect(phone.getByTestId("player-state")).toContainText("This video can't be played on the TV.");
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-error", "SOURCE_NOT_DIRECTLY_PLAYABLE");
   });
 
@@ -182,9 +173,9 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(wrong);
     await expect(phone.getByTestId("error")).toHaveText("Invalid or expired code.");
-    await expect(phone.getByTestId("code-input")).toHaveValue(""); // cleared for the next try, with the keyboard still up
+    await expect(phone.getByTestId("code-input")).toHaveValue("");
     await expect(phone.getByTestId("code-input")).toBeFocused();
-    await expect(tv.getByTestId("pairing-code")).toBeVisible(); // TV still waiting
+    await expect(tv.getByTestId("pairing-code")).toBeVisible();
   });
 
   test("the TV stays paired across a page reload, and the phone follows", async ({ browser, baseURL }) => {
@@ -193,9 +184,9 @@ test.describe("phone UI -> server -> TV player", () => {
 
     await tv.reload();
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
-    await expect(tv.getByTestId("rail-connect")).toHaveAttribute("data-badged", "true"); // the reloaded page opens on the library, which says so in its menu
+    await expect(tv.getByTestId("rail-connect")).toHaveAttribute("data-badged", "true");
     await tv.getByTestId("rail-connect").click();
-    await expect(tv.getByTestId("tv-paired")).toBeVisible(); // not asking for a new code
+    await expect(tv.getByTestId("tv-paired")).toBeVisible();
 
     await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
     await phone.getByTestId("play-url").click();
@@ -215,7 +206,6 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect.poll(() => tvTime(tv)).toBeGreaterThan(9);
     const left = await tvTime(tv);
 
-    // The browser is quit and opened again: the TV is paired, and on the video it was on, a press away from carrying on.
     await tv.reload();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     expect(Math.abs((await tvTime(tv)) - left)).toBeLessThan(2);
@@ -241,7 +231,7 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
-    await tv.waitForTimeout(1500); // (a put-back would have started by now)
+    await tv.waitForTimeout(1500);
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
   });
 
@@ -261,7 +251,6 @@ test.describe("phone UI -> server -> TV player", () => {
     const phone = await openPairedPhone(browser, tv);
     const box = phone.getByTestId("url-input");
 
-    // Written with words round it, and in brackets: it is the link that is sent.
     await box.fill(`Watch this ${baseURL}/fixtures/sample.mp4 !!`);
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
@@ -273,7 +262,6 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.getByTestId("stop").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
 
-    // Pasted as a whole message with a line after the link: a box for a link would run that line into the link, so the link is taken out of what is on the clipboard.
     await box.evaluate((input, text) => {
       const data = new DataTransfer();
       data.setData("text/plain", text);
@@ -295,7 +283,6 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.getByTestId("play-url").click();
     await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
 
-    // Whatever was wrong is put right, and the same link is asked for: it is a new try, and it is the TV that says how it went.
     broken = false;
     await phone.getByTestId("change-video").click();
     await box.fill(`${baseURL}/fixtures/flaky.mp4`);
@@ -314,23 +301,21 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     const paused = (page: typeof tv) => page.evaluate(() => document.querySelector("video")!.paused);
 
-    const second = await tv.context().newPage(); // (the same browser, so the same TV)
+    const second = await tv.context().newPage();
     await second.goto("/tv");
     await expect(tv.getByTestId("tv-banner")).toContainText("another window");
-    await expect.poll(() => paused(tv)).toBe(true); // the old page does not go on playing with nobody to steer it
-    await expect(tvRoot(second)).toHaveAttribute("data-state", "paused"); // the new one is put back on the video, held
+    await expect.poll(() => paused(tv)).toBe(true);
+    await expect(tvRoot(second)).toHaveAttribute("data-state", "paused");
 
     await phone.getByTestId("play").click();
     await expect(tvRoot(second)).toHaveAttribute("data-state", "playing");
-    expect(await paused(tv)).toBe(true); // (and only that one: two soundtracks were what the phone's Play used to start)
+    expect(await paused(tv)).toBe(true);
   });
 
   test("a film that starts from the box for a link is not called one that would not play, however slowly the TV page draws what the server told it", async ({ browser, baseURL }) => {
     test.setTimeout(120_000);
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
-    // The server says that the look-up began, that it ended and what to play within a few milliseconds. A page that is slow to draw (a TV is) draws the first of them
-    // and gets the last before it has made anything of the drawing: what it made of it was "what was on before" = the film that had just been put on.
     await (await tv.context().newCDPSession(tv)).send("Emulation.setCPUThrottlingRate", { rate: 6 });
     await tv.evaluate(() => {
       const seen: string[] = ((window as unknown as { __wouldntPlay: string[] }).__wouldntPlay = []);
@@ -342,7 +327,7 @@ test.describe("phone UI -> server -> TV player", () => {
       await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4?n=${n}`);
       await phone.getByTestId("play-url").click();
       await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 20_000 });
-      await tv.waitForTimeout(1800); // (the page judges a look-up 1.5 s after it ended, and only a film that is still on)
+      await tv.waitForTimeout(1800);
       await phone.getByTestId("stop").click();
       await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle", { timeout: 20_000 });
     }
@@ -355,21 +340,18 @@ test.describe("phone UI -> server -> TV player", () => {
     const phone = await openPairedPhone(browser, tv);
     const ids = (page: typeof tv) => page.evaluate(() => ({ stored: localStorage.getItem("tv.deviceId") ?? localStorage.getItem("controller.id"), cookie: document.cookie }));
 
-    // Both ids sit in the cookies as well as in the page's storage.
     expect((await ids(tv)).cookie).toMatch(/tv\.deviceId=tv_/);
     expect((await ids(phone)).cookie).toMatch(/controller\.id=ctl_/);
 
-    // A browser that wipes the page's storage when it closes: the cookies bring the ids back, and the storage is filled in again.
     await tv.evaluate(() => localStorage.removeItem("tv.deviceId"));
     await phone.evaluate(() => localStorage.removeItem("controller.id"));
     await tv.reload();
     await phone.reload();
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
-    await expect(tv.getByTestId("rail-connect")).toHaveAttribute("data-badged", "true"); // paired: the library's menu says so, and no new code was asked for
+    await expect(tv.getByTestId("rail-connect")).toHaveAttribute("data-badged", "true");
     expect((await ids(tv)).stored).toMatch(/^tv_/);
     expect((await ids(phone)).stored).toMatch(/^ctl_/);
 
-    // And one that clears its cookies and keeps the storage.
     await tv.context().clearCookies();
     await phone.context().clearCookies();
     await tv.reload();
@@ -395,7 +377,6 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(phone.getByTestId("tv-away")).toContainText("The TV is offline");
     await expect(phone.getByTestId("player-state")).toHaveCount(0);
 
-    // The way out is the list of TVs, where another one is connected with its code. The one that is off stays on the list: it comes back by itself.
     const other = await openTv(browser);
     await phone.getByTestId("connect-another").click();
     await expect(phone.getByTestId("tvs-sheet")).toBeVisible();
@@ -415,7 +396,7 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
-    expect(await phone.getByTestId("tv-name").evaluate((name) => name.scrollWidth - name.clientWidth)).toBeLessThanOrEqual(0); // not cut short
+    expect(await phone.getByTestId("tv-name").evaluate((name) => name.scrollWidth - name.clientWidth)).toBeLessThanOrEqual(0);
     expect(await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   });
 });
@@ -431,7 +412,7 @@ test.describe("paste a page link: the server resolves it, the TV plays it", () =
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await expect(phone.getByTestId("media-title")).toHaveText("Fixture Movie (HTML5 video)");
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "playing");
-    await expect(tv.getByText("BUY NOW")).toHaveCount(0); // the source page's ad never appears on the TV
+    await expect(tv.getByText("BUY NOW")).toHaveCount(0);
   });
 
   test("a page that only declares its HLS stream in JSON-LD plays through hls.js", async ({ browser, baseURL }) => {
@@ -462,11 +443,11 @@ test.describe("paste a page link: the server resolves it, the TV plays it", () =
     await phone.evaluate(() => navigator.clipboard.writeText("just some words"));
     await phone.getByTestId("paste").click();
     await expect(phone.getByTestId("url-input")).toHaveValue("just some words");
-    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle"); // not a link: nothing was sent
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
 
     await phone.getByRole("button", { name: "Clear" }).click();
     await phone.evaluate((link) => navigator.clipboard.writeText(`Watch this ${link} !!`), `${baseURL}/fixtures/sample.mp4`);
-    await phone.getByTestId("paste").click(); // a link in a sentence: found, and sent without the second tap
+    await phone.getByTestId("paste").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "playing");
   });
@@ -486,7 +467,6 @@ test("raw protocol: LOAD, PLAY, PAUSE, SEEK 10, STOP against the real TV player"
   await expect(tv.getByTestId("tv-paired")).toBeVisible();
 
   phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
-  // LOAD alone loads: the TV is ready and paused at 0 with a known duration, not playing.
   await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
   expect(await tvTime(tv)).toBe(0);
   expect(await tv.evaluate(() => document.querySelector("video")!.duration)).toBeGreaterThan(29);
@@ -504,7 +484,6 @@ test("raw protocol: LOAD, PLAY, PAUSE, SEEK 10, STOP against the real TV player"
   phone.cmd({ type: "STOP" });
   await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
 
-  // The phone was told about each real state the TV reached.
   const seen = new Set(phone.states.map((s) => s.state));
   for (const state of ["loading", "paused", "playing", "idle"] as const) expect(seen).toContain(state);
   phone.close();
@@ -526,18 +505,14 @@ test("media with subtitles: loads subtitles on TV, supports SET_SUBTITLE and SET
   });
 
   await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
-  // Check TV attached the track element
   await expect.poll(() => tv.evaluate(() => document.querySelectorAll("video track").length)).toBe(1);
 
-  // Switch subtitle on
   phone.cmd({ type: "SET_SUBTITLE", track: 0 });
   await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.textTracks[0]?.mode)).toBe("hidden");
 
-  // Switch subtitle off
   phone.cmd({ type: "SET_SUBTITLE", track: -1 });
   await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.textTracks[0]?.mode)).toBe("disabled");
 
-  // Speed change via command
   phone.cmd({ type: "SET_SPEED", rate: 1.25 });
   await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.playbackRate)).toBe(1.25);
 
@@ -554,7 +529,6 @@ test("TV screen interactive controls: stop button on TV browser", async ({ brows
   await phone.getByTestId("play-url").click();
   await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
 
-  // Clicking STOP directly on the TV browser stops playback (a mouse move wakes the overlay, which hides itself while you watch)
   await tv.mouse.move(400, 300);
   await tv.getByTitle("Stop playback").click();
   await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
@@ -562,7 +536,6 @@ test("TV screen interactive controls: stop button on TV browser", async ({ brows
 });
 
 test.describe("a sheet on the phone is pulled down to close", () => {
-  /** A sheet open on a phone that is playing something: the speed list, which has an option for every rate. */
   const withSheet = async (browser: Browser, baseURL: string, height = 844) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
@@ -574,7 +547,6 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     const sheet = phone.getByRole("dialog");
     await expect(sheet).toBeVisible();
     await slidUp(sheet);
-    // Marks the page, so that a reload shows; and notes whether the page kept the touches for itself (a pull left to the browser is a refresh).
     await phone.evaluate(() => {
       const w = window as unknown as { kept: boolean; moves: boolean[] };
       w.kept = true;
@@ -584,10 +556,6 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     return { tv, phone, sheet };
   };
 
-  /**
-   * A finger put down at `from`, moved `by` pixels down in `steps` moves `every` milliseconds apart (through the browser's own input), and let go.
-   * Each touch carries the time it happened at, so how fast the finger went is what is written here, not how busy the machine was.
-   */
   const pull = async (phone: Page, from: { x: number; y: number }, by: number, { steps = 10, every = 16 } = {}) => {
     const client = await phone.context().newCDPSession(phone);
     const began = Date.now() / 1000;
@@ -601,7 +569,6 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     await send("touchEnd", from.y + by, steps * every);
     await client.detach();
   };
-  /** The sheet has finished sliding up, so it is where it will stay (a busy machine can hold the slide back for a while). */
   const slidUp = (sheet: Locator) => sheet.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)).then(() => undefined));
 
   const gripOf = async (sheet: Locator) => {
@@ -612,22 +579,22 @@ test.describe("a sheet on the phone is pulled down to close", () => {
 
   test("pulled well down, or flicked, the sheet goes, and the page is not reloaded", async ({ browser, baseURL }) => {
     const { phone, sheet } = await withSheet(browser, baseURL!);
-    expect(await phone.evaluate(() => document.documentElement.classList.contains("sheet-open"))).toBe(true); // (the browser's pull to refresh is off while a sheet is up)
+    expect(await phone.evaluate(() => document.documentElement.classList.contains("sheet-open"))).toBe(true);
     expect(await phone.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY)).toBe("contain");
 
-    await pull(phone, await gripOf(sheet), 260, { steps: 12, every: 30 }); // a slow, long pull
+    await pull(phone, await gripOf(sheet), 260, { steps: 12, every: 30 });
     await expect(sheet).toHaveCount(0);
     const after = await state(phone);
-    expect(after.kept).toBe(true); // still the same page
+    expect(after.kept).toBe(true);
     expect(after.moves.length).toBeGreaterThan(0);
-    expect(after.moves.every(Boolean)).toBe(true); // every move of the pull was the sheet's, none was left to the browser
+    expect(after.moves.every(Boolean)).toBe(true);
     expect(await phone.evaluate(() => document.documentElement.classList.contains("sheet-open"))).toBe(false);
 
-    await phone.getByTestId("chip-speed").click(); // and the next one opens as usual, then goes with a flick
+    await phone.getByTestId("chip-speed").click();
     const again = phone.getByRole("dialog");
     await expect(again).toBeVisible();
     await slidUp(again);
-    await pull(phone, await gripOf(again), 100, { steps: 2, every: 10 }); // short, but fast (50 px in 10 ms)
+    await pull(phone, await gripOf(again), 100, { steps: 2, every: 10 });
     await expect(again).toHaveCount(0);
     expect((await state(phone)).kept).toBe(true);
   });
@@ -637,14 +604,14 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     const top = (await sheet.boundingBox())!.y;
     await pull(phone, await gripOf(sheet), 50, { steps: 5, every: 40 });
     await expect(sheet).toBeVisible();
-    await expect.poll(async () => Math.round((await sheet.boundingBox())!.y)).toBe(Math.round(top)); // back where it was
+    await expect.poll(async () => Math.round((await sheet.boundingBox())!.y)).toBe(Math.round(top));
     expect((await state(phone)).kept).toBe(true);
-    await phone.getByTestId("speed-1.5").click(); // and it still works
+    await phone.getByTestId("speed-1.5").click();
     await expect(phone.getByTestId("speed-1.5")).toHaveClass(/active/);
   });
 
   test("on a list that is scrolled down a pull is the list scrolling; at the top of it, the sheet", async ({ browser, baseURL }) => {
-    const { phone, sheet } = await withSheet(browser, baseURL!, 420); // upright (higher than wide), and low enough for the options not to fit: held sideways they sit two to a row, and do
+    const { phone, sheet } = await withSheet(browser, baseURL!, 420);
     const body = sheet.locator(".sheet-body");
     expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
     await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
@@ -653,12 +620,12 @@ test.describe("a sheet on the phone is pulled down to close", () => {
 
     const box = (await body.boundingBox())!;
     await pull(phone, { x: box.x + box.width / 2, y: box.y + 40 }, 120, { steps: 10, every: 20 });
-    await expect(sheet).toBeVisible(); // the list went back up under the finger; the sheet stayed
+    await expect(sheet).toBeVisible();
     expect(await body.evaluate((el) => el.scrollTop)).toBeLessThan(scrolled);
 
     await body.evaluate((el) => el.scrollTo(0, 0));
     await pull(phone, { x: box.x + box.width / 2, y: box.y + 40 }, 260, { steps: 12, every: 30 });
-    await expect(sheet).toHaveCount(0); // at the top, the same pull is the sheet's
+    await expect(sheet).toHaveCount(0);
     expect((await state(phone)).kept).toBe(true);
   });
 
@@ -666,7 +633,6 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     const { phone, sheet } = await withSheet(browser, baseURL!);
     await phone.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
-    // A sheet with a field in it: the TV's sheet has the code of another TV to add (the box for a link is on the home page now, not in a sheet).
     await phone.getByTestId("menu").click();
     await phone.getByTestId("tvs-open").click();
     const tvs = phone.getByTestId("tvs-sheet");
@@ -679,9 +645,9 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     await pull(phone, { x: field.x + field.width / 2, y: field.y + field.height / 2 }, 260, { steps: 12, every: 30 });
     await expect(tvs).toBeVisible();
     expect(Math.round((await tvs.boundingBox())!.y)).toBe(top);
-    expect((await state(phone)).moves.some(Boolean)).toBe(false); // none of the pull was taken from the page
+    expect((await state(phone)).moves.some(Boolean)).toBe(false);
 
-    await pull(phone, await gripOf(tvs), 260, { steps: 12, every: 30 }); // the same pull from the grip still closes it
+    await pull(phone, await gripOf(tvs), 260, { steps: 12, every: 30 });
     await expect(tvs).toHaveCount(0);
   });
 });

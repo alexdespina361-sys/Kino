@@ -2,12 +2,6 @@ import { expect, type Browser, type Locator, type Page } from "@playwright/test"
 import type { NormalizedMedia } from "../src/shared";
 import { openDevice, openLibrary, openTv, PHONE, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
-/**
- * The phone's layout (docs/phone-layout): a phone is held upright and used with a thumb, so on the narrowest ones (320, 360 and 390 px wide) both of its screens, the
- * remote and the library it shows when it is the screen, have their places on a bar at the foot, no text under 14 px, nothing to press under 44 px, nothing that makes the
- * page slide sideways, a title that is a page of its own, and sheets that leave the page they were opened from in view.
- */
-
 interface Size {
   name: string;
   width: number;
@@ -18,25 +12,18 @@ const SIZES: Size[] = [
   { name: "360 by 800", width: 360, height: 800 },
   { name: "390 by 844", width: 390, height: 844 },
 ];
-/** The tightest phone in each language (the words of Romanian and Italian are the longest), and the others in English. */
 const CASES = [
   ...SIZES.map((size) => ({ size, locale: "en-US", name: size.name })),
   { size: SIZES[0]!, locale: "ro-RO", name: "320 by 568 in Romanian" },
   { size: SIZES[0]!, locale: "it-IT", name: "320 by 568 in Italian" },
 ];
 
-/** A phone of this size (asking for less motion: what is measured is where things come to rest, so nothing is waited for while it slides in or rises). */
 const phoneAt = ({ width, height }: Size, locale = "en-US") => ({ ...PHONE, viewport: { width, height }, screen: { width, height }, locale, reducedMotion: "reduce" as const });
 
 const film = (id: string, title: string) => ({ id, title, year: 2000, kind: "movie", url: `/fixtures/sample.mp4?n=${id}` });
 const row = (id: string, title: string, count: number) => ({ id, title, source: "Test Source", kind: "movie", items: Array.from({ length: count }, (_, i) => film(`${id}-${i}`, `${title} film ${i + 1}`)) });
 const library = { updatedAt: Date.now(), rows: Array.from({ length: 8 }, (_, i) => row(`r${i}`, `Shelf ${i + 1}`, 14)) };
 
-/**
- * What an eye and a thumb need, measured on the page as it is on screen: the smallest text (the four words of a bar are counted apart: they are the one place that
- * is 12 px), the smallest thing to press (what is out of view, or under a sheet or a page, is neither read nor pressed, so it does not count), and whether the page
- * slides sideways. A hit area that reaches past a button's drawing counts for it. A whole page (`whole`) is counted down to its foot, as a long one is read by scrolling it.
- */
 async function measure(page: Page, whole = false) {
   return page.evaluate((whole) => {
     const W = innerWidth;
@@ -51,7 +38,7 @@ async function measure(page: Page, whole = false) {
     let barText = { px: Infinity, what: "" };
     let press = { px: Infinity, what: "" };
     for (const element of document.body.querySelectorAll<HTMLElement>("*")) {
-      const rect = element.getBoundingClientRect(); // (first: what is not displayed has no box, and most of a page is out of view)
+      const rect = element.getBoundingClientRect();
       if (rect.width < 4 || rect.height < 4) continue;
       const inView = rect.right > 0 && rect.bottom > 0 && rect.left < W && rect.top < H;
       if (!inView && !whole) continue;
@@ -90,7 +77,6 @@ async function measure(page: Page, whole = false) {
   }, whole);
 }
 
-/** One screen's numbers, each told with what it was measured on, so a failure says which thing is too small. */
 async function expectFits(page: Page, where: string, whole = false) {
   const seen = await measure(page, whole);
   expect(seen.sideways, `${where}: the page slides sideways`).toBe(false);
@@ -99,7 +85,6 @@ async function expectFits(page: Page, where: string, whole = false) {
   expect(seen.press.px, `${where}: the smallest thing to press is ${seen.press.what}`).toBeGreaterThanOrEqual(44);
 }
 
-/** Where something is once it has stopped moving (a page slides in, a sheet rises): a box read in the middle of that is somewhere on the way. */
 async function settled(target: Locator) {
   let last = await target.boundingBox();
   for (let tries = 0; tries < 30; tries++) {
@@ -111,7 +96,6 @@ async function settled(target: Locator) {
   return last!;
 }
 
-/** A word on a bar is never cut off or pushed past the edge of the place that holds it. */
 async function expectWordsFit(page: Page, selector: string, where: string) {
   const cut = await page.evaluate((each) => {
     const bad: string[] = [];
@@ -126,11 +110,10 @@ async function expectWordsFit(page: Page, selector: string, where: string) {
 }
 
 test.describe("the remote, held upright", () => {
-  /** A phone paired with a TV, its library answered by the test. */
   async function pairedPhone(browser: Browser, size: Size, locale = "en-US"): Promise<Page> {
     const [tv, phone] = await Promise.all([openTv(browser), openDevice(browser, phoneAt(size, locale), {}, withLibrary(library))]);
     await phone.goto("/");
-    await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveClass(/\bok\b/);
     await expect(phone.getByTestId("library-row").first()).toBeVisible();
     return phone;
@@ -182,7 +165,6 @@ test.describe("the remote, held upright", () => {
       expect(Math.min(back.width, back.height)).toBeGreaterThanOrEqual(44);
       await expectFits(phone, `${size.name}, a title's page`);
 
-      // The library lies behind the page, and a finger on the page (or the browser bringing a button into view) can still move it: it is not what the reader scrolled.
       await phone.evaluate(() => window.scrollTo(0, 0));
       await phone.getByTestId("title-back").tap();
       await expect(page).toHaveCount(0);
@@ -191,7 +173,6 @@ test.describe("the remote, held upright", () => {
     });
   }
 
-  // What the movie database knows of a title (the age rating and genres, who made it and who is in it, two rows of titles) is added under what the page is about: nothing above Play moves, and the page still fits.
   const known = {
     genres: ["Animation", "Action", "Comedy", "Family"],
     directors: ["Mark Osborne", "John Stevenson"],
@@ -244,7 +225,6 @@ test.describe("the remote, held upright", () => {
     const focused = () =>
       phone.evaluate(() => {
         const element = document.activeElement as HTMLElement;
-        // What is drawn round it, or round something in it (a place of the bar rings its icon), with the keyboard on it and without.
         const drawn = () =>
           [element, ...element.querySelectorAll("*")]
             .map((node) => {
@@ -257,10 +237,8 @@ test.describe("the remote, held upright", () => {
         const off = drawn();
         element.focus();
         const box = element.getBoundingClientRect();
-        // (a field shows it on the frame around it: only the buttons are asked)
         return { id: element.dataset.testid ?? element.tagName.toLowerCase(), ring: element.tagName !== "BUTTON" || on !== off, size: Math.min(box.width, box.height) };
       });
-    /** The keyboard's next stops from the start of a page (Tab), or from its end (Shift+Tab): a page that has just been put up has no stop behind it yet. */
     const stops = async (key: "Tab" | "Shift+Tab", count: number) => {
       await blur();
       const seen = [];
@@ -270,7 +248,7 @@ test.describe("the remote, held upright", () => {
       }
       return seen;
     };
-    const backward = (await stops("Shift+Tab", 6)).filter((one) => one.id !== "body"); // (a first step back from the start of a page lands on the page itself)
+    const backward = (await stops("Shift+Tab", 6)).filter((one) => one.id !== "body");
     expect(
       backward.map((one) => one.id).slice(0, 4),
       "the four places are the last the keyboard reaches, in the order they are drawn",
@@ -286,7 +264,6 @@ test.describe("the remote, held upright", () => {
     }
   });
 
-  // A key (or a screen reader) takes the page just far enough to show what it reached, and the two bars lie over the page: without the room kept for them (shell.css, scroll-margin) the foot of a poster was behind the bar.
   for (const size of [SIZES[0]!, SIZES[2]!]) {
     test(`at ${size.name}: what Tab or Shift+Tab reaches is clear of the bar below and of the TV above`, async ({ browser }) => {
       const phone = await pairedPhone(browser, size);
@@ -296,7 +273,7 @@ test.describe("the remote, held upright", () => {
           await phone.keyboard.press(key);
           const found = await phone.evaluate(() => {
             const element = document.activeElement as HTMLElement | null;
-            if (!element || element === document.body || element.closest('[data-testid="tabbar"], .top')) return null; // (the bars' own buttons are not behind a bar)
+            if (!element || element === document.body || element.closest('[data-testid="tabbar"], .top')) return null;
             const box = element.getBoundingClientRect();
             const bar = document.querySelector('[data-testid="tabbar"]')!.getBoundingClientRect();
             const top = document.querySelector(".phone-ui .top")!.getBoundingClientRect();
@@ -308,7 +285,7 @@ test.describe("the remote, held upright", () => {
           if (found) behind.push(`${key} ${press + 1}: ${found}`);
         }
       };
-      await walk("Tab", 80); // (the TV, the account, the box for a link, the filters, then the rows of posters, a few screens down)
+      await walk("Tab", 80);
       await walk("Shift+Tab", 80);
       expect(behind, "what the keyboard reached and the bars cover").toEqual([]);
     });
@@ -327,7 +304,7 @@ test.describe("a phone used as the screen, held upright", () => {
     const tv = await screen(browser, size, "en-US");
     await tv.getByTestId("rail-search").tap();
     await expect(tv.locator(".tv-rail[data-bar]")).toHaveCount(1);
-    await tv.setViewportSize({ width: size.width, height: 360 }); // (what the Android app's page is with the keyboard up)
+    await tv.setViewportSize({ width: size.width, height: 360 });
     await expect(tv.locator(".tv-rail[data-bar]"), "still the phone's bar").toHaveCount(1);
     const bar = (await tv.getByTestId("tv-rail").boundingBox())!;
     expect(bar.width, "along the foot, not down the left").toBeGreaterThanOrEqual(size.width - 1);
@@ -364,7 +341,6 @@ test.describe("a phone used as the screen, held upright", () => {
 
   test("Home opens with one title's poster across the screen: Play starts a film, the list button keeps it, the picture opens its page; a show's button opens its page; a library without pictures has none", async ({ browser }) => {
     const size = SIZES[2]!;
-    // (A title with a picture: the address need not exist, the poster only has to be asked for.)
     const pictured = (shelves: typeof library, kind = "movie") => ({ ...shelves, rows: shelves.rows.map((each, r) => ({ ...each, items: each.items.map((item) => ({ ...item, image: "/fixtures/missing.png", ...(r === 0 ? { kind } : {}) })) })) });
     const tv = await screen(browser, size, "en-US", pictured(library));
     const hero = tv.getByTestId("tv-feature");
@@ -402,11 +378,9 @@ test.describe("a phone used as the screen, held upright", () => {
   });
 
   test("the profile's page scrolls as a whole: its head goes up with the places under it, the page opens at its top, and the remote brings a button of the head back into view", async ({ browser }) => {
-    // (The owner, 17 Nov, on a phone: the head stayed where it was and only what was under Copy tag moved, a small part of a big screen.)
-    // (The lowest screen held upright that is laid out this way, compact.ts: a guest's page is more than a screen of it there.)
     const tv = await screen(browser, { name: "320 by 480", width: 320, height: 480 });
     const rows = tv.locator(".tv-rows");
-    await rows.evaluate((element) => element.scrollTo({ top: 600 })); // (Home left scrolled down: the profile's page is the same box of rows)
+    await rows.evaluate((element) => element.scrollTo({ top: 600 }));
     await tv.getByTestId("tv-account-chip").tap();
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
     const head = tv.getByTestId("tv-hero");
@@ -427,17 +401,14 @@ test.describe("a phone used as the screen, held upright", () => {
     const gone = (await settings.boundingBox())!;
     expect(gone.y, "Settings went up out of what shows").toBeLessThan(page.y - gone.height / 2);
 
-    // (The remote puts its ring on a button without scrolling to it: the page brings it into view.)
     await tv.keyboard.press("ArrowRight");
     await expect(settings).toBeFocused();
     await expect.poll(async () => { const box = (await settings.boundingBox())!; return box.y >= page.y && box.y + box.height <= page.y + page.height; }, { message: "Settings is in view again" }).toBe(true);
   });
 
   test("a page of titles scrolls as a whole: its name and its buttons go up with the titles, and the remote brings a button back into view", async ({ browser }) => {
-    // (The owner, 17 Nov, on a friend's page: the name and the buttons stayed, and only the titles under Chat moved. The lists' page is the same page.)
     const tv = await screen(browser, { name: "320 by 480", width: 320, height: 480 });
     for (let i = 0; i < 5; i++) {
-      // (By its name, and the shelf's own: the list, once it has one, is a row of its own at the top of Home.)
       await tv.locator(`.tv-tile[title="Shelf 2 film ${i + 1}"]`).last().tap();
       await tv.getByTestId("tv-detail-list").tap();
       await settled(tv.getByTestId("tv-detail-close"));
@@ -459,7 +430,6 @@ test.describe("a phone used as the screen, held upright", () => {
     const gone = (await tv.getByTestId("list-edit").boundingBox())!;
     expect(gone.y, "the list's buttons went up out of what shows").toBeLessThan(page.y - gone.height / 2);
 
-    // (The remote puts its ring on a button without scrolling to it: Up from the titles to the list's buttons brings them into view.)
     await grid.locator(".tv-tile").last().evaluate((element: HTMLElement) => element.focus({ preventScroll: true }));
     const onAButton = () => tv.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.zone === "chips");
     for (let step = 0; step < 4 && !(await onAButton()); step++) await tv.keyboard.press("ArrowUp");
@@ -468,7 +438,6 @@ test.describe("a phone used as the screen, held upright", () => {
       .poll(() => tv.evaluate(({ top, bottom }) => { const box = document.activeElement!.getBoundingClientRect(); return box.top >= top && box.bottom <= bottom; }, { top: page.y, bottom: page.y + page.height }), { message: "the button is in view" })
       .toBe(true);
 
-    // (Turned on its side and back, the head is drawn afresh over the grid and then in it again: the remote stays on the button it was on - the judge, 17 Nov.)
     const onNow = () => tv.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid ?? document.activeElement?.tagName);
     const button = await onNow();
     expect(button).toMatch(/^list-/);
@@ -481,14 +450,13 @@ test.describe("a phone used as the screen, held upright", () => {
 
   for (const size of [SIZES[0]!, SIZES[2]!]) {
     test(`at ${size.name}: a tap on a title's picture, or on the empty part beside its words, leaves its page open, and its Close button closes it`, async ({ browser }) => {
-      // (A title with a picture: its page keeps the top of the screen for it, and the words begin under it. The picture itself does not take a tap, so a tap lands on the page.)
       const withPictures = { ...library, rows: library.rows.map((each) => ({ ...each, items: each.items.map((item) => ({ ...item, backdrop: "/fixtures/missing.png" })) })) };
       const tv = await screen(browser, size, "en-US", withPictures);
       await tv.getByTestId("tv-browse-tile").first().tap();
       const page = tv.getByTestId("tv-detail");
       await expect(page).toBeVisible();
       await expect(page).toHaveAttribute("data-art", "true");
-      await expect(page).toHaveCSS("pointer-events", "auto"); // (a page lets the pointer through for its first half second, so that the tap that opened it does not press what is under it)
+      await expect(page).toHaveCSS("pointer-events", "auto");
       await settled(tv.getByTestId("tv-detail-close"));
       const wordsBegin = await tv.evaluate(() => document.querySelector(".tv-detail-text")!.getBoundingClientRect().top);
       expect(wordsBegin, "the picture has room above the words").toBeGreaterThan(100);
@@ -521,7 +489,6 @@ test.describe("a phone used as the screen, held upright", () => {
       await expectFits(tv, `${name}, settings`, true);
       await tv.getByTestId("tv-account-back").tap();
 
-      // (a phone that is the screen signs in with the typed form first: the code would ask for another phone)
       await tv.getByTestId("tv-profile-signin").tap();
       await expect(tv.getByTestId("tv-signin-form-back")).toBeVisible();
       await settled(tv.getByTestId("tv-signin-form-back"));
@@ -535,7 +502,6 @@ test.describe("a phone used as the screen, held upright", () => {
     });
   }
 
-  /** Enough of a film for the player to show every kind of menu it has. */
   const longNight = (baseURL: string): NormalizedMedia => ({
     title: "The Long Night · S1 E2",
     stream: { url: "/fixtures/sample.mp4", type: "mp4" },
@@ -556,7 +522,6 @@ test.describe("a phone used as the screen, held upright", () => {
   });
 
   for (const size of [SIZES[0]!, SIZES[2]!]) {
-    // (A window of a phone's size, not a touch screen: a phone that is touched is somebody's remote or screen of their own, and shows no code to pair another one with.)
     test(`at ${size.name}: the player's menus are sheets that leave the picture in view, with options a thumb hits`, async ({ browser, baseURL }) => {
       const tv = await openLibrary(browser, withLibrary(library), { width: size.width, height: size.height });
       await pressMenuLine(tv, "rail-connect");

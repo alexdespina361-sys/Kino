@@ -6,7 +6,6 @@ const LEFT = 100;
 const RIGHT = 900;
 const MIDDLE = 500;
 
-/** Records what the gestures asked the page to do, in order. */
 function setup(holdTakes = true) {
   const calls: string[] = [];
   const actions: PictureActions = {
@@ -20,7 +19,6 @@ function setup(holdTakes = true) {
   };
   const gestures = new PictureGestures(actions);
   let id = 0;
-  /** A finger (or a mouse) goes down and comes up again `after` ms later. */
   const tap = (x: number, { kind = "touch", after = 40, visible = false, zone }: { kind?: PointerKind; after?: number; visible?: boolean; zone?: Zone } = {}) => {
     id += 1;
     gestures.start({ id, x, y: 300, width: WIDTH, kind, wasVisible: visible, ...(zone ? { zone } : {}) });
@@ -92,7 +90,7 @@ describe("a tap", () => {
     const { calls, tap } = setup();
     tap(LEFT);
     tap(LEFT, { kind: "mouse" });
-    expect(calls).toEqual(["tap:touch:away"]); // (the click waits, as any does)
+    expect(calls).toEqual(["tap:touch:away"]);
     vi.advanceTimersByTime(DOUBLE_TAP_MS);
     expect(calls).toEqual(["tap:touch:away", "tap:mouse:away"]);
   });
@@ -140,14 +138,14 @@ describe("two taps in a row", () => {
     expect(calls).toEqual(["double:middle"]);
     tap(MIDDLE);
     vi.advanceTimersByTime(DOUBLE_TAP_MS);
-    expect(calls).toEqual(["double:middle", "tap:touch:away"]); // (the middle does not run on: a third is the first of the next pair)
+    expect(calls).toEqual(["double:middle", "tap:touch:away"]);
   });
 
   it("still count when the second finger is lifted after the wait would have run out", () => {
     const { calls, tap } = setup();
     tap(LEFT);
     vi.advanceTimersByTime(DOUBLE_TAP_MS - 30);
-    tap(LEFT, { after: 200 }); // pressed in time, a slow tap
+    tap(LEFT, { after: 200 });
     expect(calls).toEqual(["double:back"]);
   });
 
@@ -175,7 +173,7 @@ describe("two taps in a row", () => {
     tap(RIGHT);
     tap(RIGHT);
     for (let i = 0; i < 3; i++) {
-      vi.advanceTimersByTime(CHAIN_MS - 100); // (more than the run's first window in all, less than one window since the last tap)
+      vi.advanceTimersByTime(CHAIN_MS - 100);
       tap(RIGHT);
     }
     expect(calls).toEqual(["double:forward", "double:forward", "double:forward", "double:forward"]);
@@ -222,7 +220,6 @@ describe("two taps in a row", () => {
 });
 
 describe("a run of skips", () => {
-  // (each of these goes by the time the next tap comes within the run's window: it is the ordinary tap it would be after any pause)
   it("is over when a finger drags", () => {
     const { calls, gestures, tap, press } = setup();
     tap(RIGHT);
@@ -303,7 +300,7 @@ describe("a finger on the bars laid over the picture", () => {
     expect(calls).toEqual([]);
     gestures.end(id);
     vi.advanceTimersByTime(DOUBLE_TAP_MS);
-    expect(calls).toEqual(["tap:touch:away"]); // (a slow tap, but a tap)
+    expect(calls).toEqual(["tap:touch:away"]);
   });
 
   it("holds on the picture, which is where a press lands when the page does not say", () => {
@@ -424,7 +421,7 @@ describe("a mouse", () => {
     tap(RIGHT, { kind: "mouse" });
     tap(RIGHT, { kind: "mouse" });
     expect(calls).toEqual(["double:forward", "double:forward"]);
-    tap(RIGHT); // (a finger's tap on that side is the first of its own pair)
+    tap(RIGHT);
     vi.advanceTimersByTime(DOUBLE_TAP_MS);
     expect(calls).toEqual(["double:forward", "double:forward", "tap:touch:away"]);
   });

@@ -1,4 +1,4 @@
-import "./loadEnv"; // (first: the settings a PC keeps in .env.local are read before the modules that look at them)
+import "./loadEnv";
 import path from "node:path";
 import { googleFromEnv } from "./accounts/google";
 import { persistenceFromEnv } from "./accounts/persistence";
@@ -29,12 +29,9 @@ if (process.env.LIBRARY !== "off" && !process.env.TMDB_API_KEY)
   console.warn("TMDB_API_KEY is not set: the movie database answers nothing without a key, so the library has no titles (the box: /etc/kino-web.env; a PC: .env.local).");
 const host = process.env.HOST ?? "0.0.0.0";
 
-// What the limiters counted (wrong passwords, sign-ups, the day's allowances) is kept over a restart, so that a push forgives nobody: one small file
-// next to the rest of what is kept, written every minute and when the server stops (accounts/rateLimit.ts). Before anything that makes a limiter.
 const limits = process.env.DATA_DIR === "memory" ? undefined : LimitKeeper.open(path.resolve(process.env.DATA_DIR ?? "data", "limits.json"), (message) => console.warn(message));
 keepLimitsIn(limits);
 
-/** How many proxies sit in front of this server. A host like Render has one; on a PC there is none. `TRUST_PROXY` overrides: a number, `true` or `false`. */
 function trustProxy(env: NodeJS.ProcessEnv): boolean | number {
   const value = env.TRUST_PROXY;
   if (value === undefined) return env.RENDER ? 1 : false;
@@ -42,34 +39,25 @@ function trustProxy(env: NodeJS.ProcessEnv): boolean | number {
 }
 
 const { persistence, describe, kind } = await persistenceFromEnv();
-// Personal stickers (shared/stickers.ts): their pictures beside the accounts (a table of their own, or a folder), and off unless PERSONAL_STICKERS=on.
 const accounts = await AccountStore.open({
   persistence,
   log: console,
-  // (A new profile is set up by whoever uses it the first time: its name and picture, its subtitles, what it watches. PROFILE_SETUP=off: nobody is asked.)
   askSetup: process.env.PROFILE_SETUP !== "off",
   stickers: { files: stickerFilesFor(persistence, kind), on: personalStickersOn(), moving: movingStickersOn(), ...(personalStickersMaxBytes() ? { maxBytes: personalStickersMaxBytes()! } : {}) },
-  // (What the profiles of the whole site keep together, in MB: 64 unless set. accounts/store.ts SYNC_SITE_BYTES.)
   ...(Number(process.env.SYNC_SITE_MB) > 0 ? { syncSiteBytes: Number(process.env.SYNC_SITE_MB) * 1024 * 1024 } : {}),
 });
-// Which phone goes with which TV is kept in the same place, so a restart (a free host sleeps when nobody is using it) does not undo every pairing.
 const registry = new Registry();
 const pairings = await PairingStore.open({ registry, persistence, log: console });
 
-// What people send from the profile's Feedback button lives in the same place too. A home that cannot be opened must not take the site down with it:
-// reports then wait in memory (and the log says so) until the next start.
 const feedback = await FeedbackStore.open({ backend: feedbackBackendFor(persistence, kind), ...(feedbackMaxBytes() ? { maxBytes: feedbackMaxBytes()! } : {}), log: console }).catch((error: Error) => {
   console.warn(`Feedback could not be opened (${error.message}); reports are kept in memory only until the server restarts.`);
   return FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
 });
-// FEEDBACK_ADMIN_TOKEN is what the team reads and answers reports with (docs/feedback.md); without it reports are kept and nobody can read them.
 const feedbackAdminToken = process.env.FEEDBACK_ADMIN_TOKEN?.trim() || undefined;
 if (feedbackAdminToken && feedbackAdminToken.length < FEEDBACK_TOKEN_MIN) {
   console.warn(`FEEDBACK_ADMIN_TOKEN is shorter than ${FEEDBACK_TOKEN_MIN} characters, so it is not used: the team's side of the feedback is off.`);
 }
 
-// OWNER_STATS_TOKEN is the key of the owner's page (docs/stats.md, "The owner's page"): it reads one answer of counts, GET /api/owner/stats, and nothing else.
-// Without it there is no such address and nothing is counted for it. OWNER_STATS_ORIGIN names the one page of another site whose script a browser lets read it.
 const ownerStatsToken = process.env.OWNER_STATS_TOKEN?.trim() || undefined;
 if (ownerStatsToken && ownerStatsToken.length < FEEDBACK_TOKEN_MIN) {
   console.warn(`OWNER_STATS_TOKEN is shorter than ${FEEDBACK_TOKEN_MIN} characters, so it is not used: the owner's page has nothing to read.`);
@@ -79,8 +67,6 @@ if (process.env.OWNER_STATS_ORIGIN?.trim() && !ownerStatsOrigin) {
   console.warn("OWNER_STATS_ORIGIN is not an origin (https://name.example, nothing after it), so it is not used: no page of another site can read the owner's stats in a browser.");
 }
 
-// How many people open the site is counted, a number for each day and nothing about who (docs/stats.md). VISITOR_COUNT=off is the kill switch: nobody is counted.
-// A home that cannot be opened must not take the site down with it: then nobody is counted until the next start.
 const visits = /^(0|off|false|no)$/i.test(process.env.VISITOR_COUNT ?? "")
   ? undefined
   : await VisitCounter.open({ persistence: visitsPersistenceFor(persistence, kind), log: console }).catch((error: Error) => {
@@ -88,15 +74,11 @@ const visits = /^(0|off|false|no)$/i.test(process.env.VISITOR_COUNT ?? "")
       return undefined;
     });
 
-// What nobody could play is kept next to the accounts, for the screens to mark and the team to look for sources with (src/server/library/unavailable.ts).
-// A home that cannot be opened must not take the site down with it: then the list is kept in memory until the next start.
 const unavailable = await UnavailableStore.open({ persistence: unavailablePersistenceFor(persistence, kind), log: console }).catch((error: Error) => {
   console.warn(`The list of what nobody could play could not be opened (${error.message}); it is kept in memory only until the server restarts.`);
   return undefined;
 });
 
-// What is new of the titles a profile watches (a new episode, a new season, a new film of a series: src/server/titleNotices) is looked for where there is a library,
-// and kept next to the accounts. TITLE_NOTICES=off is the kill switch. A home that cannot be opened must not take the site down with it: then there are none.
 const titleNotices =
   process.env.LIBRARY === "off" || /^(0|off|false|no)$/i.test(process.env.TITLE_NOTICES ?? "")
     ? undefined
@@ -105,31 +87,24 @@ const titleNotices =
         return undefined;
       });
 
-// "Continue with Google" is on once GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS are all set (docs/google-sign-in.md); what is wrong with them is said, never the secret.
 const google = googleFromEnv(process.env, (message) => console.warn(message));
 
-// The Android app (docs/android-app.md): its notifications go through Firebase once FCM_SERVICE_ACCOUNT_FILE names the key of a service account (on the host only),
-// and its builds are offered from ANDROID_APP_DIR (outside the checkout).
 const fcm = fcmFromEnv(process.env, (message) => console.warn(message));
 const androidAppDir = process.env.ANDROID_APP_DIR?.trim() || undefined;
 
-// DIRECT_STREAMING is "on" by default to bypass the server middleman and stream directly to viewers.
 if (process.env.DIRECT_STREAMING === undefined) {
   process.env.DIRECT_STREAMING = "on";
 }
 
 const app = await buildApp({
   clientDir: defaultClientDir(),
-  // The test media (fixtures/, at /fixtures/) are for a machine that runs the app locally or for its tests: a deployed server has no use for them.
   ...(isDeployed() ? {} : { fixturesDir: defaultFixturesDir() }),
-  // LIBRARY=off: no browsing library (the e2e server, or anyone who would rather not fetch external library).
   librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource(), animeHeavenSource()],
   ...(process.env.LIBRARY === "off" ? {} : { names: createNameBook() }),
   accounts,
   registry,
   pairings,
   storage: kind,
-  // (The subtitle timings that screens share live next to the accounts, in the same database or folder.)
   subsync: subsyncStoreFor(persistence, kind),
   official: officialStoreFor(persistence, kind),
   feedback,
@@ -140,14 +115,11 @@ const app = await buildApp({
   ...(ownerStatsToken ? { ownerStatsToken } : {}),
   ...(ownerStatsOrigin ? { ownerStatsOrigin } : {}),
   ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
-  // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
   ...(Number(process.env.SIGNUPS_PER_HOUR) > 0 ? { signUpsPerHour: Number(process.env.SIGNUPS_PER_HOUR) } : {}),
   ...(Number(process.env.SIGNUPS_PER_DAY) > 0 ? { signUpsPerDay: Number(process.env.SIGNUPS_PER_DAY) } : {}),
-  // (Password and PIN checks an address may cause in a quarter of an hour: 150 unless set. The click-through tests sign in hundreds of times from this machine.)
   ...(Number(process.env.SLOW_CHECKS_PER_15_MIN) > 0 ? { slowChecksPer15Min: Number(process.env.SLOW_CHECKS_PER_15_MIN) } : {}),
-  // (Phones paired with a TV from one address in an hour: 30 unless set, see MAX_NEW_PAIRS. The click-through tests pair hundreds from this machine.)
   ...(Number(process.env.PAIRINGS_PER_HOUR) > 0 || Number(process.env.SOCKETS_PER_NETWORK) > 0
     ? {
         hub: {
@@ -160,12 +132,9 @@ const app = await buildApp({
   ...(fcm ? { push: new FcmSender(fcm, Date.now, console) } : {}),
   ...(androidAppDir ? { androidAppDir } : {}),
   trustProxy: trustProxy(process.env),
-  // Website as middle man is toggled off by default so users cannot watch something if it uses website bandwidth.
-  // Set PROXY_VIDEO=on to explicitly allow the server to proxy video.
   proxyVideo: process.env.PROXY_VIDEO === "on" || process.env.PROXY_VIDEO === "true" || process.env.PROXY_VIDEO === "1",
   logger: true,
 });
-// A promise that fails with nobody waiting for it is logged and the server carries on; an error that nothing catches is logged and stops it (src/server/survive.ts).
 keepRunning(app.log);
 app.log.info(`Accounts and pairings are kept in ${describe}.`);
 app.log.info(visits ? "Visitors are counted, a number for each day (docs/stats.md)." : "Visitors are not counted.");
@@ -178,8 +147,6 @@ limits?.every(60_000);
 
 await app.listen({ port, host });
 
-// A host stops a server with SIGTERM (a free Render instance does when it has been idle, and at every deploy): write what
-// has not been written yet, then go.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     app.log.info(`${signal}: saving and stopping.`);

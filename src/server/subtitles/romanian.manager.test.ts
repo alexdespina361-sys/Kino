@@ -8,12 +8,6 @@ import zlib from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isEnglishFile, isListedFile, siteFetch, trimKept } from "./romanian";
 
-/*
- * The manager asks the Romanian subtitle sites, which send whole archives. These tests are about how it asks: the archives of a site at once rather than one
- * after the other, the two sites at once, and a title asked about twice in the same moment asked of the sites once. The sites are made up; nothing goes anywhere.
- */
-
-/** A zip archive of one .srt file, as `extractSrtFromZip` reads it. */
 function zipOf(name: string, srt: string): Buffer {
   const deflated = zlib.deflateRawSync(Buffer.from(srt, "utf8"));
   const fnBuf = Buffer.from(name, "utf8");
@@ -31,7 +25,6 @@ function zipOf(name: string, srt: string): Buffer {
 const srt = (line: string) => `1\n00:00:01,000 --> 00:00:02,000\n${line}\n\n2\n00:00:03,000 --> 00:00:04,000\n${line} ${line} ${line} ${line} ${line} ${line} ${line} ${line} ${line} ${line}\n`;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The sites of the test: Subs.ro lists two archives, Subtitrari-Noi one; every archive takes `archiveMs` to come. */
 function sitesOf(archiveMs: number) {
   const asked: string[] = [];
   let underway = 0;
@@ -101,10 +94,10 @@ describe("a title with no IMDb id, matched by its name (the judge, 17 Nov)", () 
   it("tells an English file of an archive by its words, and keeps Thrones and Bros", () => {
     expect(isEnglishFile("Show.S01E01.English.srt")).toBe(true);
     expect(isEnglishFile("Show.S01E01.eng.srt")).toBe(true);
-    expect(isEnglishFile("Show.S01E01.en.srt")).toBe(false); // ("en" is a word of other names too: the judge, 17 Nov)
+    expect(isEnglishFile("Show.S01E01.en.srt")).toBe(false);
     expect(isEnglishFile("Un.Homme.en.Colere.2021.srt")).toBe(false);
     expect(isEnglishFile("Show.S01E01.English.ro.srt")).toBe(false);
-    expect(isEnglishFile("Game.of.Thrones.S01E01.English.srt")).toBe(true); // (it was let through as Romanian: "thRONes")
+    expect(isEnglishFile("Game.of.Thrones.S01E01.English.srt")).toBe(true);
     expect(isEnglishFile("Game.of.Thrones.S01E01.srt")).toBe(false);
     expect(isEnglishFile("Super.Mario.Bros.2023.srt")).toBe(false);
     expect(isEnglishFile("Engagement.2020.srt")).toBe(false);
@@ -117,7 +110,7 @@ describe("RomanianSubtitleManager", () => {
     const manager = new RomanianSubtitleManager(undefined, sites.fetch);
     const started = Date.now();
     const subs = await manager.getSubtitles({ imdbId: "tt0001", title: "A Film" });
-    expect(Date.now() - started).toBeLessThan(40 * 3); // (three archives of 40 ms: at once, not one after the other)
+    expect(Date.now() - started).toBeLessThan(40 * 3);
     expect(sites.mostUnderway()).toBe(3);
     expect(subs.map((sub) => sub.label)).toEqual(["Romanian (Subs.ro) · a", "Romanian (Subs.ro) · b", "Romanian (Retail / Subtitrari-Noi) · c"]);
     expect(subs.map((sub) => sub.id)).toEqual([9000, 9001, 9002]);
@@ -148,7 +141,6 @@ describe("RomanianSubtitleManager", () => {
   });
 
   it("gives each episode of a season's pack a subtitle of its own name", async () => {
-    // (One archive holds the season; the files of every episode used to be numbered from one, so two episodes shared a name and the later look-up answered for both.)
     const pack = Buffer.concat([zipOf("Show.S01E01.srt", srt("Primul")), zipOf("Show.S01E02.srt", srt("Al doilea"))]);
     const fetch = (async (input: string | URL | Request) => {
       const url = String(input);
@@ -165,7 +157,7 @@ describe("RomanianSubtitleManager", () => {
     expect(kept(first!)).toContain("Primul");
     expect(kept(second!)).toContain("Al doilea");
     expect(episodeId("subsro_77_1", 1, 2)).toBe("subsro_77_1_s1e2");
-    expect(episodeId("subsro_77_1_s1e2", 1, 2)).toBe("subsro_77_1_s1e2"); // (what was kept under the new name is not renamed again)
+    expect(episodeId("subsro_77_1_s1e2", 1, 2)).toBe("subsro_77_1_s1e2");
     expect(episodeId("subsro_77_1", undefined, undefined)).toBe("subsro_77_1");
   });
 
@@ -186,7 +178,7 @@ describe("RomanianSubtitleManager", () => {
       const url = String(input);
       if (url === "https://subs.ro/cautare") return new Response('<input name="antispam" value="x">');
       if (url === "https://subs.ro/ajax/search") return new Response('<a href="https://subs.ro/subtitrare/a-film/11">a</a><a href="https://subs.ro/subtitrare/a-film-too/12">b</a>');
-      if (url.includes("/descarca/a-film/11")) return new Response(endless()); // (never ends, and does not say how long it is)
+      if (url.includes("/descarca/a-film/11")) return new Response(endless());
       if (url.includes("/descarca/a-film-too/12")) return new Response(new Uint8Array(zipOf("b.srt", srt("Doi"))), { headers: { "content-length": String(MAX_ARCHIVE_BYTES + 1) } });
       return new Response("", { status: 404 });
     }) as typeof globalThis.fetch;
@@ -198,12 +190,11 @@ describe("RomanianSubtitleManager", () => {
 
   it("leaves out a file that unpacks to more than a subtitle is, and stops at the number of files a pack has", () => {
     const bomb = zipOf("bomb.srt", "0".repeat(MAX_FILE_BYTES + 1));
-    expect(bomb.length).toBeLessThan(64 * 1024); // (a few kilobytes that unpack to megabytes)
+    expect(bomb.length).toBeLessThan(64 * 1024);
     const found = extractSrtFromZip(Buffer.concat([bomb, zipOf("good.srt", srt("Bun"))]));
     expect(found.map((file) => file.name)).toEqual(["good.srt"]);
     const many = Buffer.concat(Array.from({ length: MAX_ARCHIVE_FILES + 5 }, (_, n) => zipOf(`${n}.srt`, srt("Unu"))));
     expect(extractSrtFromZip(many)).toHaveLength(MAX_ARCHIVE_FILES);
-    // (An archive cut short in the middle of a header is read as far as it goes, not past its end.)
     expect(extractSrtFromZip(Buffer.concat([zipOf("good.srt", srt("Bun")), zipOf("cut.srt", srt("Rupt")).subarray(0, 12)]))).toHaveLength(1);
   });
 
@@ -231,7 +222,7 @@ describe("RomanianSubtitleManager", () => {
     const manager = new RomanianSubtitleManager(undefined, fetch);
     const subs = await manager.getSubtitles({ imdbId: "tt0004" });
     expect(asked.some((url) => url.includes("127.0.0.1"))).toBe(false);
-    expect(subs.map((sub) => sub.url)).toEqual(["/api/subtitles/ro/os_2xy.vtt"]); // (the site's name for the file, without what is not a letter, a digit, `_` or `-`)
+    expect(subs.map((sub) => sub.url)).toEqual(["/api/subtitles/ro/os_2xy.vtt"]);
   });
 
   it("lets the titles asked about longest ago go when it keeps too many, and asks the sites again when one of them is wanted", async () => {
@@ -252,7 +243,7 @@ describe("RomanianSubtitleManager", () => {
     const id = (track: { url: string }) => track.url.replace("/api/subtitles/ro/", "").replace(".vtt", "");
     const [oldest] = await manager.getSubtitles({ imdbId: "tt1000" });
     const [second] = await manager.getSubtitles({ imdbId: "tt1001" });
-    await manager.getSubtitles({ imdbId: "tt1000" }); // (asked about again: now the second is the one asked about longest ago)
+    await manager.getSubtitles({ imdbId: "tt1000" });
     for (let n = 2; n <= MAX_KEPT_TITLES; n++) await manager.getSubtitles({ imdbId: `tt${1000 + n}` });
     expect(manager.getVtt(id(second!))).toBeUndefined();
     expect(manager.getVtt(id(oldest!))).toContain("Film 1000");
@@ -295,7 +286,6 @@ describe("siteFetch", () => {
   });
 
   it("really fetches: what is posted to one server and sent on to another arrives there as a GET without the cookie, and the answer is the last one's", async () => {
-    // (Two servers of this machine, so with every address allowed: the rest of these tests never leave the function.)
     const seen: string[] = [];
     const second = http.createServer((req, res) => {
       seen.push(`${req.method} ${req.url} cookie=${req.headers.cookie ?? "-"} type=${req.headers["content-type"] ?? "-"}`);
@@ -312,13 +302,12 @@ describe("siteFetch", () => {
       const at = `http://127.0.0.1:${(first.address() as AddressInfo).port}`;
       const get = siteFetch(undefined, () => true);
       const page = await get(`${at}/page`);
-      expect(page.headers.get("set-cookie")).toContain("s=1"); // (the cookie a site sets is still there to be sent back)
+      expect(page.headers.get("set-cookie")).toContain("s=1");
       expect(await page.text()).toBe("a page");
       const res = await get(`${at}/search`, { method: "POST", body: "x=1", headers: { cookie: "s=1", "content-type": "application/x-www-form-urlencoded" }, signal: AbortSignal.timeout(5_000) });
       expect(res.status).toBe(200);
       expect(await res.text()).toBe("the archive");
       expect(seen).toEqual(["GET /page cookie=-", "POST /search cookie=s=1", "GET /file cookie=- type=-"]);
-      // (And with the usual rule, this machine is not asked at all.)
       await expect(siteFetch()(`${at}/page`)).rejects.toThrow("address not allowed");
       expect(seen).toHaveLength(3);
     } finally {
@@ -328,20 +317,18 @@ describe("siteFetch", () => {
   });
 
   it("looks at a name's address again when it connects: a name that was public when it was looked at and leads here when it is connected to is not asked", async () => {
-    // (DNS rebinding: a name whose answer changes between the look and the connection. Here every address is allowed for as long as the look takes,
-    // then none is; the connection would reach this machine's own server.)
     const seen: string[] = [];
     const server = http.createServer((req, res) => {
       seen.push(`${req.method} ${req.url}`);
       res.writeHead(200, { "content-type": "text/plain" }).end("this machine");
     });
-    await new Promise<void>((done) => server.listen(0, done)); // (every address of this machine, so whichever "localhost" leads to)
+    await new Promise<void>((done) => server.listen(0, done));
     try {
       const looked = (await lookup("localhost", { all: true })).length;
       let asked = 0;
       const rebinding = () => asked++ < looked;
       await expect(siteFetch(undefined, rebinding)(`http://localhost:${(server.address() as AddressInfo).port}/inside`, { signal: AbortSignal.timeout(5_000) })).rejects.toThrow();
-      expect(asked).toBeGreaterThan(looked); // (it was looked at again)
+      expect(asked).toBeGreaterThan(looked);
       expect(seen).toEqual([]);
     } finally {
       server.close();
@@ -381,11 +368,11 @@ describe("trimKept", () => {
       at("c.json", 30);
       at("d.json", 20);
       at("e.json", 10);
-      at("notes.txt", 60); // (not a title's file)
+      at("notes.txt", 60);
       await trimKept(dir, 3, 1_000);
       expect(readdirSync(dir).sort()).toEqual(["c.json", "d.json", "e.json", "notes.txt"]);
       at("big.json", 5, 25);
-      await trimKept(dir, 3, 40); // (the newest, 25 bytes, and the one before it, 10: a third would be 45)
+      await trimKept(dir, 3, 40);
       expect(readdirSync(dir).sort()).toEqual(["big.json", "e.json", "notes.txt"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });

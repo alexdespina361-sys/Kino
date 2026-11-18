@@ -76,7 +76,6 @@ describe("searching a chat", () => {
       { text: " și ", hit: false },
       { text: "șapte", hit: true },
     ]);
-    // (a letter written with its accent apart, as some keyboards do, is lit whole)
     expect(marked("ăsta", "asta")).toEqual([{ text: "ăsta", hit: true }]);
     expect(marked("nothing here", "")).toEqual([{ text: "nothing here", hit: false }]);
     expect(marked("hello 👋 world", "world")).toEqual([

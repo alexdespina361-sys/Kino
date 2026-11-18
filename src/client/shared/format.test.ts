@@ -6,7 +6,7 @@ describe("formatLeft", () => {
     expect(formatLeft(23 * 60)).toBe("23 min");
     expect(formatLeft(72 * 60)).toBe("1 h 12 min");
     expect(formatLeft(2 * 3600)).toBe("2 h");
-    expect(formatLeft(89 * 60 + 40)).toBe("1 h 30 min"); // rounds to the minute
+    expect(formatLeft(89 * 60 + 40)).toBe("1 h 30 min");
   });
 
   it("never says less than a minute, and treats nonsense as that", () => {
@@ -49,7 +49,7 @@ describe("formatClock and formatEndsAt", () => {
   it("says when the video ends, at the speed it is playing", () => {
     expect(formatEndsAt(0, 3600, 1, at(20, 0))).toBe("21:00");
     expect(formatEndsAt(1800, 3600, 1, at(20, 0))).toBe("20:30");
-    expect(formatEndsAt(0, 3600, 2, at(20, 0))).toBe("20:30"); // double speed: half the time
+    expect(formatEndsAt(0, 3600, 2, at(20, 0))).toBe("20:30");
     expect(formatEndsAt(0, 0, 1, at(20, 0))).toBe("");
   });
 });

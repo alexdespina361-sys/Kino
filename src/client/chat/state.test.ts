@@ -54,7 +54,6 @@ describe("the chat after an answer", () => {
     const before: ChatState = { rev: 20, open: false, muted: false, theirSeen: 0, theirGot: 0, lines: [line(20, false)] };
     expect(applyThread(before, thread(20, undefined, { open: true }), false, true)).toBe(before);
     expect(applyThread(before, thread(20, undefined, { open: true }), false, false).open).toBe(true);
-    // (a newer revision is newer news, whenever its call began)
     expect(applyThread(before, thread(21, undefined, { open: true }), false, true).open).toBe(true);
   });
 
@@ -72,11 +71,9 @@ describe("the chat after an answer", () => {
   it("says how far the friend has one's messages and has seen them, only ever further: one tick, then two (the owner, 17 Nov)", () => {
     const at10 = applyThread(FRESH_CHAT, thread(10, [line(5, true), line(8, true), line(10, true)], { theirGot: 8, theirSeen: 5 }));
     expect([5, 8, 10].map((id) => ticksOf(at10, id))).toEqual([2, 1, 0]);
-    // (an answer that began before the friend looked does not take a tick away; one with the friend's newer look adds them)
     expect(applyThread(at10, thread(10, undefined, {}))).toMatchObject({ theirSeen: 5, theirGot: 8 });
     const looked = applyThread(at10, thread(10, undefined, { theirSeen: 10, theirGot: 10 }));
     expect([5, 8, 10].map((id) => ticksOf(looked, id))).toEqual([2, 2, 2]);
-    // (seen is had: a server that says only `theirSeen` gives the one tick as well)
     expect(applyThread(FRESH_CHAT, thread(3, [], { theirSeen: 3 })).theirGot).toBe(3);
   });
 
@@ -112,7 +109,6 @@ describe("the messages", () => {
     expect(dayOf(day(18), now, "it")).toBe("oggi");
     expect(dayOf(day(14), now, "it")).toMatch(/14.*ott/i);
     expect(dayOf(day(14), now, "en")).not.toMatch(/2026/);
-    // (a day of another year says which: on 5 Jan, 26 Dec is last year's)
     const january = new Date(2027, 0, 5, 12).getTime();
     expect(dayOf(new Date(2026, 11, 26, 12).getTime(), january, "en")).toMatch(/26.*Dec.*2026/);
     expect(dayOf(new Date(2026, 11, 26, 12).getTime(), january, "ro")).toMatch(/2026/);

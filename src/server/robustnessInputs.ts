@@ -1,11 +1,5 @@
 import { gzipSync } from "node:zlib";
 
-/**
- * The awkward inputs of `robustness.test.ts`: a seeded generator and the shapes of body, path, query, header and frame that no page sends
- * and that a server has to turn away without a 5xx, a hang or a leak. Nothing here is random but the seed, so the same requests are sent on every machine.
- */
-
-/** A seeded generator (mulberry32) giving numbers in [0, 1). */
 export function seeded(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -17,14 +11,12 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** A number from a text (FNV-1a), to seed a generator for one route so that a new route does not change what the others are sent. */
 export function hashed(text: string): number {
   let hash = 0x811c9dc5;
   for (let at = 0; at < text.length; at++) hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193);
   return hash >>> 0;
 }
 
-/** `count` of the items, chosen by the generator and kept in the order the list has them: the seed decides which ones, nothing else does. */
 export function sample<T>(rand: () => number, items: readonly T[], count: number): T[] {
   if (count >= items.length) return [...items];
   const chosen = new Set<number>();
@@ -37,14 +29,10 @@ export interface Named<T> {
   value: T;
 }
 
-/* ------------------------------ JSON that JSON.stringify cannot write ------------------------------ */
-
-/** Text that goes into a body as it is: a number `JSON.stringify` has no way to write, or a key called `__proto__`. */
 export class Raw {
   constructor(readonly text: string) {}
 }
 
-/** `JSON.stringify` that writes a `Raw` as it is. */
 export function toJson(value: unknown): string {
   if (value instanceof Raw) return value.text;
   if (Array.isArray(value)) return `[${value.map(toJson).join(",")}]`;
@@ -52,11 +40,9 @@ export function toJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-/** Marks a member that is taken out (see `replaceAt`). */
 export const DROP = Symbol("drop");
 type Path = ReadonlyArray<string | number>;
 
-/** A copy of `value` with what is at `path` replaced by `replacement`, or taken out of its object or array when that is `DROP`. */
 export function replaceAt(value: unknown, path: Path, replacement: unknown): unknown {
   const [head, ...rest] = path;
   if (head === undefined) return replacement;
@@ -72,7 +58,6 @@ export function replaceAt(value: unknown, path: Path, replacement: unknown): unk
   return copy;
 }
 
-/** Every place in a value that can be changed: each member of each object and the first item of each array. */
 export function pathsIn(value: unknown, at: Array<string | number> = [], out: Array<Array<string | number>> = []): Array<Array<string | number>> {
   if (Array.isArray(value)) {
     if (value.length > 0) {
@@ -88,15 +73,12 @@ export function pathsIn(value: unknown, at: Array<string | number> = [], out: Ar
   return out;
 }
 
-/* ------------------------------ values for a field of a body ------------------------------ */
-
 const nested = (depth: number, wrap: (inner: unknown) => unknown): unknown => {
   let inner: unknown = 1;
   for (let level = 0; level < depth; level++) inner = wrap(inner);
   return inner;
 };
 
-/** What a field of a body can be made, short of the right thing. The first `CORE_VALUES` are tried on every field, the rest on some of them (and `heavyValues` only on the routes that take a lot). */
 export const CORE_VALUES = 12;
 export function awkwardValues(): Array<Named<unknown>> {
   return [
@@ -140,7 +122,6 @@ export function awkwardValues(): Array<Named<unknown>> {
   ];
 }
 
-/** Values of a field that cost the server a lot to look at (as big as a body may be): tried only on the routes that take big things. */
 export function heavyValues(): Array<Named<unknown>> {
   return [
     { name: "a hundred thousand small items", value: new Raw(`[${"0,".repeat(99_999)}0]`) },
@@ -149,15 +130,11 @@ export function heavyValues(): Array<Named<unknown>> {
   ];
 }
 
-/* ------------------------------ whole bodies ------------------------------ */
-
 export interface BodyShape {
   name: string;
   body?: string | Buffer;
-  /** The content type: `application/json` unless said, and none at all when `null`. */
   type?: string | null;
   headers?: Record<string, string>;
-  /** Takes a megabyte or so to send: tried only where it can be read. */
   big?: boolean;
 }
 
@@ -209,12 +186,8 @@ export function bodyShapes(): BodyShape[] {
   ];
 }
 
-/** The body sizes of two megabytes and more: past the limit of every route that has the usual one. */
 export const OVER_THE_LIMIT: BodyShape = { name: "a body past the limit", body: `{"a":"${"a".repeat(2 * 1024 * 1024)}"}`, big: true };
 
-/* ------------------------------ addresses and queries ------------------------------ */
-
-/** What follows the folder's name in the address of a file (the routes that serve a folder), written as it would be on the wire. */
 export const FILE_JUNK: Array<Named<string>> = [
   { name: "nothing", value: "" },
   { name: "up a folder", value: "a/../../outside.txt" },
@@ -234,7 +207,6 @@ export const FILE_JUNK: Array<Named<string>> = [
   { name: "unicode", value: encodeURIComponent("ünï-日本語-🙂.js") },
 ];
 
-/** Path segments, written as they would be on the wire (some are not even valid). */
 export const PATH_JUNK: Array<Named<string>> = [
   { name: "nothing", value: "" },
   { name: "a space", value: "%20" },
@@ -263,7 +235,6 @@ export const PATH_JUNK: Array<Named<string>> = [
   { name: "ten thousand escapes", value: "%41".repeat(10_000) },
 ];
 
-/** Values of a query parameter, written as they would be on the wire. */
 export const QUERY_JUNK: Array<Named<string>> = [
   { name: "empty", value: "" },
   { name: "NUL", value: "%00" },
@@ -297,7 +268,6 @@ export const QUERY_JUNK: Array<Named<string>> = [
   { name: "ten thousand escapes", value: "%41".repeat(10_000) },
 ];
 
-/** Whole query strings that no page sends, written as they would be on the wire (without the question mark). */
 export const QUERY_STRINGS: Array<Named<string>> = [
   { name: "a name given twice", value: "a=1&a=2" },
   { name: "a name given three thousand times", value: Array.from({ length: 3000 }, (_, at) => `a=${at}`).join("&") },
@@ -310,14 +280,11 @@ export const QUERY_STRINGS: Array<Named<string>> = [
   { name: "a plus sign and a semicolon", value: "a=1+2;b=3" },
 ];
 
-/* ------------------------------ headers ------------------------------ */
-
 export interface HeaderShape {
   name: string;
   headers: Record<string, string>;
 }
 
-/** Request headers that a browser would not send. (Each is a legal header: the server has to take what Node's own parser lets through.) */
 export function headerShapes(): HeaderShape[] {
   const long = (letter: string) => letter.repeat(5000);
   return [
@@ -361,18 +328,13 @@ export function headerShapes(): HeaderShape[] {
   ];
 }
 
-/* ------------------------------ WebSocket frames ------------------------------ */
-
 export interface FrameShape {
   name: string;
   data: string | Buffer;
-  /** Sent as a binary frame (otherwise as text, even when the bytes are no text). */
   binary: boolean;
-  /** The code the library itself closes the connection with when it sees this frame (before the server reads it): a frame past the size limit, text that is no UTF-8. */
   closes?: number;
 }
 
-/** Frames of every kind a client could put on the socket besides a message that is right. (The size limit of the server is 64 KiB.) */
 export function frameShapes(rand: () => number): FrameShape[] {
   const noise = (length: number) => Buffer.from(Array.from({ length }, () => Math.floor(rand() * 256)));
   const ping = JSON.stringify({ type: "PING" });

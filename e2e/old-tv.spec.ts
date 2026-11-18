@@ -1,18 +1,6 @@
 import { chromium, expect, type Page } from "@playwright/test";
 import { test, withLibrary } from "./helpers";
 
-/**
- * The site in the oldest browser of a TV we know of: Chromium 94 (Hisense VIDAA 6, Samsung Tizen 7, TVs from 2021). The build is made for it
- * (`build.target` in vite.config.ts); this opens the library, a title's page, an MP4 film and an HLS stream in it and wants no page error.
- *
- * It runs only when CHROME94 names that browser's chrome.exe, which is not in the repository: Chromium's own snapshot build 911519 (94.0.4606.0),
- * from https://commondatastorage.googleapis.com/chromium-browser-snapshots/index.html?prefix=Win_x64/911519/ (chrome-win.zip). Then:
- *   CHROME94=<folder>/chrome-win/chrome.exe npx playwright test e2e/old-tv.spec.ts
- * (Do not start that chrome.exe with --version on Windows: it opens a window.)
- *
- * Playwright's own checks (toBeVisible, a locator's click) need a newer browser (checkVisibility), so the page is read with plain DOM calls and
- * clicked where an element is.
- */
 const CHROME94 = process.env.CHROME94;
 const films = [
   { id: "filmpire-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "/fixtures/sample.mp4?n=1" },
@@ -58,7 +46,6 @@ test("the site in Chromium 94: library, a title's page, an MP4 film and an HLS s
     await page.goto("/tv");
     await expect.poll(() => count(page, "tv-browse-tile"), { timeout: 20_000 }).toBeGreaterThan(0);
     await page.waitForTimeout(800);
-    // a title's page with the remote's OK, then Play: the MP4 film
     await page.keyboard.press("Enter");
     await expect.poll(() => count(page, "tv-detail")).toBe(1);
     await page.waitForTimeout(800);
@@ -67,7 +54,6 @@ test("the site in Chromium 94: library, a title's page, an MP4 film and an HLS s
     await page.waitForTimeout(1_500);
     await page.keyboard.press("Escape");
     await expect.poll(() => state(page), { timeout: 10_000 }).toBe("idle");
-    // the HLS stream (hls.js)
     await expect.poll(() => count(page, "tv-browse-tile")).toBeGreaterThan(1);
     await page.waitForTimeout(800);
     await press(page, "tv-browse-tile", 1);

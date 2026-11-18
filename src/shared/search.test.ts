@@ -30,7 +30,7 @@ describe("normalizeQuery", () => {
     expect(normalizeQuery("Marvel’s  Daredevil!")).toBe("marvels daredevil");
     expect(normalizeQuery("Spider-Man: No Way Home")).toBe("spider man no way home");
     expect(normalizeQuery("LOTR two towers")).toBe("lord of the rings two towers");
-    expect(normalizeQuery("what is got")).toBe("what is got"); // a short name is a short name only first
+    expect(normalizeQuery("what is got")).toBe("what is got");
   });
   it("is empty for nothing worth looking for", () => {
     expect(normalizeQuery("")).toBe("");
@@ -64,11 +64,11 @@ describe("searchItems", () => {
     expect(find("teh night of the hunter")).toEqual(["The Night of the Hunter"]);
     expect(find("teh night")).toEqual(["The Night of the Hunter"]);
     expect(find("iron mna")).toEqual(["Iron Man"]);
-    expect(find("mna")).toEqual([]); // alone, three letters are too little to go on
+    expect(find("mna")).toEqual([]);
     expect(find("teh")).toEqual([]);
   });
   it("takes a number for what it is: a year is not forgiven", () => {
-    expect(find("dune 2012")).toEqual([]); // (not Dune of 2021)
+    expect(find("dune 2012")).toEqual([]);
     expect(find("dune 2021")).toEqual(["Dune"]);
   });
   it("needs every word, and finds the title with the words in any order", () => {
@@ -222,10 +222,10 @@ describe("TitleIndex", () => {
       into.discardWhere((item) => item.title.startsWith("Harry"));
       into.add([{ id: "x2", title: "Night Moves", url: "/x2" }]);
     };
-    const late = new TitleIndex(items); // (nothing looked for yet: its words are made at the first search, from what is in then)
+    const late = new TitleIndex(items);
     steps(late);
     const early = new TitleIndex(items);
-    early.find("warm up"); // (its words made now, and kept up to date by each step)
+    early.find("warm up");
     steps(early);
     for (const query of queries) {
       expect(late.find(query, "loose").map((item) => item.id).sort(), query).toEqual(early.find(query, "loose").map((item) => item.id).sort());
@@ -260,7 +260,7 @@ describe("TitleIndex", () => {
     const own = index();
     expect(own.find("dunr")).toEqual([]);
     expect(names(own.find("dunr", "relaxed"))).toEqual(["Dune", "Dune: Part Two"]);
-    expect(own.find("ovotar")).toEqual([]); // (two letters off Avatar)
+    expect(own.find("ovotar")).toEqual([]);
     expect(names(own.find("ovotar", "relaxed"))).toEqual(["Avatar", "Avatar: The Way of Water"]);
     expect(own.find("zzz", "relaxed")).toEqual([]);
   });
@@ -269,8 +269,8 @@ describe("TitleIndex", () => {
     const own = index();
     expect(own.find("dune zzzz")).toEqual([]);
     expect(names(own.find("dune zzzz", "loose"))).toEqual(["Dune", "Dune: Part Two"]);
-    expect(names(own.find("dune part zzzz", "loose"))).toEqual(["Dune: Part Two"]); // (two of the three)
-    expect(own.find("watch full movie", "loose")).toEqual([]); // (nothing but noise)
+    expect(names(own.find("dune part zzzz", "loose"))).toEqual(["Dune: Part Two"]);
+    expect(own.find("watch full movie", "loose")).toEqual([]);
     expect(own.find("zzzz qqqq", "loose")).toEqual([]);
     expect(own.find("   ", "loose")).toEqual([]);
   });
@@ -281,24 +281,23 @@ describe("TitleIndex", () => {
       { id: "b", title: "Knight Rider", url: "/b" },
       { id: "c", title: "Dark Waters", url: "/c" },
     ]);
-    // ("knight" is asked in each of its swapped spellings too, and all of them find "knight": that is still one word of the three.)
     expect(names(own.find("dark knight returns", "loose"))).toEqual(["The Dark Knight"]);
   });
 
   it("does not take a word that is in a great many titles for a word they have in common with what was typed", () => {
     const own = index();
-    expect(own.find("the zzzzz", "loose")).toEqual([]); // (not every title with "The")
+    expect(own.find("the zzzzz", "loose")).toEqual([]);
     expect(own.find("the of and a", "loose")).toEqual([]);
-    expect(names(own.find("the zzzzz night", "loose")).sort()).toEqual(["Night Train", "The Night of the Hunter"]); // (the word that is left is what they have)
+    expect(names(own.find("the zzzzz night", "loose")).sort()).toEqual(["Night Train", "The Night of the Hunter"]);
   });
 
   it("searches the tiers in turn until there are enough, and says how many have all the words", () => {
     const own = index();
     const found = own.search("strager things");
     expect(names(found.items)).toEqual(["Stranger Things", "Things We Lost in the Fire"]);
-    expect(found.exact).toBe(1); // (the other has only one of the two words)
+    expect(found.exact).toBe(1);
 
-    expect(own.search("dunr")).toMatchObject({ exact: 2 }); // (the relaxed tier has all the words of a title too)
+    expect(own.search("dunr")).toMatchObject({ exact: 2 });
     expect(own.search("zzzz")).toEqual({ items: [], exact: 0 });
     expect(own.search("")).toEqual({ items: [], exact: 0 });
   });
@@ -317,7 +316,7 @@ describe("TitleIndex", () => {
     expect(own.size).toBeLessThanOrEqual(10);
     expect(own.find("alpha")).toEqual([]);
     expect(names(own.find("yankee"))).toEqual(["Film yankee"]);
-    own.add([{ id: "alpha", title: "Film alpha", url: "/again" }]); // (one that was forgotten is taken again)
+    own.add([{ id: "alpha", title: "Film alpha", url: "/again" }]);
     expect(names(own.find("alpha"))).toEqual(["Film alpha"]);
   });
 

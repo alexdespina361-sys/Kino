@@ -1,9 +1,5 @@
 import type { ReactNode, SVGProps } from "react";
 
-/**
- * Inline SVG icons. Emoji and unicode symbols render differently on every TV browser (or not at all),
- * these look the same everywhere and take their colour and size from the surrounding text.
- */
 function Icon({ children, ...rest }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
   return (
     <svg
@@ -28,7 +24,6 @@ type Props = SVGProps<SVGSVGElement>;
 
 export const PlayIcon = (props: Props) => (
   <Icon {...props}>
-    {/* A triangle looks centred when its middle of mass, not its bounding box, sits in the middle: nudged ~1/12 of its width past centre. */}
     <path d="M7.4 5v14l11-7z" fill="currentColor" />
   </Icon>
 );
@@ -40,7 +35,6 @@ export const PauseIcon = (props: Props) => (
   </Icon>
 );
 
-/** Circular arrow with "10" inside: back 10 seconds. */
 export const Back10Icon = (props: Props) => (
   <Icon {...props}>
     <polyline points="1 4 1 10 7 10" />
@@ -61,7 +55,6 @@ export const Forward10Icon = (props: Props) => (
   </Icon>
 );
 
-/** Two triangles pointing on: faster. */
 export const FastForwardIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M3 5.5v13l8.5-6.5z" fill="currentColor" />
@@ -155,7 +148,6 @@ export const ClipboardIcon = (props: Props) => (
   </Icon>
 );
 
-/** Two sheets, one over the other: copy. */
 export const CopyIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="9" y="9" width="12" height="12" rx="2" />
@@ -163,7 +155,6 @@ export const CopyIcon = (props: Props) => (
   </Icon>
 );
 
-/** A viewfinder: the four corners of a frame with a line through it. */
 export const ScanIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M7 12h10" />
@@ -225,7 +216,6 @@ export const BackspaceIcon = (props: Props) => (
   </Icon>
 );
 
-/** A round button with a cross: empty the box (Delete takes one letter, this takes them all). */
 export const ClearIcon = (props: Props) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />
@@ -279,13 +269,11 @@ export const LogoutIcon = (props: Props) => (
 
 export const GearIcon = (props: Props) => (
   <Icon {...props}>
-    {/* A cog, not a sun: six teeth whose tips and valleys follow two circles (radii 10 and 7.2), the hub a circle in the middle. */}
     <path d="M9.89 5.11L10.18 2.17A10 10 0 0 1 13.82 2.17L14.11 5.11A7.2 7.2 0 0 1 16.91 6.73L19.6 5.51A10 10 0 0 1 21.43 8.66L19.02 10.38A7.2 7.2 0 0 1 19.02 13.62L21.43 15.34A10 10 0 0 1 19.6 18.49L16.91 17.27A7.2 7.2 0 0 1 14.11 18.89L13.82 21.83A10 10 0 0 1 10.18 21.83L9.89 18.89A7.2 7.2 0 0 1 7.09 17.27L4.4 18.49A10 10 0 0 1 2.57 15.34L4.98 13.62A7.2 7.2 0 0 1 4.98 10.38L2.57 8.66A10 10 0 0 1 4.4 5.51L7.09 6.73A7.2 7.2 0 0 1 9.89 5.11Z" />
     <circle cx="12" cy="12" r="3" />
   </Icon>
 );
 
-/** A phone upright, a little over three parts high to two wide (the first one drawn was one to two: it read as a ruler beside the menu's other icons). */
 export const PhoneIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="5.5" y="3" width="13" height="18" rx="3" />
@@ -327,7 +315,6 @@ export const FilmIcon = (props: Props) => (
   </Icon>
 );
 
-/** A label that says GIF: the chat's button that sends one (chat/GifPick.tsx). */
 export const GifIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="2" y="5" width="20" height="14" rx="3" />
@@ -335,7 +322,6 @@ export const GifIcon = (props: Props) => (
   </Icon>
 );
 
-/** A sticker with its corner peeled up and a smile on it: the chat's button that sends one (chat/StickerPick.tsx). */
 export const StickerIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M20 12.5V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h5.5z" />
@@ -344,7 +330,6 @@ export const StickerIcon = (props: Props) => (
   </Icon>
 );
 
-/** A keyboard: back to typing, the chat's panel of titles, GIFs and stickers put away (chat/ChatPanel.tsx). */
 export const KeyboardIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="2" y="6" width="20" height="12" rx="2" />
@@ -352,7 +337,6 @@ export const KeyboardIcon = (props: Props) => (
   </Icon>
 );
 
-/** A face with a wide grin: cartoons. */
 export const CartoonIcon = (props: Props) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />
@@ -361,7 +345,6 @@ export const CartoonIcon = (props: Props) => (
   </Icon>
 );
 
-/** A torii gate: anime. */
 export const AnimeIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M2.5 5.5C6 7 9 7 12 7s6 0 9.5-1.5" />
@@ -383,7 +366,6 @@ export const UsersIcon = (props: Props) => (
   </Icon>
 );
 
-/** A heart: friends. */
 export const HeartIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
@@ -396,16 +378,12 @@ export const RefreshIcon = (props: Props) => (
   </Icon>
 );
 
-/** A star: an outline, or filled in for a title that has a rating. */
 export const StarIcon = ({ filled, ...props }: Props & { filled?: boolean }) => (
   <Icon {...props}>
     <polygon points="12 2.5 15.1 8.8 22 9.8 17 14.6 18.2 21.5 12 18.2 5.8 21.5 7 14.6 2 9.8 8.9 8.8" {...(filled ? { fill: "currentColor" } : {})} />
   </Icon>
 );
 
-/* ---- the feedback: what kind it is, how a picture is added and marked ---- */
-
-/** A bug: head, shell, six legs and two feelers. */
 export const BugIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M9.2 7.4a2.8 2.8 0 0 1 5.6 0M8 3.6l1.6 1.9M16 3.6l-1.6 1.9" />
@@ -421,7 +399,6 @@ export const WarningIcon = (props: Props) => (
   </Icon>
 );
 
-/** A spark: something that is there, made better. */
 export const SparkleIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M10.5 4.5 12.4 10l5.6 1.9-5.6 1.9-1.9 5.6-1.9-5.6L3 11.9 8.6 10z" />
@@ -429,7 +406,6 @@ export const SparkleIcon = (props: Props) => (
   </Icon>
 );
 
-/** A bulb: a new idea. */
 export const BulbIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M9.4 18.2h5.2M10.2 21h3.6" />
@@ -472,7 +448,6 @@ export const PaperclipIcon = (props: Props) => (
   </Icon>
 );
 
-/** The four corners of what is on the screen, and a dot in the middle: a picture of the screen. */
 export const ScreenshotIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5" />
@@ -480,7 +455,6 @@ export const ScreenshotIcon = (props: Props) => (
   </Icon>
 );
 
-/** The tools that mark a picture: a circle (drawn as an oval), an arrow, a box, a line by hand (the pencil), a word, a cover. */
 export const OvalIcon = (props: Props) => (
   <Icon {...props}>
     <ellipse cx="12" cy="12" rx="9" ry="6.4" />
@@ -505,7 +479,6 @@ export const TextIcon = (props: Props) => (
   </Icon>
 );
 
-/** A solid block: what covers the private part of a picture. */
 export const CoverIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="4" y="6" width="16" height="12" rx="1.6" fill="currentColor" />
@@ -526,14 +499,12 @@ export const RedoIcon = (props: Props) => (
   </Icon>
 );
 
-/** The bell with a line through it: not told of what comes (a muted chat). */
 export const BellOffIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M18 8a6 6 0 0 0-9.3-5M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14M13.7 21a2 2 0 0 1-3.4 0M18 13.5V8M3 3l18 18" />
   </Icon>
 );
 
-/** Three dots one above the other: "more", a few things that are there when they are asked for (upright, as in a messenger: the owner, 17 Nov). */
 export const MoreIcon = (props: Props) => (
   <Icon {...props}>
     <circle cx="12" cy="5" r="1.6" fill="currentColor" />
@@ -542,7 +513,6 @@ export const MoreIcon = (props: Props) => (
   </Icon>
 );
 
-/** Answering a message: an arrow that turns back (the chat's Reply). */
 export const ReplyIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M9 14 4 9l5-5" />

@@ -23,47 +23,23 @@ import type { ResolveFn, ResolveResult } from "../resolvers";
 import { MAX_PHONES_PER_TV, type Controller, type Device, type Registry } from "../sessions/registry";
 import { networkOf } from "../trust";
 
-/** Close code sent to an older TV page when a newer page takes over the same device. */
 export const CLOSE_REPLACED = 4000;
 
-/**
- * How much one connection may say. A TV reports about once a second (a handful at once when a video starts), a phone sends a message
- * per tap, so the allowance is far above any page that works: `FRAME_BURST` messages at once, `FRAME_RATE_PER_S` a second after that.
- * A connection past the burst is not listened to; one that keeps on (more than twice the burst) is closed.
- */
 export const FRAME_BURST = 100;
 export const FRAME_RATE_PER_S = 30;
 
-/**
- * How much may be waiting to be written to one connection before it is taken to have stopped reading. A page that reads is never behind
- * by more than a few messages (a report is a couple of hundred bytes), so this is far above any that works. One that answers pings and
- * reads nothing would otherwise keep every report relayed to it in this server's memory: it is dropped instead.
- */
 export const MAX_BUFFERED_BYTES = 1_000_000;
 
-/** A film that starts or holds within this long of an admin guest's play or pause is that guest's doing; otherwise it is the host's own. */
 export const STEER_ATTRIBUTION_MS = 4000;
 
-/**
- * How long a TV or phone that nobody has paired is kept after its connection went, in case its page comes back (a page that was reloaded, or lost its link, is the same TV with
- * the same code until then). By then the code it was given has run out, and a page that comes back after that is a new TV. Without this, every page that ever said hello would
- * stay in this server's memory for good.
- */
 export const KEEP_UNPAIRED_MS = PAIRING_CODE_TTL_MS;
 
-/**
- * How many TVs, and how many phones, that nobody has paired are kept at most, however fast they come (the pages of a household are a handful). One more than that lets go of the
- * one that came first and is not connected; when every one of them is connected, it is turned away (the connection is closed, 1013) and its page tries again in a moment.
- */
 export const MAX_UNPAIRED = 5000;
 
-/** How many links that did not play are remembered at most (see `Hub.noteFailed`): a link is a few hundred bytes, and the ones that matter are the latest. */
 export const MAX_FAILED_LINKS = 200;
 
-/** Whether a party's film was going when its host last reported, and whose doing that was (`PartyTv.id`). */
 interface Hold {
   playing: boolean;
-  /** Held only because the host's picture waits for data. */
   waiting: boolean;
   by: string;
 }
@@ -74,128 +50,67 @@ type Conn =
   | { role: "controller"; socket: WebSocket; controllerId: string };
 
 export interface HubOptions {
-  /** A socket that has sent nothing for this long is dropped (clients PING every 15 s). Default 60 s. */
   staleAfterMs?: number;
-  /** How often to look for silent sockets. Default 20 s. */
   sweepEveryMs?: number;
-  /** Wrong or expired codes tolerated from one address in one window before pairing pauses for it. Default 20. */
   maxFailedPairings?: number;
-  /** Wrong codes tolerated from all addresses together in that window before pairing pauses for everyone (a code is only six digits). Default 5 times as many. */
   maxFailedPairingsInAll?: number;
-  /** Length of that window. Default 60 s. */
   failedPairingWindowMs?: number;
-  /** Videos looked up for one TV (chosen on a phone, on the TV itself, or the next episode) tolerated in one window before further ones are refused. Default 30. */
   maxResolves?: number;
-  /** Length of that window. Default 60 s. */
   resolveWindowMs?: number;
-  /** Videos looked up for all the TVs and phones of one address together tolerated in that window before further ones are refused: what `/api/resolve` allows an address over HTTP. Default 60. */
   maxResolvesByAddress?: number;
-  /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
   profiles?: ScreenProfiles;
-  /** How long a TV or phone that nobody has paired is kept after it went (see KEEP_UNPAIRED_MS). Default: as long as a pairing code is good. */
   keepUnpairedMs?: number;
-  /** How many TVs, and how many phones, that nobody has paired are kept at most (see MAX_UNPAIRED). */
   maxUnpaired?: number;
-  /** How many links that did not play are remembered at most (see MAX_FAILED_LINKS). */
   maxFailedLinks?: number;
-  /** Where a video that would not play is written down (`playback-failed`: the title's site, the player's error and what it hit; never a link). */
   log?: { info(object: Record<string, unknown>, message: string): void };
-  /** A connection that has not said hello (TV_HELLO or CTL_HELLO) this long after it opened is closed (1008), however much else it says: a page says hello first. Default 30 s. */
   helloWithinMs?: number;
-  /** Connections one address may have open at once (see MAX_SOCKETS_PER_ADDRESS). */
   maxSocketsPerAddress?: number;
-  /** Connections open at once in all (see MAX_SOCKETS). */
   maxSockets?: number;
-  /** Connections one network (an IPv6 /48) may have open at once (see MAX_SOCKETS_PER_NETWORK). */
   maxSocketsPerNetwork?: number;
-  /** TVs, and phones, that nobody has paired one address may have connected at once (see MAX_UNPAIRED_PER_ADDRESS). */
   maxUnpairedPerAddress?: number;
-  /** Phones paired with a TV (by its code or its control code) from one address in an hour (see MAX_NEW_PAIRS). */
   maxNewPairs?: number;
-  /** How long a party's host has to have been away for a guest's page, opened afresh, not to be put back in its party (see `tvHello`). Default HOST_GONE_MS. */
   hostGoneMs?: number;
 }
 
-/** A host's page that has been closed this long is taken to be gone, not reloading: a guest's page opened since is not put back in its party. */
 const HOST_GONE_MS = 60_000;
 
-/**
- * How many connections one address may have open at once: every page of a TV or a phone is one, and a household, or many behind one address of a mobile
- * network, has some tens at the very most. One more is closed at once (1013) and its page tries again in a moment. A connection without an address (a test) is not counted.
- */
 export const MAX_SOCKETS_PER_ADDRESS = 100;
-/** How many connections may be open at once in all (each holds some memory and a file of the system's). */
 export const MAX_SOCKETS = 20_000;
-/**
- * How many one IPv6 network of a customer (a /48: trust.ts `networkOf`) may have open at once, all its /64s together. Each /64 is an address with
- * `MAX_SOCKETS_PER_ADDRESS` of its own, and a /48 is 65,536 of them: one customer could have taken every place (the review of 18 Nov). Four addresses'
- * worth, as a mobile network that gives each phone a /64 of one block may (env SOCKETS_PER_NETWORK).
- */
 export const MAX_SOCKETS_PER_NETWORK = 400;
-/**
- * How many TVs, and how many phones, that nobody has paired one address may have connected at once. A household has a few; many behind one address of a
- * mobile network some tens. 50 addresses could otherwise hold all `MAX_UNPAIRED` places, and no new TV could connect.
- */
 export const MAX_UNPAIRED_PER_ADDRESS = 40;
-/** How many phones may be paired with a TV from one address in an hour: a pair is kept for months (see KEEP_PAIRINGS_DAYS), where a TV or phone that nobody paired goes in minutes. */
 export const MAX_NEW_PAIRS = 30;
 
-/** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
 export class Hub {
-  private readonly tvs = new Map<string, WebSocket>(); // deviceId -> socket
-  private readonly controllers = new Map<string, WebSocket>(); // controllerId -> socket
-  /** Every page of each phone that is open, the one opened last at the end: a phone may have more than one (`controllers` has the one that answers for it; when that closes, the one before takes its place). */
-  private readonly phoneSockets = new Map<string, Set<WebSocket>>(); // controllerId -> sockets
-  /** How many screens and how many phones are connected right now (the owner's stats: a count, never which). */
+  private readonly tvs = new Map<string, WebSocket>();
+  private readonly controllers = new Map<string, WebSocket>();
+  private readonly phoneSockets = new Map<string, Set<WebSocket>>();
   connected(): { tvs: number; phones: number } {
     return { tvs: this.tvs.size, phones: this.controllers.size };
   }
-  /** Latest PLAY_URL per device, so a slow resolve can't overwrite a newer choice (or a STOP). */
   private readonly resolveSeq = new Map<string, number>();
-  /** The link each TV last had looked up (the address of the page, which is what a result is kept by), to know which one a failure on that TV is about. */
-  private readonly lastLookup = new Map<string, string>(); // deviceId -> link
-  /** The stream each TV last said had started (see `noteStarted`), so that a film is written down once. */
-  private readonly startedFilm = new Map<string, string>(); // deviceId -> stream link
-  /** Links that were handed out and did not play: the next look-up of each is made afresh, not read from what was kept (see `ResolveFn`). The oldest go when there are many. */
+  private readonly lastLookup = new Map<string, string>();
+  private readonly startedFilm = new Map<string, string>();
   private readonly failedLinks = new Set<string>();
   private readonly log: HubOptions["log"];
-  /** When each open socket last said anything. A TV that lost power never sends a close frame. */
   private readonly lastSeen = new Map<WebSocket, number>();
-  /** TVs whose page has just been opened and has not reported yet: its first report is when a video it was on is put back. */
   private readonly opened = new Set<string>();
-  /** How long each TV last said its answers take to come (a PING's `rtt`, in milliseconds), which is how a guest is told how old the host's position is. */
-  private readonly roundTrips = new Map<string, number>(); // deviceId -> ms
-  /** Whether each hosting TV's film was going when it last reported, and who started or held it: what the guests are told when it is held ("Paused by Anna"). */
-  private readonly holds = new Map<string, Hold>(); // host deviceId
-  /** The last play or pause an admin guest asked of a host, to tell it from the host's own when the film changes. */
-  private readonly steered = new Map<string, { by: string; at: number }>(); // host deviceId
+  private readonly roundTrips = new Map<string, number>();
+  private readonly holds = new Map<string, Hold>();
+  private readonly steered = new Map<string, { by: string; at: number }>();
   private readonly sweeper: ReturnType<typeof setInterval>;
-  /**
-   * Wrong codes lately, counted for each address and for all of them. A code is only six digits, so guessing has to be slow once this is on
-   * the internet; counted per address, one visitor who types wrong codes cannot stop everyone else pairing, and the count over all of them
-   * is what is left to slow down guessing from many addresses at once.
-   */
   private readonly wrongByAddress: RateLimiter;
   private readonly wrongInAll: RateLimiter;
-  /** Lookups lately, counted for each TV: every one is a fetch of a page that is somebody else's, and a person chooses a title every few seconds at the very most. */
   private readonly resolvesByDevice: RateLimiter;
-  /** ... and for each address, all the TVs and phones there together (the id of a TV is one that a new hello can renew; where a connection comes from is not). */
   private readonly resolvesByAddress: RateLimiter;
-  /** Where each open socket comes from (see `addressOf`). */
   private readonly addresses = new WeakMap<WebSocket, string>();
   private readonly profiles: ScreenProfiles | undefined;
-  /** When each TV or phone that nobody has paired was first seen to be gone: only the ones still waiting (see `forgetAbandoned`). */
   private goneSince = new Map<string, number>();
-  /** When each TV whose page is not open now last went away (its connection closed): a party whose host has been away long does not take a guest's page back (see `tvHello`). */
-  private readonly awaySince = new Map<string, number>(); // deviceId -> ms
-  /** (A TV that went away before this server started is counted as away since then.) */
+  private readonly awaySince = new Map<string, number>();
   private readonly startedAt = Date.now();
   private readonly keepUnpairedMs: number;
   private readonly maxUnpaired: number;
   private readonly maxFailedLinks: number;
-  /** The connections that have not said hello yet, and when each opened (see `helloWithinMs`). */
   private readonly unnamed = new Map<WebSocket, number>();
-  /** How many connections are open now, for each address and in all. */
   private readonly openByAddress = new Map<string, number>();
   private readonly openByNetwork = new Map<string, number>();
   private openInAll = 0;
@@ -203,7 +118,6 @@ export class Hub {
   private readonly maxSockets: number;
   private readonly maxSocketsPerNetwork: number;
   private readonly maxUnpairedPerAddress: number;
-  /** Phones paired lately, counted for each address (see MAX_NEW_PAIRS). */
   private readonly newPairs: RateLimiter;
   private readonly hostGoneMs: number;
 
@@ -235,9 +149,7 @@ export class Hub {
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
-      // (A ping keeps a connection from going stale: one that never said who it is would be kept for ever by pinging.)
       for (const [socket, opened] of this.unnamed) if (now - opened > helloWithinMs) socket.close(1008, "say hello first");
-      // (A TV away longer than that is away "since this server started" as far as `tvHello` is concerned: the same answer, and the map stays small.)
       for (const [id, since] of this.awaySince) if (now - since > this.hostGoneMs) this.awaySince.delete(id);
       this.forgetAbandoned(now);
     }, options.sweepEveryMs ?? 20_000);
@@ -248,9 +160,7 @@ export class Hub {
     clearInterval(this.sweeper);
   }
 
-  /** `address` is where the connection comes from (the request's `ip`); wrong codes are counted against it. */
   handleConnection(socket: WebSocket, address?: string): void {
-    // (No room: closed before anything is kept of it, and its page tries again in a moment.)
     const network = address === undefined ? undefined : networkOf(address);
     if (
       this.openInAll >= this.maxSockets ||
@@ -268,7 +178,7 @@ export class Hub {
     this.lastSeen.set(socket, now);
     this.unnamed.set(socket, now);
     if (address) this.addresses.set(socket, address);
-    let load = 0; // messages lately, draining at FRAME_RATE_PER_S
+    let load = 0;
     let loadAt = now;
 
     socket.on("message", (data, isBinary) => {
@@ -276,7 +186,6 @@ export class Hub {
       load = Math.max(0, load - ((at - loadAt) / 1000) * FRAME_RATE_PER_S) + 1;
       loadAt = at;
       if (load > FRAME_BURST) {
-        // (Not read, not answered: an answer for each would double the work. A connection that goes on past twice the burst is closed.)
         if (load > 2 * FRAME_BURST && socket.readyState === socket.OPEN) socket.close(1008, "too many messages");
         return;
       }
@@ -309,10 +218,9 @@ export class Hub {
         this.holds.delete(conn.deviceId);
         this.steered.delete(conn.deviceId);
         const device = this.registry.getDevice(conn.deviceId);
-        if (device) this.registry.checkpoint(device); // where it had got is written down exactly, in case the page is not opened again for a while
+        if (device) this.registry.checkpoint(device);
         if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
         if (device) this.tellPhones(device);
-        // The rest of its party sees it go offline.
         const host = device && (this.registry.leaderOf(device) ?? device);
         if (host && this.registry.inParty(host)) this.sendParty(host);
       }
@@ -328,7 +236,6 @@ export class Hub {
       case "CTL_HELLO":
         return this.controllerHello(conn, message.controllerId);
       case "PING":
-        // A TV that stays on for weeks says hello once; the pings are how the registry knows it is still in use.
         if (conn.role !== "none") this.registry.markSeen(conn.role === "tv" ? conn.deviceId : conn.controllerId);
         if (conn.role === "tv" && message.rtt !== undefined) this.roundTrips.set(conn.deviceId, message.rtt);
         this.send(conn.socket, { type: "PONG" });
@@ -341,9 +248,6 @@ export class Hub {
     return conn;
   }
 
-  /* ------------------------------ TVs and phones that nobody has paired ------------------------------ */
-
-  /** Lets go of the TVs and phones that nobody has paired and that have been gone for `keepUnpairedMs` (counted from the first sweep that saw them gone). */
   private forgetAbandoned(now: number): void {
     const waiting = new Map<string, number>();
     const look = (free: string[], connected: Map<string, WebSocket>): void => {
@@ -356,17 +260,12 @@ export class Hub {
     };
     look(this.registry.freeTvs(), this.tvs);
     look(this.registry.freePhones(), this.controllers);
-    this.goneSince = waiting; // (only the ones still waiting: one that came back, or was paired, is not counted any more)
+    this.goneSince = waiting;
   }
 
-  /**
-   * Whether there is room for one more TV (or phone) that nobody has paired. When `maxUnpaired` of them are here already, the one that came first and is not connected is
-   * let go of to make room; false when every one of them is connected.
-   */
   private hasRoomFor(kind: "tv" | "phone", socket: WebSocket): boolean {
     const free = kind === "tv" ? this.registry.freeTvs() : this.registry.freePhones();
     const connected = kind === "tv" ? this.tvs : this.controllers;
-    // (An address has so many of them connected at once: see MAX_UNPAIRED_PER_ADDRESS.)
     const address = this.addresses.get(socket);
     if (address !== undefined) {
       let here = 0;
@@ -384,15 +283,11 @@ export class Hub {
 
   private forget(id: string): void {
     this.registry.forgetFree(id);
-    this.resolveSeq.delete(id); // (a lookup that was still running for it ends there: see `playUrlForDevice`)
+    this.resolveSeq.delete(id);
     this.lastLookup.delete(id);
     this.startedFilm.delete(id);
   }
 
-  /**
-   * A TV says how long the film it asked for took to start: the look-up after the press, and the picture after the look-up. One line per film (a TV that
-   * says it twice for the same stream is not written down twice), with the title's site and the kind of stream, never a link.
-   */
   private noteStarted(device: Device, { lookupMs, loadMs, resumed, manifestMs, pieceMs, pieceS, pieceKB, height, metadataMs }: Omit<Extract<ClientMessage, { type: "TV_STARTED" }>, "type">): void {
     const link = this.lastLookup.get(device.id);
     const stream = device.media?.stream;
@@ -402,29 +297,21 @@ export class Hub {
     try {
       domain = new URL(link).hostname;
     } catch {
-      /* (the look-up said no to it already) */
     }
-    // (Then, when the TV said them, where the load's own time went: see TV_STARTED.)
     const load = Object.fromEntries(Object.entries({ resumed, manifestMs, pieceMs, pieceS, pieceKB, height, metadataMs }).filter(([, value]) => value !== undefined));
     this.log?.info({ domain, type: stream.type, ...(stream.directUrl && { direct: true }), ...(lookupMs !== undefined && { lookupMs }), loadMs, ...load }, "playback-started");
   }
 
-  /**
-   * A TV says that what it was given would not play. A stream's own link, with the token that came with it, can run out while the result of the look-up is
-   * kept (ten minutes), and asking again for the same title would hand out the same dead link: the next look-up of this one is made afresh.
-   */
   private noteFailed(deviceId: string, state: PlayerState): void {
     const link = this.lastLookup.get(deviceId);
     if (!link) return;
-    // (The one line that says why a title did not play: the look-up's own line says only that a link was found.)
     let domain = "";
     try {
       domain = new URL(link).hostname;
     } catch {
-      /* whatever was asked for: the look-up said no to it already */
     }
     this.log?.info({ domain, error: state.error, ...(state.detail && { detail: state.detail }) }, "playback-failed");
-    this.failedLinks.delete(link); // (so that it is the newest)
+    this.failedLinks.delete(link);
     this.failedLinks.add(link);
     for (const oldest of this.failedLinks) {
       if (this.failedLinks.size <= this.maxFailedLinks) break;
@@ -432,38 +319,25 @@ export class Hub {
     }
   }
 
-  /** A hello that finds no room: the connection is closed without a word (a page that is told something tries again at once; one that is only cut off waits longer each time). */
   private turnAway(conn: Conn): Conn {
     conn.socket.close(1013, "busy");
     return conn;
   }
 
-  /* ------------------------------ TV ------------------------------ */
-
-  /**
-   * A connection is one TV for as long as it lasts. A hello on one that is a TV already is that page asking for a fresh picture (it comes back to the front): it is that
-   * TV again, whatever id it names, and no other is made. One that names another TV that exists, or comes from a phone, is turned away: the first TV's place in `tvs`
-   * would stay on a connection that goes away.
-   */
   private tvHello(conn: Conn, named?: string, opened = false): Conn {
     const mine = conn.role === "tv" ? conn.deviceId : undefined;
     if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getDevice(named)))) return this.refuseHello(conn);
     const { socket } = conn;
     const wanted = mine ?? named;
-    // (A TV that this server does not know is a new one, and there is room for only so many that nobody has paired.)
     if (!(wanted && this.registry.getDevice(wanted)) && !this.hasRoomFor("tv", socket)) return this.turnAway(conn);
     const device = this.registry.tvHello(wanted);
-    this.goneSince.delete(device.id); // (its time starts over when it goes again, however soon that is)
+    this.goneSince.delete(device.id);
     this.awaySince.delete(device.id);
 
-    // One live page per TV. The old page is told to stand down instead of fighting for the slot.
     const previous = this.tvs.get(device.id);
     this.tvs.set(device.id, socket);
     if (previous && previous !== socket) previous.close(CLOSE_REPLACED, "replaced");
 
-    // A page opened afresh on a screen that watched along with a host whose page has been closed a while (the party was never ended) is not put back in that
-    // party: it opens on the library, and is told why; the host's party lists it no more (the judge, 16 Nov: it opened on "Watching along with ... Offline",
-    // a party that was over in all but name). A page that only lost its connection, or one reloaded while the host is there or only just gone, stays.
     const wasWith = opened ? this.registry.leaderOf(device) : undefined;
     let leftParty: string | undefined;
     if (wasWith && !this.tvs.has(wasWith.id) && Date.now() - (this.awaySince.get(wasWith.id) ?? this.startedAt) >= this.hostGoneMs) {
@@ -473,7 +347,6 @@ export class Hub {
     }
 
     const leader = this.registry.leaderOf(device);
-    // A page that has just been opened is idle, whatever the TV was doing before; its first report says so, and then what it was on is put back.
     if (opened && !leader) {
       this.opened.add(device.id);
       device.state = IDLE_STATE;
@@ -489,7 +362,7 @@ export class Hub {
     this.toControllers(device, { type: "TV_STATUS", online: true });
     this.tellPhones(device);
     if (leader) {
-      this.catchUp(device, leader); // a page that was reloaded mid-film picks up where the others are
+      this.catchUp(device, leader);
       this.sendParty(leader);
     } else if (this.registry.inParty(device)) {
       this.sendParty(device);
@@ -502,10 +375,9 @@ export class Hub {
     if (!device) return;
 
     if (message.type === "TV_STATE") {
-      const first = this.opened.delete(deviceId); // the report that follows a page's first hello
-      const wasOn = device.state.state !== "idle"; // (a page that was just opened has been given an idle state, so its first report is not a stop)
+      const first = this.opened.delete(deviceId);
+      const wasOn = device.state.state !== "idle";
       if (message.media && !device.media && !device.leaderId && message.state.state !== "idle") {
-        // A server that was restarted while this TV played is told what it has on, and so are the phones that come back to it.
         device.media = message.media;
         this.toControllers(device, { type: "MEDIA", media: message.media });
       }
@@ -515,9 +387,7 @@ export class Hub {
       this.syncFollowers(device);
       this.registry.noteProgress(device, message.state);
       if (wasOn && message.state.state === "idle") {
-        this.registry.forgetResume(device); // left on the TV itself (Back, Stop): nothing to put back
-        // A host that stops takes the video away from the guests too: they wait for the next one. And what it had on is gone from the server's
-        // memory with or without guests, so that a screen that joins its party later (or a phone that comes back to it) is not given a film it left.
+        this.registry.forgetResume(device);
         if (device.followerIds.length > 0) this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
         this.applyCommand(device, { type: "STOP" });
       }
@@ -528,12 +398,11 @@ export class Hub {
       const host = this.registry.leaderOf(device) ?? device;
       if (this.registry.inParty(host)) this.sendParty(host);
     } else if (message.type === "TV_PROFILE") {
-      // A proof the accounts gave is the only way to be known as a profile; a bad or spent one is no profile at all.
       this.registry.setProfile(device, (message.proof && this.profiles?.redeem(message.proof)) || null);
       const host = this.registry.leaderOf(device) ?? device;
       if (this.registry.inParty(host)) this.sendParty(host);
     } else if (message.type === "TV_PARTY_OPEN") {
-      if (device.leaderId) return; // a guest has no party of its own
+      if (device.leaderId) return;
       this.registry.ensurePartyCode(device);
       this.sendParty(device);
     } else if (message.type === "TV_PARTY_JOIN") {
@@ -551,35 +420,30 @@ export class Hub {
     } else if (message.type === "TV_PARTY_ADMIN") {
       this.setAdmin(device, message.id, message.admin);
     } else if (message.type === "TV_PARTY_CMD") {
-      // Only a guest that the host has made an admin steers the film, and only while the host's own screen is there to do what it asks.
       const host = this.registry.leaderOf(device);
       if (!host || !device.admin || !this.tvs.has(host.id)) return;
       if (message.command.type === "PLAY" || message.command.type === "PAUSE") this.steered.set(host.id, { by: device.publicId, at: Date.now() });
       this.command(host, message.command, undefined, device.publicId);
     } else if (message.type === "TV_NEW_CODE") {
-      // A free TV is given a pairing code. One that has a phone gets the code that lets another phone in; asking is what keeps
-      // that one good, so a TV asks while it shows it and not otherwise.
       const hasPhone = device.controllerId !== null;
       const pairing = hasPhone ? this.registry.ensureControlCode(device) : this.registry.ensureCode(device);
       if (pairing) this.send(this.tvs.get(deviceId), { type: "TV_CODE", pairing, ...(hasPhone ? { control: true } : {}) });
     } else if (message.type === "TV_NEXT_EPISODE") {
-      if (device.leaderId) return; // a TV that watches along follows; it doesn't choose
+      if (device.leaderId) return;
       if (device.media?.series?.next?.url) {
-        // The next episode is the same show: it keeps the picture the first one had.
         void this.playUrlForDevice(device, device.media.series.next.url, undefined, undefined, { poster: device.media.poster, backdrop: device.media.backdrop, year: device.media.year });
       }
     } else if (message.type === "TV_PLAY_URL") {
       if (device.leaderId) return;
       void this.playUrlForDevice(device, message.url, undefined, message.startAt, message.hint);
     } else if (message.type === "TV_CANCEL") {
-      if (device.leaderId) return; // a TV that watches along has no say in what plays; it can leave the party
+      if (device.leaderId) return;
       this.cancelLoad(device);
     } else if (message.type === "TV_STARTED") {
       this.noteStarted(device, message);
     } else if (message.type === "TV_UNPAIR") {
       const leader = this.registry.leaderOf(device);
       if (leader) {
-        // One of the TVs watching along leaves the party; the others carry on.
         this.registry.detachFollower(device);
         this.resetTv(device);
         this.sendParty(leader);
@@ -590,14 +454,10 @@ export class Hub {
       this.registry.unpairDevice(device);
       this.resetTv(device);
       followers.forEach((follower) => this.resetTv(follower));
-      // The phones that were controlling it are back on the code screen; the ones that had moved on to another TV only lose it from their list.
       phones.forEach((phone) => (phone.deviceId === null ? this.sendWelcome(phone) : this.sendTvs(phone)));
     }
   }
 
-  /* ------------------------------ phone ------------------------------ */
-
-  /** As for a TV: a connection is one phone for as long as it lasts, and a hello again (the menu asking for the code, a page back from sleep) is that phone again. */
   private controllerHello(conn: Conn, named?: string): Conn {
     const mine = conn.role === "controller" ? conn.controllerId : undefined;
     if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getController(named)))) return this.refuseHello(conn);
@@ -611,7 +471,6 @@ export class Hub {
     return { role: "controller", socket, controllerId: controller.id };
   }
 
-  /** A page of a phone is open: it is the one that answers for the phone now (so it is again when it says hello again). */
   private phoneOpened(id: string, socket: WebSocket): void {
     const open = this.phoneSockets.get(id) ?? new Set<WebSocket>();
     open.add(socket);
@@ -619,7 +478,6 @@ export class Hub {
     this.controllers.set(id, socket);
   }
 
-  /** A page of a phone has closed. The phone is gone with its last page; until then the page opened last of those left answers for it, so that closing a newer page does not leave an older one unheard. */
   private phoneClosed(id: string, socket: WebSocket): void {
     const open = this.phoneSockets.get(id);
     open?.delete(socket);
@@ -630,7 +488,6 @@ export class Hub {
     } else if (this.controllers.get(id) === socket) this.controllers.set(id, newest);
   }
 
-  /** A hello that would make a connection a second TV or phone is answered with an error; the connection stays what it was. */
   private refuseHello(conn: Conn): Conn {
     this.send(conn.socket, { type: "ERROR", code: "ALREADY_HELLO", message: "This connection is a TV or a phone already. Connect again to be another." });
     return conn;
@@ -657,7 +514,6 @@ export class Hub {
     });
   }
 
-  /** The TVs a phone has connected to, as its list shows them. */
   private tvList(controller: Controller): PhoneTv[] {
     return this.registry.tvsOf(controller).map((device) => ({
       id: device.publicId,
@@ -672,14 +528,13 @@ export class Hub {
     this.toController(controller.id, { type: "TVS", tvs: this.tvList(controller) });
   }
 
-  /** Every phone that has this TV on its list is told how the list looks now: the TV came or went, or was named. */
   private tellPhones(device: Device): void {
     for (const phone of this.registry.phonesOf(device)) this.sendTvs(phone);
   }
 
   private fromController(controllerId: string, message: ClientMessage): void {
     const controller = this.registry.getController(controllerId);
-    if (!controller) return; // (a phone that was let go of, and not a page of one that was still open: see `forgetAbandoned`)
+    if (!controller) return;
     if (message.type === "PAIR") return this.pair(controller, message.code);
     if (message.type === "PLAY_URL") return void this.playUrl(controller, message.url, message.startAt, message.hint);
     if (message.type === "UNPAIR") return this.unpair(controller, message.id);
@@ -698,7 +553,6 @@ export class Hub {
     this.command(device, message.command, controllerId);
   }
 
-  /** What a command does to the TV it is for and the screens watching along with it: asked by the phone that controls it, or by a guest the host made an admin (`by`, which the host's screen is told). */
   private command(device: Device, command: Command, controllerId?: string, by?: string): void {
     if (command.type === "NEXT_EPISODE") {
       if (device.media?.series?.next?.url) {
@@ -709,11 +563,9 @@ export class Hub {
 
     if (command.type === "LOAD" || command.type === "STOP") this.bumpResolveSeq(device.id);
     this.send(this.tvs.get(device.id), { type: "TV_CMD", command, ...(by ? { by } : {}) });
-    // The TVs watching along load and stop with this one; play, pause and seeks reach them as the position it reports.
     if (command.type === "LOAD" || command.type === "STOP") {
       this.toFollowers(device, { type: "TV_CMD", command });
     }
-    // The phone always renders what the TV reports; only LOAD/STOP need an immediate placeholder.
     if (command.type === "LOAD" || command.type === "STOP") {
       this.applyCommand(device, command);
       this.toControllers(device, { type: "STATE", state: device.state });
@@ -721,12 +573,9 @@ export class Hub {
   }
 
   private pair(controller: Controller, code: string): void {
-    // A phone that has a TV is not turned away: that TV stays on its list, as it was, and the one this code belongs to is the one it controls now.
     if (this.registry.isFull(controller)) return this.error(controller.id, "TV_LIST_FULL", `A phone can keep ${MAX_PHONE_TVS} TVs. Forget one first.`);
-    // While blocked the code is not even checked, so a right guess gets no answer different from a wrong one.
     const socket = this.controllers.get(controller.id);
     if (this.pairingPaused(socket)) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
-    // (Nor is it checked when this address has paired too many phones lately: a pair is kept for months, so it is not to be made by the thousand. See MAX_NEW_PAIRS.)
     const address = socket && this.addresses.get(socket);
     if (address && this.newPairs.wait(address) > 0) return this.error(controller.id, "RATE_LIMITED", "Too many phones were connected from here lately. Try again later.");
 
@@ -734,23 +583,21 @@ export class Hub {
     let device = this.registry.pair(controller, code);
     let isNewPair = true;
     if (!device) {
-      device = this.registry.joinController(controller, code, (id) => this.controllers.has(id)); // (a TV with all its places taken lets go of a phone that is not connected)
+      device = this.registry.joinController(controller, code, (id) => this.controllers.has(id));
       isNewPair = false;
     }
     if (device && address) this.newPairs.hit(address);
     if (!device) {
-      // The code of a watch party, typed where a TV's code goes: it is no wrong guess, and the phone is told what it is for (see Controller.tsx).
       if (this.registry.isPartyCode(code)) {
         return this.error(controller.id, "PARTY_CODE", "That is the code of a watch party. Watch on this device to join it.");
       }
-      // The right code of a TV that has no room for another phone (every one it has is connected): no wrong guess either, and the phone is told why (the TV can let its phones go: TV_UNPAIR).
       if (this.registry.isFullControlCode(controller, code)) {
         return this.error(controller.id, "TV_PHONES_FULL", `That TV already has ${MAX_PHONES_PER_TV} phones, all it can keep. Disconnect its phones on the TV, then try again.`);
       }
       this.wrongCode(socket);
       return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
     }
-    this.send(this.tvs.get(device.id), { type: "TV_PAIRED" }); // a later phone is news to the TV too
+    this.send(this.tvs.get(device.id), { type: "TV_PAIRED" });
     this.sendWelcome(controller);
     if (!isNewPair) {
       for (const other of this.registry.controllersOf(device)) {
@@ -760,7 +607,6 @@ export class Hub {
     this.tellLeftBehind(controller, before, device);
   }
 
-  /** A phone moved on from `before` to `now`: the phones still controlling `before` have one less with them. */
   private tellLeftBehind(controller: Controller, before: Device | undefined, now: Device): void {
     if (!before || before === now) return;
     for (const other of this.registry.controllersOf(before)) {
@@ -768,16 +614,15 @@ export class Hub {
     }
   }
 
-  /** The phone controls another TV of its list. The one it leaves is not touched: it carries on as it was, still paired with this phone. */
   private switchTv(controller: Controller, id: string): void {
     const before = this.registry.deviceForController(controller);
     const device = this.registry.switchTo(controller, id);
     if (!device) {
       this.error(controller.id, "NOT_YOUR_TV", "That TV is not on your list any more.");
-      return this.sendTvs(controller); // (what the phone shows may be out of date: the TV disconnected it)
+      return this.sendTvs(controller);
     }
     if (device !== before) {
-      this.send(this.tvs.get(device.id), { type: "TV_PAIRED" }); // a phone has come back to it
+      this.send(this.tvs.get(device.id), { type: "TV_PAIRED" });
       for (const other of this.registry.controllersOf(device)) {
         if (other.id !== controller.id) this.sendWelcome(other);
       }
@@ -786,7 +631,6 @@ export class Hub {
     this.sendWelcome(controller);
   }
 
-  /** The phone names the TV it controls: it is called that on every list from now on (a phone of its own and the others'). */
   private nameTv(controller: Controller, name: string): void {
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
@@ -796,26 +640,19 @@ export class Hub {
     if (this.registry.inParty(host)) this.sendParty(host);
   }
 
-  /** Where a connection comes from, as far as it is known (a request without an address, as in a test, is one place with the others like it). */
   private addressOf(socket: WebSocket | undefined): string {
     return (socket && this.addresses.get(socket)) ?? "unknown";
   }
 
-  /** Wrong codes only count against the limit for so long. True while too many were tried recently from this connection's address, or from all of them. */
   private pairingPaused(socket: WebSocket | undefined): boolean {
     return this.wrongByAddress.wait(this.addressOf(socket)) > 0 || this.wrongInAll.wait("all") > 0;
   }
 
-  /** A wrong code was tried from this connection. */
   private wrongCode(socket: WebSocket | undefined): void {
     this.wrongByAddress.hit(this.addressOf(socket));
     this.wrongInAll.hit("all");
   }
 
-  /**
-   * The phone forgets a TV (the one it controls, or one on its list). A TV that is left with no phone stops, gets a fresh code and
-   * loses its party; the phone is sent back to the code screen if it was the TV it controlled, and is told its shorter list if not.
-   */
   private unpair(controller: Controller, id?: string): void {
     const leader = id === undefined ? this.registry.deviceForController(controller) : this.registry.tvsOf(controller).find((tv) => tv.publicId === id);
     const wasCurrent = leader !== undefined && leader.id === controller.deviceId;
@@ -823,7 +660,7 @@ export class Hub {
     const device = this.registry.unpair(controller, id);
     if (device) {
       this.resetTv(device);
-      followers.forEach((follower) => this.resetTv(follower)); // the TVs watching along lose their party
+      followers.forEach((follower) => this.resetTv(follower));
     } else if (leader && wasCurrent) {
       for (const other of this.registry.controllersOf(leader)) {
         this.sendWelcome(other);
@@ -833,16 +670,12 @@ export class Hub {
     else this.sendTvs(controller);
   }
 
-  /* ------------------------------ watching together ------------------------------ */
-
-  /** Another TV's code, typed on the phone: that TV now watches along with the phone's TV. */
   private addTv(controller: Controller, code: string): void {
     const socket = this.controllers.get(controller.id);
     if (this.pairingPaused(socket)) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
     const joined = this.registry.addFollower(controller, code);
     if (!joined.ok) {
       if (joined.reason === "INVALID_CODE") {
-        // The code of a watch party (the phone's own, read off its invite) is no wrong guess: it is told what it is for, and it is not counted against the tries.
         if (this.registry.isPartyCode(code)) {
           return this.error(controller.id, "ADD_PARTY_CODE", "That is the code of a watch party. Type it on the device that should join it.");
         }
@@ -870,7 +703,6 @@ export class Hub {
     this.sendParty(removed.leader);
   }
 
-  /** The phone asks for the code others join its TV's party with (starting the party if there is none). */
   private openParty(controller: Controller): void {
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
@@ -878,9 +710,8 @@ export class Hub {
     this.sendParty(device);
   }
 
-  /** The host (its screen, or the phone that controls it) makes a guest an admin, or takes that back: everyone in the party hears how it stands now. */
   private setAdmin(host: Device, publicId: string, admin: boolean): void {
-    if (!this.registry.setAdmin(host, publicId, admin)) return; // (a guest has no guests to make one of)
+    if (!this.registry.setAdmin(host, publicId, admin)) return;
     this.sendParty(host);
   }
 
@@ -890,7 +721,6 @@ export class Hub {
     this.setAdmin(device, publicId, admin);
   }
 
-  /** The phone ends the party its TV hosts, as the TV itself can: the code is no good any more and every guest is on its own again. */
   private endParty(controller: Controller): void {
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
@@ -898,7 +728,6 @@ export class Hub {
     this.sendParty(device);
   }
 
-  /** A TV types the code of a party: from then on it watches along with that party's host. */
   private joinParty(guest: Device, code: string): void {
     const tv = this.tvs.get(guest.id);
     const refuse = (errorCode: string, message: string) => this.send(tv, { type: "ERROR", code: errorCode, message });
@@ -919,14 +748,13 @@ export class Hub {
           return refuse("ALREADY_IN_PARTY", "Leave this party before joining another.");
       }
     }
-    this.bumpResolveSeq(guest.id); // a lookup this TV had going must not start something over the party's video
+    this.bumpResolveSeq(guest.id);
     this.send(tv, { type: "TV_FOLLOWING", leader: this.registry.displayName(joined.host) });
     this.catchUp(guest, joined.host);
     this.sendParty(joined.host);
   }
 
   private partyTv(device: Device): PartyTv {
-    // (Who is signed in on a screen is shown to the party only as far as the accounts say: a profile that keeps friends off is not shown by name.)
     const profile = device.profileId ? this.profiles?.card(device.profileId) : undefined;
     return {
       id: device.publicId,
@@ -941,7 +769,6 @@ export class Hub {
     return this.registry.followersOf(host).map((guest) => this.partyTv(guest));
   }
 
-  /** The party as one of its TVs sees it, or null when that TV is in none. Only the host is given the code to join with. */
   private viewOf(device: Device): PartyView | null {
     const host = this.registry.leaderOf(device) ?? device;
     if (!this.registry.inParty(host)) return null;
@@ -955,7 +782,6 @@ export class Hub {
     };
   }
 
-  /** Everyone in a party hears when it changes: the phones of its host get the guests (and the code), every TV in it gets the whole picture. */
   private sendParty(host: Device): void {
     const code = this.registry.partyCodeOf(host);
     this.toControllers(host, { type: "PARTY", tvs: this.partyOf(host), ...(code ? { code } : {}) });
@@ -968,7 +794,6 @@ export class Hub {
     for (const follower of this.registry.followersOf(leader)) this.send(this.tvs.get(follower.id), message);
   }
 
-  /** A TV that just joined (or came back) loads what the leader has on, at the place it has reached. */
   private catchUp(follower: Device, leader: Device): void {
     if (!leader.media) return;
     const at = leader.state.currentTime;
@@ -978,16 +803,14 @@ export class Hub {
     });
   }
 
-  /** What the followers need from every report of the leader: is it playing, and where. They keep their own picture in step. */
   private syncFollowers(leader: Device): void {
     const { state } = leader;
     if (leader.followerIds.length === 0) {
-      this.holds.delete(leader.id); // (nobody to tell who paused: the next party starts from nothing)
+      this.holds.delete(leader.id);
       this.steered.delete(leader.id);
       return;
     }
     if (state.state !== "playing" && state.state !== "paused") return;
-    // A leader that is waiting for data holds the others too, so nobody runs ahead of it.
     const waiting = state.state === "playing" && Boolean(state.buffering);
     const playing = state.state === "playing" && !waiting;
     const report = {
@@ -1006,11 +829,6 @@ export class Hub {
     }
   }
 
-  /**
-   * Who set the leader's film going or held it, for the guests to say ("Paused by Anna"): an admin guest whose play or pause this just was,
-   * otherwise the host's own screen (or the phone that controls it). Kept as it was until the film changes again, so a guest that comes
-   * in while it is held is told too. A film that only waits for data is nobody's pause, and is the host's to be waited for.
-   */
   private holder(leader: Device, playing: boolean, waiting: boolean): string {
     const before = this.holds.get(leader.id);
     if (before && before.playing === playing && before.waiting === waiting) return before.by;
@@ -1021,11 +839,6 @@ export class Hub {
     return by;
   }
 
-  /**
-   * About how long a report of `leader` takes to get to `follower`, in seconds: half of each one's round trip to this server, as each last
-   * said it (if only one has, the other is taken to be the same). A guest that adds it to the position it is told sees where the host is
-   * now, not where it was; without it every guest is behind by about that much. Not said at all before either has measured.
-   */
   private lagBetween(leader: Device, follower: Device): number | undefined {
     const there = this.roundTrips.get(leader.id);
     const here = this.roundTrips.get(follower.id);
@@ -1033,19 +846,14 @@ export class Hub {
     return Math.min(MAX_LAG_S, ((there ?? here ?? 0) + (here ?? there ?? 0)) / 2000);
   }
 
-  /** After a pairing ended from either side: the TV stops and shows a fresh code. */
   private resetTv(device: Device): void {
-    this.bumpResolveSeq(device.id); // a lookup still in flight must not start playing on an unpaired TV
+    this.bumpResolveSeq(device.id);
     const tv = this.tvs.get(device.id);
     this.send(tv, { type: "TV_CMD", command: { type: "STOP" } });
     this.send(tv, { type: "TV_UNPAIRED", pairing: this.registry.ensureCode(device) });
-    this.send(tv, { type: "TV_PARTY", party: null }); // whatever party it was in is over for it
+    this.send(tv, { type: "TV_PARTY", party: null });
   }
 
-  /**
-   * Whoever is at the TV stopped waiting for a video: a lookup still running is dropped (its answer must not start the film
-   * later), what had begun loading is stopped on this TV and the ones watching along, and the phone is told there is nothing to wait for.
-   */
   private cancelLoad(device: Device): void {
     this.bumpResolveSeq(device.id);
     const tv = this.tvs.get(device.id);
@@ -1064,18 +872,12 @@ export class Hub {
     return next;
   }
 
-  /** Resolve a pasted URL to media, report progress to the phone, then have the TV load and play it. */
   private async playUrl(controller: Controller, url: string, startAt?: number, hint?: PlayHint): Promise<void> {
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
     return this.playUrlForDevice(device, url, controller.id, startAt, hint);
   }
 
-  /**
-   * A TV page was just opened that had a video on when it was last closed: the video is found again and put back, paused at the
-   * place it had reached, so the phone (or the remote) carries on with a press. It is looked up again rather than reloaded from
-   * what was kept, because the stream's own link may have expired by now.
-   */
   private restore(device: Device): void {
     const back = this.registry.resumeOf(device);
     if (back) void this.playUrlForDevice(device, back.url, undefined, back.time > 5 ? back.time : undefined, back.hint, true);
@@ -1088,8 +890,6 @@ export class Hub {
     const tvOffline = () => status({ phase: "failed", reason: "tv_offline", message: "The TV is offline." });
     if (!this.tvs.has(device.id)) return tvOffline();
 
-    // Far more lookups than a person can choose are refused, from one TV and from one address (every TV and phone there together: the same count `/api/resolve` has). Nothing is
-    // announced or dropped for one that is: the TV is not left waiting for it, and a lookup under way carries on.
     const address = this.addressOf(controllerId ? this.controllers.get(controllerId) : this.tvs.get(device.id));
     if (this.resolvesByDevice.wait(device.id) > 0 || this.resolvesByAddress.wait(address) > 0) {
       const message = "Too many videos asked for in a short time. Try again in a minute.";
@@ -1104,7 +904,6 @@ export class Hub {
     this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: true, ...(hint && { hint }) });
     this.toFollowers(device, { type: "TV_RESOLVING", active: true });
 
-    // (A link that was handed to this server's screens and did not play is not read from what was kept: see `noteFailed`.)
     const fresh = this.failedLinks.delete(url);
     this.lastLookup.set(device.id, url);
     let result: ResolveResult;
@@ -1113,7 +912,7 @@ export class Hub {
     } catch {
       result = { status: "temporary_failure", reason: "Something went wrong while looking for the video." };
     }
-    if (this.resolveSeq.get(device.id) !== seq) return; // superseded by a newer choice or a STOP
+    if (this.resolveSeq.get(device.id) !== seq) return;
 
     this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: false });
     this.toFollowers(device, { type: "TV_RESOLVING", active: false });
@@ -1123,7 +922,6 @@ export class Hub {
     const media = withHint(result.media, hint);
     status({ phase: "found", media });
     this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "LOAD", media, startAt } });
-    // A TV that is being put back on what it was playing waits there: nobody has asked for it to play, and a browser that has had no press yet would refuse.
     if (!putBack) this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "PLAY" } });
     this.toFollowers(device, { type: "TV_CMD", command: { type: "LOAD", media, startAt } });
     this.applyCommand(device, { type: "LOAD", media, ...(startAt === undefined ? {} : { startAt }) }, putBack);
@@ -1131,7 +929,6 @@ export class Hub {
     this.toControllers(device, { type: "STATE", state: device.state });
   }
 
-  /** Keep the server's memory of the TV roughly right until the TV reports its real state. */
   private applyCommand(device: Device, command: Command, putBack = false): void {
     if (command.type === "LOAD") {
       device.media = command.media;
@@ -1144,11 +941,8 @@ export class Hub {
     }
   }
 
-  /* ------------------------------ sending ------------------------------ */
-
   private send(socket: WebSocket | undefined, message: ServerMessage): void {
     if (socket?.readyState !== 1) return;
-    // (A connection that is not reading is let go of, not fed: its `close` handler tidies up as for any other that goes.)
     if (socket.bufferedAmount > MAX_BUFFERED_BYTES) return socket.terminate();
     socket.send(JSON.stringify(message));
   }

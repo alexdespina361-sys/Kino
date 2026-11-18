@@ -2,11 +2,6 @@ import { expect } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { openLibrary, openPairedPhone, openTv, test, withLibrary } from "./helpers";
 
-/**
- * What people watch on Kino (the owner, 18 Nov 2026: "on by default, users can turn off"): a row on Home, after the second row of the library, of the titles
- * people of at least three accounts watched this week (server/accounts/watching.ts). Shown with four titles or more, on Home only.
- */
-
 const film = (id: string, title: string) => ({ id, title, kind: "movie" as const, url: `/fixtures/sample.mp4?${id}` });
 const library = {
   updatedAt: Date.now(),

@@ -5,7 +5,6 @@ import { ChatPanel, PANEL_TAB_KEY, savedTab } from "./ChatPanel";
 import { count, fakeSession, has, tagOf } from "./fixtures";
 import { STICKERS } from "./stickers";
 
-/** A browser's storage holding `saved` (or one that refuses to be read). */
 const storage = (saved: string | null, refuses = false) =>
   vi.stubGlobal("window", {
     localStorage: {

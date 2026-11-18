@@ -66,7 +66,6 @@ describe("GET /api/library", () => {
     expect(packed.headers.etag).toBeTruthy();
     const again = await app.inject({ url: "/api/library", headers: { "accept-encoding": "gzip", "if-none-match": String(packed.headers.etag) } });
     expect(again.statusCode).toBe(304);
-    // (...and it is the same list whichever way it was asked for.)
     expect((await app.inject({ url: "/api/library" })).headers.etag).toBe(packed.headers.etag);
   });
 });
@@ -80,15 +79,12 @@ describe("GET /api/library/search", () => {
       search: async (q) => (q.toLowerCase().includes("night") ? [{ id: "i2", title: "A Night to Remember", url: "https://x.example/2" }] : []),
     };
     app = await buildApp({ librarySources: [searchableSource] });
-    // First query library to warm cache
     await app.inject({ url: "/api/library" });
 
-    // Local cached match
     const res1 = await app.inject({ url: "/api/library/search?q=casa" });
     expect(res1.statusCode).toBe(200);
     expect(res1.json()).toEqual({ items: [{ id: "i1", title: "Casablanca", url: "https://x.example/1" }], exact: 1 });
 
-    // Remote source match
     const res2 = await app.inject({ url: "/api/library/search?q=night" });
     expect(res2.statusCode).toBe(200);
     expect(res2.json()).toEqual({ items: [{ id: "i2", title: "A Night to Remember", url: "https://x.example/2" }], exact: 1 });
@@ -126,7 +122,6 @@ describe("GET /api/library/rows and /more", () => {
     app = await buildApp({ librarySources: [paging] });
     expect(LibraryRowsSchema.parse((await app.inject({ url: "/api/library/rows?kind=series" })).json())).toMatchObject({ rows: [{ id: "shelf-series-0" }] });
     expect(LibraryRowsSchema.parse((await app.inject({ url: "/api/library/rows?kind=movie&cursor=5" })).json())).toMatchObject({ rows: [{ id: "shelf-movie-5" }] });
-    // (when both are given, the section is the one that counts)
     expect(LibraryRowsSchema.parse((await app.inject({ url: "/api/library/rows?kind=movie&section=anime" })).json())).toMatchObject({ rows: [{ id: "shelf-anime-0" }] });
   });
 
@@ -135,7 +130,6 @@ describe("GET /api/library/rows and /more", () => {
     const spying: LibrarySource = { ...paging, shelves: async (section, cursor) => (asked.push([section, cursor]), { rows: [], next: null }) };
     app = await buildApp({ librarySources: [spying] });
     for (const url of ["/api/library/rows", "/api/library/rows?section=cartoon", "/api/library/rows?section=cartoon", "/api/library/rows?section=anime&cursor=5"]) await app.inject({ url });
-    // (the same question twice is answered from what was kept)
     expect(asked).toEqual([[undefined, 0], ["cartoon", 0], ["anime", 5]]);
   });
 
@@ -196,7 +190,7 @@ describe("GET /api/library/similar", () => {
 
     const unknown = await app.inject({ url: `/api/library/similar?url=${encodeURIComponent("https://x.example/watch/2")}` });
     expect(unknown.json()).toEqual({ items: [] });
-    expect(unknown.headers["cache-control"]).toBe("no-store"); // may be a place that could not be reached just now
+    expect(unknown.headers["cache-control"]).toBe("no-store");
   });
 
   it("wants a link", async () => {
@@ -230,7 +224,7 @@ describe("GET /api/library/about", () => {
     const unknown = await app.inject({ url: `/api/library/about?url=${encodeURIComponent("https://x.example/watch/2")}` });
     expect(unknown.statusCode).toBe(200);
     expect(unknown.json()).toEqual({ about: null });
-    expect(unknown.headers["cache-control"]).toBe("no-store"); // may be a place that could not be reached just now
+    expect(unknown.headers["cache-control"]).toBe("no-store");
   });
 
   it("answers none, and no error, when a place cannot be reached or no place knows how", async () => {

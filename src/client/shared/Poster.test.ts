@@ -17,11 +17,11 @@ describe("posterSizes", () => {
   });
 
   it("leaves alone a size already chosen, another site's picture, and none", () => {
-    expect(posterSizes(sharper("https://image.tmdb.org/t/p/w500/abc.jpg"))).toBeUndefined(); // (the banner's 780, asked for on purpose)
+    expect(posterSizes(sharper("https://image.tmdb.org/t/p/w500/abc.jpg"))).toBeUndefined();
     expect(posterSizes("https://image.tmdb.org/t/p/original/back.jpg")).toBeUndefined();
     expect(posterSizes("https://image.tmdb.org/t/p/w1280/a b.jpg")).toBeUndefined();
     expect(posterSizes("https://example.com/t/p/w500/abc.jpg")).toBeUndefined();
-    expect(posterSizes("https://image.tmdb.org/t/p/w500/a b.jpg")).toBeUndefined(); // (a space would split the list)
+    expect(posterSizes("https://image.tmdb.org/t/p/w500/a b.jpg")).toBeUndefined();
     expect(posterSizes(undefined)).toBeUndefined();
   });
 });

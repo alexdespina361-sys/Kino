@@ -7,7 +7,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
-// scripts/feedback.mjs is what the team reads reports with. These check where it finds its address and token (a person writes that file by hand).
 const exec = promisify(execFile);
 const SCRIPT = path.resolve("scripts/feedback.mjs");
 const TOKEN = "never-shown-0123456789-abcdefghijklmnop";
@@ -25,7 +24,6 @@ async function folder(): Promise<string> {
   return made;
 }
 
-/** A site that turns every ask away with 401 and remembers what it was asked. */
 async function site() {
   const asked: { url: string; authorization: string }[] = [];
   const server = createServer((request, response) => {
@@ -132,7 +130,6 @@ describe("the owner's stats", () => {
     ],
   };
 
-  /** A site that answers the stats with this, and /api/health with `health` (a 404 when it has none: a server before the counters were the team's), and remembers what it was asked. */
   async function statsSite(status: number, body: unknown, health?: unknown) {
     const asked: { url: string; authorization: string }[] = [];
     const server = createServer((request, response) => {
@@ -155,9 +152,9 @@ describe("the owner's stats", () => {
     expect(code).toBe(0);
     expect(asked).toEqual([
       { url: "/api/admin/stats?days=3", authorization: `Bearer ${TOKEN}` },
-      { url: "/api/health", authorization: `Bearer ${TOKEN}` }, // (the server's counters: the team's since 16 Nov)
+      { url: "/api/health", authorization: `Bearer ${TOKEN}` },
     ]);
-    expect(said).not.toContain("Server:"); // (this one has none to give)
+    expect(said).not.toContain("Server:");
     expect(said).toContain("Accounts: 37 (52 profiles). Sign-ups are open, up to 500.");
     expect(said).toContain("made      today 2, last 7 days 9, last 30 days 37");
     expect(said).toContain("used      today 5, last 7 days 14, last 30 days 30");
@@ -168,7 +165,6 @@ describe("the owner's stats", () => {
     expect(said).toContain("Your address, as the server reads it: 203.0.113.9");
     expect(said).toContain("the connection 10.1.2.3, X-Forwarded-For 203.0.113.9, 172.70.1.2, Cloudflare says none");
     expect(said).toContain("2026-11-01 14:30 UTC");
-    // the days, newest last, with the columns for what the server has
     expect(said.split("\n").filter((line) => /^\s*2026-1\d-\d\d\s+\d/.test(line)).map((line) => line.trim().split(/\s+/))).toEqual([
       ["2026-10-30", "1", "34", "20", "40"],
       ["2026-10-31", "0", "34", "29", "50"],

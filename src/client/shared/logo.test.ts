@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-/** The wordmark's picture (public/branding) is what the page loads in an <img>: shapes and nothing else. */
-
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const pictures = {
   "kino-cat-off.svg": read("../../../public/branding/kino-cat-off.svg"),

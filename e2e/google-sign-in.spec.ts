@@ -9,17 +9,8 @@ import { en } from "../src/client/i18n/en";
 import { openDevice, openLibrary, openProfilePage, openTvSettings, openTvSignIn, PHONE, test, PICTURE_NAME, PICTURE_NAMED } from "./helpers";
 import { TEST_ACCOUNT } from "./testAccount";
 
-/**
- * "Continue with Google" on the phone and on a computer used as the TV. The server the other specs run against has no Google settings, so it is
- * the site with Google off; for Google on, these tests start a second one, whose Google is a fake on this machine (nothing here ever reaches
- * Google): the page where a person says yes or no, and the token endpoint, which checks what a real one checks (the client, its secret, the
- * code, PKCE) and answers with an ID token for whoever the test says is at Google.
- */
-
 const CLIENT_ID = "kino-e2e.apps.googleusercontent.com";
-/** (A made-up value for the fake: it is what the site has to send, and what must never be in its log.) */
 const CLIENT_SECRET = "e2e-made-up-client-secret";
-/** What the config's pages start with (playwright.config.ts), for the second site's address. */
 const SEED = { "kino.fullscreen.left": "1", "kino.linkbox": "1" };
 const TV_SIZE = { width: 1280, height: 720 };
 const FIRE_TV = "Mozilla/5.0 (Linux; Android 9; AFTMM Build/PS7633; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.6099.230 Mobile Safari/537.36";
@@ -35,16 +26,11 @@ interface Person {
 }
 
 let counter = 0;
-/** A Google account nobody has used here yet (Google's numbers for people are long numbers). */
 const newPerson = (givenName: string): Person => ({ sub: `1${Date.now()}${String(++counter).padStart(4, "0")}`, givenName });
 
-/** Google, as far as the site sees it. */
 class FakeGoogle {
-  /** Who is signed in to Google in the browser: who says yes on its page. */
   person = newPerson("Ana");
-  /** What each trip to Google asked for. */
   readonly asked: URLSearchParams[] = [];
-  /** Everything that must never be in the site's log: the secret, and what each round trip carried. */
   readonly secrets = new Set<string>([CLIENT_SECRET]);
   private readonly codes = new Map<string, { challenge: string; nonce: string; redirectUri: string; person: Person }>();
   private readonly server = http.createServer((request, response) => void this.answer(request, response));
@@ -72,7 +58,6 @@ class FakeGoogle {
     response.writeHead(404).end();
   }
 
-  /** Google's page: "Continue as ...", or "Cancel". */
   private authorize(query: URLSearchParams, response: http.ServerResponse) {
     this.asked.push(query);
     const redirectUri = query.get("redirect_uri") ?? "";
@@ -98,7 +83,6 @@ class FakeGoogle {
     );
   }
 
-  /** The token endpoint: a code once, for the client with its secret, the same way back, and the verifier of the challenge it was asked with. */
   private token(form: URLSearchParams, response: http.ServerResponse) {
     const code = form.get("code") ?? "";
     const found = this.codes.get(code);
@@ -137,9 +121,7 @@ class FakeGoogle {
   }
 }
 
-/** The site with Google on: the same server as the one the other specs use (the same build), with Google's three settings, and the fake's two addresses. */
 class SiteWithGoogle {
-  /** All the server wrote. */
   log = "";
   private child: ChildProcess | undefined;
   private port = 0;
@@ -161,7 +143,7 @@ class SiteWithGoogle {
         LIBRARY: "off",
         DATA_DIR: "memory",
         SIGNUPS_PER_HOUR: "1000",
-        PROFILE_SETUP: "off", // (a new profile is asked nothing here: these are about signing in; e2e/profile-setup.spec.ts has the pages that ask)
+        PROFILE_SETUP: "off",
         GOOGLE_CLIENT_ID: CLIENT_ID,
         GOOGLE_CLIENT_SECRET: CLIENT_SECRET,
         GOOGLE_REDIRECT_URIS: `${this.origin}/api/auth/google/callback`,
@@ -192,13 +174,10 @@ class SiteWithGoogle {
   }
 }
 
-/** Who the server says is signed in on this page, and whether it says Google is on. */
 const sessionOf = (page: Page) => page.evaluate(() => fetch("/api/me").then((answer) => answer.json())) as Promise<{ me: { account: { id: string; email: string; google?: true; googleOnly?: true } } | null; google?: boolean }>;
-/** What kind of device the server thinks this page's session is. */
 const deviceOf = (page: Page) =>
   page.evaluate(async () => ((await (await fetch("/api/sessions")).json()) as { kind: string; current: boolean }[]).find((session) => session.current)?.kind);
 
-/** The addresses the page has been at, in order (an address the page changed itself, as well as one it was sent to). */
 function addresses(page: Page): string[] {
   const seen: string[] = [];
   page.on("framenavigated", (frame) => {
@@ -207,7 +186,6 @@ function addresses(page: Page): string[] {
   return seen;
 }
 
-/** Off to Google with `button`, the person's answer on Google's page, and the browser on its way back to the site. */
 async function viaGoogle(page: Page, google: FakeGoogle, button: Locator | (() => Promise<void>), answer: "continue" | "cancel" = "continue"): Promise<void> {
   await (typeof button === "function" ? button() : button.click());
   await page.waitForURL((url) => url.origin === google.origin && url.pathname === "/authorize");
@@ -223,7 +201,6 @@ async function signUpWithPassword(page: Page, account: { email: string; password
   if (weakness(account.email, account.password)) await page.getByTestId("auth-agree").click();
 }
 
-/** A screen's own form (a computer used as the TV, or a TV's browser) opened from the profile's page, making an account with a name and a password. */
 async function signUpOnScreen(screen: Page, account: { email: string; password: string }) {
   await openTvSignIn(screen);
   await screen.getByTestId("tv-signin-email").click();
@@ -235,7 +212,6 @@ async function signUpOnScreen(screen: Page, account: { email: string; password: 
   if (weakness(account.email, account.password)) await screen.getByTestId("auth-agree").click();
 }
 
-// (The phone that has been the remote: `PHONE`'s saved state is for the address of the tests' own server, and the site with Google on is another.)
 const newPhone = (browser: Browser) => openDevice(browser, PHONE, { ...SEED, "kino.role": "remote" });
 
 test.describe("with Google sign-in off", () => {
@@ -249,7 +225,7 @@ test.describe("with Google sign-in off", () => {
     await expect(phone.getByTestId("google-button")).toHaveCount(0);
     await signUpWithPassword(phone, { email: `Robert ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
     await expect(phone.getByTestId("menu-security")).toBeVisible();
-    await expect(phone.getByTestId("menu-google")).toHaveCount(0); // (the profile does not offer what the site cannot do)
+    await expect(phone.getByTestId("menu-google")).toHaveCount(0);
     await phone.getByTestId("menu-security").click();
     await expect(phone.getByTestId("password-current")).toBeVisible();
     await expect(phone.getByTestId("google-connect")).toHaveCount(0);
@@ -276,7 +252,6 @@ test.describe("with Google sign-in on", () => {
     await site.stop();
     await google.stop();
   });
-  // Whatever a test did, the server wrote no code, token, state, verifier, secret, Google number or e-mail in its log.
   test.afterEach(() => {
     expect([...google.secrets].filter((secret) => site.log.includes(secret))).toEqual([]);
   });
@@ -292,7 +267,6 @@ test.describe("with Google sign-in on", () => {
     await expect(phone.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
     await expect(phone.getByTestId("google-button")).toBeVisible();
 
-    // A TV's own browser (a Fire TV's): Google's pages are no place for a remote, so its form is as it was.
     const fireTv = await openDevice(browser, { viewport: TV_SIZE, userAgent: FIRE_TV }, SEED);
     await fireTv.goto(`${site.origin}/tv`);
     await expect(fireTv.getByTestId("tv-browse")).toBeVisible();
@@ -311,24 +285,22 @@ test.describe("with Google sign-in on", () => {
     await phone.getByTestId("account-button").click();
     await viaGoogle(phone, google, phone.getByTestId("google-button"));
     await phone.waitForURL(`${site.origin}/`);
-    expect(seen.filter((address) => address.startsWith(site.origin) && address.includes("google="))).toEqual([]); // (a sign-in that worked says nothing)
-    // What went to Google: this site's way back, the three scopes, a flow of its own, PKCE.
+    expect(seen.filter((address) => address.startsWith(site.origin) && address.includes("google="))).toEqual([]);
     const asked = google.asked.at(-1)!;
     expect(asked.get("redirect_uri")).toBe(`${site.origin}/api/auth/google/callback`);
     expect(asked.get("scope")).toBe("openid email profile");
     expect(asked.get("code_challenge_method")).toBe("S256");
 
-    // (The server logs its requests, the start of this one too, but not the way back, whose address has the code in it.)
     expect(site.log).toContain("/api/auth/google/start?device=remote");
     expect(site.log).not.toContain("/api/auth/google/callback");
 
     await phone.getByTestId("account-button").click();
     await expect(phone.getByTestId("account-profile-name")).toHaveText("Ana");
     await expect(phone.getByTestId("account-card")).toContainText(en["account.signedInGoogle"]);
-    await expect(phone.getByTestId("menu-google")).toHaveCount(0); // (an account made with Google has Google: its profile offers nothing to connect)
+    await expect(phone.getByTestId("menu-google")).toHaveCount(0);
     const first = (await sessionOf(phone)).me!;
     expect(first.account).toMatchObject({ google: true, googleOnly: true });
-    expect(first.account.email).toMatch(/^g-[a-z2-7]{12}$/); // (a login nobody chose: Google's e-mail is not kept)
+    expect(first.account.email).toMatch(/^g-[a-z2-7]{12}$/);
     expect(await deviceOf(phone)).toBe("remote");
 
     await phone.getByTestId("sign-out").click();
@@ -351,7 +323,7 @@ test.describe("with Google sign-in on", () => {
     await viaGoogle(phone, google, phone.getByTestId("google-button"), "cancel");
     await expect(phone.getByTestId("account-toast")).toHaveText(en["google.denied"]);
     expect(seen).toContain(`${site.origin}/?google=denied`);
-    await expect(phone).toHaveURL(`${site.origin}/`); // (the word is taken out of the address: a reload does not say it again)
+    await expect(phone).toHaveURL(`${site.origin}/`);
     expect((await sessionOf(phone)).me).toBeNull();
 
     await phone.getByTestId("account-button").click();
@@ -368,7 +340,6 @@ test.describe("with Google sign-in on", () => {
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await openTvSignIn(tv);
     await tv.getByTestId("tv-signin-email").click();
-    // The page lands on the name, as it did before; Google's button is one Up away.
     await expect(tv.getByTestId("auth-email")).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("google-button")).toBeFocused();
@@ -378,7 +349,7 @@ test.describe("with Google sign-in on", () => {
     expect(await deviceOf(tv)).toBe("tv");
     await openProfilePage(tv);
     await expect(tv.getByTestId("tv-profile-settings")).toBeVisible();
-    await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0); // (an account made with Google has Google: its profile offers nothing to connect)
+    await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0);
   });
 
   test("saying no at Google comes back to the TV's page, which says so", async ({ browser }) => {
@@ -413,7 +384,7 @@ test.describe("with Google sign-in on", () => {
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-security").click();
     await expect(phone.getByTestId("google-connected")).toBeVisible();
-    await expect(phone.getByTestId("password-current")).toBeVisible(); // (the password is still the account's)
+    await expect(phone.getByTestId("password-current")).toBeVisible();
 
     await phone.getByTestId("page-back").first().click();
     await phone.getByTestId("sign-out").click();
@@ -423,7 +394,7 @@ test.describe("with Google sign-in on", () => {
     await phone.waitForURL(`${site.origin}/`);
     expect((await sessionOf(phone)).me?.account.id).toBe(id);
     await phone.getByTestId("account-button").click();
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(linda); // (not a new account named after the person at Google)
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(linda);
   });
 
   test("the phone's profile offers an account with a password to connect Google, and the line is gone once it is connected", async ({ browser }) => {
@@ -437,7 +408,6 @@ test.describe("with Google sign-in on", () => {
     const mira = (await phone.getByTestId("account-profile-name").innerText()).trim();
     const id = (await sessionOf(phone)).me!.account.id;
 
-    // On the profile itself, not behind Password & security: between Devices and that page.
     const line = phone.getByTestId("menu-google");
     await expect(line).toContainText(en["account.googleConnect"]);
     const order = await phone.getByTestId("account-screen").locator("[data-testid^='menu-']").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-testid")));
@@ -451,7 +421,6 @@ test.describe("with Google sign-in on", () => {
     await expect(phone.getByTestId("menu-security")).toBeVisible();
     await expect(phone.getByTestId("menu-google")).toHaveCount(0);
 
-    // A Google account belongs to one account at most: another account is told so, and keeps its line.
     const other = await newPhone(browser);
     await other.goto(`${site.origin}/`);
     await other.getByTestId("account-button").click();
@@ -471,7 +440,6 @@ test.describe("with Google sign-in on", () => {
     await tv.goto(`${site.origin}/tv`);
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
 
-    // Nobody is signed in: the page offers signing in, which is what a guest has come for.
     await openProfilePage(tv);
     await expect(tv.getByTestId("tv-profile-signin")).toBeVisible();
     await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0);
@@ -479,7 +447,6 @@ test.describe("with Google sign-in on", () => {
     await signUpOnScreen(tv, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
 
-    // The Settings' Profile group has the line too, with Manage profiles and signing a TV in.
     await openTvSettings(tv);
     await expect(tv.getByTestId("tv-connect-google")).toContainText(en["account.googleConnect"]);
     await tv.getByTestId("tv-account-back").click();
@@ -487,7 +454,6 @@ test.describe("with Google sign-in on", () => {
 
     const connect = tv.getByTestId("tv-profile-google");
     await expect(connect).toContainText(en["account.googleConnect"]);
-    // (The remote still starts at Settings: this button is the last.)
     await tv.getByTestId("tv-profile-settings").focus();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-profile-feedback")).toBeFocused();
@@ -529,7 +495,6 @@ test.describe("with Google sign-in on", () => {
     await viaGoogle(phone, google, phone.getByTestId("google-button"));
     await phone.waitForURL(`${site.origin}/`);
 
-    // The word for "confirmed" in an address that somebody else made deletes nothing: the page only deletes when this tab went to Google to delete.
     const deletes: string[] = [];
     phone.on("request", (request) => {
       if (new URL(request.url()).pathname === "/api/me/delete") deletes.push(request.url());
@@ -546,13 +511,11 @@ test.describe("with Google sign-in on", () => {
     await expect(phone.getByTestId("password-current")).toHaveCount(0);
     await expect(phone.getByTestId("google-connect")).toHaveCount(0);
 
-    // No at Google: nothing is deleted.
     await phone.getByTestId("delete-account").click();
     await viaGoogle(phone, google, phone.getByTestId("delete-google"), "cancel");
     await expect(phone.getByTestId("account-toast")).toHaveText(en["google.denied"]);
     expect((await sessionOf(phone)).me).not.toBeNull();
 
-    // Yes at Google (which is asked to have the person sign in again): the account is gone.
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-security").click();
     await phone.getByTestId("delete-account").click();
@@ -572,10 +535,8 @@ test.describe("with Google sign-in on", () => {
     await phone.getByTestId("account-button").click();
     await viaGoogle(phone, google, phone.getByTestId("google-button"));
     await phone.waitForURL(`${site.origin}/`);
-    // Mia's profile is made a child's, a grown-up's is added, and a PIN set (on another screen, as far as this one knows).
     const request = phone.context().request;
     const mia = ((await (await request.get(`${site.origin}/api/me`)).json()) as { me: { profiles: Array<{ id: string }> } }).me.profiles[0]!.id;
-    // (This screen is on Mia's profile, the only one there is, before another is added: else, opened again, it would ask who is watching.)
     await expect.poll(() => phone.evaluate(() => localStorage.getItem("kino.profile"))).toBe(mia);
     expect((await request.post(`${site.origin}/api/profiles`, { data: { name: "Grown" } })).ok()).toBe(true);
     expect((await request.post(`${site.origin}/api/profiles/${mia}/sync`, { data: { since: 0, settings: [{ key: "child", at: Date.now(), value: true }] } })).ok()).toBe(true);
@@ -592,7 +553,6 @@ test.describe("with Google sign-in on", () => {
     expect(changes).toEqual([]);
     expect(await pinned()).toBe(true);
 
-    // Leaving Mia's profile: the PIN is asked; forgotten, it is Google that confirms (an account made with Google has no password).
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-switch").click();
     await phone.getByTestId("pin-forgot").click();
@@ -602,7 +562,6 @@ test.describe("with Google sign-in on", () => {
     await expect(phone.getByTestId("account-toast")).toHaveText(en["pin.removed"]);
     expect(await pinned()).toBe(false);
     expect(changes).toHaveLength(1);
-    // Nothing asks now.
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-switch").click();
     await phone.getByTestId("profile-Grown").click();

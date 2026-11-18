@@ -1,4 +1,3 @@
-// The aligner's worker: the voice detector and the solves, away from the page that plays the film. See backend.ts.
 import type { WorkerReply, WorkerRequest } from "./backend";
 import { SyncCore } from "./core";
 import type { Cue } from "./cues";
@@ -45,7 +44,6 @@ async function handle({ op, args }: WorkerRequest): Promise<unknown> {
 
 scope.onmessage = (event) => {
   const { id } = event.data;
-  // (Requests are taken in turn: only "init" waits, and nothing is sent before it has answered.)
   handle(event.data).then(
     (value) => scope.postMessage({ id, value }),
     (error: unknown) => scope.postMessage({ id, error: error instanceof Error ? error.message : String(error) }),

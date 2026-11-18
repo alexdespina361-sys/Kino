@@ -11,7 +11,7 @@ describe("episodeStatus", () => {
   it("tells watched, started (with how far and how long is left) and new apart", () => {
     expect(episodeStatus(list, "Show", 1, 1)).toEqual({ kind: "watched" });
     expect(episodeStatus(list, "Show", 1, 2)).toEqual({ kind: "started", fraction: 1 / 3, secondsLeft: 1800, position: 900 });
-    expect(episodeStatus(list, "Show", 1, 3)).toEqual({ kind: "new" }); // 5 seconds in isn't "started"
+    expect(episodeStatus(list, "Show", 1, 3)).toEqual({ kind: "new" });
     expect(episodeStatus(list, "Show", 1, 4)).toEqual({ kind: "new" });
   });
 

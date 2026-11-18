@@ -1,5 +1,3 @@
-// Run on the candidate relay machine. No credentials or tokens are printed.
-// This checks that machine's egress; running it on a PC does not validate a VPS.
 const pages = process.argv.slice(2);
 if (!pages.length) pages.push(
   'https://filmpire.sc/watch/123542?s=1&e=1',
@@ -47,7 +45,7 @@ async function text(response) {
 async function probe(raw, referer) {
   const source = new URL(raw);
   let token = await text(await request(new URL('/generate.php', source), referer, false, 'token'));
-  try { const parsed = JSON.parse(token); token = parsed.token || parsed.data || token; } catch { /* Plain JWT. */ }
+  try { const parsed = JSON.parse(token); token = parsed.token || parsed.data || token; } catch { }
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) throw new Error('No valid provider token');
   const expiry = Number(JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).exp);
   if (!Number.isFinite(expiry) || expiry * 1000 <= Date.now() + 60_000) throw new Error('Provider token expires too soon');

@@ -2,89 +2,45 @@ import { z } from "zod";
 import { AvatarSeenSchema, ListItemSchema, ListNameItemSchema, ProfileNameSchema, RatingItemSchema, TagNumberSchema, type Settings } from "./account";
 import { isHttpUrl } from "./media";
 
-/**
- * Friends: two profiles that agreed to be, through a code one gave and the other typed (or a link with it). A friend can look at
- * the other's lists and ratings, send titles, watch-party invitations and plans for a day and time to their inbox, write to them (see chat.ts), and hear what the other watches, each of
- * those only as far as the other's switches allow. All of it is optional: with `friends` off in the settings of a profile nothing
- * of it shows, is shared or arrives, and the friends themselves are kept for when it is turned on again.
- */
-
 export const MAX_FRIENDS = 50;
-/** An invitation (a code to give a friend) is good for this long, and for one friend. */
 export const INVITE_TTL_MS = 7 * 24 * 3600 * 1000;
-/** How many codes a profile can have out at once: making another takes back the oldest. */
 export const MAX_OPEN_INVITES = 5;
-/** Written the way people read it aloud: no 0/O or 1/I. The same letters as the codes that sign a TV in. */
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const INVITE_CODE_LENGTH = 8;
-/** How many things a friend's inbox keeps (the newest) and for how long. */
 export const INBOX_MAX = 100;
 export const INBOX_KEEP_MS = 30 * 24 * 3600 * 1000;
-/** ...and how many of those can be from one friend, so that one friend cannot fill it and push out what the others sent. */
 export const INBOX_PER_SENDER = 20;
-/** A request to be friends waits this long for an answer, and a profile keeps at most this many (the newest) from the others. */
 export const REQUEST_KEEP_MS = 30 * 24 * 3600 * 1000;
 export const MAX_REQUESTS = 30;
-/** A watch-party code is no use after the party, so an invitation to one is dropped after this. */
 export const PARTY_INVITE_KEEP_MS = 12 * 3600 * 1000;
 export const FRIEND_NOTE_MAX = 200;
-/** A plan to watch together is put at least this far ahead (a party can be started at once, so a plan is for later), and at most this far. */
 export const PLAN_MIN_AHEAD_MS = 5 * 60 * 1000;
 export const PLAN_MAX_AHEAD_MS = 30 * 24 * 3600 * 1000;
-/** How many plans one friend can have waiting for an answer from another, and how many one profile can have waiting from all of its friends together. */
 export const PLAN_OPEN_PER_PAIR = 3;
 export const PLAN_OPEN_PER_SENDER = 10;
-/** A plan that was said yes to stays this long after its time: that is how long a page that opens late still says the time has come. */
 export const PLAN_KEEP_AFTER_MS = 2 * 3600 * 1000;
-/** A party the two start up to this long before the time of a plan they agreed to is that plan: it is done (and a phone whose clock runs a little fast is no trouble). */
 export const PLAN_SETTLE_AHEAD_MS = 30 * 60 * 1000;
-/** What friends are told of what somebody watched: the last two weeks, from a minute in (a title tried and left is not "watched"). */
 export const ACTIVITY_KEEP_MS = 14 * 24 * 3600 * 1000;
 export const ACTIVITY_MIN_SECONDS = 60;
 export const ACTIVITY_PER_FRIEND = 4;
 export const ACTIVITY_MAX = 30;
-/** "Is watching" for as long as it was last watched less than this ago. */
 export const WATCHING_NOW_MS = 15 * 60 * 1000;
-/**
- * "Online" for as long as a screen of the profile asked after its friends less than this ago. (A screen that is open and in view asks every
- * half minute, and not at all once it is out of view, so this is two missed looks.)
- */
 export const ONLINE_MS = 90_000;
 
-/* ------------------------------ the switches ------------------------------ */
-
-/** Each is a setting of the profile (see SETTING_SCHEMAS), and this is what it is until it is set. Nothing is on until `friends` is. */
 export const FRIEND_DEFAULTS = {
   friends: false,
-  /** Friends can look at my lists... */
   friendsLists: true,
-  /** ...and at my ratings. */
   friendsRatings: true,
-  /** Friends are told what I watch, and I am told what they watch: one exchange (see `friendChoices`). */
   friendsGive: false,
-  /** Not asked any more: it follows `friendsGive`, and a value an earlier version stored is not read. */
   friendsGet: false,
-  /** Friends can send me titles and invitations to a watch party. */
   friendsInbox: true,
-  /** Friends can see when I am online (and I can see when they are). Off, I am never shown as online: the one switch for "appear offline" and "always offline". */
   friendsPresence: true,
-  /** Friends can write to me (a small chat between two friends: see chat.ts). Off, they are told so, and nothing they wrote before can be added to. */
   friendsMessages: true,
 } as const;
 export type FriendSetting = keyof typeof FRIEND_DEFAULTS;
 export const FRIEND_SETTINGS = Object.keys(FRIEND_DEFAULTS) as FriendSetting[];
 export type FriendChoices = { [K in FriendSetting]: boolean };
 
-/**
- * What a profile has chosen about friends, with the default for each thing it has not.
- *
- * Friends are on for everybody (the owner, 15 Nov 2026: "remove the ratings and friends and turn it on for all accounts"): the old master switch `friends` is not
- * read to say whether they are: they are off only for a child's profile (`child`) and where `friendsOff` says so (nothing sets that now). Turning a child's profile
- * back into an ordinary one brings friends back as they were: nothing about them was written. What a profile chose before is kept and is not undone behind its back:
- *  - one that had turned friends off (`friends: false`) does not share what it watches, whatever `friendsGive` says, until it turns that on again;
- *  - one that had turned ratings off (`ratings: false`) does not show its ratings to friends until it turns that on again.
- * (`friendSwitchWrites` writes what turning one of them on again takes. Nothing here writes or deletes a setting: a profile that never touches a switch keeps what it had.)
- */
 export function friendChoices(settings: Settings): FriendChoices {
   const choice = (key: FriendSetting): boolean => settings[key] ?? FRIEND_DEFAULTS[key];
   const gives = settings.friends === false ? false : choice("friendsGive");
@@ -93,20 +49,15 @@ export function friendChoices(settings: Settings): FriendChoices {
     friendsLists: choice("friendsLists"),
     friendsRatings: settings.ratings === false ? false : choice("friendsRatings"),
     friendsGive: gives,
-    friendsGet: gives, // (told what friends watch while one tells what one watches)
+    friendsGet: gives,
     friendsInbox: choice("friendsInbox"),
     friendsPresence: choice("friendsPresence"),
     friendsMessages: choice("friendsMessages"),
   };
 }
 
-/** Ratings show for everybody (they had a switch until 15 Nov 2026; a `false` kept from it is not read for this). The one place that says so. */
 export const ratingsShown = (_settings: Settings): boolean => true;
 
-/**
- * What a switch of what friends may do writes when it is turned on or off: itself, and, turned on, the old choice that kept it off as well (see `friendChoices`):
- * sharing what is watched turned on again also says friends are on, and showing ratings to friends also says ratings are on.
- */
 export function friendSwitchWrites(settings: Settings, key: FriendSetting, on: boolean): Array<[FriendSetting | "ratings", boolean]> {
   const writes: Array<[FriendSetting | "ratings", boolean]> = [[key, on]];
   if (on && key === "friendsGive" && settings.friends === false) writes.push(["friends", true]);
@@ -114,46 +65,30 @@ export function friendSwitchWrites(settings: Settings, key: FriendSetting, on: b
   return writes;
 }
 
-/** The switches that are on for everybody now, with no switch to turn them off (the last is this screen's own, not what a friend may do). */
 export type SunsetSwitch = "friendsLists" | "friendsRatings" | "friendsInbox" | "friendsPresence" | "friendsMessages" | "newsPopups";
 const SUNSET_SWITCHES: readonly SunsetSwitch[] = ["friendsLists", "friendsRatings", "friendsInbox", "friendsPresence", "friendsMessages", "newsPopups"];
 
-/**
- * Which of them a profile still has a switch for: the ones it turned off before they went, so that what it chose is neither undone nor out of its
- * reach. (A screen asks once, when it opens: a switch turned back on stays under the remote until the screen is left, and is gone the next time.)
- */
 export const sunsetSwitches = (settings: Settings): SunsetSwitch[] => SUNSET_SWITCHES.filter((key) => settings[key] === false || (key === "friendsRatings" && settings.ratings === false));
 
-/** Whether a profile takes messages from its friends: friends are on, and it has not turned that switch off. */
 export function takesMessages(settings: Settings): boolean {
   const choices = friendChoices(settings);
   return choices.friends && choices.friendsMessages;
 }
 
-/** Whether a profile lets its lists be looked at: friends are on, and it shares them. */
 export function sharesLists(settings: Settings): boolean {
   const choices = friendChoices(settings);
   return choices.friends && choices.friendsLists;
 }
 
-/** Whether a profile lets its ratings be looked at: friends are on and it shares them (one that had turned ratings off does not, until it says so: see `friendChoices`). */
 export function sharesRatings(settings: Settings): boolean {
   const choices = friendChoices(settings);
   return choices.friends && choices.friendsRatings;
 }
 
-/* ------------------------------ tags ------------------------------ */
-
-/**
- * What tells two profiles of one name apart, wherever they are: the first "Sam" is Sam#1, the next Sam#2 (the lowest number nobody with that
- * name has). It is how somebody is found by name, and what a profile in a watch party is added by.
- */
 export const tagLabel = (name: string, tag: number): string => `${name}#${tag}`;
 
-/** A name as tags compare it: the way it is shown, in one spelling, without capitals ("SAM" and "sam" are one name). */
 export const nameKey = (name: string): string => plainText(name).normalize("NFC").toLowerCase();
 
-/** What somebody typed to find a profile ("Sam#2", "sam # 2"): the name is whatever comes before the last #. Nothing when it is not a tag. */
 export function parseTag(text: string): { name: string; tag: number } | undefined {
   const at = text.lastIndexOf("#");
   if (at < 1) return undefined;
@@ -164,47 +99,32 @@ export function parseTag(text: string): { name: string; tag: number } | undefine
   return tag >= 1 ? { name, tag } : undefined;
 }
 
-/** Whether two ways of naming a profile (a name and its tag) name the same one. */
 export const sameTag = (a: { name: string; tag?: number | undefined }, b: { name: string; tag?: number | undefined }): boolean =>
   a.tag !== undefined && a.tag === b.tag && nameKey(a.name) === nameKey(b.name);
 
-/* ------------------------------ text and pictures from friends ------------------------------ */
-
-/**
- * Words that other people read as they were typed, made fit to show: no control characters and none that turn text around or hide in it
- * (a name that reads backwards, a line that hides another), no more than a few marks piled on one letter, and one space where there were
- * several. (Emoji, which join with an invisible joiner, are left whole. Nothing is added or rewritten: what comes out is never longer than
- * what went in, so a name that fitted its limit still does.)
- */
 export function plainText(value: string): string {
   const cleaned = wellFormedText(value)
-    .replace(/[\t-\r]/g, " ") // (line breaks and tabs read as spaces)
-    .replace(/[­ᅟᅠ⠀ㅤﾠ]/gu, "") // (a soft hyphen and the blank fillers of Hangul and Braille: nothing to see)
+    .replace(/[\t-\r]/g, " ")
+    .replace(/[­ᅟᅠ⠀ㅤﾠ]/gu, "")
     .replace(/[\p{Cc}؜​‎‏‪-‮⁠-⁯﻿]/gu, "")
     .replace(/(\p{M}{4})\p{M}+/gu, "$1")
     .replace(/\s+/gu, " ")
     .trim();
-  // (Joiners and marks on their own are nothing to look at: a name or a title made only of them is no name or title.)
   return /[\p{L}\p{N}\p{P}\p{S}]/u.test(cleaned) ? cleaned : "";
 }
 
-/**
- * Whether a string has no lone surrogate (half of a pair, which JSON can carry): `encodeURIComponent` throws on one, so a page that puts a
- * friend's address in a request would fall over when its title is opened. (Written out rather than `isWellFormed`, which an older TV browser lacks.)
- */
 export function isWellFormedText(value: string): boolean {
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
     if (code >= 0xd800 && code <= 0xdbff) {
       const next = value.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return false; // (at the end of the text `next` is NaN: no pair)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
       i++;
     } else if (code >= 0xdc00 && code <= 0xdfff) return false;
   }
   return true;
 }
 
-/** The same text with each lone surrogate replaced by U+FFFD (never longer, and the same text when there was none). */
 export function wellFormedText(value: string): string {
   if (isWellFormedText(value)) return value;
   let out = "";
@@ -219,11 +139,6 @@ export function wellFormedText(value: string): string {
   return out;
 }
 
-/**
- * A picture that came from a friend is loaded by the browser of whoever looks, so it is shown only if it is the web address of some
- * other site: not a path (which would be this site's own), and not an address on this site (`ownHost` is the one the look came to),
- * which would make that browser, signed in as it is, call the site on a friend's say-so.
- */
 export function foreignPicture(value: string | undefined, ownHost: string | undefined): string | undefined {
   if (!value || !isHttpUrl(value)) return undefined;
   const hostname = (host: string) => host.replace(/:\d+$/, "").toLowerCase();
@@ -232,14 +147,9 @@ export function foreignPicture(value: string | undefined, ownHost: string | unde
   return ownHost && hostname(url.host) === hostname(ownHost) ? undefined : value;
 }
 
-/**
- * A name or an address that only a private network (or this very machine) answers to: a picture from there would make the browser of
- * whoever looks knock on the doors of its own network on a friend's say-so. (`URL` has already turned `127.1` or `0x7f.1` into the plain
- * four numbers. A public name that points into a private network cannot be told from here.)
- */
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.+$/, "");
-  if (host.startsWith("[") || !host.includes(".")) return true; // (an IPv6 address; a name with no dot: localhost, a router, a NAS)
+  if (host.startsWith("[") || !host.includes(".")) return true;
   if (/\.(local|localhost|internal|lan|home|corp|intranet|private)$/.test(host) || host.endsWith(".home.arpa")) return true;
   const quad = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
   if (!quad) return false;
@@ -258,45 +168,28 @@ function isPrivateHost(hostname: string): boolean {
   );
 }
 
-/* ------------------------------ what travels ------------------------------ */
-
 const IdSchema = z.string().min(1).max(60);
 const PictureSchema = z.string().max(2048);
 const LinkSchema = z.string().max(2048).refine(isHttpUrl, "invalid_request").refine(isWellFormedText, "invalid_request");
-/** A picture sent by a friend is shown on the screen of another: a web address, never a path (see `foreignPicture`). */
 const SentPictureSchema = LinkSchema;
-/** Text that is shown to others: cleaned (see `plainText`) before it is measured. */
 const shownText = (min: number, max: number) => z.string().max(1000).transform(plainText).pipe(z.string().min(min).max(max));
 
-/** A friend, as the profile that has them sees them: who they are, and what they allow right now (all false while they have friends turned off). */
 export const FriendSchema = z.object({
   id: IdSchema,
   name: ProfileNameSchema,
   avatar: AvatarSeenSchema,
-  /** The number that goes with the name (see `tagLabel`). */
   tag: TagNumberSchema.optional(),
   since: z.number(),
-  /** They have friends turned on: when they do not, nothing below is true. */
   on: z.boolean(),
-  /** Their lists can be looked at. */
   lists: z.boolean(),
-  /** Their ratings can be looked at. */
   ratings: z.boolean(),
-  /** What they watch is told (they give it, and this profile gets it). */
   activity: z.boolean(),
-  /** They take titles and invitations. */
   inbox: z.boolean(),
-  /** A screen of theirs is open right now, and both of you let friends see that (see `ONLINE_MS`). Absent: not online, or not told. */
   online: z.boolean().optional(),
-  /**
-   * When a screen of theirs last looked after its friends (the server's clock, in ms; also while they are online, so that a screen whose news has gone old
-   * can say when they last were), told on the same terms as `online`. Absent: not told, or never since they last chose not to be seen.
-   */
   lastOnline: z.number().int().nonnegative().optional(),
 });
 export type Friend = z.infer<typeof FriendSchema>;
 
-/** A title a friend wants this profile to see. */
 export const RecommendationSchema = z.object({
   kind: z.literal("recommend"),
   title: shownText(1, 300),
@@ -305,31 +198,20 @@ export const RecommendationSchema = z.object({
   backdrop: SentPictureSchema.optional(),
   year: z.number().int().min(1800).max(2200).optional(),
   type: z.enum(["movie", "series"]).optional(),
-  /** Why, in a few words. */
   note: shownText(0, FRIEND_NOTE_MAX).optional(),
 });
-/** The six-digit code of a watch party that is open now (see `partyLink`), and when it stops being one. */
 export const PartyInviteSchema = z.object({
   kind: z.literal("party"),
   code: z.string().regex(/^\d{6}$/),
   endsAt: z.number().finite(),
 });
-/** "Let's watch together": a friend asks for a party (nothing more; the answer is an invitation to one). */
 export const TogetherSchema = z.object({ kind: z.literal("together") });
-/**
- * "Let's watch together on a day and time": a friend proposes when (`when`, in epoch milliseconds, which every screen shows in its own local time;
- * it is not `at`, which an item of the inbox already has for the time it arrived), with a few words if they like. The friend answers yes or no
- * (see `PlanAnswerSchema`), and the time is put at least `PLAN_MIN_AHEAD_MS` and at most `PLAN_MAX_AHEAD_MS` from now (see `planTimeProblem`).
- */
 export const PlanSchema = z.object({ kind: z.literal("plan"), when: z.number().int().positive(), note: shownText(0, FRIEND_NOTE_MAX).optional() });
-/** What a friend says to a plan. */
 export const PlanAnswerSchema = z.enum(["yes", "no"]);
 export type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
-/** What one friend sends another. */
 export type Message = z.infer<typeof RecommendationSchema> | z.infer<typeof PartyInviteSchema> | z.infer<typeof TogetherSchema> | z.infer<typeof PlanSchema>;
 
 const To = { to: z.array(IdSchema).min(1).max(MAX_FRIENDS) };
-/** What a profile sends to friends (to each of `to`). A plan goes to one friend: it is a question for them, and each answer is their own. */
 export const SendSchema = z.discriminatedUnion("kind", [
   RecommendationSchema.extend(To),
   PartyInviteSchema.extend(To),
@@ -337,26 +219,18 @@ export const SendSchema = z.discriminatedUnion("kind", [
   PlanSchema.extend({ to: z.array(IdSchema).length(1) }),
 ]);
 export type SendRequest = z.infer<typeof SendSchema>;
-/** Who it was delivered to and who is not taking things. */
 export const SentSchema = z.object({ sent: z.array(IdSchema), declined: z.array(IdSchema) });
 export type Sent = z.infer<typeof SentSchema>;
 
 const Delivered = { id: z.string().min(1).max(40), at: z.number(), from: IdSchema, read: z.boolean() };
-/**
- * What is in an inbox. An invitation says whether its party is `open` (the server looks, each time: the code and the time it ends are
- * those of the party as it is now, which can differ from what was sent when the code was renewed). An answer without it comes from a
- * server that does not look, and then the time `endsAt` is all there is to go by (see `partyOpen`).
- */
 export const InboxItemSchema = z.discriminatedUnion("kind", [
   RecommendationSchema.extend(Delivered),
   PartyInviteSchema.extend(Delivered).extend({ open: z.boolean().optional() }),
   TogetherSchema.extend(Delivered),
-  // (A plan in an inbox says what became of it: no `answer` is a question for this profile, "yes" a plan that is on (in both inboxes), "no" the news for the one who asked.)
   PlanSchema.extend(Delivered).extend({ answer: PlanAnswerSchema.optional() }),
 ]);
 export type InboxItem = z.infer<typeof InboxItemSchema>;
 
-/** Something a friend watched: a film, or a show (its latest episode). Worked out from what the friend's profile keeps, never kept apart. */
 export const ActivityItemSchema = z.object({
   friend: IdSchema,
   key: z.string().max(400),
@@ -369,15 +243,10 @@ export const ActivityItemSchema = z.object({
   done: z.boolean().optional(),
   season: z.number().int().optional(),
   episode: z.number().int().optional(),
-  /** How far into the film, or into that episode, they are (0..100). */
   percent: z.number().int().min(0).max(100).optional(),
 });
 export type ActivityItem = z.infer<typeof ActivityItemSchema>;
 
-/**
- * How far a friend got in a title that is in their lists or ratings: the latest episode of a show, and how far into it (or into the film).
- * `link` is the title's address as `titleLink` names it, which is how a list item or a rating of it is found.
- */
 export const FriendProgressSchema = z.object({
   link: z.string().max(2048),
   season: z.number().int().optional(),
@@ -387,35 +256,21 @@ export const FriendProgressSchema = z.object({
 });
 export type FriendProgress = z.infer<typeof FriendProgressSchema>;
 
-/** A code this profile gave out and nobody has used yet. */
 export const OpenInviteSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
 export type OpenInvite = z.infer<typeof OpenInviteSchema>;
 
-/** Somebody who is not (yet) a friend, as a profile is shown them: who, with the tag that names them. */
 export const PersonSchema = z.object({ id: IdSchema, name: ProfileNameSchema, avatar: AvatarSeenSchema, tag: TagNumberSchema });
 export type Person = z.infer<typeof PersonSchema>;
-/** Somebody asking to be friends, and since when. */
 export const RequestSchema = z.object({ from: PersonSchema, at: z.number() });
 export type FriendRequest = z.infer<typeof RequestSchema>;
-/** Somebody this profile has asked and has not heard from. */
 export const SentRequestSchema = z.object({ to: PersonSchema, at: z.number() });
 export type SentRequest = z.infer<typeof SentRequestSchema>;
 
-/**
- * Messages waiting from a friend (that this profile has not looked at, and that it has not muted): how many, and when the newest was written. It is what the
- * Friends page and the bell tell of a chat, quietly; the messages themselves are only asked for by a page that has the chat open (see chat.ts).
- */
 export const ChatNoticeSchema = z.object({ friend: IdSchema, count: z.number().int().positive(), at: z.number() });
 export type ChatNotice = z.infer<typeof ChatNoticeSchema>;
 
-/**
- * Everything a profile with friends turned on asks for, in one answer. `requests` are the ones who asked this profile to be friends and wait
- * for an answer; `sent` are the ones this profile asked. `chat` is what waits in the chats, a friend at a time (absent: nothing does, and a
- * server that does not know of chats says nothing of them).
- */
 export const FriendsStateSchema = z.object({
   friends: z.array(FriendSchema),
-  // (An item of a kind this screen does not know - one added after its page was loaded - is left out, rather than the whole answer being refused.)
   inbox: z.array(z.unknown()).transform((items) => items.flatMap((item) => { const known = InboxItemSchema.safeParse(item); return known.success ? [known.data] : []; })),
   activity: z.array(ActivityItemSchema),
   invites: z.array(OpenInviteSchema),
@@ -425,71 +280,49 @@ export const FriendsStateSchema = z.object({
 });
 export type FriendsState = z.infer<typeof FriendsStateSchema>;
 
-/** A friend as a profile that has friends turned off sees them: who they are and since when, nothing of what they have chosen (that is for a profile that has friends on). */
 export const KeptFriendSchema = FriendSchema.pick({ id: true, name: true, avatar: true, since: true });
 export type KeptFriend = z.infer<typeof KeptFriendSchema>;
-/** The friends of a profile that has friends turned off: only who they are, so that one can be taken off without turning anything on. */
 export const KeptFriendsSchema = z.object({ friends: z.array(KeptFriendSchema) });
 export type KeptFriends = z.infer<typeof KeptFriendsSchema>;
 
-/** Who is behind a code, before it is used. */
 export const InviteViewSchema = z.object({ code: z.string().max(20), from: z.object({ name: ProfileNameSchema, avatar: AvatarSeenSchema }) });
 export type InviteView = z.infer<typeof InviteViewSchema>;
 export const AcceptSchema = z.object({ code: z.string().min(1).max(40) });
 export const AcceptedSchema = z.object({ friend: FriendSchema });
 export const InvitedSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
 
-/** Who is behind a tag, before anybody is asked: the picture, the name and the tag as they are shown. */
 export const TagViewSchema = PersonSchema.omit({ id: true });
 export type TagView = z.infer<typeof TagViewSchema>;
-/** Asking the profile with this tag to be friends. */
 export const AskSchema = z.object({ tag: z.string().min(1).max(60) });
-/** What came of it: the request is waiting (`sent`), or the other had asked already and the two are friends now. */
 export const AskedSchema = z.object({ status: z.enum(["sent", "friends"]), friend: FriendSchema.optional() });
 export type AskOutcome = z.infer<typeof AskedSchema>;
-/** A screen that says whose it is (see `ScreenProfiles`): what it asks of the server to prove it, and the proof. */
 export const ScreenProofSchema = z.object({ proof: z.string().min(1).max(100) });
 
-/** What a friend lets be looked at: the lists (with their names) and the ratings. The items are as the friend's profile keeps them. */
 export const FriendListsSchema = z.object({ listNames: z.array(ListNameItemSchema), list: z.array(ListItemSchema), progress: z.array(FriendProgressSchema).optional() });
 export type FriendLists = z.infer<typeof FriendListsSchema>;
 export const FriendRatingsSchema = z.object({ ratings: z.array(RatingItemSchema), progress: z.array(FriendProgressSchema).optional() });
 export type FriendRatings = z.infer<typeof FriendRatingsSchema>;
 
-/* ------------------------------ words for the screens ------------------------------ */
-
-/** What a friend's activity says they did, from when it was and whether it was finished. */
 export function activityVerb(item: Pick<ActivityItem, "at" | "done">, now: number): "watching" | "watched" | "finished" {
   if (item.done) return "finished";
   return now - item.at < WATCHING_NOW_MS ? "watching" : "watched";
 }
 
-/** The friends that something can be sent to now. */
 export const reachable = (friends: readonly Friend[]): Friend[] => friends.filter((friend) => friend.on && friend.inbox);
 
-/** Whether the party an invitation is to can be joined: what the server said of it, else by the clock. */
 export const partyOpen = (invitation: { open?: boolean | undefined; endsAt: number }, now: number): boolean => invitation.open ?? invitation.endsAt > now;
 
-/** A plan as it is in an inbox. */
 export type PlanItem = Extract<InboxItem, { kind: "plan" }>;
 
-/** Why a time cannot be put to a friend from `now`, when it cannot: it is too near (a party can be started instead) or too far off. */
 export function planTimeProblem(when: number, now: number): "too_soon" | "too_far" | undefined {
   if (when < now + PLAN_MIN_AHEAD_MS) return "too_soon";
   return when > now + PLAN_MAX_AHEAD_MS ? "too_far" : undefined;
 }
 
-/** Whether a plan in an inbox waits for this profile's answer: it has none yet, and the time it is for has not come. */
 export const planAsks = (item: Pick<PlanItem, "answer" | "when">, now: number): boolean => item.answer === undefined && item.when > now;
 
-/** Whether a plan that is on has its time come, and not long gone: the moment to start the party. */
 export const planDue = (item: Pick<PlanItem, "answer" | "when">, now: number): boolean => item.answer === "yes" && item.when <= now && now < item.when + PLAN_KEEP_AFTER_MS;
 
-/**
- * Whether asking a friend to watch together makes sense: they take things in the inbox (the switch that lets a friend send titles and invitations: this is
- * an invitation in the making). Telling what they watch is not needed: it was, and by default nobody does, so the button was never there.
- */
 export const canAskTogether = (friend: Friend): boolean => friend.on && friend.inbox;
 
-/** The address that adds the friend whose code this is (`/?friend=ABCD2345`): what the link in a message holds. */
 export const friendLink = (code: string, origin: string): string => `${origin}/?friend=${code}`;

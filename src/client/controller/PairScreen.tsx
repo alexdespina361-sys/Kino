@@ -11,22 +11,16 @@ import { cameraAvailable, Scanner } from "./Scanner";
 interface PairScreenProps {
   code: string;
   onCodeChange: (code: string) => void;
-  /** Send the code. Called automatically as soon as the sixth digit is in. */
   onSubmit: (code: string) => void;
   connection: SocketStatus;
-  /** A code is out and the server hasn't answered yet. */
   pending: boolean;
   error: string | null;
-  /** Something to know before trying again (the TV that was connected is gone). */
   notice?: string | null;
-  /** How many TVs this phone still has on its list, and the way to them: choosing one of those takes no code. */
   tvCount?: number;
   onTvs?: () => void;
-  /** Top right: the way into the account page. */
   corner?: ReactNode;
 }
 
-/** A connection that has not come in this long is said to be missing, not just "reaching". */
 const OFFLINE_AFTER_MS = 4000;
 
 export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, error, notice, tvCount = 0, onTvs, corner }: PairScreenProps) {
@@ -41,7 +35,6 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
     const timer = setTimeout(() => setOffline(true), OFFLINE_AFTER_MS);
     return () => clearTimeout(timer);
   }, [connection]);
-  // A code that was refused leaves an empty field: the keyboard stays up for the next try.
   useEffect(() => {
     if (error && code === "") input.current?.focus();
   }, [error, code]);
@@ -49,7 +42,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
   const change = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 6);
     onCodeChange(digits);
-    if (digits.length === 6 && ready) onSubmit(digits); // nobody wants to hunt for a Connect button
+    if (digits.length === 6 && ready) onSubmit(digits);
   };
 
   const scanned = (digits: string) => {
@@ -81,7 +74,6 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
             {notice}
           </p>
         )}
-        {/* A phone that has TVs has done this before: the way to them takes the place of the steps for a new one (the list has them too). */}
         {tvCount > 0 && onTvs ? (
           <button type="button" className="btn btn-block" data-testid="tvs-open" onClick={onTvs}>
             <TvIcon /> {tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}

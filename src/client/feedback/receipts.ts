@@ -2,15 +2,9 @@ import type { FeedbackArea, FeedbackDetailKey, FeedbackFrequency, FeedbackKind, 
 import { FEEDBACK_KEY } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
 
-/**
- * What a page keeps of the feedback it sent: the key of each report (the receipt, which is also what it takes to read the answer: the server keeps
- * only a hash of it), and the draft of what is being written. Both are in this browser's storage only.
- */
 const RECEIPTS_KEY = "kino.feedback.receipts";
 const DRAFT_KEY = "kino.feedback.draft";
-/** The most receipts kept: the oldest go. */
 const MAX_RECEIPTS = 40;
-/** A draft that nobody came back to in this long is not offered again. */
 export const DRAFT_DAYS = 14;
 
 export interface Receipt {
@@ -31,13 +25,11 @@ export interface Draft {
   at: number;
 }
 
-/** A key that nobody can guess: 128 random bits, as 22 characters of base64url (the server asks for 22 to 64). */
 export function newKey(fill: (bytes: Uint8Array<ArrayBuffer>) => void = (bytes) => void crypto.getRandomValues(bytes)): string {
   const bytes = new Uint8Array(16);
   try {
     fill(bytes);
   } catch {
-    // (A browser from before crypto.getRandomValues: the receipt is then only as good as Math.random, which is all such a browser has.)
     for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
   }
   let binary = "";

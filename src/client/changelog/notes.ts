@@ -1,7 +1,5 @@
 import type { ChangeNote } from "./news";
 
-/** What each version of Kino brought, the newest first: only what is on the site and on for everyone, said the way a viewer sees it.
- *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
     version: "0.4.20",

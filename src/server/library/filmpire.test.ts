@@ -160,10 +160,9 @@ describe("filmpireSource", () => {
       const { get, asked } = tmdb();
       const source = filmpireSource({ categories: [mockCategories[0]!], fetch: get as never, now: () => NOW });
       const titles = ["Old Film", "Out At Home", "TMDB Could Not Say"];
-      expect((await source.load())[0]!.items.map((item) => item.title)).toEqual(titles); // (a row of films: the show is not among them anyway)
+      expect((await source.load())[0]!.items.map((item) => item.title)).toEqual(titles);
       expect((await source.search!("anything")).map((item) => item.title)).toEqual([...titles, "New Show"]);
       const checked = asked.filter((url) => url.includes("/release_dates")).map((url) => /\/movie\/(\d+)\//.exec(url)![1]);
-      // (asked once each in twelve hours, though two lists had them; the one TMDB could not answer is asked again, and kept meanwhile)
       expect(checked.sort()).toEqual(["12", "13", "14", "15", "15"]);
     });
 
@@ -211,9 +210,7 @@ describe("filmpireSource", () => {
 describe("filmpireSource shelves and more", () => {
   const movie = (id: number, title: string, extra: object = {}) => ({ id, title, release_date: "1985-01-01", poster_path: "/p.jpg", ...extra });
   const shelf = (id: string, type: "movie" | "tv" = "movie"): FilmpireCategory => ({ id, title: id.toUpperCase(), path: `/discover/${type}?with_genres=1&sort_by=vote_count.desc`, type });
-  /** Seven shelves in groups of one each, so that the plan is the order they are given in. */
   const groups = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"].map((id) => [shelf(id)]);
-  /** TMDB answering a discover question with the titles of the shelf (by the `with_genres` it was asked for), page by page. */
   const answering = (results: (page: number, url: URL) => unknown[] | number, totalPages = 4) => {
     const asked: URL[] = [];
     const get = vi.fn(async (url: string | URL) => {
@@ -259,9 +256,9 @@ describe("filmpireSource shelves and more", () => {
   it("leaves out a shelf that has nothing to show or cannot be had, and fails only when none could", async () => {
     let count = 0;
     const get = vi.fn(async () => {
-      count++; // (the five are asked in the order of the shelves)
-      if (count === 2) return json({}, 500); // (one that cannot be had)
-      if (count === 3) return json({ results: [], total_pages: 0 }); // (one with nothing in it)
+      count++;
+      if (count === 2) return json({}, 500);
+      if (count === 3) return json({ results: [], total_pages: 0 });
       return json({ results: [movie(count, `Fine ${count}`)], total_pages: 3 });
     });
     const source = filmpireSource({ categories: [], shelves: groups, fetch: get as never });
@@ -292,15 +289,15 @@ describe("filmpireSource shelves and more", () => {
     const source = filmpireSource({ categories: [{ id: "pop", title: "Pop", path: "/movie/popular?language=en-US&page=1", type: "movie" }], shelves: groups, fetch: get as never });
 
     expect(await source.more!("filmpire-s1", 2)).toEqual({ items: [expect.objectContaining({ id: "filmpire-movie-20", title: "Page 2" })], last: false });
-    expect((await source.more!("filmpire-s1", 3)).last).toBe(true); // (TMDB has three pages of it)
+    expect((await source.more!("filmpire-s1", 3)).last).toBe(true);
     expect((await source.more!("filmpire-pop", 2)).items.map((one) => one.title)).toEqual(["Page 2"]);
-    expect(asked.map((url) => url.searchParams.getAll("page"))).toEqual([["2"], ["3"], ["2"]]); // (once, whatever the path said)
+    expect(asked.map((url) => url.searchParams.getAll("page"))).toEqual([["2"], ["3"], ["2"]]);
     expect(asked[2]!.pathname).toBe("/3/movie/popular");
     expect(asked[2]!.searchParams.get("language")).toBe("en-US");
 
     const deep = answering((page) => [movie(page, `Page ${page}`)], 500);
     const wide = filmpireSource({ categories: [], shelves: groups, fetch: deep.get as never });
-    expect((await wide.more!("filmpire-s1", MAX_PAGE)).last).toBe(true); // (TMDB would go on; the shelf does not)
+    expect((await wide.more!("filmpire-s1", MAX_PAGE)).last).toBe(true);
     expect(await wide.more!("filmpire-s1", MAX_PAGE + 1)).toEqual({ items: [], last: true });
     expect(deep.asked).toHaveLength(1);
   });
@@ -309,7 +306,7 @@ describe("filmpireSource shelves and more", () => {
     const get = vi.fn();
     const source = filmpireSource({ categories: [], shelves: groups, fetch: get as never });
     expect(await source.more!("filmpire-nothing", 2)).toEqual({ items: [], last: true });
-    expect(await source.more!("s1", 2)).toEqual({ items: [], last: true }); // (a row's id on the wire has "filmpire-" in front)
+    expect(await source.more!("s1", 2)).toEqual({ items: [], last: true });
     expect(await source.more!("filmpire-s1", 1)).toEqual({ items: [], last: true });
     expect(get).not.toHaveBeenCalled();
   });
@@ -348,11 +345,8 @@ describe("filmpireSource sections", () => {
   const live = film(1, "Live Film", { genre_ids: [28], original_language: "en" });
   const toon = film(2, "Toon Film", { genre_ids: [ANIMATION, 35], original_language: "en" });
   const manga = film(3, "Manga Film", { genre_ids: [ANIMATION, 14], original_language: "ja" });
-  /** English in its title and its language, but made in Japan: an anime all the same. */
   const madeInJapan = film(4, "Made In Japan", { genre_ids: [ANIMATION], original_language: "en", origin_country: ["JP"] });
-  /** Animated, but not Japanese: a cartoon, as a Korean or a French one is. */
   const koreanToon = film(5, "Korean Toon", { genre_ids: [ANIMATION], original_language: "ko", origin_country: ["KR"] });
-  /** TMDB gave no genres for it. */
   const unknown = film(6, "No Genres");
   const films = [live, toon, manga, madeInJapan, koreanToon, unknown];
   const liveShow = show(10, "Live Show", { genre_ids: [18], original_language: "en" });
@@ -360,7 +354,6 @@ describe("filmpireSource sections", () => {
   const animeShow = show(12, "Anime Show", { genre_ids: [ANIMATION, 10759], original_language: "ja", origin_country: ["JP"] });
   const shows = [liveShow, toonShow, animeShow];
   const titlesOf = (row: { items: Array<{ title: string }> }) => row.items.map((one) => one.title);
-  /** TMDB answering a question about a show with the shows and about a film with the films. */
   const tmdb = () => vi.fn(async (url: string | URL) => json({ results: String(url).includes("/tv") ? shows : films, total_pages: 3 }));
   const shelf = (id: string, type: "movie" | "tv", section?: "cartoon" | "anime"): FilmpireCategory => ({ id, title: id.toUpperCase(), path: `/discover/${type}?with_genres=1&sort_by=vote_count.desc`, type, ...(section ? { section } : {}) });
 
@@ -388,10 +381,9 @@ describe("filmpireSource sections", () => {
     const docs = [
       film(20, "Family Toon", { genre_ids: [ANIMATION, FAMILY], original_language: "en" }),
       show(21, "Kids Toon Show", { genre_ids: [ANIMATION, KIDS], original_language: "en", origin_country: ["US"] }),
-      show(22, "Grown-up Toon Show", { genre_ids: [ANIMATION, 35], original_language: "en", origin_country: ["US"] }), // (Family Guy, South Park)
-      film(23, "Family Film", { genre_ids: [FAMILY, 35], original_language: "en" }), // (not animated: no child profile's)
-      show(24, "Kids Anime", { genre_ids: [ANIMATION, KIDS], original_language: "ja", origin_country: ["JP"] }), // (an anime: said, but not a cartoon)
-      // (a title's own page at TMDB says its genres as objects)
+      show(22, "Grown-up Toon Show", { genre_ids: [ANIMATION, 35], original_language: "en", origin_country: ["US"] }),
+      film(23, "Family Film", { genre_ids: [FAMILY, 35], original_language: "en" }),
+      show(24, "Kids Anime", { genre_ids: [ANIMATION, KIDS], original_language: "ja", origin_country: ["JP"] }),
       { id: 25, title: "Page Toon", release_date: "2001-01-01", genres: [{ id: ANIMATION, name: "Animation" }, { id: FAMILY, name: "Family" }], original_language: "fr" },
     ];
     const results = await filmpireSource({ fetch: vi.fn(async () => json({ results: docs })) as never }).search!("anything");
@@ -403,7 +395,7 @@ describe("filmpireSource sections", () => {
       "Kids Anime": ["anime", true, false],
       "Page Toon": ["cartoon", true, true],
     });
-    for (const one of results) expect(LibraryItemSchema.safeParse(one).data, one.title).toEqual(one); // (the flag goes through the schema the client reads with)
+    for (const one of results) expect(LibraryItemSchema.safeParse(one).data, one.title).toEqual(one);
   });
 
   it("puts only the titles of a category's own section in its row: the film that is a cartoon is not among the movies, nor the anime among the cartoons", async () => {
@@ -425,7 +417,6 @@ describe("filmpireSource sections", () => {
       ["filmpire-manga-tv", "series", "anime", ["Anime Show"]],
     ]);
     for (const row of rows) expect(LibraryRowSchema.safeParse(row).success, row.id).toBe(true);
-    // (a title says its section too, apart from what it is, a film or a show)
     expect(rows[1]!.items[0]).toMatchObject({ kind: "movie", section: "cartoon" });
     expect(rows[5]!.items[0]).toMatchObject({ kind: "series", section: "anime" });
     expect(rows[0]!.items[0]!.section).toBeUndefined();
@@ -443,7 +434,6 @@ describe("filmpireSource sections", () => {
     ]);
     expect(await ofSection("anime")).toEqual([["filmpire-a1", "anime", ["Manga Film", "Made In Japan"]]]);
     expect((await ofSection(undefined)).map(([id]) => id)).toEqual(["filmpire-m1", "filmpire-t1", "filmpire-c1", "filmpire-c2", "filmpire-a1"]);
-    // (each section has its own place to go on from)
     expect((await source.shelves!("cartoon", 0)).next).toBeNull();
     expect((await source.shelves!(undefined, 0)).next).toBeNull();
   });
@@ -475,7 +465,6 @@ describe("filmpireSource sections", () => {
       const own = sectionOfCategory(cat);
       if (own === "movie" || own === "series") {
         expect(cat.type, cat.id).toBe(own === "movie" ? "movie" : "tv");
-        // (the lists TMDB can sort by genre are asked for none of it; its trending, popular and top lists cannot be, and are sifted when they come)
         if (cat.path.startsWith("/discover")) expect(genres(params(cat).get("without_genres")), cat.id).toContain("16");
       } else {
         expect(genres(params(cat).get("with_genres")), cat.id).toContain("16");
@@ -485,7 +474,6 @@ describe("filmpireSource sections", () => {
   });
 
   it("has no cartoon or anime among the movies, series, trending, popular and top rated lists TMDB cannot sift (they are sifted here)", async () => {
-    // a trending list of TMDB with a cartoon among its films: the Movies row leaves it out, the cartoon row (which asked for animation) has it
     const trending: FilmpireCategory[] = [
       { id: "trending-movies", title: "Trending Movies", path: "/trending/movie/week", type: "movie" },
       { id: "cartoon-movies", title: "Cartoon Movies", path: "/discover/movie?with_genres=16", type: "movie", section: "cartoon" },
@@ -499,11 +487,11 @@ describe("filmpireSource sections", () => {
       { id: "popular-tv", title: "Popular Series", path: "/tv/popular", type: "tv" },
     ];
     const items = [
-      { id: 101, name: "Jimmy Fallon Live", media_type: "tv", first_air_date: "2014-02-17", genre_ids: [10767], poster_path: "/jf.jpg" }, // Talk
-      { id: 102, name: "Daily News Report", media_type: "tv", first_air_date: "2020-01-01", genre_ids: [10763], poster_path: "/news.jpg" }, // News
-      { id: 103, name: "Binnelanders Daily", media_type: "tv", first_air_date: "2005-10-13", genre_ids: [10766], poster_path: "/soap.jpg" }, // Soap
-      { id: 201, name: "Breaking Bad", media_type: "tv", first_air_date: "2008-01-20", genre_ids: [18, 80], poster_path: "/bb.jpg" }, // Scripted drama
-      { id: 202, title: "Inception", media_type: "movie", release_date: "2010-07-16", genre_ids: [28, 878], poster_path: "/inc.jpg" }, // Movie
+      { id: 101, name: "Jimmy Fallon Live", media_type: "tv", first_air_date: "2014-02-17", genre_ids: [10767], poster_path: "/jf.jpg" },
+      { id: 102, name: "Daily News Report", media_type: "tv", first_air_date: "2020-01-01", genre_ids: [10763], poster_path: "/news.jpg" },
+      { id: 103, name: "Binnelanders Daily", media_type: "tv", first_air_date: "2005-10-13", genre_ids: [10766], poster_path: "/soap.jpg" },
+      { id: 201, name: "Breaking Bad", media_type: "tv", first_air_date: "2008-01-20", genre_ids: [18, 80], poster_path: "/bb.jpg" },
+      { id: 202, title: "Inception", media_type: "movie", release_date: "2010-07-16", genre_ids: [28, 878], poster_path: "/inc.jpg" },
     ];
     const get = vi.fn(async () => json({ results: items, total_pages: 1 }));
     const rows = await filmpireSource({ categories: rawCategories, fetch: get as never }).load();
@@ -588,7 +576,6 @@ describe("filmpireSource search", () => {
     expect(results.map((r) => r.title)).toEqual(["Playable Movie", "Playable Show"]);
     expect(probe).toHaveBeenCalledTimes(3);
 
-    // the seasons are TMDB's, whatever the video check told of (the judge, 17 Nov: its own list once put Bleach at seasons 3 to 16)
     const seasons = await source.seasons!("https://filmpire.sc/watch/201?s=1&e=1");
     expect(seasons).toEqual([1, 2, 3]);
     expect(getTmdb).toHaveBeenCalledTimes(2);
@@ -614,7 +601,7 @@ describe("filmpireSource search", () => {
       return asked.length > before;
     };
     expect(await askedAgain(ids.at(-1)!)).toBe(false);
-    expect(await askedAgain(ids[0]!)).toBe(true); // (the first ones were let go for the newer)
+    expect(await askedAgain(ids[0]!)).toBe(true);
     clock += 6 * 60 * 60 * 1000 + 1;
     expect(await askedAgain(ids.at(-2)!)).toBe(true);
   });
@@ -639,7 +626,6 @@ describe("filmpireSource search", () => {
 
   describe("with more than one page of answers", () => {
     const movie = (id: number, title: string) => ({ id, media_type: "movie", title, release_date: "2020-01-01", poster_path: "/p.jpg" });
-    /** TMDB answering `search/multi` page by page, and the pages asked for. */
     const pages = (answers: Record<number, unknown[] | number>, total: number) => {
       const asked: number[] = [];
       const get = vi.fn(async (url: string | URL) => {
@@ -682,13 +668,12 @@ describe("filmpireSource search", () => {
       expect(await source.search!("gone")).toEqual([]);
       expect(probe).toHaveBeenCalledTimes(1);
 
-      // (the same source, a later question: 102 is known to lack a video; 103 was never asked about and is not now)
       first.get.mockImplementation(async (url: string | URL) => {
         const page = Number(new URL(String(url)).searchParams.get("page"));
         return json({ results: page === 1 ? [movie(101, "Here")] : [movie(102, "Gone"), movie(103, "Never Asked")], total_pages: 2 });
       });
       expect((await source.search!("here")).map((r) => r.title)).toEqual(["Here", "Never Asked"]);
-      expect(probe).toHaveBeenCalledTimes(2); // (101 only)
+      expect(probe).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -702,7 +687,6 @@ describe("filmpireSource search", () => {
     const source = filmpireSource({ fetch: getTmdb as never, probeFetch: brokenProbe as never, verifyPlayback: true });
     const results = await source.search!("query");
 
-    // Fails open: title is preserved
     expect(results.map((r) => r.title)).toEqual(["Glitchy Movie"]);
   });
 });
@@ -784,7 +768,6 @@ describe("filmpireSource title", () => {
 
 describe("filmpireSource about", () => {
   const film = (id: number, title: string, date: string | undefined, poster: string | null = "/p.jpg") => ({ id, title, media_type: "movie", poster_path: poster, ...(date ? { release_date: date } : {}) });
-  /** What TMDB answers for a film that is the first of a collection, with the people, the ratings and the recommendations appended. */
   const kungFu = {
     genres: [{ id: 16, name: "Animation" }, { id: 28, name: "Action" }, { id: 35, name: "Comedy" }],
     belongs_to_collection: { id: 77, name: "Kung Fu Panda Collection" },
@@ -832,15 +815,15 @@ describe("filmpireSource about", () => {
     expect(asked[0]).toContain("/movie/603?");
     expect(asked[0]).toContain("append_to_response=credits,release_dates,recommendations");
     expect(asked[1]).toContain("/collection/77?");
-    expect(asked.every((url) => url.startsWith("https://api.themoviedb.org/3/"))).toBe(true); // (nothing else is asked, no video probed)
+    expect(asked.every((url) => url.startsWith("https://api.themoviedb.org/3/"))).toBe(true);
 
     expect(about).toMatchObject({
       genres: ["Animation", "Action", "Comedy"],
-      directors: ["Mark Osborne", "John Stevenson"], // (only directors, each once)
+      directors: ["Mark Osborne", "John Stevenson"],
       creators: [],
-      ages: { RO: "AG", US: "PG-13", GB: "U" }, // (the theatrical release's, else any; a country with none and the countries the site has no use for are left out)
+      ages: { RO: "AG", US: "PG-13", GB: "U" },
     });
-    expect(about!.cast).toEqual(["Jack Black", "Angelina Jolie", "Dustin Hoffman", "Extra 0", "Extra 1", "Extra 2", "Extra 3", "Extra 4"]); // (first billed first, eight at most)
+    expect(about!.cast).toEqual(["Jack Black", "Angelina Jolie", "Dustin Hoffman", "Extra 0", "Extra 1", "Extra 2", "Extra 3", "Extra 4"]);
   });
 
   it("lists the other parts of the collection in the order they came out, without the film itself, one not out yet, one with no date (the owner, 17 Nov) or one TMDB has no picture of", async () => {
@@ -857,12 +840,11 @@ describe("filmpireSource about", () => {
     const about = await source.about!("https://filmpire.sc/watch/603");
     const iceAge = { id: "filmpire-movie-9", title: "Ice Age", year: 2002, image: "https://image.tmdb.org/t/p/w500/p.jpg", kind: "movie", url: "https://filmpire.sc/watch/9" };
     expect(about!.similar).toEqual([iceAge]);
-    // A title that is dubbed in Romanian says so only while the dubbed sources are on (RO_DUB_SOURCES): a badge with no dub behind it is a promise not kept.
     const before = process.env.RO_DUB_SOURCES;
     process.env.RO_DUB_SOURCES = "on";
     try {
       const dubbed = await sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu)).source.about!("https://filmpire.sc/watch/603");
-      expect(dubbed!.similar).toEqual([{ ...iceAge, hasRoDub: true }]); // (Epoca de gheață)
+      expect(dubbed!.similar).toEqual([{ ...iceAge, hasRoDub: true }]);
     } finally {
       if (before === undefined) delete process.env.RO_DUB_SOURCES;
       else process.env.RO_DUB_SOURCES = before;
@@ -881,7 +863,7 @@ describe("filmpireSource about", () => {
       json({
         genres: [{ name: "Drama" }],
         created_by: [{ name: "Vince Gilligan" }],
-        belongs_to_collection: { id: 1 }, // (TMDB has none for a show; if it ever did, a show's other parts are its seasons)
+        belongs_to_collection: { id: 1 },
         credits: { cast: [{ name: "Bryan Cranston", order: 0 }], crew: [{ name: "An Episode Director", job: "Director" }] },
         content_ratings: { results: [{ iso_3166_1: "US", rating: "TV-MA" }, { iso_3166_1: "RO", rating: "" }, { iso_3166_1: "GB", rating: "18" }] },
         recommendations: { results: [{ id: 5, name: "Better Call Saul", media_type: "tv", first_air_date: "2015-02-08", poster_path: "/s.jpg" }] },
@@ -917,7 +899,7 @@ describe("filmpireSource about", () => {
     expect(await source.title!("filmpire-tv-46260")).toMatchObject({ title: "Naruto", kind: "series", section: "anime" });
     expect(await source.title!("filmpire-tv-1434")).toMatchObject({ title: "Family Guy", section: "cartoon" });
     expect((await source.title!("filmpire-tv-1396"))?.section).toBeUndefined();
-    expect(await source.title!("filmpire-movie-603")).toMatchObject({ title: "The Matrix", kind: "movie" }); // (genres it cannot read: the title is still had)
+    expect(await source.title!("filmpire-movie-603")).toMatchObject({ title: "The Matrix", kind: "movie" });
   });
 
   it("knows nothing about links that are not Filmpire's, and says so without asking anyone", async () => {
@@ -988,7 +970,6 @@ describe("filmpireSource episodes", () => {
 
   describe("of a show TMDB keeps as one long season, or as more (the judge, 17 Nov)", () => {
     const episodesOf = (count: number) => Array.from({ length: count }, (_, at) => ({ episode_number: at + 1, name: `Episode ${at + 1}` }));
-    /** TMDB with the seasons `show` says (season: episodes), and the episodes of each. */
     const tmdb = (show: Record<number, number>) =>
       vi.fn(async (url: string | URL) => {
         const address = String(url);
@@ -1014,7 +995,7 @@ describe("filmpireSource episodes", () => {
 
     it("of 59 with nothing told of by a check: parts of 24, 24 and 11, which together are the 59 once each", async () => {
       const source = filmpireSource({ fetch: tmdb({ 1: 59 }) as never });
-      const { seasons, lists } = await all(source, 95478); // (an id of its own: what a check told of is kept for every source)
+      const { seasons, lists } = await all(source, 95478);
       expect(seasons).toEqual([1, 2, 3]);
       expect(lists.map((list) => list.length)).toEqual([24, 24, 11]);
       expect(lists.flat().map((episode) => episode.title)).toEqual(episodesOf(59).map((episode) => episode.name));
@@ -1068,7 +1049,7 @@ describe("filmpireSource episodes", () => {
       const source = filmpireSource({ fetch: tmdb({ 1: 24 }) as never, probeFetch: probe as never, verifyPlayback: true, filterTrash: false, now: () => clock });
       expect((await all(source, 95486)).lists.map((list) => list.length)).toEqual([12, 12]);
       up = false;
-      clock += 30 * 24 * 60 * 60 * 1000; // (long after the answer is out of date)
+      clock += 30 * 24 * 60 * 60 * 1000;
       const { seasons, lists } = await all(source, 95486);
       expect(seasons).toEqual([1, 2]);
       expect(lists.map((list) => list.length)).toEqual([12, 12]);
@@ -1097,7 +1078,7 @@ describe("filmpireSource episodes", () => {
   it("knows nothing of films or of other places' links, and says so without asking anyone", async () => {
     const get = vi.fn();
     const source = filmpireSource({ fetch: get as never });
-    expect(await source.episodes!("https://filmpire.sc/watch/603", 1)).toEqual([]); // a film has no seasons
+    expect(await source.episodes!("https://filmpire.sc/watch/603", 1)).toEqual([]);
     expect(await source.episodes!("https://other.example/watch/1399?s=1&e=1", 1)).toEqual([]);
     expect(await source.episodes!("not a link", 1)).toEqual([]);
     expect(get).not.toHaveBeenCalled();
@@ -1170,7 +1151,6 @@ describe("filmpireSource seasons", () => {
         ],
       })
     );
-    // Probe returns seasons starting at 3 (like data.vidsrc.sh did for Bleach)
     const probe = vi.fn(async () =>
       json({
         status_code: "200",
@@ -1181,10 +1161,8 @@ describe("filmpireSource seasons", () => {
       })
     );
     const source = filmpireSource({ fetch: get as never, probeFetch: probe as never, verifyPlayback: true });
-    // First trigger a search so the probe preloads seasons
     await source.search!("bleach");
 
-    // When querying seasons for Bleach (watch/30984), probe seasons [3, 4, 16] must NOT override TMDB [1, 2]
     const seasons = await source.seasons!("https://filmpire.sc/watch/30984?type=series");
     expect(seasons).toEqual([1, 2]);
     expect(get).toHaveBeenCalledWith(
@@ -1226,11 +1204,11 @@ describe("the video checks of a search", () => {
     const first = probePlayback(1, "movie", probe as never, cache, Date.now, 5_000, slots, 50);
     const second = await probePlayback(2, "movie", probe as never, cache, Date.now, 5_000, slots, 50);
     expect(second).toEqual({ ok: true });
-    expect(probe).toHaveBeenCalledTimes(1); // (the second was not made)
+    expect(probe).toHaveBeenCalledTimes(1);
     expect(cache.has("movie:2")).toBe(false);
     release();
     expect(await first).toEqual({ ok: false });
-    expect(await probePlayback(2, "movie", probe as never, cache, Date.now, 5_000, slots, 50)).toEqual({ ok: false }); // (a turn again: made, and its answer kept)
+    expect(await probePlayback(2, "movie", probe as never, cache, Date.now, 5_000, slots, 50)).toEqual({ ok: false });
     expect(cache.get("movie:2")?.status).toBe(404);
   });
 });

@@ -3,12 +3,10 @@ import { PLAN_KEEP_AFTER_MS, PLAN_MAX_AHEAD_MS, PLAN_MIN_AHEAD_MS, type InboxIte
 import { loadLanguage, setLanguage, t } from "../i18n";
 import { PLAN_DAYS, PLAN_HOURS, dateValue, defaultPlan, duePlans, inboxToShow, momentOf, nextPlanMoment, planLines, planMoment, planOffered, planStatus, timeValue, whenLabel, whenText } from "./plans";
 
-// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
 await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
-/** A moment by this machine's own clock: a plan is shown in the viewer's own time, so the tests go by the clock they run on, not by UTC. November 2026. */
 const at = (day: number, hour = 0, minute = 0): number => new Date(2026, 10, day, hour, minute).getTime();
-const NOW = at(12, 14, 30); // Thursday the 12th, half past two
+const NOW = at(12, 14, 30);
 const HOUR = 3_600_000;
 const SOON = NOW + HOUR;
 
@@ -95,7 +93,7 @@ describe("what a plan says", () => {
   it("says a plan that is on, one whose time has come, and one a friend cannot make, each in its own words", () => {
     expect(planLines(plan("a", saturday, { answer: "yes" }), "Sam", NOW)).toEqual({ heading: t("friends.planAgreed", { name: "Sam" }), detail: whenLabel(saturday, NOW) });
     expect(planLines(plan("a", NOW - 60_000, { answer: "yes" }), "Sam", NOW).heading).toBe(t("friends.planDue", { name: "Sam" }));
-    expect(planLines(plan("a", saturday, { answer: "no", note: "a note" }), "Sam", NOW)).toEqual({ heading: t("friends.planDeclined", { name: "Sam" }), detail: whenLabel(saturday, NOW) }); // (the news is the time alone)
+    expect(planLines(plan("a", saturday, { answer: "no", note: "a note" }), "Sam", NOW)).toEqual({ heading: t("friends.planDeclined", { name: "Sam" }), detail: whenLabel(saturday, NOW) });
   });
 
   it("is said in the language of the site", () => {
@@ -135,15 +133,15 @@ describe("choosing a time with the remote", () => {
     expect(planOffered(NOW - HOUR, NOW)).toBe(false);
     expect(planOffered(NOW + PLAN_MAX_AHEAD_MS, NOW)).toBe(true);
     expect(planOffered(NOW + PLAN_MAX_AHEAD_MS + 1, NOW)).toBe(false);
-    for (let day = 0; day < PLAN_DAYS; day++) expect(PLAN_MAX_AHEAD_MS).toBeGreaterThan(planMoment(NOW, day, 22) - NOW); // (every day that is offered can be sent)
+    for (let day = 0; day < PLAN_DAYS; day++) expect(PLAN_MAX_AHEAD_MS).toBeGreaterThan(planMoment(NOW, day, 22) - NOW);
   });
 
   it("starts on eight in the evening, or the next evening hour that is still ahead, or tomorrow at eight when the evening is gone", () => {
     expect(defaultPlan(at(12, 14, 30))).toEqual({ day: 0, hour: 20 });
-    expect(defaultPlan(at(12, 19, 56))).toEqual({ day: 0, hour: 21 }); // (eight is under five minutes away)
+    expect(defaultPlan(at(12, 19, 56))).toEqual({ day: 0, hour: 21 });
     expect(defaultPlan(at(12, 20, 30))).toEqual({ day: 0, hour: 21 });
     expect(defaultPlan(at(12, 21, 50))).toEqual({ day: 0, hour: 22 });
-    expect(defaultPlan(at(12, 21, 56))).toEqual({ day: 1, hour: 20 }); // (ten at night is under five minutes away)
+    expect(defaultPlan(at(12, 21, 56))).toEqual({ day: 1, hour: 20 });
     expect(defaultPlan(at(12, 22, 30))).toEqual({ day: 1, hour: 20 });
     expect(defaultPlan(at(12, 23, 59))).toEqual({ day: 1, hour: 20 });
   });

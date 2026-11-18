@@ -12,7 +12,7 @@ describe("preferredLanguages", () => {
 
   it("is the person's own list, in their order, when they made one", () => {
     expect(preferredLanguages(["fr", "de", "fr"], "en")).toEqual(["fr", "de"]);
-    expect(preferredLanguages(["eng", "ron"], "it")).toEqual(["en", "ro"]); // however a code is spelled
+    expect(preferredLanguages(["eng", "ron"], "it")).toEqual(["en", "ro"]);
   });
 });
 
@@ -112,7 +112,6 @@ describe("groupOf", () => {
 });
 
 describe("releaseRank", () => {
-  // Real labels, as the site's resolver gave them for The Bad Guys and The Boondocks (the subtitle lab's pick test).
   const rank = (labels: string[]) => labels.map(releaseRank);
 
   it("puts WEB releases first, however their name says it", () => {
@@ -135,7 +134,6 @@ describe("releaseRank", () => {
   it("puts a Kino Official file before any release, and only one the site named so", () => {
     expect(rank(["English · Kino Official", "Română · Kino Official", "English · Kino Official.WEB", "Kino Official"])).toEqual([-1, -1, 0, 3]);
     expect(defaultTrack([{ label: "English · Film.WEB-DL" }, { label: "English · Kino Official" }])?.label).toBe("English · Kino Official");
-    // (In the menu, inside its language, it is called by its own name.)
     const [english] = groupTracks([track(0, "English · Kino Official", "en"), track(1, "English · Film.WEB-DL", "en")]);
     expect(english!.tracks.map((each, i) => versionLabel(each, "English", i))).toEqual(["Kino Official", "Film.WEB-DL"]);
   });
@@ -182,7 +180,7 @@ describe("byRelease", () => {
       track(10, "English (11) · The.Bad.Guys.2022.DVDRip"),
     ];
     expect(byRelease(tracks).map((t) => t.id)).toEqual([2, 3, 8, 4, 5, 9, 10, 0, 1, 7, 6]);
-    expect(tracks.map((t) => t.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]); // (a new list: the one given is left as it was)
+    expect(tracks.map((t) => t.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
 });
 
@@ -196,7 +194,7 @@ describe("defaultTrack", () => {
       track(4, "English (5) · The Boondocks (2005) - S01E10 - The Itis (1080p HMAX WEB-DL x265 YOGI)"),
     ];
     expect(defaultTrack(boondocks)?.id).toBe(3);
-    expect(defaultTrack([track(0, "English"), track(1, "English (2)")])?.id).toBe(0); // (names that say nothing: the first, as before)
+    expect(defaultTrack([track(0, "English"), track(1, "English (2)")])?.id).toBe(0);
   });
 
   it("is never a track of only the songs or the forced lines", () => {

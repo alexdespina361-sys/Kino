@@ -49,7 +49,6 @@ describe("UnavailableStore", () => {
     const { store, later } = await storeAt();
     store.nothingFound(episode(23, 3), { title: "Pokémon", kind: "series" });
     expect(store.answerFor(episode(1, 1))).toEqual({ title: false, episodes: [] });
-    // (Try again and the screen's second look are the same occasion, and so is another try the same afternoon.)
     later(2 * MIN);
     store.nothingFound(episode(23, 3));
     later(3 * 60 * MIN);
@@ -59,7 +58,6 @@ describe("UnavailableStore", () => {
     store.nothingFound(episode(23, 3));
     expect(store.answerFor(episode(1, 1))).toEqual({ title: false, episodes: [{ season: 23, episode: 3 }] });
     expect(store.answerFor("https://filmpire.sc/watch/60572?type=series&s=25&e=1").episodes).toEqual([{ season: 23, episode: 3 }]);
-    // (Another show's links are told nothing of it.)
     expect(store.answerFor("https://filmpire.sc/watch/1399?s=1&e=1").episodes).toEqual([]);
   });
 
@@ -72,7 +70,6 @@ describe("UnavailableStore", () => {
     store.found(film);
     expect(store.answerFor(film).title).toBe(false);
     expect(store.list()).toEqual([]);
-    // (It starts over: one nothing after a found is no mark.)
     later(OCCASION_GAP_MS);
     store.nothingFound(film);
     expect(store.answerFor(film).title).toBe(false);
@@ -118,7 +115,6 @@ describe("UnavailableStore", () => {
     await second.store.flush();
     expect(second.store.list()).toHaveLength(MAX_RECORDS);
     expect(persistence.docs.size).toBe(MAX_RECORDS);
-    // (The one met the longest ago went first: the film.)
     expect(second.store.answerFor(film).title).toBe(false);
   });
 

@@ -43,37 +43,21 @@ import { buildStreamRelay } from "./streamRelay/app";
 import { signedRelayUrl, type RelayLink } from "./streamRelay/links";
 import { FRAME_BURST } from "./websocket/hub";
 
-/**
- * The HTTP API and the WebSocket, asked for what no page asks for: every route with every method it has, signed out, signed in as an ordinary user and (for the
- * team's routes) with the team's token, each with the valid request and then with awkward ones (a path, a query, a body, a header, a field of a body made wrong).
- * What has to hold is the same everywhere: no answer from the 500s, JSON or nothing, no stack trace or file path in it, an answer within two seconds, and nothing
- * thrown that nobody caught. Everything is in-process (`app.inject`, `app.injectWS`); the only address a route is ever given to fetch is a server of this file's own.
- * The WebSocket is spoken to as a stranger, as a TV and as a phone (alone, paired, in a party): every message of the protocol made wrong field by field, and
- * frames that are no message at all. It has to take them in, answer a PING afterwards and close the connection only with a clean code. The stream relay (a small
- * app of its own) gets the same for its signed links.
- * What the sweep sends is fixed by `SEED` (see `robustnessInputs.ts`), so a failure is the same failure on every machine.
- */
-
 const SEED = 20_261_102;
 const TEAM_TOKEN = "team-token-of-the-sweep".padEnd(32, "-");
 const PASSWORD = "sweep-password";
 const cheap = { N: 1024, r: 8, p: 1 } as const;
-/** An answer that takes longer than this is a finding, whatever it says. */
 const SLOW_MS = 2000;
-/** How many people with friends, chats and reports the signed-in passes are spread over (so that no limit per account is what answers). */
 const WORLDS = 24;
 const CANARY = "TEXT-OF-A-FILE-OUTSIDE-THE-SERVED-FOLDERS";
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("not really a picture")]);
-/** A real picture of one colour (the `n`th), as base64: what a page sends to make a personal sticker of. */
 function stickerPicture(n: number): string {
   const png = new PngImage({ width: 24, height: 24 });
   for (let at = 0; at < png.data.length; at += 4) png.data.set([n & 255, (n >> 8) & 255, 200, 255], at);
   return PngImage.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, bitDepth: 8, deflateLevel: 9 }).toString("base64");
 }
 let pictures = 0;
-
-/* ------------------------------ what a request is ------------------------------ */
 
 interface Req {
   method: string;
@@ -88,25 +72,18 @@ interface Route {
 }
 type Pass = "out" | "user" | "team";
 
-/** Somebody with an account, friends, a chat, an inbox, a report and the rest of what the routes take in their addresses. */
 interface World {
   cookie: string;
   email: string;
   password: string;
   account: string;
   profile: string;
-  /** A second profile of the account: the one that routes which take a profile away are given. */
   spare: string;
   friend: string;
-  /** Another friend, for the route that ends a friendship (the friend above is the one the other routes ask about). */
   spareFriend: string;
-  /** How the friend is asked for by tag. */
   tag: string;
-  /** Somebody whose request to be friends is waiting. */
   asker: string;
-  /** Another device of the account. */
   session: string;
-  /** The friend's code (to be a friend of, which the profile already is) and the profile's own. */
   invite: string;
   ownInvite: string;
   inbox: string;
@@ -118,12 +95,9 @@ interface World {
   link: { code: string; secret: string };
   report: { key: string; id: string; file: string };
   doomed: string;
-  /** A personal sticker of the profile's own, and one the friend sent it in their chat. */
   sticker: string;
   theirSticker: string;
 }
-
-/* ------------------------------ the rig ------------------------------ */
 
 const unhandled: string[] = [];
 const trap = (error: unknown) => void unhandled.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
@@ -131,9 +105,7 @@ const trap = (error: unknown) => void unhandled.push(error instanceof Error ? `$
 let app: FastifyInstance;
 let accounts: AccountStore;
 let upstream: Server;
-/** The sweep's own server, the only place a route is ever sent to. */
 let origin = "";
-/** A title's link: a page of that server, so that nothing which follows it (the library looks for its video) leaves this machine. */
 let TITLE = "";
 let tmp = "";
 let hash = "";
@@ -142,7 +114,6 @@ const methodsOf = new Map<string, Set<string>>();
 const worlds: World[] = [];
 
 let addresses = 0;
-/** A different visitor for every request (behind one proxy, as on the host), so that a limit per address is never what answers. */
 function nextAddress(): string {
   addresses++;
   return `45.${(addresses >> 16) & 255}.${(addresses >> 8) & 255}.${addresses & 255}`;
@@ -166,7 +137,6 @@ async function call(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: st
   return { status: res.statusCode, data, cookie: header?.split(";")[0] };
 }
 
-/** A call that has to have worked: the world is made of them. */
 async function made(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, who: { cookie?: string }, payload: unknown, status: number) {
   const answer = await call(method, url, who, payload);
   if (answer.status !== status) throw new Error(`setting up: ${method} ${url} answered ${answer.status} ${JSON.stringify(answer.data)}, wanted ${status}`);
@@ -261,7 +231,6 @@ async function makeWorld(n: number): Promise<World> {
 }
 
 let freshCount = 0;
-/** A new account (signed in, with a second profile and a second device) for a route that takes something of the account away. */
 function freshWorld(): World {
   const n = ++freshCount;
   const email = `fresh-${n}`;
@@ -302,7 +271,6 @@ beforeAll(async () => {
   writeFileSync(path.join(tmp, "served", "outside.txt"), CANARY);
   writeFileSync(path.join(tmp, "outside.txt"), CANARY);
 
-  // The one place `/api/proxy` and `/api/resolve` are ever sent to: a page with a video, the video, a playlist and a subtitle file.
   upstream = createServer((request, response) => {
     const pathname = (request.url ?? "").split("?")[0];
     if (pathname === "/video.mp4") response.writeHead(200, { "content-type": "video/mp4", "content-length": 2048 }).end(Buffer.alloc(2048, 1));
@@ -318,7 +286,6 @@ beforeAll(async () => {
   hash = await hashPassword(PASSWORD, cheap);
   accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, stickers: { on: true } });
   const visits = await VisitCounter.open({ persistence: new MemoryPersistence(), flushMs: 0 });
-  // (Every route is told of as it is added: the hook is put on the app the moment Fastify makes it, before the first route.)
   const seen: Array<{ method: string | string[]; url: string }> = [];
   const onInit = ({ fastify }: any) => fastify.addHook("onRoute", (route: { method: string | string[]; url: string }) => seen.push({ method: route.method, url: route.url }));
   subscribe("fastify.initialization", onInit);
@@ -334,9 +301,7 @@ beforeAll(async () => {
       trustProxy: 1,
       librarySources: [library],
       allowPrivateNetwork: true,
-      // (AniSkip's times: a fake that knows one episode, so that the sweep asks no site of the internet.)
       animeSkip: { find: async (hint) => (hint.title === "Frieren" ? { intro: { start: 116.75, end: 206.75 } } : null) },
-      // (Google sign-in on, at the address the sweep's requests come to; its token endpoint is the sweep's own server, which has none: a code is never taken.)
       google: { clientId: "sweep-client", clientSecret: "sweep-secret", redirectUris: ["http://localhost/api/auth/google/callback"], tokenUrl: `${origin}/token`, timeoutMs: 500 },
       clientDir: client,
       fixturesDir: fixtures,
@@ -354,7 +319,6 @@ beforeAll(async () => {
       if (each !== "HEAD") keyed.set(`${each} ${url}`, { method: each, url, key: `${each} ${url}` });
     }
   }
-  // (What no route answers - a page of the app, an address that is nothing - is answered by the not-found handler of the app.)
   for (const [method, url] of [["GET", "/tv"], ["GET", "/no/such/place"], ["POST", "/no/such/place"]] as const) keyed.set(`${method} ${url}`, { method, url, key: `${method} ${url}` });
   routes.push(...[...keyed.values()].sort((a, b) => a.key.localeCompare(b.key)));
 
@@ -369,20 +333,14 @@ afterAll(async () => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
 });
 
-/* ------------------------------ what each route takes ------------------------------ */
-
 interface Spec {
-  /** The team's routes: asked with the team's token in the third pass. */
   team?: boolean;
-  /** A new account for every request: the route takes something of the account away. */
   fresh?: boolean;
-  /** Takes big things: the biggest bodies and values are tried on it. */
   heavy?: boolean;
   params?: Record<string, (w: World) => string>;
   query?: (w: World) => Record<string, string>;
   body?: (w: World) => unknown;
   headers?: Record<string, string>;
-  /** The answers besides 2xx and 3xx that the valid request gets by going through the whole route (a refusal that is meant). */
   ok?: number[];
 }
 
@@ -419,7 +377,6 @@ const SPECS: Record<string, Spec> = {
   "GET /tv": { headers: { accept: "text/html" } },
   "GET /no/such/place": { ok: [404] },
   "POST /no/such/place": { ok: [404] },
-  // (A plain request for the WebSocket address is not a WebSocket: it is told there is nothing there.)
   "GET /ws": { ok: [404] },
   "GET /api/library/search": { query: () => ({ q: "casa" }) },
   "GET /api/library/rows": { query: () => ({ cursor: "0", section: "movie" }) },
@@ -448,14 +405,11 @@ const SPECS: Record<string, Spec> = {
   "POST /api/me/password": { fresh: true, body: (w) => ({ current: w.password, next: "another-password" }), ok: [204] },
   "POST /api/me/delete": { fresh: true, body: (w) => ({ password: w.password }), ok: [204] },
   "POST /api/me/child-pin": { fresh: true, body: () => ({ next: "1234" }) },
-  "POST /api/me/child-pin/check": { body: () => ({ pin: "1234" }), ok: [404] }, // (the account asking has no PIN)
-  // (The start sends the browser to Google; the way back is given a state that no flow has, which is a way back that went wrong: both answer with a redirect.)
+  "POST /api/me/child-pin/check": { body: () => ({ pin: "1234" }), ok: [404] },
   "GET /api/auth/google/start": { query: () => ({ device: "remote", next: "/", mode: "signin" }) },
   "GET /api/auth/google/callback": { query: () => ({ state: "s".repeat(43), code: "4/0Asweep" }) },
-  // (The app's round trip to Google: a ticket needs Google on, which the sweep's server has not, and a code nobody made is a way back that went wrong.)
   "POST /api/auth/google/app-ticket": { body: () => ({ mode: "link", challenge: "c".repeat(43), device: "tv", next: "/tv" }), ok: [200, 400] },
   "GET /api/auth/google/app-claim": { query: () => ({ code: "c".repeat(43), verifier: "v".repeat(43) }) },
-  // (The Android app: its notifications, and its builds, of which the sweep's server keeps none.)
   "PUT /api/push": { body: (w) => ({ token: "sweep-device-token-".padEnd(48, "x"), profileId: w.profile }), ok: [204, 429] },
   "DELETE /api/push": { ok: [204, 429] },
   "GET /api/app/android": { ok: [404] },
@@ -475,7 +429,6 @@ const SPECS: Record<string, Spec> = {
   "POST /api/link/:code/deny": { params: { code: (w) => w.linkDeny }, ok: [204] },
   "GET /api/profiles/:id/friends": { params: profile },
   "POST /api/profiles/:id/screen": { params: profile },
-  // (sixty a minute for an account: the sweep asks more, and is told to wait)
   "GET /api/profiles/:id/title-notices": { params: profile, ok: [429] },
   "POST /api/profiles/:id/title-notices/seen": { params: profile, body: () => ({ ids: ["tv-1399"] }), ok: [429] },
   "POST /api/profiles/:id/title-notices/dismiss": { params: profile, body: () => ({ id: "tv-1399" }), ok: [429] },
@@ -507,7 +460,6 @@ const SPECS: Record<string, Spec> = {
   "PUT /api/profiles/:id/friends/:fid/chat/mute": { params: withFriend, body: () => ({ muted: false }) },
   "GET /api/profiles/:id/friends/:fid/chat/report": { params: withFriend },
   "POST /api/profiles/:id/friends/:fid/chat/report": { params: withFriend, body: () => ({ rev: 1 }), ok: [204, 400, 404, 409] },
-  // (Personal stickers: a sticker the sweep let go is gone, a collection that is full or an account that made its day's few is told so: all of them meant.)
   "POST /api/profiles/:id/friends/:fid/chat/sticker": { params: withFriend, body: (w) => ({ id: w.sticker }), ok: [201, 404, 429] },
   "GET /api/profiles/:id/friends/:fid/chat/stickers/:sid": { params: { ...withFriend, sid: (w) => w.theirSticker }, ok: [200, 404, 429] },
   "POST /api/profiles/:id/friends/:fid/chat/stickers/:sid/save": { params: { ...withFriend, sid: (w) => w.theirSticker }, ok: [200, 404, 409, 429] },
@@ -520,7 +472,6 @@ const SPECS: Record<string, Spec> = {
   "POST /api/feedback/open": { body: (w) => ({ key: w.report.key }) },
   "POST /api/feedback/reply": { heavy: true, body: (w) => ({ key: w.report.key, text: "More words", attachments: [] }) },
   "GET /api/admin/feedback": { team: true, query: () => ({ status: "open", limit: "5" }) },
-  // (`since` is a revision that never is the current one, and `wait` is none: a request for this route never waits for something to change.)
   "GET /api/admin/feedback/changes": { team: true, query: () => ({ since: "-1", wait: "0" }) },
   "GET /api/admin/feedback/:id": { team: true, params: { id: (w) => w.report.id } },
   "GET /api/admin/feedback/:id/files/:file": { team: true, params: { id: (w) => w.report.id, file: (w) => w.report.file } },
@@ -541,8 +492,6 @@ const SPECS: Record<string, Spec> = {
   "PUT /api/subsync/:key": { heavy: true, params: { key: () => "b".repeat(32) }, body: () => ({ v: 1, lines: 10, placed: [[0, 5, 5, 1], [1, 10, 10, 0]] }), ok: [204] },
 };
 
-/* ------------------------------ building the requests ------------------------------ */
-
 interface Base {
   method: string;
   params: Record<string, string>;
@@ -550,7 +499,6 @@ interface Base {
   body: unknown;
   headers: Record<string, string>;
 }
-/** What a probe changes of the request after its valid form was built: the end of the address, the whole body, some headers (`null`: none). */
 interface Overlay {
   method?: string;
   suffix?: string;
@@ -589,7 +537,6 @@ function render(route: Route, base: Base, overlay: Overlay = {}): Req {
   return { method: overlay.method ?? base.method, url, headers, ...(payload === null ? {} : { payload }) };
 }
 
-/** Addresses a route is given to fetch, written as junk: only ever the sweep's own server, or something that is no address at all. */
 const urlJunk = (): Array<Named<string>> => [
   { name: "an address with a name and a password", value: encodeURIComponent(origin.replace("://", "://user:secret@") + "/video.mp4") },
   { name: "an address of 3000 characters", value: encodeURIComponent(`${origin}/${"p".repeat(3000)}`) },
@@ -598,7 +545,6 @@ const urlJunk = (): Array<Named<string>> => [
   { name: "a page that is not there", value: encodeURIComponent(`${origin}/missing`) },
 ];
 
-/** The probes (by the start of their names) that are known to be answered wrongly, and that a test of their own holds on to instead of the sweep (none now). */
 const KNOWN: Record<string, string[]> = {};
 
 function probesFor(route: Route, spec: Spec, pass: Pass, rand: () => number): Probe[] {
@@ -619,13 +565,11 @@ function probesFor(route: Route, spec: Spec, pass: Pass, rand: () => number): Pr
   if (other) add(`the method ${other}`, () => ({ method: other }));
   if (route.method === "GET") add("the method HEAD", () => ({ method: "HEAD" }));
 
-  // The address: each part of it made junk, the other parts right.
   for (const name of namesIn(route.url)) {
     const junk = name === "*" ? FILE_JUNK : [...PATH_JUNK.slice(0, 7), ...sample(rand, PATH_JUNK.slice(7), 5)];
     for (const each of junk) add(`${name} as ${each.name}`, (base) => void (base.params[name] = each.value));
   }
 
-  // The query: each name dropped, given junk, and given twice; then names nobody asked for.
   for (const name of keys) {
     add(`the query ${name} left out`, (base) => void (base.query = base.query.filter(([each]) => each !== name)));
     const junk = [...QUERY_JUNK.slice(0, 8), ...sample(rand, QUERY_JUNK.slice(8), 4), ...(["url", "referer"].includes(name) ? urlJunk() : [])];
@@ -635,7 +579,6 @@ function probesFor(route: Route, spec: Spec, pass: Pass, rand: () => number): Pr
   }
   for (const each of sample(rand, QUERY_STRINGS, 4)) add(`the query string with ${each.name}`, () => ({ suffix: each.value }));
 
-  // The body, as a whole: with no valid request behind it, and on a route which takes none.
   if (takesBody) {
     const shapes = bodyShapes().filter((shape) => !shape.big);
     const chosen = [...shapes.slice(0, 8), ...sample(rand, shapes.slice(8), 10), ...(spec.heavy ? [...bodyShapes().filter((shape) => shape.big), OVER_THE_LIMIT] : [])];
@@ -644,7 +587,6 @@ function probesFor(route: Route, spec: Spec, pass: Pass, rand: () => number): Pr
     for (const shape of bodyShapes().filter((each) => ["{}", "plain text"].includes(each.name))) add(`the body on a ${route.method}: ${shape.name}`, () => overlayOf(shape));
   }
 
-  // The body, field by field: each part of a valid body made wrong, the other parts right (not when nobody is signed in: the route turns the request away first).
   const template = spec.body?.(worlds[0]!);
   if (template !== undefined && pass !== "out") {
     const places = pathsIn(template);
@@ -656,7 +598,6 @@ function probesFor(route: Route, spec: Spec, pass: Pass, rand: () => number): Pr
     }
   }
 
-  // The headers: a few at a time.
   for (const shape of sample(rand, headerShapes(), 8)) add(`the headers: ${shape.name}`, () => ({ headers: shape.headers }));
   return list;
 }
@@ -668,18 +609,13 @@ function overlayOf(shape: BodyShape): Overlay {
   return { payload: shape.body === undefined ? null : shape.body, headers };
 }
 
-/* ------------------------------ what an answer must be ------------------------------ */
-
 interface Outcome {
   res?: LightMyRequestResponse;
   ms: number;
-  /** The request was never made: the client side turned it down (an address that is nothing, a header that cannot be). */
   unmade?: string;
-  /** No answer came within `HANG_MS`. */
   hung?: boolean;
 }
 
-/** After this long a request is taken to be stuck, and the sweep goes no further (a request that is slow but answers is told by `SLOW_MS`). */
 const HANG_MS = 4000;
 
 async function send(req: Req, target: FastifyInstance = app): Promise<Outcome> {
@@ -702,7 +638,6 @@ async function send(req: Req, target: FastifyInstance = app): Promise<Outcome> {
   }
 }
 
-/** Where the server keeps its files, as a path might be written in a message: the folder it runs from, and the ones the rig has it serve. */
 const folders = () => [ROOT, tmp].flatMap((folder) => [folder, folder.replaceAll("\\", "/"), folder.replaceAll("\\", "\\\\")]);
 
 const leakOf = (text: string): string | undefined => {
@@ -712,7 +647,6 @@ const leakOf = (text: string): string | undefined => {
   return undefined;
 };
 
-/** The words of an answer, unpacked if the server packed them (a visitor may ask for that). */
 function textOf(res: LightMyRequestResponse): string {
   const coding = String(res.headers["content-encoding"] ?? "identity").toLowerCase();
   try {
@@ -726,7 +660,6 @@ function textOf(res: LightMyRequestResponse): string {
   return res.body;
 }
 
-/** What is wrong with an answer, in a few words, or nothing. */
 function wrongWith(req: Req, { res, ms, hung }: Outcome): string | undefined {
   if (hung) return `did not answer within ${HANG_MS} ms`;
   if (!res) return undefined;
@@ -736,7 +669,6 @@ function wrongWith(req: Req, { res, ms, hung }: Outcome): string | undefined {
   if (ms > SLOW_MS) return `took ${Math.round(ms)} ms`;
   const readable = /json|text|html|xml|javascript/.test(type) || res.statusCode >= 400;
   const text = readable ? textOf(res) : "";
-  // (A browser asking for an address that is no page of the site gets the page, which says so, with a 404: the judge, 16 Nov.)
   const strayPage = req.method === "GET" && !req.url.startsWith("/api") && res.statusCode === 404 && /^text\/html/.test(type) && text.includes("<title>");
   if (res.statusCode >= 400 && text && !/json/.test(type) && !(proxy && /^text\/plain/.test(type)) && !strayPage) return `answered ${res.statusCode} with ${type || "no type"}, which is not JSON`;
   if (/json/.test(type) && text) {
@@ -751,8 +683,6 @@ function wrongWith(req: Req, { res, ms, hung }: Outcome): string | undefined {
   if (text.includes(CANARY)) return "served a file from outside the folders it serves";
   return undefined;
 }
-
-/* ------------------------------ the sweep ------------------------------ */
 
 const totals = { sent: 0, unmade: 0, limited: 0, routes: new Set<string>() };
 
@@ -782,7 +712,7 @@ async function sweep(pass: Pass): Promise<string[]> {
       else if (pass !== "out" && !(spec.team && pass === "user") && probe.label === "the valid request" && status >= 400 && !(spec.ok ?? []).includes(status)) {
         problems.push(`[${pass}] ${route.key} - the valid request answered ${status} (${outcome.res!.body.slice(0, 80)}), so the sweep does not get into the route: mend its entry in SPECS`);
       }
-      if (outcome.hung) return problems; // (a server that does not answer is not asked more)
+      if (outcome.hung) return problems;
     }
   }
   return problems;
@@ -819,10 +749,6 @@ describe("the HTTP API turns away what it should not take", () => {
   });
 });
 
-/**
- * What was once a 500: a name given twice reaches a handler as a list (the library takes `q`, `row` and `url` for text, and so does the resolver), and Fastify's
- * HEAD twin of the socket's address calls the handler with no socket.
- */
 describe("what was once a 500", () => {
   const asked = async (req: Req) => wrongWith(req, await send(req));
 
@@ -851,22 +777,14 @@ describe("what was once a 500", () => {
   });
 });
 
-/* ------------------------------ the WebSocket ------------------------------ */
-
-/** The codes a connection may be closed with: the protocol's (a frame too big or not text, a rule broken) and the server's own (too many messages, a newer page taking over). */
 const CLEAN_CLOSES = [1000, 1001, 1002, 1003, 1007, 1008, 1009, 4000];
-/** How long a screen waits for a server that has gone quiet. */
 const WAIT_MS = 2000;
-/** How many frames one connection is given in a go: well under what the hub listens to at once (`FRAME_BURST`), with a hello or two and the PING that ends the go. */
 const BATCH = FRAME_BURST - 30;
-/** How many fields of each message are made wrong (chosen by the seed). */
 const FIELDS = 12;
 
-/** A screen at the far end of `app.injectWS` (in memory, as in `hub.test.ts`): it says what it is told to and keeps what it hears. */
 class Peer {
   private static live: Peer[] = [];
   heard: ServerMessage[] = [];
-  /** How many frames came that are no message of the protocol. */
   strange = 0;
   closeCode: number | undefined;
   private wakers: Array<() => void> = [];
@@ -892,7 +810,6 @@ class Peer {
 
   static anyStrange = (): boolean => Peer.live.some((peer) => peer.strange > 0);
 
-  /** Every socket opened since the last time drops, as when a page is closed (a polite close never completes over `injectWS`'s in-memory streams). */
   static dropAll(): void {
     for (const peer of Peer.live.splice(0)) peer.ws.terminate();
   }
@@ -913,14 +830,13 @@ class Peer {
     return this.heard.filter((message) => message.type === "PONG").length;
   }
 
-  /** Waits until `done()` holds; false if the socket is closed first or `WAIT_MS` pass. */
   async until(done: () => boolean): Promise<boolean> {
     const deadline = Date.now() + WAIT_MS;
     while (!done()) {
       const left = deadline - Date.now();
       if (left <= 0 || this.closeCode !== undefined) return false;
       await new Promise<void>((resume) => {
-        const timer = setTimeout(resume, Math.min(left, 25)); // (a look now and then: what `done` asks about need not come as a message)
+        const timer = setTimeout(resume, Math.min(left, 25));
         this.wakers.push(() => {
           clearTimeout(timer);
           resume();
@@ -930,7 +846,6 @@ class Peer {
     return true;
   }
 
-  /** The next message of this type that `accept`s (the ones before it are kept). */
   async next<T extends ServerMessage["type"]>(type: T, accept: (message: Extract<ServerMessage, { type: T }>) => boolean = () => true): Promise<Extract<ServerMessage, { type: T }>> {
     type Wanted = Extract<ServerMessage, { type: T }>;
     const at = () => this.heard.findIndex((message) => message.type === type && accept(message as Wanted));
@@ -939,22 +854,15 @@ class Peer {
   }
 }
 
-/** What a message has to name: the ids that the server made for the screens of a scene. */
 interface Ids {
-  /** The host TV's own id, which is its secret. */
   deviceId: string;
   controllerId: string;
-  /** The host TV, in the phone's list. */
   tvId: string;
-  /** The guest, in the party's lists. */
   guestId: string;
   partyCode: string;
-  /** The pairing code of a TV that nobody has paired with. */
   spareCode: string;
-  /** What a signed-in profile gives a screen to be known by (it is good once). */
   proof: string;
 }
-/** A TV that has a phone and hosts a party, a TV in that party and the phone. (A fresh one for every go: what one message does to it must not decide what the next is sent to.) */
 interface Scene extends Ids {
   host: Peer;
   guest: Peer;
@@ -997,7 +905,6 @@ async function newScene(): Promise<Scene> {
   };
 }
 
-/** Who says it: before any hello, as a TV or a phone that has said hello, and as the screens of the scene (which have a phone, a party, a host). */
 interface Role {
   name: string;
   join: (scene: Scene) => Promise<Peer>;
@@ -1026,8 +933,6 @@ const ROLES: Role[] = [
   { name: "a TV in that party", join: async (scene) => scene.guest },
   { name: "the phone of that TV", join: async (scene) => scene.phone },
 ];
-
-/* What each message looks like when it is right. */
 
 const MEDIA = (): Record<string, unknown> => ({
   title: "A film",
@@ -1085,10 +990,8 @@ const COMMANDS = (): Array<Record<string, unknown>> => [
 ];
 
 interface Template {
-  /** The type of the message in the protocol (a command is told apart by its `name`). */
   type: string;
   name: string;
-  /** The message, right in every way. */
   make: (ids: Ids) => Record<string, unknown>;
 }
 
@@ -1130,13 +1033,10 @@ function templates(): Template[] {
   ];
 }
 
-/* What is said: a frame that is made when the scene is there to name its ids. */
-
 type Maker = (ids: Ids) => FrameShape;
 const said = (name: string, message: unknown): FrameShape => ({ name, data: toJson(message), binary: false });
 const small = (each: Named<unknown>) => toJson(each.value).length < 20_000;
 
-/** A message as it should be, then each of some of its fields left out and made every kind of wrong (a frame past the size limit is tried by itself, below). */
 function makersOf(template: Template, pool: Array<Named<unknown>>): Maker[] {
   const rand = seeded(hashed(`${SEED}:ws:${template.name}`));
   const values = [...pool.slice(0, CORE_VALUES), ...sample(rand, pool.slice(CORE_VALUES).filter(small), 3)];
@@ -1149,7 +1049,6 @@ function makersOf(template: Template, pool: Array<Named<unknown>>): Maker[] {
   return makers;
 }
 
-/** Messages whose type is none of the client's: the server's own words, names from the prototype, the client's own with a letter changed. */
 function strangeTypes(): Maker[] {
   const own = ServerMessageSchema.options.map((option) => option.shape.type.value as string);
   const names = [...own, "ping", "Ping", "PING ", " PING", "PING\u0000", "TV_HELLO2", "CMD_", "__proto__", "constructor", "toString", "hasOwnProperty", "", "*"];
@@ -1159,7 +1058,6 @@ function strangeTypes(): Maker[] {
   ]);
 }
 
-/** Frames that are no message at all, and (each by itself, for the socket is closed by it) the ones that the library closes the connection for. */
 function frameGroups(): Array<{ name: string; makers: Maker[] }> {
   const shapes = frameShapes(seeded(hashed(`${SEED}:frames`)));
   return [
@@ -1168,12 +1066,9 @@ function frameGroups(): Array<{ name: string; makers: Maker[] }> {
   ];
 }
 
-/* The go: a scene, the frames said by one of its screens, a PING to know they were all taken in. */
-
 const isPing = (frame: FrameShape) => !frame.binary && typeof frame.data === "string" && parseClientMessage(frame.data)?.type === "PING";
 const socketTotals = { batches: 0, frames: 0, closedEarly: 0 };
 
-/** What is wrong after `makers` were said by `role`, in a few words, or nothing. */
 async function runBatch(role: Role, makers: Maker[]): Promise<string | undefined> {
   const thrown = unhandled.length;
   socketTotals.batches++;
@@ -1209,7 +1104,6 @@ async function runBatch(role: Role, makers: Maker[]): Promise<string | undefined
   }
 }
 
-/** A go that went wrong, frame by frame: which of them do it alone. */
 async function whichOnes(role: Role, group: string, makers: Maker[], what: string): Promise<string[]> {
   const found: string[] = [];
   for (const make of makers) {
@@ -1248,7 +1142,6 @@ describe("the WebSocket turns away what it should not take", () => {
       ...CommandSchema.options.map((option) => `CMD ${option.shape.type.value}`).filter((name) => !made.some((each) => each.name === name)),
     ];
     expect(missing).toEqual([]);
-    // (A message that is wrong from the start would have its fields made wrong for nothing.)
     expect(made.filter((each) => parseClientMessage(toJson(each.make(SOMEWHERE))) === null).map((each) => each.name)).toEqual([]);
   });
 
@@ -1269,8 +1162,6 @@ describe("the WebSocket turns away what it should not take", () => {
   });
 });
 
-/* ------------------------------ the stream relay ------------------------------ */
-
 describe("the stream relay turns away what it should not take", () => {
   it("answers a request that is wrong with a refusal, and the one that is right with the video", async () => {
     const key = "relay-key-of-the-sweep".padEnd(32, "-");
@@ -1286,20 +1177,17 @@ describe("the stream relay turns away what it should not take", () => {
       const asked: Array<[string, Req]> = [];
       const ask = (label: string, url: string, more: Partial<Req> = {}) => void asked.push([label, { method: "GET", url, headers: {}, ...more }]);
 
-      // The link, one part at a time: left out, given twice, made junk (the signature is wrong for these, so they are turned away before anything is fetched).
       for (const [name] of parts) {
         ask(`${name} left out`, withParts(parts.filter(([each]) => each !== name)));
         ask(`${name} given twice`, withParts([...parts, [name, "x"]]));
         for (const junk of [...QUERY_JUNK.slice(0, 8), ...sample(rand, QUERY_JUNK.slice(8), 4)]) ask(`${name} as ${junk.name}`, withParts(parts.map(([each, value]): [string, string] => [each, each === name ? junk.value : value])));
       }
-      // Links signed as they should be, to what is junk or is not a video, and signed to run out at a time that makes no sense.
       const places = ["", "not a link", "http://", "http://[::1", "http://127.0.0.1:99999/", "file:///nothing", "javascript:0", "data:text/plain,hello", `${origin}/${"p".repeat(3000)}`];
       for (const place of [...places, `${origin}/missing`, `${origin}/list.m3u8`, `${origin}/sub.srt`, `${origin}/page.html`, `${origin.replace("://", "://name:secret@")}/video.mp4`]) {
         ask(`a link to ${JSON.stringify(place.slice(0, 40))}`, signed({ url: place }));
         ask(`a referer of ${JSON.stringify(place.slice(0, 40))}`, signed({ referer: place }));
       }
       for (const expires of [0, -1, Date.now() - 1, Date.now() + 25 * 3600_000, 2 ** 53, Number.NaN, Number.POSITIVE_INFINITY, 1.5]) ask(`a link to run out at ${expires}`, signed({ expires }));
-      // Other methods, a body, other places, junk in the address, headers.
       for (const method of ["POST", "PUT", "PATCH", "DELETE"]) ask(`the method ${method}`, good, { method, headers: { "content-type": "application/json" }, payload: "{}" });
       ask("OPTIONS", "/api/proxy", { method: "OPTIONS" });
       ask("HEAD", good, { method: "HEAD" });
@@ -1324,7 +1212,6 @@ describe("the stream relay turns away what it should not take", () => {
       expect(shown(problems)).toEqual([]);
       expect(asked.length).toBeGreaterThan(150);
 
-      // (And the right link is not turned away with the rest.)
       const through = await relay.inject({ url: good });
       expect(through.statusCode).toBe(200);
       expect(through.rawPayload.length).toBe(2048);

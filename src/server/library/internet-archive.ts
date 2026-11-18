@@ -3,15 +3,9 @@ import type { LibraryItem, LibraryRow, LibrarySection } from "../../shared";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
 
-/**
- * The Internet Archive's own film collections. Its pages name their video (`og:video`), so a title here plays like any
- * pasted link, with no code made for the site. What is in a collection, and under what terms, is the Archive's call.
- */
 export interface ArchiveRow {
-  /** The collection's identifier on archive.org. */
   collection: string;
   title: string;
-  /** The section of the library the collection is for, when it is one that is only Cartoons (the others are not told apart: they are on Home). */
   section?: LibrarySection;
 }
 
@@ -25,7 +19,6 @@ export const ARCHIVE_ROWS: ArchiveRow[] = [
 
 export interface ArchiveOptions {
   rows?: ArchiveRow[];
-  /** Titles per row. */
   perRow?: number;
   fetch?: typeof fetch;
   timeoutMs?: number;
@@ -44,7 +37,6 @@ const ENTITIES: Record<string, string> = {
   eacute: "é", egrave: "è", agrave: "à", ccedil: "ç",
 };
 
-/** The Archive's descriptions are uploaders' HTML. Plain text, one paragraph, cut at a word if long. */
 export function plainDescription(raw: string | string[] | undefined, max = 300): string | undefined {
   const text = (Array.isArray(raw) ? raw.join(" ") : (raw ?? ""))
     .replace(/<(br|\/p|\/div|\/li)\b[^>]*>/gi, " ")
@@ -58,7 +50,7 @@ export function plainDescription(raw: string | string[] | undefined, max = 300):
     })
     .replace(/\s+/g, " ")
     .trim();
-  if (text.length < 20) return undefined; // "Movie." says nothing
+  if (text.length < 20) return undefined;
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max * 0.6))}…`;
@@ -67,10 +59,6 @@ const SearchSchema = z.object({ response: z.object({ docs: z.array(z.unknown()) 
 
 const SEARCH = "https://archive.org/advancedsearch.php";
 const FIELDS = ["identifier", "title", "year", "description"];
-/**
- * Collections are open to anyone, so the rows leave out what is tagged adult and what is titled like it. Crude, and meant to be:
- * it keeps the worst off a shared TV, not everything unsuitable.
- */
 const AVOID_SUBJECTS = ["erotica", "adult", "porn", "xxx"];
 const AVOID_TITLE_WORDS = ["sex", "sexy", "nude", "naked", "erotic", "porn", "molester", "stripper", "hooker"];
 const query = (collection: string) =>
@@ -125,7 +113,7 @@ export function internetArchive(options: ArchiveOptions = {}): LibrarySource {
       const settled = await Promise.allSettled(rows.map(loadRow));
       const loaded = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
       const failed = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
-      if (loaded.length === 0 && failed) throw failed.reason; // nothing came: the cache keeps what it had
+      if (loaded.length === 0 && failed) throw failed.reason;
       return loaded;
     },
     async search(queryText: string): Promise<LibraryItem[]> {

@@ -2,11 +2,6 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfigFromFile, type ProxyOptions } from "vite";
 
-/**
- * Regression: a second `export default` in vite.config.ts is accepted silently by Vite's config bundler and
- * the LAST one wins, which dropped the dev proxy (so /ws hung forever, locally and through tunnels).
- * This checks what Vite actually resolves, not what the file looks like.
- */
 describe("vite.config.ts (as Vite resolves it)", async () => {
   const loaded = await loadConfigFromFile(
     { command: "serve", mode: "development" },

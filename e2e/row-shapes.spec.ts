@@ -1,13 +1,6 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { openDevice, openLibrary, PHONE, pressMenuLine, readPairingCode, test, withLibrary } from "./helpers";
 
-/**
- * Rows of more than one shape (the owner, 15 Nov: "Mix the row shapes (posters, wide cards, category rows) instead of one size everywhere, on the phone too"):
- * the second row of the library and every third after it are wide cards, a still of each title, on the TV and on the phone; the phone has the row of
- * categories as well; and Up and Down between rows of different sizes land on the tile under the one the remote is on. (See src/client/shared/shapes.ts.)
- * The pictures are drawn here: nothing is asked of the movie database.
- */
-
 const film = (id: string, title: string) => ({
   id,
   title,
@@ -40,10 +33,9 @@ test("the TV draws the second row of the library and every third after it as wid
   const card = tv.getByRole("region", { name: "Row 2" }).getByTestId("tv-browse-tile").first();
   await expect(card).toHaveClass(/tv-tile-landscape/);
   await expect(card.locator("img")).toHaveAttribute("src", /w1280\/r1-0-wide\.jpg$/);
-  await expect(card.locator("img")).toHaveAttribute("srcset", /w780\/r1-0-wide\.jpg 780w/); // (a card takes the 780 px still, not the 1280 px one)
+  await expect(card.locator("img")).toHaveAttribute("srcset", /w780\/r1-0-wide\.jpg 780w/);
   const box = (await card.boundingBox())!;
-  expect(box.width / box.height).toBeGreaterThan(1.3); // (wide: its picture is 16 by 9, with its name under it)
-  // The other rows of the library are posters, the first one a ranking.
+  expect(box.width / box.height).toBeGreaterThan(1.3);
   await expect(tv.getByRole("region", { name: "Row 3" }).getByTestId("tv-browse-tile").first()).toHaveClass(/tv-tile-poster/);
   await expect(tv.getByRole("region", { name: "Row 1" })).toHaveAttribute("data-layout", "ranked");
 });
@@ -51,15 +43,15 @@ test("the TV draws the second row of the library and every third after it as wid
 test("Up and Down between a row of wide cards and a row of posters land on the tile under the one the remote is on", async ({ browser }) => {
   const tv = await openLibrary(browser, setup, { width: 1920, height: 1080 });
   await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
-  await tv.keyboard.press("ArrowDown"); // the ranking's first title -> the first wide card
+  await tv.keyboard.press("ArrowDown");
   await expect.poll(() => focused(tv)).toEqual({ row: "Row 2", col: 0 });
-  await tv.keyboard.press("ArrowDown"); // ...and the first poster under it, not the second (the card's middle is over that one)
+  await tv.keyboard.press("ArrowDown");
   await expect.poll(() => focused(tv)).toEqual({ row: "Row 3", col: 0 });
   for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowRight");
   await expect.poll(() => focused(tv)).toEqual({ row: "Row 3", col: 5 });
-  await tv.keyboard.press("ArrowUp"); // the sixth poster stands over the third wide card, not the sixth (two screens along)
+  await tv.keyboard.press("ArrowUp");
   await expect.poll(() => focused(tv)).toEqual({ row: "Row 2", col: 2 });
-  await tv.keyboard.press("ArrowDown"); // and back down, to a poster under that card
+  await tv.keyboard.press("ArrowDown");
   await expect.poll(async () => (await focused(tv)).row).toBe("Row 3");
   const back = await focused(tv);
   expect(back.col).toBeGreaterThanOrEqual(4);
@@ -83,7 +75,6 @@ test("the phone has the wide cards in the same rows, and a row of categories tha
   const box = (await card.locator(".lib-art").boundingBox())!;
   expect(box.width / box.height).toBeGreaterThan(1.6);
 
-  // The categories come after the third row: a card for each row, that opens it.
   const categories = phone.getByTestId("library-categories");
   await expect(categories).toBeVisible();
   expect(await phone.evaluate(() => {

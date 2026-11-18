@@ -3,12 +3,6 @@ import { en } from "../src/client/i18n/en";
 import { openDevice, openTvSettings, openTvSignIn, SEEDED, test, withLibrary } from "./helpers";
 import { TEST_ACCOUNT } from "./testAccount";
 
-/**
- * A new profile is set up by whoever uses it first (the owner, 18 Nov: the name and the picture, the subtitle languages in their order, and the sections of
- * the library the profile watches; the others are not shown on it). These run against the second server of playwright.config.ts, which asks as the site
- * does; the server every other spec uses asks nothing (PROFILE_SETUP=off), so that their accounts open on what they are testing.
- */
-
 const ORIGIN = `http://127.0.0.1:${(Number(process.env.E2E_PORT) || 8788) + 50}`;
 const stored = (more: { name: string; value: string }[] = []) => ({ cookies: [], origins: [{ origin: ORIGIN, localStorage: [...SEEDED, ...more] }] });
 
@@ -45,7 +39,6 @@ async function signUpOnScreen(screen: Page, account: { email: string; password: 
 }
 
 const step = (page: Page) => page.getByTestId("profile-setup");
-/** The page fits: nothing of it is off the side, and the button that goes on is on the screen. */
 async function fits(page: Page, button: string) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "nothing is off the side").toBe(true);
   await expect(page.getByTestId(button)).toBeInViewport();
@@ -57,7 +50,6 @@ test.describe("a new profile is set up before anything else", () => {
     const tv = await openScreen(browser);
     await signUpOnScreen(tv, fresh());
 
-    // 1 of 3: who it is. There is no way round it: Back leaves it where it is.
     await expect(step(tv)).toHaveAttribute("data-step", "who");
     await expect(tv.getByTestId("tv-setup")).toContainText(en["setup.welcome"]);
     await tv.keyboard.press("Escape");
@@ -70,8 +62,6 @@ test.describe("a new profile is set up before anything else", () => {
     await expect(picture).toHaveAttribute("aria-checked", "true");
     await tv.getByTestId("profile-save").click();
 
-    // 2 of 3: the subtitles. What a profile has without choosing is there to begin with (the page's language, then the site's others); a language pressed
-    // is taken out, and pressed again it is the last in the order.
     await expect(step(tv)).toHaveAttribute("data-step", "subtitles");
     const order = tv.getByTestId("setup-subtitle-order");
     await expect(order).toHaveText(`${en["setup.main"]}: English  ·  ${en["setup.second"]}: Romanian  ·  ${en["setup.also"]}: Italian`);
@@ -84,15 +74,13 @@ test.describe("a new profile is set up before anything else", () => {
     await fits(tv, "setup-next");
     await tv.getByTestId("setup-next").click();
 
-    // 3 of 3: the sections. All four to begin with; the last one left cannot be turned off.
     await expect(step(tv)).toHaveAttribute("data-step", "sections");
     for (const section of ["movie", "series", "cartoon", "anime"]) await expect(tv.getByTestId(`section-choice-${section}`)).toHaveAttribute("aria-pressed", "true");
     for (const section of ["series", "cartoon", "anime"]) await tv.getByTestId(`section-choice-${section}`).click();
     await expect(tv.getByTestId("section-choice-movie")).toHaveAttribute("aria-disabled", "true");
-    await tv.getByTestId("section-choice-movie").click({ force: true }); // (it says it cannot be pressed, and a press does nothing)
+    await tv.getByTestId("section-choice-movie").click({ force: true });
     await expect(tv.getByTestId("section-choice-movie")).toHaveAttribute("aria-pressed", "true");
     await tv.getByTestId("section-choice-series").click();
-    // (Back is the page before, which has kept what was chosen; and this one keeps it too)
     await tv.getByTestId("setup-back").click();
     await expect(order).toContainText("Romanian");
     await tv.getByTestId("setup-next").click();
@@ -100,7 +88,6 @@ test.describe("a new profile is set up before anything else", () => {
     await fits(tv, "setup-next");
     await tv.getByTestId("setup-next").click();
 
-    // The library, as the profile that was just made: its name, and only Movies and Series.
     await expect(step(tv)).toHaveCount(0);
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Mia/);
     await tv.getByTestId("rail-home").click();
@@ -114,14 +101,12 @@ test.describe("a new profile is set up before anything else", () => {
     await expect(tv.getByText("Toon Shelf")).toHaveCount(0);
     await expect(tv.getByText("Manga Shelf")).toHaveCount(0);
 
-    // It is asked once: the page opened again is the library.
     await tv.reload();
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Mia/);
     await expect(step(tv)).toHaveCount(0);
     await expect(tv.getByTestId("rail-cartoons")).toHaveCount(0);
 
-    // The settings have the same choice: Anime turned on there is in the menu and among the rows.
     await openTvSettings(tv);
     const line = tv.getByTestId("tv-sections-setting");
     await expect(line).toContainText("Movies, Series");
@@ -136,14 +121,13 @@ test.describe("a new profile is set up before anything else", () => {
     await expect(tv.getByTestId("rail-cartoons")).toHaveCount(0);
     await expect(tv.getByText("Manga Shelf", { exact: true }).first()).toBeVisible();
 
-    // A profile that is added has its name and picture already: it is asked the other two, the first time it is used, and watches everything unless it says.
     await openTvSettings(tv);
     await tv.getByTestId("tv-manage-profiles").click();
     await tv.getByTestId("profile-add").click();
     await tv.getByTestId("profile-name-input").fill("Noa");
     await tv.getByTestId("profile-save").click();
     await expect(tv.getByTestId("profile-Noa")).toBeVisible();
-    await expect(step(tv)).toHaveCount(0); // (Mia is still the one in use)
+    await expect(step(tv)).toHaveCount(0);
     await tv.getByTestId("tv-profiles-done").click();
     await tv.getByTestId("tv-switch-profile").click();
     await tv.getByTestId("profile-Noa").click();
@@ -163,13 +147,11 @@ test.describe("a new profile is set up before anything else", () => {
     const tv = await openScreen(browser);
     await signUpOnScreen(tv, fresh());
     const focused = (id: string) => tv.getByTestId(id).evaluate((element) => element === document.activeElement);
-    /** Down until the remote is on `id` (a page's way on is under everything else on it). */
     const downTo = async (id: string) => {
       for (let press = 0; press < 12 && !(await focused(id)); press++) await tv.keyboard.press("ArrowDown");
       await expect(tv.getByTestId(id)).toBeFocused();
     };
 
-    // The name (which has the remote), the pictures under it, Continue under those.
     await expect(step(tv)).toHaveAttribute("data-step", "who");
     await expect(tv.getByTestId("profile-name-input")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
@@ -180,7 +162,6 @@ test.describe("a new profile is set up before anything else", () => {
     await downTo("profile-save");
     await tv.keyboard.press("Enter");
 
-    // The languages, and Continue under them; Back is beside it and is the page before.
     await expect(step(tv)).toHaveAttribute("data-step", "subtitles");
     await expect(tv.locator('[data-testid^="setup-lang-"]:focus')).toHaveCount(1);
     await downTo("setup-next");
@@ -194,7 +175,6 @@ test.describe("a new profile is set up before anything else", () => {
     await downTo("setup-next");
     await tv.keyboard.press("Enter");
 
-    // The sections: OK turns the one under the remote off, Right is the next; the last one left stays on, and Down from it is Done.
     await expect(step(tv)).toHaveAttribute("data-step", "sections");
     await expect(tv.getByTestId("section-choice-movie")).toBeFocused();
     for (const section of ["movie", "series", "cartoon"]) {
@@ -206,7 +186,6 @@ test.describe("a new profile is set up before anything else", () => {
     await expect(tv.getByTestId("section-choice-anime")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("section-choice-anime")).toHaveAttribute("aria-pressed", "true");
-    // (Down from the last section is the button nearest under it, which is Back; Done is beside it.)
     await tv.keyboard.press("ArrowDown");
     await expect(tv.locator('[data-testid="setup-next"]:focus, [data-testid="setup-back"]:focus')).toHaveCount(1);
     await tv.keyboard.press("ArrowLeft");
@@ -217,7 +196,6 @@ test.describe("a new profile is set up before anything else", () => {
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tv.getByTestId("rail-anime")).toBeVisible();
     await expect(tv.getByTestId("rail-movies")).toHaveCount(0);
-    // (the remote is somewhere on the page: the next press of an arrow does something)
     expect(await tv.evaluate(() => document.activeElement !== null && document.activeElement !== document.body)).toBe(true);
   });
 
@@ -270,7 +248,6 @@ test.describe("a new profile is set up before anything else", () => {
     );
     await phone.goto("/");
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
-    // (a phone that is the screen signs in with the typed form first)
     const account = fresh();
     await phone.getByTestId("tv-account-chip").tap();
     await phone.getByTestId("tv-profile-signin").tap();
@@ -332,7 +309,6 @@ test.describe("a new profile is set up before anything else", () => {
     await phone.getByTestId("setup-next").click();
     await expect(phone.getByTestId("setup-profile")).toHaveCount(0);
 
-    // The settings of the account have what was chosen.
     await phone.getByTestId("account-button").click();
     await expect(phone.getByTestId("account-screen")).toContainText("Remo");
     await phone.getByTestId("menu-settings").click();

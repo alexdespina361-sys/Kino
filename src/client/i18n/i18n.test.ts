@@ -4,7 +4,6 @@ import { FILMPIRE_CATEGORIES } from "../../server/library/filmpire";
 import { FILMPIRE_SHELVES } from "../../server/library/shelves";
 import { DICTIONARIES, detectLanguage, hasKey, loadLanguage, rowTitle, translate } from "./index";
 
-// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
 await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
@@ -24,7 +23,6 @@ describe("translate", () => {
   it("picks the plural form the language uses for the number", () => {
     expect(translate("en", "library.results", { count: 1 })).toBe("1 result");
     expect(translate("en", "library.results", { count: 2 })).toBe("2 results");
-    // Romanian has a third form: "20 de rezultate", but "3 rezultate" and "1 rezultat"
     expect(translate("ro", "library.results", { count: 1 })).toBe("1 rezultat");
     expect(translate("ro", "library.results", { count: 3 })).toBe("3 rezultate");
     expect(translate("ro", "library.results", { count: 20 })).toBe("20 de rezultate");
@@ -70,7 +68,6 @@ describe("the dictionaries", () => {
       const bases = new Set(Object.keys(english).filter((key) => /_(one|other)$/.test(key)).map(baseOf));
       for (const base of bases) {
         for (const form of rules.resolvedOptions().pluralCategories) {
-          // Italian also has "many" (millions), which falls back to "other"
           if (form === "many") continue;
           expect(`${base}_${form}` in dictionary || `${base}_other` in dictionary, `${language} ${base} ${form}`).toBe(true);
         }

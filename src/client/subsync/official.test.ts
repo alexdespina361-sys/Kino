@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { offerLines, type TimedFile } from "./official";
 
-/** A file of `count` lines a second apart, placed 1.5 s later; `solved` and `worded` say which lines a solve placed, and which by words. */
 function timed(count: number, solved: (i: number) => boolean, worded: (i: number) => boolean): TimedFile {
   const cues = Array.from({ length: count }, (_, i) => ({ start: i + 0.004, end: i + 0.8, text: `line ${i}` }));
   const indices = [...cues.keys()];

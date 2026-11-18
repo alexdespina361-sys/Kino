@@ -4,31 +4,20 @@ import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, place, readPairingCode, test, showProfilePage, nameFirstProfile, PICTURE_NAMED } from "./helpers";
 
-/**
- * Tags and requests: every profile has a tag (`Name#1`) that another types to find it, and finding it only asks: the other says yes (or no).
- * A watch party shows the profile each screen is signed in as, with a short button that asks it too. Each test makes its own accounts and screens.
- */
-
-test.use({ actionTimeout: 15_000 }); // (a wrong id fails in seconds, not when the test runs out of time)
+test.use({ actionTimeout: 15_000 });
 
 let counter = 0;
-/** A name short enough to be a profile's name as it is (a profile is named after the username, 16 letters at most). */
-const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" }); // (a password that is not asked about)
+const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" });
 type Account = ReturnType<typeof fresh>;
 const nameOf = (account: Account) => account.email.charAt(0).toUpperCase() + account.email.slice(1);
-/** The tag the first profile of a name has (the names here are made new for every test). */
 const tagOf = (name: string) => `${name}#1`;
 
-/** A line of the words of a language with its blanks filled in: `{name}` and the like. */
 const say = (text: string, params: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? "");
 
-/** The page looks at its friends now, as it does when it comes back to the front (and every half minute). */
 const look = (page: Page) => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 
 const WORDS = { en, ro, it: italian };
 type Language = keyof typeof WORDS;
-
-/* ------------------------------ a phone ------------------------------ */
 
 async function signUp(page: Page, account: Account) {
   await page.getByTestId("account-button").click();
@@ -43,7 +32,6 @@ async function signUp(page: Page, account: Account) {
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
-/** The account page is open: it has Friends (they are on for everybody since 15 Nov 2026: there is no switch to turn on). */
 async function turnOnFriends(page: Page) {
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
@@ -53,7 +41,6 @@ async function openFriends(page: Page) {
   await expect(page.getByTestId("friends-page")).toBeVisible();
 }
 
-/** A new phone, signed up, with friends on: left on the account page. */
 async function phoneWithFriends(browser: Browser, name: string) {
   const account = fresh(name);
   const page = await openDevice(browser, { ...PHONE, locale: "en-US" });
@@ -63,8 +50,6 @@ async function phoneWithFriends(browser: Browser, name: string) {
   return { page, name: nameOf(account) };
 }
 
-/* ------------------------------ a TV ------------------------------ */
-
 const HD = { width: 1280, height: 720 };
 
 interface Screen {
@@ -72,7 +57,6 @@ interface Screen {
   name: string;
 }
 
-/** A new screen, signed up with the email form and with friends on, left on the profile's page. */
 async function screenWithFriends(browser: Browser, name: string, options: { viewport?: { width: number; height: number }; language?: Language } = {}): Promise<Screen> {
   const account = fresh(name);
   const page = await openLibrary(browser, undefined, options.viewport ?? HD, options.language ? { "kino.lang": options.language } : {});
@@ -86,12 +70,11 @@ async function screenWithFriends(browser: Browser, name: string, options: { view
   await expect(page.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
   await nameFirstProfile(page, nameOf(account));
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
-  await showProfilePage(page); // (friends are on for everybody: the profile's page has them at once)
-  await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible(); // (back on the profile's page, which has its friends now)
+  await showProfilePage(page);
+  await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible();
   return { page, name: nameOf(account) };
 }
 
-/** A tile of the current page, by its title. */
 const tile = (page: Page, title: string) => page.locator(`.tv-tile[title="${title}"]`);
 
 async function openFriendsPage(page: Page) {
@@ -101,14 +84,12 @@ async function openFriendsPage(page: Page) {
 
 const codeOf = async (host: Page) => (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
 
-/** The menu's Watch party, then Start: the party's page, with its code. */
 async function startParty(host: Page): Promise<string> {
   await host.getByTestId("rail-party").click();
   await host.getByTestId("tv-party-start").click();
   return codeOf(host);
 }
 
-/** The remote of a screen that is not in a party yet: Watch party in the menu, then Join, then the digits. */
 async function joinWith(guest: Page, code: string) {
   await guest.getByTestId("rail-party").click();
   await guest.getByTestId("tv-party-join").click();
@@ -116,10 +97,6 @@ async function joinWith(guest: Page, code: string) {
   await expect(guest.getByTestId("tv-following")).toBeVisible();
 }
 
-/**
- * What of the rows under `rows` is out of place: a part (`parts`) that leaves its row, two that cover each other, a row that leaves the
- * screen's sides. The row may be taller than a line (the buttons go under the words where they do not fit beside them).
- */
 const rowProblems = (page: Page, rows: string, parts: string) =>
   page.evaluate(
     ([rowSelector, partSelector]) => {
@@ -145,8 +122,6 @@ const rowProblems = (page: Page, rows: string, parts: string) =>
     [rows, parts] as const,
   );
 
-/* ------------------------------ on a phone ------------------------------ */
-
 test.describe("finding a friend by tag on the phone", () => {
   test("the tag finds a profile whatever the capitals, only asks, and a no leaves nothing; a yes makes friends", async ({ browser }) => {
     test.setTimeout(120_000);
@@ -155,10 +130,9 @@ test.describe("finding a friend by tag on the phone", () => {
     await openFriends(ann.page);
     await openFriends(bob.page);
     const [annTag, bobTag] = [tagOf(ann.name), tagOf(bob.name)];
-    await expect(ann.page.getByTestId("friend-your-tag-text")).toHaveText(annTag); // (the page says what to give: the tag, and a button that copies it)
+    await expect(ann.page.getByTestId("friend-your-tag-text")).toHaveText(annTag);
     await expect(ann.page.getByTestId("friend-your-tag-copy")).toBeVisible();
 
-    // Nothing is looked for while it is typed, and Find is for a tag only (a name alone, or nothing, is no tag).
     const typed = bob.page.getByTestId("friend-tag-input");
     const find = bob.page.getByTestId("friend-tag-find");
     await expect(find).toBeDisabled();
@@ -168,11 +142,10 @@ test.describe("finding a friend by tag on the phone", () => {
     await expect(bob.page.getByTestId("friend-tag-card")).toHaveCount(0);
     await find.click();
     await expect(bob.page.getByTestId("friend-tag-error")).toHaveText(en["error.tag_gone"]);
-    await ann.page.getByTestId("friend-tag-input").fill(annTag); // one's own tag is no use to find
+    await ann.page.getByTestId("friend-tag-input").fill(annTag);
     await ann.page.getByTestId("friend-tag-find").click();
     await expect(ann.page.getByTestId("friend-tag-error")).toHaveText(en["error.own_request"]);
 
-    // Found (as typed in small letters), asked: the form is clear again and Bob is told in a line. Ann is not a friend yet.
     await typed.fill(annTag.toLowerCase());
     await find.click();
     await expect(bob.page.getByTestId("friend-tag-name")).toHaveText(annTag);
@@ -182,7 +155,6 @@ test.describe("finding a friend by tag on the phone", () => {
     await expect(bob.page.getByTestId("friend-tag-card")).toHaveCount(0);
     await expect(bob.page.getByTestId("friend-row")).toHaveCount(0);
 
-    // Ann: a dot on her picture before she looks, a line, a request with Bob's tag; a no, and nobody is made her friend.
     await look(ann.page);
     await expect(ann.page.getByTestId("account-toast")).toHaveText(say(en["friends.news.request"], { name: bobTag }));
     await expect(ann.page.getByTestId("friend-request")).toHaveCount(1);
@@ -191,7 +163,6 @@ test.describe("finding a friend by tag on the phone", () => {
     await expect(ann.page.getByTestId("friend-request")).toHaveCount(0);
     await expect(ann.page.getByTestId("friend-row")).toHaveCount(0);
 
-    // Bob may ask again; this time it is a yes: friends on both sides, and the request is gone.
     await look(bob.page);
     await typed.fill(annTag);
     await find.click();
@@ -217,7 +188,6 @@ test.describe("finding a friend by tag on the phone", () => {
     await bob.page.getByTestId("friend-tag-send").click();
     await expect(bob.page.getByTestId("account-toast")).toHaveText(say(en["friends.requestSent"], { name: tagOf(ann.name) }));
 
-    // (Ann has not looked yet: she types Bob's tag, and the answer is that they are friends)
     await ann.page.getByTestId("friend-tag-input").fill(tagOf(bob.name));
     await ann.page.getByTestId("friend-tag-find").click();
     await ann.page.getByTestId("friend-tag-send").click();
@@ -229,8 +199,6 @@ test.describe("finding a friend by tag on the phone", () => {
   });
 });
 
-/* ------------------------------ on a TV ------------------------------ */
-
 test.describe("finding a friend by tag on the TV", () => {
   test("a tag is typed and asks; the request is a tile on the other's page that OK opens, Back leaves waiting, and Accept makes friends", async ({ browser }) => {
     test.setTimeout(150_000);
@@ -240,33 +208,32 @@ test.describe("finding a friend by tag on the TV", () => {
 
     await openFriendsPage(ann.page);
     await tile(ann.page, en["friends.add"]).click();
-    await expect(ann.page.getByTestId("tv-your-tag").locator("b")).toHaveText(annTag); // (the question says what to give: the tag)
+    await expect(ann.page.getByTestId("tv-your-tag").locator("b")).toHaveText(annTag);
     await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("tv-add-friend")).toHaveCount(0);
 
     await openFriendsPage(bob.page);
     await tile(bob.page, en["friends.add"]).click();
     await bob.page.getByTestId("tv-friend-tag").click();
-    await expect(bob.page.getByTestId("tv-friend-tag-find")).toBeDisabled(); // (nothing typed)
+    await expect(bob.page.getByTestId("tv-friend-tag-find")).toBeDisabled();
     await bob.page.getByTestId("tv-friend-tag-input").fill(annTag.toLowerCase());
     await bob.page.getByTestId("tv-friend-tag-find").click();
     await expect(bob.page.getByTestId("tv-friend-tag-name")).toHaveText(annTag);
     await bob.page.getByTestId("tv-friend-tag-send").click();
-    await expect(bob.page.getByTestId("tv-friend-tag-page")).toHaveCount(0); // (asked: the pages are shut)
+    await expect(bob.page.getByTestId("tv-friend-tag-page")).toHaveCount(0);
     await expect(bob.page.getByTestId("tv-add-friend")).toHaveCount(0);
     await expect(bob.page.getByTestId("tv-account-toast")).toHaveText(say(en["friends.requestSent"], { name: annTag }));
 
-    // Ann: a line, and a tile for the request in a row of its own above the friends. Back from it leaves it waiting.
     await look(ann.page);
     await expect(ann.page.getByTestId("tv-account-toast")).toHaveText(say(en["friends.news.request"], { name: bobTag }));
     await expect(tile(ann.page, bobTag)).toBeVisible();
     await tile(ann.page, bobTag).focus();
     await expect(ann.page.getByTestId("tv-hero-title")).toHaveText(bobTag);
-    await expect(ann.page.getByTestId("tv-hero-play")).toHaveCount(0); // (the banner has nothing to play or keep for somebody who asks)
+    await expect(ann.page.getByTestId("tv-hero-play")).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-hero-list")).toHaveCount(0);
     await tile(ann.page, bobTag).click();
     await expect(ann.page.getByTestId("tv-friend-request-name")).toHaveText(bobTag);
-    await expect(ann.page.getByTestId("tv-friend-request-accept")).toBeFocused(); // (where the remote starts: OK says yes)
+    await expect(ann.page.getByTestId("tv-friend-request-accept")).toBeFocused();
     await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("tv-friend-request")).toHaveCount(0);
     await expect(tile(ann.page, bobTag)).toBeVisible();
@@ -305,9 +272,6 @@ test.describe("finding a friend by tag on the TV", () => {
   });
 });
 
-/* ------------------------------ on the profile's own page ------------------------------ */
-
-// The owner's report of 15 Nov: people did not know their own name#tag. The profile's page says it under the name, with a button that copies it.
 test.describe("a profile's own tag on its page", () => {
   test("the TV's profile page says it under the name, and its last button copies it: OK from the remote, or a click", async ({ browser }) => {
     test.setTimeout(90_000);
@@ -321,7 +285,6 @@ test.describe("a profile's own tag on its page", () => {
     await expect(copy).toBeInViewport({ ratio: 1 });
     await expect(copy).toHaveText("Copy tag");
 
-    // The remote: Settings is still the first button, the copy the last (Right of it, nothing).
     await page.getByTestId("tv-profile-settings").focus();
     for (let step = 0; step < 4 && !(await copy.evaluate((element) => element === document.activeElement)); step++) await page.keyboard.press("ArrowRight");
     await expect(copy).toBeFocused();
@@ -331,11 +294,11 @@ test.describe("a profile's own tag on its page", () => {
     await page.keyboard.press("Enter");
     await expect(copy).toHaveText("Tag copied");
     expect(await clipboard()).toBe(tagOf(ann.name));
-    await expect(copy).toBeFocused(); // (the remote kept its place)
-    await expect(copy).toHaveText("Copy tag"); // (and the button is ready for the next time by itself)
+    await expect(copy).toBeFocused();
+    await expect(copy).toHaveText("Copy tag");
 
     await page.evaluate(() => navigator.clipboard.writeText("something else"));
-    await copy.click(); // a mouse
+    await copy.click();
     await expect(copy).toHaveText("Tag copied");
     expect(await clipboard()).toBe(tagOf(ann.name));
   });
@@ -348,7 +311,7 @@ test.describe("a profile's own tag on its page", () => {
     await expect(page.getByTestId("tv-profile-tag")).toBeInViewport({ ratio: 1 });
     await expect(page.getByTestId("tv-profile-tag-copy")).toBeInViewport({ ratio: 1 });
     const [copy, settings] = [(await page.getByTestId("tv-profile-tag-copy").boundingBox())!, (await page.getByTestId("tv-profile-settings").boundingBox())!];
-    expect(copy.width).toBeGreaterThan(settings.width * 1.5); // (as wide as the two above it)
+    expect(copy.width).toBeGreaterThan(settings.width * 1.5);
     expect(copy.height).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
@@ -366,8 +329,6 @@ test.describe("a profile's own tag on its page", () => {
   });
 });
 
-/* ------------------------------ in a watch party ------------------------------ */
-
 test.describe("asking the profile on a screen of a watch party", () => {
   test("a screen signed in as a profile gets a short Add button; Requested waits for the answer, and asking back is friends at once", async ({ browser }) => {
     test.setTimeout(150_000);
@@ -375,10 +336,9 @@ test.describe("asking the profile on a screen of a watch party", () => {
     const guest = await screenWithFriends(browser, "Gus");
     const code = await startParty(host.page);
     await joinWith(guest.page, code);
-    const bystander = await openLibrary(browser, undefined, HD); // a screen nobody is signed in on
+    const bystander = await openLibrary(browser, undefined, HD);
     await joinWith(bystander, code);
 
-    // The host's list: three screens, and a button for the one that is a profile (not for itself, not for the screen nobody is on).
     await expect(host.page.getByTestId("tv-party-member")).toHaveCount(3);
     const add = host.page.getByTestId("tv-party-add");
     await expect(add).toHaveCount(1);
@@ -391,11 +351,10 @@ test.describe("asking the profile on a screen of a watch party", () => {
     await expect(add).toHaveAttribute("aria-disabled", "true");
     await expect(host.page.getByTestId("tv-account-toast")).toHaveText(say(en["friends.requestSent"], { name: tagOf(guest.name) }));
 
-    // The guest's list has the host's button (the profile on a screen is told by the server, not by what the screen says), and the guest's own screen has none.
     const back = guest.page.getByTestId("tv-party-add");
     await expect(back).toHaveCount(1);
     await expect(back).toHaveAttribute("aria-label", say(en["friends.partyAddAria"], { name: tagOf(host.name) }));
-    await back.click(); // (the host asked first: friends at once)
+    await back.click();
     await expect(guest.page.getByTestId("tv-account-toast")).toHaveText(say(en["friends.added"], { name: host.name }));
     await expect(back).toHaveCount(0);
     await look(host.page);
@@ -414,7 +373,7 @@ test.describe("asking the profile on a screen of a watch party", () => {
     await signUp(phone, pam);
     await turnOnFriends(phone);
     await phone.keyboard.press("Escape");
-    await place(phone, "home"); // (a paired phone has the account as one of the places of its bar)
+    await place(phone, "home");
     await expect(phone.getByTestId("account-screen")).toHaveCount(0);
 
     const guest = await screenWithFriends(browser, "Gus");
@@ -431,7 +390,7 @@ test.describe("asking the profile on a screen of a watch party", () => {
     await expect(add).toBeDisabled();
     await expect(phone.getByTestId("account-toast")).toHaveText(say(en["friends.requestSent"], { name: tagOf(guest.name) }));
 
-    await look(guest.page); // (the guest's screen waits on the party's page: it is told in a line)
+    await look(guest.page);
     await expect(guest.page.getByTestId("tv-account-toast")).toHaveText(say(en["friends.news.request"], { name: tagOf(nameOf(pam)) }));
   });
 
@@ -441,7 +400,7 @@ test.describe("asking the profile on a screen of a watch party", () => {
       const words = WORDS[language];
       const host = await screenWithFriends(browser, "Hal", { language });
       const guest = await screenWithFriends(browser, "Gus");
-      await host.page.getByTestId("rail-connect").click(); // (a phone of the host's, to see the same list on it)
+      await host.page.getByTestId("rail-connect").click();
       const phone = await openDevice(browser, { ...PHONE, locale: language === "ro" ? "ro-RO" : "it-IT" });
       await phone.goto("/");
       await phone.getByTestId("code-input").fill(await readPairingCode(host.page));
@@ -455,8 +414,7 @@ test.describe("asking the profile on a screen of a watch party", () => {
       await expect(phone.getByTestId("party-join-code")).toBeVisible();
       await joinWith(guest.page, ((await phone.getByTestId("party-join-code").textContent()) ?? "").replace(/\D/g, ""));
 
-      // The TV: the longest the row can be (an admin, so its button says Remove admin), at several shapes of screen.
-      await host.page.getByTestId("tv-back-to-library").click(); // (a TV with a phone on it waits for a video until it is sent back)
+      await host.page.getByTestId("tv-back-to-library").click();
       await host.page.getByTestId("rail-party").click();
       await host.page.getByTestId("tv-party-admin").click();
       await expect(host.page.getByTestId("tv-party-admin")).toHaveText(words["party.removeAdmin"]);
@@ -467,11 +425,10 @@ test.describe("asking the profile on a screen of a watch party", () => {
           .poll(() => rowProblems(host.page, '[data-testid="tv-party-member"]', ".tv-party-dot, .tv-party-name, small, .tv-party-actions button"), { message: `the TV at ${size.width} by ${size.height}` })
           .toEqual([]);
       }
-      await host.page.getByTestId("tv-party-add").click(); // (and the longer word of the button once it is asked)
+      await host.page.getByTestId("tv-party-add").click();
       await expect(host.page.getByTestId("tv-party-add")).toHaveText(words["friends.partyRequested"]);
       await expect.poll(() => rowProblems(host.page, '[data-testid="tv-party-member"]', ".tv-party-dot, .tv-party-name, small, .tv-party-actions button")).toEqual([]);
 
-      // The phone: the two buttons and the word go under the name where they do not fit beside it, down to the narrowest phones.
       await expect(phone.getByTestId("party-add")).toBeVisible();
       for (const width of [412, 390, 360, 320]) {
         await phone.setViewportSize({ width, height: 700 });

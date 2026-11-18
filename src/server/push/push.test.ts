@@ -13,23 +13,16 @@ import { AppReleases, readRelease } from "./appRelease";
 import { FcmSender, fcmFromEnv, serviceJwt, type FcmConfig, type PushMessage, type PushResult, type PushSender } from "./fcm";
 import { PushHub, QUIET_MS, UPDATE_TOPIC } from "./push";
 
-/**
- * The Android app's notifications and updates, against a Firebase of this file's own (a server on 127.0.0.1): nothing here reaches Google.
- */
-
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 const clock = { now: 1_800_000_000_000 };
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 
-/** A Firebase of our own: the token endpoint and `messages:send`, with what each was sent kept. */
 class FakeFirebase {
   server!: Server;
   origin = "";
   tokens: URLSearchParams[] = [];
   sent: Array<{ auth: string; body: any }> = [];
-  /** What `messages:send` answers next (then 200): a status (a 404 is Firebase's UNREGISTERED, as it says it), or a status and the body. */
   answers: Array<number | { status: number; body: unknown }> = [];
-  /** What the token endpoint answers. */
   tokenStatus = 200;
 
   async start() {
@@ -100,7 +93,7 @@ describe("the Firebase sender", () => {
     expect(firebase.sent.map((each) => each.auth)).toEqual(["Bearer access-1", "Bearer access-1"]);
     expect(firebase.sent[0]!.body).toEqual({ message: { token: "device-1", data: { kind: "chat", name: "Sam" }, android: { priority: "high", ttl: "60s", collapse_key: "chat-pro_sam" } } });
     expect(firebase.sent[1]!.body.message.topic).toBe(UPDATE_TOPIC);
-    clock.now += 56 * 60_000; // (a little before the hour is up, a new one)
+    clock.now += 56 * 60_000;
     await sender.send({ token: "device-1", data: {} });
     expect(firebase.tokens).toHaveLength(2);
   });
@@ -131,7 +124,6 @@ describe("the Firebase sender", () => {
     expect(await sender.send({ token: "device-1", data: {} })).toBe("failed");
     expect(await sender.send({ token: "device-2", data: {} })).toBe("gone");
     expect(await sender.send({ token: "device-1", data: {} })).toBe("failed");
-    // (a topic is nobody's token: never "gone")
     firebase.answers = [404];
     expect(await sender.send({ topic: UPDATE_TOPIC, data: {} })).toBe("failed");
   });
@@ -158,9 +150,6 @@ describe("the Firebase sender", () => {
   });
 });
 
-/* ------------------------------ who is told of what ------------------------------ */
-
-/** A sender that keeps what it was given, and answers what it is told to. */
 class KeptSender implements PushSender {
   sent: PushMessage[] = [];
   answer: PushResult = "sent";
@@ -175,7 +164,6 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-/** Two friends, Ana and Sam, each on an account of their own; Ana's phone has the app. */
 async function friends(sender: PushSender | null = new KeptSender()) {
   const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => clock.now });
   const hub = new PushHub(store, sender ?? undefined);
@@ -207,7 +195,6 @@ describe("what the app is told of", () => {
     store.chats.send(sam, ana, "still there?");
     await hub.settled();
     expect(sender.sent).toHaveLength(2);
-    // (What Ana writes is not told to Ana.)
     clock.now += QUIET_MS;
     store.chats.send(ana, sam, "yes");
     await hub.settled();
@@ -245,7 +232,7 @@ describe("what the app is told of", () => {
     await hub.settled();
     expect(sender.sent.map((message) => message.data.kind)).toEqual(["together"]);
     clock.now += QUIET_MS;
-    store.friends.deliver(ana, sam, { kind: "together" }); // (unread: the same invitation, not told again)
+    store.friends.deliver(ana, sam, { kind: "together" });
     await hub.settled();
     expect(sender.sent).toHaveLength(1);
     sender.answer = "gone";
@@ -272,7 +259,7 @@ describe("what the app is told of", () => {
     expect(kept, "nothing kept of where the tablet was reached, nor of the profile").not.toContain("ana-tablet-token");
     expect(kept).not.toContain(kid.value.id);
     expect(store.pushTokensOf(ana)).toHaveLength(1);
-    clock.now += SESSION_TTL_MS + 1; // (the phone's sign-in runs out)
+    clock.now += SESSION_TTL_MS + 1;
     expect(store.countPushDevices()).toBe(0);
   });
 
@@ -288,7 +275,7 @@ describe("what the app is told of", () => {
     const recent = first.createSession(account.value.id, "remote", "a newer phone");
     first.setPush(recent.session.id, "new-phone-token-0000000000", profile);
     await first.close();
-    clock.now += SESSION_TTL_MS + 3 * 86_400_000; // (the old one ran out 8 days ago, the newer 3)
+    clock.now += SESSION_TTL_MS + 3 * 86_400_000;
     const again = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
     await again.flush();
     expect(persistence.docs.has(`session:${old.session.id}`)).toBe(false);
@@ -304,8 +291,6 @@ describe("what the app is told of", () => {
     expect(await hub.appUpdate(3)).toBe(false);
   });
 });
-
-/* ------------------------------ the routes ------------------------------ */
 
 async function site(options: { push?: PushSender; androidAppDir?: string } = {}) {
   const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => clock.now });
@@ -368,7 +353,6 @@ describe("the routes of the app", () => {
       expect(sender.sent, "nothing told before the site listens (an app that hears it asks at once)").toEqual([]);
       await app.listen({ port: 0, host: "127.0.0.1" });
       await vi.waitFor(() => expect(sender.sent).toEqual([{ topic: UPDATE_TOPIC, data: { kind: "update", version: "3" }, collapseKey: "update", ttlSeconds: 7 * 86_400 }]));
-      // (A restart does not send it again.)
       const again = new KeptSender();
       const restarted = new AppReleases(dir, new PushHub(await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 }), again));
       await restarted.start();

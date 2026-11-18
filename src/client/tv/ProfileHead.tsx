@@ -10,40 +10,27 @@ import { CheckIcon, CopyIcon, GearIcon, MessageIcon, UserIcon } from "../shared/
 import type { RailEntry } from "./Rail";
 
 interface ProfileHeadProps {
-  /** Whoever is watching: the profile in use, or a guest (no account on this TV). */
   name: string;
   avatar: AvatarId | undefined;
-  /** The line under the name: the account, or for a guest what signing in is for. */
   line: string;
   signedIn: boolean;
-  /** There is somewhere to sign in (not on a server that has no accounts): the button, and the line about what signing in is for, are there only then. */
   canSignIn: boolean;
   onSignIn: () => void;
   onSettings: () => void;
-  /** The remote came to the button at this place of the banner's row (the library keeps it, to come back to it from Settings; on a phone, where the head scrolls with the page, it brings the button into view). */
   onArrive: (col: number, button: HTMLElement) => void;
-  /** After Feedback, the menu's lines that a phone's bar of four has no room for (the watch party, the phone), as buttons. */
   places: readonly RailEntry[];
-  /** Given for an account that has no Google account yet, where Google sign-in is on: the button, last of all, that goes to Google to connect one. */
   onConnectGoogle?: (() => void) | undefined;
-  /** The profile's name#tag, where friends are on: what a friend types to find them (people did not know their own). It is shown under the name, and a button after all the others copies it. */
   tag?: string | undefined;
 }
 
-/**
- * The top of the profile's page, where the other pages have a banner: who is watching, Settings in the corner (the button for the remote,
- * the keyboard and the mouse alike) with Feedback next to it, and for a guest the way to sign in, which is what the guest has come to this page for.
- * (Feedback comes after Settings, so the remote still starts where it did; connecting Google, and copying the tag, come after all the others, for the same reason.)
- */
 export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive, places, onConnectGoogle, tag }: ProfileHeadProps) {
   const t = useT();
   const feedback = useFeedbackEntry();
   const tagShown = useRef<HTMLElement>(null);
   const [copying, copyTag] = useCopy(tag ?? "", tagShown);
-  /** The Android app, on a phone's browser with Android (app/GetTheApp.tsx): a card under the buttons. Nothing on a TV. */
   const release = useAppRelease();
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: (event: FocusEvent<HTMLElement>) => onArrive(col, event.currentTarget) });
-  const settingsCol = signedIn || !canSignIn ? 0 : 1; // (a guest's Sign in is the button before it)
+  const settingsCol = signedIn || !canSignIn ? 0 : 1;
   const googleCol = settingsCol + 2 + places.length;
   return (
     <div className={release ? "tv-profile-head with-app" : "tv-profile-head"}>

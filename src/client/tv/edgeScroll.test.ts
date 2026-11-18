@@ -4,7 +4,6 @@ import { DWELL_MS, EdgeScroll, edgeAt, FASTEST, IDLE_MS, LOOK_MS, RAMP_MS, SLOWE
 const HEIGHT = 720;
 const STRIP = stripOf(HEIGHT);
 
-/** A page that scrolls: where it is, how much of it there is, and how much of it shows. */
 class FakePage implements Page {
   top = 0;
   constructor(
@@ -22,7 +21,6 @@ class FakePage implements Page {
   }
 }
 
-/** The machine, with a page for it to scroll (or none), the hints it gave, and a clock that goes along as a loop of frames would take it. */
 function setup(page: FakePage | null = new FakePage()) {
   const world = { page, asked: 0, x: -1 };
   const hints: Array<EdgeHint | null> = [];
@@ -39,7 +37,6 @@ function setup(page: FakePage | null = new FakePage()) {
   let now = 0;
   let next: number | null = null;
   const point = (y: number, more: Partial<PointerMove> = {}): PointerMove => ({ x: 400, y, height: HEIGHT, mouse: true, busy: () => false, ...more });
-  /** What the binding does: look now, and again when it is told to. `run(ms)` lets that much time go by. */
   const look = () => {
     next = machine.frame(now);
   };
@@ -51,7 +48,6 @@ function setup(page: FakePage | null = new FakePage()) {
     }
     now = end;
   };
-  /** The pointer goes to `y` (and, as the binding does when something is to be looked at, the machine looks at once). */
   const moveTo = (y: number, more: Partial<PointerMove> = {}) => {
     if (machine.move(point(y, more))) look();
   };
@@ -85,7 +81,6 @@ describe("the strip", () => {
     expect(edgeAt(50, 720, "top")).toBe("top");
     expect(edgeAt(64, 720, "top")).toBe("top");
     expect(edgeAt(65, 720, "top")).toBeNull();
-    // (and one that was in the other is no more in this one than a new pointer would be)
     expect(edgeAt(670, 720, "top")).toBeNull();
   });
 });
@@ -150,19 +145,17 @@ describe("a pointer at the bottom of the screen", () => {
     const from = s.world.page!.top;
     s.run(1000);
     const moved = s.world.page!.top - from;
-    // about 600 px a screen at 0.5 a screen a second, a little faster as it ramps: not a pixel a frame short of that
     expect(moved).toBeGreaterThan(300 + 0.2 * 600 * 0.9);
     expect(Number.isInteger(s.world.page!.top)).toBe(true);
   });
 
   it("comes to a stop at the end of the page, with nothing said, and goes on when the page has more", () => {
-    const page = new FakePage(1500, 600); // 900 px to go
+    const page = new FakePage(1500, 600);
     const s = setup(page);
     s.moveTo(719);
     s.run(DWELL_MS + 2500);
     expect(page.top).toBe(900);
     expect(s.after()).toBeNull();
-    // (the library brings more rows as it nears its end)
     page.total = 4000;
     s.run(IDLE_MS + 500);
     expect(page.top).toBeGreaterThan(900);
@@ -177,7 +170,7 @@ describe("a pointer at the bottom of the screen", () => {
     expect(s.after()).toBeNull();
     const page = new FakePage();
     s.world.page = page;
-    s.run(IDLE_MS + 20); // (it looks again within that)
+    s.run(IDLE_MS + 20);
     expect(s.after()).toEqual({ edge: "bottom", moving: false });
     const shownAt = s.clock();
     s.run(DWELL_MS - 100);
@@ -190,15 +183,15 @@ describe("a pointer at the bottom of the screen", () => {
     const page = new FakePage();
     const s = setup(page);
     s.moveTo(719);
-    s.run(DWELL_MS - 300); // (nearly there)
-    s.world.page = null; // (the page the pointer was waiting on is gone: a title page closed, the library changed)
+    s.run(DWELL_MS - 300);
+    s.world.page = null;
     s.run(1_500);
     expect(s.after()).toBeNull();
     s.world.page = page;
-    s.run(IDLE_MS + 20); // (it looks again within that)
+    s.run(IDLE_MS + 20);
     expect(s.after()).toEqual({ edge: "bottom", moving: false });
     s.run(DWELL_MS - 300);
-    expect(page.top).toBe(0); // (not on the old count)
+    expect(page.top).toBe(0);
     s.run(600);
     expect(page.top).toBeGreaterThan(0);
   });
@@ -239,7 +232,7 @@ describe("a pointer that does not stay", () => {
     const s = setup();
     s.moveTo(715);
     s.run(600);
-    s.moveTo(670); // (out of the strip, not out of its slack)
+    s.moveTo(670);
     s.run(600);
     expect(s.world.page!.top).toBeGreaterThan(0);
   });
@@ -250,7 +243,6 @@ describe("a pointer that does not stay", () => {
     expect(s.after()).toBeNull();
     s.run(3000);
     expect(s.world.page!.top).toBe(0);
-    // and one that was resting is stopped by a finger
     s.moveTo(719);
     s.run(DWELL_MS + 400);
     expect(s.world.page!.top).toBeGreaterThan(0);
@@ -267,7 +259,7 @@ describe("a pointer that does not stay", () => {
     expect(s.after()).toBeNull();
     s.run(3000);
     expect(s.world.page!.top).toBe(0);
-    s.moveTo(718); // (the button was let go, or the menu left, and the pointer is still against the edge)
+    s.moveTo(718);
     expect(s.after()).toEqual({ edge: "bottom", moving: false });
   });
 
@@ -296,14 +288,12 @@ describe("what else is in use", () => {
     expect(s.after()).toBeNull();
     s.run(2000);
     expect(s.world.page!.top).toBe(at);
-    // (moving about inside the strip is not coming back, and nor is a move to where the pointer already is)
     s.moveTo(719);
     s.moveTo(717);
     s.moveTo(719);
     s.run(3000);
     expect(s.world.page!.top).toBe(at);
     expect(s.after()).toBeNull();
-    // out, and in again
     s.moveTo(300);
     s.moveTo(719);
     expect(s.after()).toEqual({ edge: "bottom", moving: false });
@@ -339,16 +329,14 @@ describe("what else is in use", () => {
     s.run(DWELL_MS + 500);
     const at = s.world.page!.top;
     expect(at).toBeGreaterThan(0);
-    s.machine.other(); // (what the binding does on a wheel)
+    s.machine.other();
     s.look();
     expect(s.after()).toBeNull();
     s.run(2000);
     expect(s.world.page!.top).toBe(at);
-    // moving about in the strip is not coming back...
     s.moveTo(715);
     s.run(DWELL_MS + 500);
     expect(s.world.page!.top).toBe(at);
-    // ...out and in again is, and the other strip too
     s.moveTo(300);
     s.moveTo(719);
     expect(s.after()).toEqual({ edge: "bottom", moving: false });
@@ -378,7 +366,7 @@ describe("what else is in use", () => {
     expect(s.after()).toBeNull();
     s.moveTo(719);
     s.run(500);
-    s.moveTo(719); // again, in the strip: the wait is not begun again by it
+    s.moveTo(719);
     s.run(DWELL_MS - 500 + 200);
     expect(s.world.page!.top).toBeGreaterThan(0);
   });
@@ -389,7 +377,7 @@ describe("the looking", () => {
     const s = setup();
     s.moveTo(719, { x: 123 });
     expect(s.world.x).toBe(123);
-    s.moveTo(715, { x: 900 }); // (along the edge: the next look is at the new place)
+    s.moveTo(715, { x: 900 });
     s.run(LOOK_MS + 20);
     expect(s.world.x).toBe(900);
   });
@@ -407,7 +395,7 @@ describe("the looking", () => {
     expect(asked).toBe(0);
     expect(s.world.asked).toBe(0);
     expect(s.machine.frame(1000)).toBeNull();
-    s.moveTo(719, { busy }); // (in a strip, it is: once, as the pointer comes in)
+    s.moveTo(719, { busy });
     expect(asked).toBe(1);
     expect(s.world.asked).toBe(1);
   });
@@ -417,7 +405,6 @@ describe("the looking", () => {
     s.moveTo(719);
     const askedAtFirst = s.world.asked;
     s.run(DWELL_MS - 10);
-    // one look at the page for the start, and one every LOOK_MS after
     expect(s.world.asked - askedAtFirst).toBeLessThanOrEqual(Math.ceil(DWELL_MS / LOOK_MS) + 1);
     s.run(40);
     expect(s.after()).toEqual({ edge: "bottom", moving: true });
@@ -428,7 +415,7 @@ describe("the looking", () => {
     s.moveTo(719);
     s.run(DWELL_MS + 100);
     const at = s.world.page!.top;
-    const next = s.machine.frame(s.clock() + 5000); // five seconds in one frame
+    const next = s.machine.frame(s.clock() + 5000);
     expect(next).toBe(0);
     expect(s.world.page!.top - at).toBeLessThan(600 * FASTEST * 0.07 + 2);
   });

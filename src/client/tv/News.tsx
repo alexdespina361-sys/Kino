@@ -3,15 +3,10 @@ import { NewsList } from "../changelog/NewsList";
 import { useT } from "../i18n";
 import { BackButton, Screen } from "./Idle";
 
-/**
- * "What's new", opened from the profile's page: every version of Kino, the newest first. The remote walks the lines (Up, Down), Back or the corner's
- * button leaves. Opening it is seeing the newest version (`onSeen`): the tile stops saying "New".
- */
 export function NewsTv({ onClose, onSeen }: { onClose: () => void; onSeen: () => void }) {
   const t = useT();
   const page = useRef<HTMLDivElement>(null);
   useEffect(onSeen, [onSeen]);
-  // (The list comes a moment after the page: the remote then goes to its first line, unless it was moved meanwhile.)
   useEffect(() => {
     const root = page.current;
     if (!root) return;

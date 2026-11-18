@@ -21,9 +21,6 @@ describe("Romanian subtitle processing", () => {
     const utf8Buf = Buffer.from(text, "utf8");
     expect(decodeSubtitleBytes(utf8Buf)).toBe(text);
 
-    // CP1250 encoding test
-    // "mâine": 'm' (0x6D), 'â' in CP1250 is 0xE2, 'i' (0x69), 'n' (0x6E), 'e' (0x65)
-    // "și": 'ș' in CP1250 is 0xBA (or 0xAA)
     const cp1250Bytes = Buffer.from([0x6D, 0xE2, 0x69, 0x6E, 0x65, 0x20, 0xBA, 0x69, 0x20, 0xFE, 0x61, 0x72, 0x61]);
     const decoded = decodeSubtitleBytes(cp1250Bytes);
     expect(decoded).toContain("mâine");
@@ -39,25 +36,23 @@ describe("Romanian subtitle processing", () => {
   });
 
   it("extracts .srt files from a zip archive", () => {
-    // Create a mini zip buffer in memory with one compressed .srt file
     const srtContent = "1\n00:00:10,000 --> 00:00:12,000\nSalut!";
     const deflated = zlib.deflateRawSync(Buffer.from(srtContent, "utf8"));
     const filename = "test.srt";
     const fnBuf = Buffer.from(filename, "utf8");
 
-    // Construct local file header
     const header = Buffer.alloc(30);
-    header.writeUInt32LE(0x04034b50, 0); // signature
-    header.writeUInt16LE(20, 4); // version needed
-    header.writeUInt16LE(0, 6); // general purpose bit flag
-    header.writeUInt16LE(8, 8); // compression method (deflate)
-    header.writeUInt16LE(0, 10); // file mod time
-    header.writeUInt16LE(0, 12); // file mod date
-    header.writeUInt32LE(0, 14); // crc-32 (ignored in raw extraction)
-    header.writeUInt32LE(deflated.length, 18); // compressed size
-    header.writeUInt32LE(Buffer.byteLength(srtContent), 22); // uncompressed size
-    header.writeUInt16LE(fnBuf.length, 26); // file name length
-    header.writeUInt16LE(0, 28); // extra field length
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(0, 6);
+    header.writeUInt16LE(8, 8);
+    header.writeUInt16LE(0, 10);
+    header.writeUInt16LE(0, 12);
+    header.writeUInt32LE(0, 14);
+    header.writeUInt32LE(deflated.length, 18);
+    header.writeUInt32LE(Buffer.byteLength(srtContent), 22);
+    header.writeUInt16LE(fnBuf.length, 26);
+    header.writeUInt16LE(0, 28);
 
     const zip = Buffer.concat([header, fnBuf, deflated]);
     const extracted = extractSrtFromZip(zip);
@@ -75,11 +70,9 @@ describe("Romanian subtitle processing", () => {
   });
 
   it("stores and retrieves subtitles in RomanianSubtitleManager", async () => {
-    // (No site is asked in a test: a manager without a `get` of the test's own would reach the real ones.)
     const manager = new RomanianSubtitleManager(undefined, async () => {
       throw new Error("no site is asked in this test");
     });
-    // Simulate cached entry
     const sub = {
       id: "test_sub_1",
       label: "Romanian · Test Release",

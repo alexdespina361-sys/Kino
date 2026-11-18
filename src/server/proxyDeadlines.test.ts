@@ -5,12 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { handleStreamProxy } from "./proxy";
 import type { SegmentCache } from "./segmentCache";
 
-/*
- * What a proxy request does with an other end that stops, or that goes on for ever a few bytes at a time: the request, and the connection to that end,
- * are not held open by it. The other end is a server on this machine, and so is the only address the proxy is let go to here.
- */
 describe("handleStreamProxy: an other end that is too slow", () => {
-  const WAIT_MS = 300; // (how long the proxy waits for the other end in these tests)
+  const WAIT_MS = 300;
   const BIG = 24 * 1024 * 1024;
   const allowed = (address: string) => address === "127.0.0.1";
   let upstream: http.Server;
@@ -19,17 +15,16 @@ describe("handleStreamProxy: an other end that is too slow", () => {
   let quiet: FastifyInstance;
   let faulty: FastifyInstance;
   let proxy: string;
-  /** The paths whose connection from the proxy was closed (by the proxy: the other end does not close any of them itself). */
   const letGo: string[] = [];
 
   beforeAll(async () => {
     upstream = http.createServer((request, response) => {
       const path = new URL(request.url ?? "/", "http://upstream").pathname;
       response.on("close", () => letGo.push(path));
-      if (path === "/silent") return; // (never answers)
+      if (path === "/silent") return;
       if (path === "/stalled.srt" || path === "/stalled.vtt") {
         response.writeHead(200, { "content-type": "text/plain" });
-        return void response.write("1\n00:00:01,000 --> 00:00:02,000\nHel"); // (and nothing more)
+        return void response.write("1\n00:00:01,000 --> 00:00:02,000\nHel");
       }
       if (path === "/stalled.m3u8") {
         response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
@@ -40,21 +35,19 @@ describe("handleStreamProxy: an other end that is too slow", () => {
         return void response.write("not");
       }
       if (path === "/dripped.m3u8") {
-        // (A byte every few milliseconds: never silent, and never done.)
         response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
         response.write("#EXTM3U\n");
         const dripping = setInterval(() => response.write("#\n"), 20);
         return void response.on("close", () => clearInterval(dripping));
       }
       if (path === "/slowish.srt") {
-        // (Half of it now and half a moment later: well within the time.)
         response.writeHead(200, { "content-type": "text/plain" });
         response.write("1\n00:00:01,000 --> 00:00:02,000\n");
         return void setTimeout(() => response.end("Hello\n"), WAIT_MS / 3);
       }
       if (path === "/stalled.mp4") {
         response.writeHead(200, { "content-type": "video/mp4", "content-length": "1000000" });
-        return void response.write(Buffer.alloc(1000, 1)); // (and nothing more)
+        return void response.write(Buffer.alloc(1000, 1));
       }
       if (path === "/big.mp4") {
         response.writeHead(200, { "content-type": "video/mp4", "content-length": String(BIG) });
@@ -71,12 +64,10 @@ describe("handleStreamProxy: an other end that is too slow", () => {
     await app.listen({ port: 0, host: "127.0.0.1" });
     proxy = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 
-    // (A server that carries no film: it passes subtitles on and nothing else.)
     quiet = Fastify();
     quiet.get<{ Querystring: { url?: string } }>("/api/proxy", (request, reply) => handleStreamProxy(request, reply, { isAllowedAddress: allowed, video: false, upstreamMs: WAIT_MS }));
     await quiet.ready();
 
-    // (A server whose cache of shared pieces fails: a fault of the proxy's own, nothing to do with an other end.)
     const cache = {
       maxPiece: 1024,
       get: async () => {
@@ -104,7 +95,6 @@ describe("handleStreamProxy: an other end that is too slow", () => {
     const result = await promise;
     return { result, ms: Date.now() - started };
   };
-  /** A screen reading a film from the proxy: what came, and whether it all did. It can stop reading for a while after the first bytes. */
   const read = (path: string, options: { pauseMs?: number } = {}) =>
     new Promise<{ status: number; bytes: number; complete: boolean }>((resolve, reject) => {
       http
@@ -119,7 +109,7 @@ describe("handleStreamProxy: an other end that is too slow", () => {
               setTimeout(() => res.resume(), options.pauseMs);
             }
           });
-          res.on("error", () => {}); // (a connection that is cut says so here, and `close` follows)
+          res.on("error", () => {});
           res.on("close", () => resolve({ status: res.statusCode ?? 0, bytes, complete: res.complete }));
         })
         .on("error", reject);

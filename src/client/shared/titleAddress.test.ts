@@ -32,7 +32,7 @@ describe("a title's own address", () => {
     expect(titleAsk("")).toBeNull();
     expect(titleAsk("?party=123456")).toBeNull();
     expect(titleAsk("?title=movie-603")).toEqual({ id: "filmpire-movie-603", extras: {} });
-    expect(titleAsk("?title=movie-0")).toEqual({ id: "filmpire-movie-0", extras: {} }); // (well made: the server is asked, and finds nothing)
+    expect(titleAsk("?title=movie-0")).toEqual({ id: "filmpire-movie-0", extras: {} });
     for (const wrong of ["?title=", "?title=x", "?title=movie-603x"]) expect(titleAsk(wrong), wrong).toEqual({ id: null, extras: {} });
   });
 
@@ -63,7 +63,7 @@ describe("what an address asks for besides the title", () => {
     for (const odd of ["0", "11", "-1", "7.5"]) expect(of(`r=${odd}`, "movie-603"), `r=${odd}`).toEqual({});
     for (const odd of ["s=0&e=1", "s=201&e=1", "s=1&e=0", "s=1&e=5001", "s=1&e=x"]) expect(of(odd, "tv-1399"), odd).toEqual({});
     expect(of("t=86400", "movie-603")).toEqual({ at: 86_400 });
-    expect(of("s=2&e=5&t=754&r=8", "x")).toEqual({ at: 754, score: 8 }); // (an address that is no show's has no episodes)
+    expect(of("s=2&e=5&t=754&r=8", "x")).toEqual({ at: 754, score: 8 });
   });
 
   it("is written after the title's address, only what there is, and read back the same", () => {
@@ -80,8 +80,8 @@ describe("what an address asks for besides the title", () => {
   it("is read from the address once a page load, asked about once, and is there until it is dealt with: the library drawn again after a film does not open it again", async () => {
     const first = pendingLink("?title=x");
     expect(first?.id).toBeNull();
-    expect(await first?.item).toBeNull(); // (one that names nothing is not asked about)
-    const again = pendingLink("?title=movie-603"); // (a library drawn again before the answer came: the same link, the same answer)
+    expect(await first?.item).toBeNull();
+    const again = pendingLink("?title=movie-603");
     expect(again?.id).toBeNull();
     expect(again?.item).toBe(first?.item);
     dropLink();

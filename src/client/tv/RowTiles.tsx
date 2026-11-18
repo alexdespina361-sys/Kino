@@ -1,30 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronIcon, ChevronLeftIcon } from "../shared/icons";
 
-/** How far one press of an arrow moves a row, of the width the row shows. */
 const STEP = 0.8;
-/** A row that can have more titles asks for them when it is scrolled to within this many widths of its end. */
 const NEAR_END = 1.5;
-/** ...and shows this many empty tiles at its end while they are on their way. */
 const WAITING_TILES = 3;
 
-/**
- * A row of titles with an arrow at each end that a mouse can press: a wheel scrolls the page, not a row, so a row that runs off the screen
- * has no other way for a pointer to reach what lies past its edge. An arrow shows only on the side that has more, and only while the pointer
- * is over the row (the stylesheet). The remote and the keyboard walk the titles themselves, and the row slides to keep the one they are on
- * in view; they never land on an arrow, and pressing one does not take the focus from the title they are on.
- *
- * A row the library can add titles to (`onNearEnd`) asks for them as its end comes near, whoever scrolled it: a finger, a wheel, an arrow or the
- * remote's focus. It asks again after each answer while the end is still near (so a row that does not fill the screen fills it), and shows empty tiles
- * at its end while `loading`.
- */
 export function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState({ before: false, after: false });
   const wantsMore = useRef(onNearEnd);
   wantsMore.current = onNearEnd;
-  // Only a row that is on the screen asks; one further down asks when it is scrolled to. (The judge, 16 Nov: the TV's Home asked for the next titles of
-  // about 37 rows as it opened, ~244 KB and the catalog's work for every visitor before anybody scrolled.) A browser that cannot tell asks as it did.
   const onScreen = useRef(typeof IntersectionObserver === "undefined");
 
   const measure = useCallback(() => {
@@ -36,7 +21,6 @@ export function RowTiles({ children, onNearEnd, loading }: { children: ReactNode
     if (onScreen.current && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * NEAR_END) wantsMore.current?.();
   }, []);
 
-  // (The titles of a row come and go as the library fills in or a list changes, and the window changes size: look again each time.)
   useEffect(measure);
   useEffect(() => {
     const row = scroller.current;

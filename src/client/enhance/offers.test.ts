@@ -25,31 +25,31 @@ describe("the ✦ choices of the Quality list", () => {
   it("draws 2K in the film's own shape, as big as fits in 2560 x 1440", () => {
     expect(twoKSize({ width: 1280, height: 720 })).toEqual({ width: 2560, height: 1440 });
     expect(twoKSize({ width: 1280, height: 536 })).toEqual({ width: 2560, height: 1072 });
-    expect(twoKSize({ width: 960, height: 720 })).toEqual({ width: 1920, height: 1440 }); // (4:3)
-    expect(twoKSize({ width: 854, height: 480 })).toEqual({ width: 2560, height: 1438 }); // (never wider than 2560)
+    expect(twoKSize({ width: 960, height: 720 })).toEqual({ width: 1920, height: 1440 });
+    expect(twoKSize({ width: 854, height: 480 })).toEqual({ width: 2560, height: 1438 });
   });
 
   it("finds the biggest quality that says its size", () => {
     expect(biggest([{ width: 640, height: 360 }, { width: 1920, height: 1080 }, { height: 720 }])).toEqual({ width: 1920, height: 1080 });
     expect(biggest([{}, { width: 0, height: 0 }])).toBeUndefined();
-    expect(biggest([{ height: 720 }, { height: 1440 }])).toEqual({ width: 2560, height: 1440 }); // (files called "720p" and "1440p": 2K already)
+    expect(biggest([{ height: 720 }, { height: 1440 }])).toEqual({ width: 2560, height: 1440 });
   });
 });
 
 describe("the watch on a device that draws too slowly", () => {
   it("says nothing in the warm-up, nor while few frames are late", () => {
     const watch = new Watch(12, 48, 0.2);
-    for (let frame = 0; frame < 12; frame++) expect(watch.note(true)).toBe("ok"); // (the programs are built then)
-    for (let frame = 0; frame < 200; frame++) expect(watch.note(frame % 10 === 0)).toBe("ok"); // (one in ten late)
+    for (let frame = 0; frame < 12; frame++) expect(watch.note(true)).toBe("ok");
+    for (let frame = 0; frame < 200; frame++) expect(watch.note(frame % 10 === 0)).toBe("ok");
     expect(watch.held).toBe(200);
   });
 
   it("says slow once, when more than a fifth of the last frames were late", () => {
     const watch = new Watch(12, 48, 0.2);
     for (let frame = 0; frame < 12; frame++) watch.note(false);
-    const said = Array.from({ length: 100 }, (_, frame) => watch.note(frame % 3 === 0)); // (one in three late)
+    const said = Array.from({ length: 100 }, (_, frame) => watch.note(frame % 3 === 0));
     expect(said.filter((one) => one === "slow")).toHaveLength(1);
-    expect(said.indexOf("slow")).toBe(47); // (as soon as the window is full)
+    expect(said.indexOf("slow")).toBe(47);
     expect(watch.held).toBe(0);
   });
 });
@@ -63,9 +63,9 @@ describe("what a device remembers", () => {
     expect(firstTier({}, 720, true)).toBe("anime");
     expect(firstTier({}, 720, false)).toBe("sharp");
     expect(firstTier({ fhd: "sharp" }, 1080, true)).toBe("sharp");
-    expect(firstTier({ hd: "anime" }, 720, false)).toBe("sharp"); // (WebGPU gone since: a browser updated or a flag)
-    expect(firstTier({ hd: "slow" }, 720, true)).toBe("slow"); // (a kept choice is left off for it; a pick tries FSR 1 again: enhancer.ts)
-    expect(firstTier({ hd: "slow" }, 480, true)).toBe("anime"); // (another size of picture is another question)
+    expect(firstTier({ hd: "anime" }, 720, false)).toBe("sharp");
+    expect(firstTier({ hd: "slow" }, 720, true)).toBe("slow");
+    expect(firstTier({ hd: "slow" }, 480, true)).toBe("anime");
   });
 
   it("reads back only what it wrote", () => {
@@ -74,7 +74,7 @@ describe("what a device remembers", () => {
     expect(readTiers(null)).toEqual({});
     expect(readChoice("2k")).toBe("2k");
     expect(readChoice("4k")).toBe("off");
-    expect(readChoice("2k60")).toBe("off"); // (never offered, and no longer a choice)
+    expect(readChoice("2k60")).toBe("off");
     expect(readChoice(null)).toBe("off");
   });
 });

@@ -1,56 +1,38 @@
 import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_TEXT_MAX, type ChatLine, type ChatReactionsNow, type ChatThread } from "../../shared";
 import { ApiError } from "../account/api";
 
-/** What can go wrong with a chat, in the few words the views know how to say. */
 export type ChatProblem = "offline" | "rate_limited" | "chat_off" | "friends_off" | "not_friends" | "too_long" | "empty" | "gone" | "changed" | "other";
 
 const PROBLEMS: readonly ChatProblem[] = ["offline", "rate_limited", "chat_off", "friends_off", "not_friends", "too_long", "empty", "gone", "changed"];
 
-/** What a failed call comes to: the server's word when the views have a sentence for it, else "other". */
 export function problemOf(error: unknown): ChatProblem {
   const code = error instanceof ApiError ? error.code : "";
   return PROBLEMS.find((problem) => problem === code) ?? "other";
 }
 
-/** The chat can't go on at all: the friend is no friend any more, or friends are off. Asking again would only be told the same. */
 export const endsChat = (problem: ChatProblem): problem is "not_friends" | "friends_off" => problem === "not_friends" || problem === "friends_off";
 
-/** The chat as the page has it. `rev` is null until the first answer. */
 export interface ChatState {
   rev: number | null;
-  /** Whether the friend takes messages. */
   open: boolean;
-  /** Whether new messages from the friend are muted (for this profile only). */
   muted: boolean;
-  /** Oldest first. */
   lines: readonly ChatLine[];
-  /** How far the friend has seen one's messages (two ticks), and how far a screen of theirs has them (one tick): the `id` of the newest, 0 for none. */
   theirSeen: number;
   theirGot: number;
 }
 
 export const FRESH_CHAT: ChatState = { rev: null, open: true, muted: false, lines: [], theirSeen: 0, theirGot: 0 };
 
-/** The ticks of one's own message: 2 when the friend has seen it, 1 when a screen of theirs has it, 0 before (the owner, 17 Nov). */
 export const ticksOf = (state: Pick<ChatState, "theirSeen" | "theirGot">, id: number): 0 | 1 | 2 => (id <= state.theirSeen ? 2 : id <= state.theirGot ? 1 : 0);
 
-/**
- * The chat after an answer. An answer older than what the page has (it was slow, and a later one came first) is ignored, and so is one at the same revision
- * to a call that started before the one whose answer the page took last (`older`): whether the friend takes messages changes no revision, so such an answer
- * could put back an `open` that is over (the judge, 17 Nov). An answer without messages means "still at the revision you have", and one with `reactions`
- * "the messages you have, with these reactions now". `keepMuted`: a mute is on its way or has just been answered, so a reading that started before it must
- * not put the old state back.
- */
 export function applyThread(state: ChatState, answer: ChatThread, keepMuted = false, older = false): ChatState {
   if (state.rev !== null && (answer.rev < state.rev || (answer.rev === state.rev && older))) return state;
   const lines = answer.lines ?? (answer.reactions ? withReactions(state.lines, answer.reactions) : state.lines);
-  // (They only go forward: an answer that started before the friend looked does not take a tick away.)
   const theirSeen = Math.max(state.theirSeen, answer.theirSeen ?? 0);
   const theirGot = Math.max(state.theirGot, theirSeen, answer.theirGot ?? 0);
   return { rev: answer.rev, open: answer.open, muted: keepMuted ? state.muted : answer.muted, lines, theirSeen, theirGot };
 }
 
-/** The messages with the reactions an answer says they have now (a message it does not name keeps its own). */
 function withReactions(lines: readonly ChatLine[], now: readonly ChatReactionsNow[]): readonly ChatLine[] {
   if (now.length === 0) return lines;
   const byId = new Map(now.map((each) => [each.id, each]));
@@ -62,7 +44,6 @@ function withReactions(lines: readonly ChatLine[], now: readonly ChatReactionsNo
   });
 }
 
-/** The newest message of one's own, or undefined. */
 export function lastOwn(lines: readonly ChatLine[]): ChatLine | undefined {
   for (let at = lines.length - 1; at >= 0; at--) if (lines[at]!.mine) return lines[at];
   return undefined;
@@ -73,10 +54,8 @@ const startOf = (at: number) => {
   const date = new Date(at);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 };
-/** The date formats follow the language of the site, with British English for English (as the rest of the site does: the day comes first). */
 const localeOf = (language: string) => (language === "en" ? "en-GB" : language);
 
-/** The hour of a message ("09:05") in the language of the site. Empty for a time that is not one. */
 export function stampOf(at: number, language: string): string {
   try {
     return new Intl.DateTimeFormat(localeOf(language), { hour: "2-digit", minute: "2-digit" }).format(new Date(at));
@@ -85,12 +64,10 @@ export function stampOf(at: number, language: string): string {
   }
 }
 
-/** The day a message was written, for the line that begins a day: "today" and "yesterday" in words, an older one as "14 Oct". Empty for a time that is not one. */
 export function dayOf(at: number, now: number, language: string): string {
   try {
     const ago = Math.round((startOf(at) - startOf(now)) / DAY);
     if (ago === 0 || ago === -1) return new Intl.RelativeTimeFormat(localeOf(language), { numeric: "auto" }).format(ago, "day");
-    // (A day of another year says which: on 5 Jan, "26 Dec" read as last week, and somebody gone fourteen months looked recent: the judge, 17 Nov.)
     const other = new Date(at).getFullYear() !== new Date(now).getFullYear();
     return new Intl.DateTimeFormat(localeOf(language), { day: "numeric", month: "short", ...(other ? { year: "numeric" } : {}) }).format(new Date(at));
   } catch {
@@ -98,7 +75,6 @@ export function dayOf(at: number, now: number, language: string): string {
   }
 }
 
-/** Whether a message begins a new day (the first one does), for the line that says which. */
 export function startsDay(lines: readonly ChatLine[], index: number): boolean {
   const line = lines[index];
   if (!line) return false;
@@ -106,5 +82,4 @@ export function startsDay(lines: readonly ChatLine[], index: number): boolean {
   return !before || new Date(before.at).toDateString() !== new Date(line.at).toDateString();
 }
 
-/** The numbers the views say in words: the limits of shared/chat.ts. */
 export const CHAT_FACTS = { messages: CHAT_KEEP_MAX, days: Math.round(CHAT_KEEP_MS / 86_400_000), max: CHAT_TEXT_MAX } as const;

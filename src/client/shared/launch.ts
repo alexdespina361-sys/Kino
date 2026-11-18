@@ -1,43 +1,31 @@
 import { isHttpUrl } from "../../shared";
 
 export interface LaunchParams {
-  /** A 6-digit pairing code, from the QR code on the TV (`/?code=482731`). */
   code?: string;
-  /** The 6-digit code of a TV that has a phone already, from the QR code it shows for another phone (`/?control=482731`). Joining that TV is all it is good for. */
   control?: string;
-  /** The code on a TV's sign-in screen (`/?link=ABCD2345`): the phone is asked whether to sign that TV in. */
   link?: string;
-  /** The code a friend gave (`/?friend=ABCD2345`, what the link and the QR code of a friend's invitation hold): the phone is asked whether to add them. */
   friend?: string;
-  /** A link to play, from the phone's share sheet (`/?url=...` or `/?text=...`). */
   url?: string;
-  /** Where in it to start, in whole seconds (`&t=754`): what "Play on TV" on a phone that is the screen sends with the link (role.ts `playOnTv`). Only with a link. */
   startAt?: number;
 }
 
-/** How far a start may be (protocol.ts `StartAtSchema`: a day). */
 const START_MAX = 86_400;
 
-/** The characters a sign-in code is made of: no 0/O or 1/I, which are mixed up when read aloud (the server's alphabet). */
 const LINK_CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 
-/** The code on a TV's sign-in screen, however it was typed ("abcd-2345" is "ABCD2345"); undefined when it isn't one. */
 export function linkCodeOf(text: string | null | undefined): string | undefined {
   const code = (text ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   return LINK_CODE.test(code) ? code : undefined;
 }
 
-/** What has been typed of a sign-in code, tidied as it goes: upper case, only letters and digits, a dash after the fourth ("abcd23" is "ABCD-23"). */
 export function typedLinkCode(text: string): string {
   const clean = text.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
   return clean.length > 4 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
 }
 
-/** The first http(s) link inside free text: apps often share "Watch this https://site/watch/1 !!" as `text`. */
 export function firstLink(text: string): string | undefined {
   for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
     let link = match[0];
-    // Sentence punctuation and an unbalanced ")" belong to the prose, not the link.
     while (/[.,;:!?\]]$/.test(link) || (link.endsWith(")") && count(link, "(") < count(link, ")"))) link = link.slice(0, -1);
     if (isHttpUrl(link)) return link;
   }
@@ -46,34 +34,22 @@ export function firstLink(text: string): string | undefined {
 
 const count = (text: string, char: string) => text.split(char).length - 1;
 
-/**
- * What a box for one link makes of what was put in it: a link stays as it is, and a link among words or in brackets (a whole message copied from a chat) is the link,
- * as it is for a link that is shared to the app or pasted with the button. What has no link in it is left for the server to say so.
- */
 export function linkOf(text: string): string {
   const trimmed = text.trim();
   return /\s/.test(trimmed) || !isHttpUrl(trimmed) ? (firstLink(trimmed) ?? trimmed) : trimmed;
 }
 
-/** The address that connects a phone: this site with a TV's pairing code in it (what its QR code holds). */
 export const pairLink = (code: string, origin = location.origin) => `${origin}/?code=${code}`;
 
-/** The address that lets another phone control a TV that has one: this site with the TV's control code in it (what the QR codes on its screen and on the first phone's menu hold). */
 export const controlLink = (code: string, origin = location.origin) => `${origin}/?control=${code}`;
 
-/** The address that opens a watch party on any phone or computer: this site with the party's code in it (what its QR code holds). */
 export const partyLink = (code: string, origin = location.origin) => `${origin}/?party=${code}`;
 
-/** The code of the watch party an address was opened for (`/?party=482731`), or null for any other visit. */
 export function readPartyCode(search: string): string | null {
   const code = (new URLSearchParams(search).get("party") ?? "").replace(/\D/g, "");
   return code.length === 6 ? code : null;
 }
 
-/**
- * The code of a watch party in something pasted or typed: its link (`…/?party=482731`), the six digits as the host's screen shows them ("482 731"), alone
- * or among other words ("Code: 482731"), or six digits and nothing else. Null when there is none (or more than one way to read it: other digits only).
- */
 export function partyCodeIn(text: string): string | null {
   const linked = /[?&]party=([\d\s-]+)/.exec(text)?.[1]?.replace(/\D/g, "");
   if (linked?.length === 6) return linked;
@@ -82,7 +58,6 @@ export function partyCodeIn(text: string): string | null {
   return null;
 }
 
-/** What the phone page was opened for. Everything is optional and anything odd is ignored. */
 export function readLaunchParams(search: string): LaunchParams {
   const params = new URLSearchParams(search);
   const code = params.get("code")?.trim();

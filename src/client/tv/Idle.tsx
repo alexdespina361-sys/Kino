@@ -17,7 +17,6 @@ import { TvCode } from "./TvCode";
 
 export interface Pairing {
   code: string;
-  /** Local deadline (Date.now() based) computed from the server's remaining lifetime. */
   expiresAt: number;
 }
 
@@ -32,19 +31,13 @@ function Brand() {
 interface ScreenProps {
   children: ReactNode;
   testId?: string;
-  /** Tighter spacing, for pages with more on them than a headline and a button. */
   compact?: boolean;
-  /** Land on the first button (or the one marked `data-autofocus`) as the screen opens, for screens that are a question. */
   focus?: boolean;
-  /** What the remote's Back does here. Without it, Back is left to whoever listens. */
   onBack?: (() => void) | undefined;
-  /** What the system's Back of a phone or a tablet does here, where it is not what the remote's does (see `useBack`). */
   leaving?: (() => void) | undefined;
-  /** A class of the page's own, for a page laid out unlike the others (the chat on a hand-held screen fills it, as a messenger does). */
   className?: string;
 }
 
-/** A full-screen page the remote can walk around: its `[data-nav]` buttons are reached with the arrow keys. */
 export function Screen({ children, testId, compact = false, focus = false, onBack, leaving, className }: ScreenProps) {
   const ref = useRef<HTMLElement>(null);
   useDpad(ref);
@@ -61,15 +54,9 @@ export function Screen({ children, testId, compact = false, focus = false, onBac
   );
 }
 
-/**
- * The way out of a full-screen page, the same on every page that has one: a quiet button in the top corner (the stylesheet puts it there,
- * wherever it stands in the page), level with the wordmark. What a page is for is the accent's colour; leaving it never is. `label` says
- * where it goes when that is worth saying ("Back to the library").
- */
-export function BackButton({ onClick, testId, label, autoFocus = false, col }: { onClick: () => void; testId: string; label?: string; autoFocus?: boolean; /** In the library's top bar: its place among the corner's buttons, which the library's own arrow keys walk (a page that fills the screen is walked by `data-nav`). */ col?: number }) {
+export function BackButton({ onClick, testId, label, autoFocus = false, col }: { onClick: () => void; testId: string; label?: string; autoFocus?: boolean; col?: number }) {
   const t = useT();
   const text = label ?? t("common.back");
-  // (In the library's top bar its name goes on a small screen, where the account button needs the room: the button then keeps it for a screen reader.)
   const place = col === undefined ? { "data-nav": true } : { "data-zone": "top", "data-row": 0, "data-col": col, "aria-label": text };
   return (
     <button className="tv-action tv-back" onClick={onClick} {...place} {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
@@ -78,10 +65,6 @@ export function BackButton({ onClick, testId, label, autoFocus = false, col }: {
   );
 }
 
-/**
- * The bell beside the account chip: a number on it while something waits for an answer, a quieter dot when friends only watched something.
- * Not there while friends are off. `col` is its place among the corner's buttons, for the library's arrow keys.
- */
 export function BellChip({ onOpen, col }: { onOpen: () => void; col: number }) {
   const t = useT();
   const bell = useBell();
@@ -108,12 +91,6 @@ export function BellChip({ onOpen, col }: { onOpen: () => void; col: number }) {
   );
 }
 
-/**
- * Top right of the library: who is watching on this TV, or a way to sign in. It opens the profile's page (what this profile rated, its friends and
- * History, and Settings in that page's corner). `zone`: the library's own arrow keys walk to it, not the screen's; `col` is its place among the
- * corner's buttons; `current`: the page that is open is the profile's (or one of the pages that belong to it). On a server that has no accounts
- * it is still there, as "Profile": nobody signs in, but the page has Settings in its corner, and there is no other way to them.
- */
 export function AccountChip({ onOpen, zone = false, col = 0, current = false }: { onOpen: () => void; zone?: boolean; col?: number; current?: boolean }) {
   const t = useT();
   const { status, me, profile } = useAccount();
@@ -143,18 +120,9 @@ export function AccountChip({ onOpen, zone = false, col = 0, current = false }: 
   );
 }
 
-/** How long the welcome stays before it fades, and how long the fade takes. */
 const WELCOME_MS = 1400;
 const WELCOME_FADE_MS = 700;
 
-/**
- * The first moments of a screen that has just opened: the name and a greeting over the library as it fills in. It fades away by
- * itself, or at the first press, and never takes a press: the library under it is already there.
- *
- * A screen that is not full screen yet (and whose viewer has not turned that down) `ask`s instead: it waits, with a button that
- * takes it there, as that press is what a browser wants. Any other key or click is that press too (the page has already acted on
- * it by now) and Back says not now. While it waits, the library under it gets no keys, so OK can only mean the button.
- */
 export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void }) {
   const t = useT();
   const [leaving, setLeaving] = useState(false);
@@ -163,7 +131,7 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
     enterFullscreen();
     setLeaving(true);
   };
-  useHandHeldBack(ask && !leaving ? () => setLeaving(true) : undefined); // (a phone's own Back says not now, as the remote's does)
+  useHandHeldBack(ask && !leaving ? () => setLeaving(true) : undefined);
   useEffect(() => {
     const leave = () => setLeaving(true);
     if (!ask) {
@@ -178,7 +146,7 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
     }
     const keys = (event: KeyboardEvent) => {
       const action = event.altKey || event.ctrlKey || event.metaKey ? null : actionForKey(event);
-      if (!action) return; // the browser's own keys (reload, F11...) and ones that mean nothing here are left alone
+      if (!action) return;
       event.stopPropagation();
       event.preventDefault();
       if (event.type !== "keydown") return;
@@ -192,7 +160,6 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
       window.removeEventListener("keyup", keys, true);
     };
   }, []);
-  // However the page got there (the button, another key, the browser's own), being full screen is what it asked for.
   useEffect(() => {
     if (ask && fullscreen) setLeaving(true);
   }, [fullscreen]);
@@ -219,7 +186,6 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
   );
 }
 
-/** A screen that opened on a watch party's link needs one press before the browser will let the host's video play, so it asks for it. */
 export function TvLocked({ onUnlock }: { onUnlock: () => void }) {
   const t = useT();
   return (
@@ -236,24 +202,16 @@ export function TvLocked({ onUnlock }: { onUnlock: () => void }) {
 interface IdleProps {
   paired: boolean;
   pairing: Pairing | null;
-  /** Once a phone is connected: the code that lets another one in (null until the server has answered). */
   control: Pairing | null;
-  /** The server is looking up a link that was just chosen. */
   resolving: boolean;
-  /** The lookup has gone on too long: a button to give up on it appears. */
   stuck: boolean;
-  /** Give up waiting for the video. Back does it too. */
   onCancel: () => void;
-  /** Let go of the paired phone and show a new code. */
   onDisconnect: () => void;
-  /** Back to the library. */
   onBack: () => void;
 }
 
-/** What the TV shows besides the library, a video and a watch party: finding one, pairing a phone, being paired. */
 export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, onDisconnect, onBack }: IdleProps) {
   const t = useT();
-  // The pairing page opens on its way out, lit: nothing else on it is for a TV to press, and a first press that only found a button was lost (the judge, 16 Nov).
   const back = <BackButton onClick={onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} autoFocus />;
 
   if (resolving) {
@@ -277,7 +235,6 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
 
   if (paired) {
     return (
-      // (Nothing lit here on purpose: this page comes by itself when a phone connects, and a stray OK must neither let go of the phones nor leave. features.spec.ts)
       <Screen key="paired" compact onBack={onBack}>
         <span className="tv-ready-icon">
           <CheckIcon />
@@ -286,7 +243,6 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
           {t("tv.connectedWaiting")}
         </h1>
         <p className="tv-lead">{t("tv.connectedLead")}</p>
-        {/* Another phone joins the way the first did: the same steps, and the QR code opens the page with this code in it. */}
         <p className="tv-join-title">{t("tv.morePhones")}</p>
         <div className="tv-pair tv-party-invite" data-testid="tv-join">
           <ol className="tv-steps">
@@ -309,9 +265,7 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
             <p>{t("tv.qrHint")}</p>
           </div>
         </div>
-        {/* (The way out comes before Disconnect in page order, though the stylesheet puts it in the corner: the remote's first press lands on the first button, and while the code is on its way there is no Copy before it, so it must not be the one that lets go of every phone.) */}
         {back}
-        {/* Reached with the remote's arrow keys; the first press only lands on a button, it never presses one. */}
         <div className="tv-actions">
           <button className="tv-action" onClick={onDisconnect} data-testid="tv-disconnect" data-nav>
             {t("tv.disconnect")}
@@ -322,7 +276,6 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
   }
 
   if (pairing) {
-    // The QR code opens the phone page with the code filled in, so pairing needs no typing at all.
     const link = pairLink(pairing.code);
     return (
       <Screen key="pairing" focus onBack={onBack}>
@@ -354,7 +307,6 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
   }
 
   return (
-    // (Waiting for a code that may be a while coming: Back is the way out to the library, as it is from the code itself.)
     <Screen testId="tv-connecting" onBack={onBack}>
       <div className="spinner tv-spinner" />
       <h1 className="tv-headline">{t("tv.connecting")}</h1>

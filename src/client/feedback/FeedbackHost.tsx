@@ -35,21 +35,18 @@ type Screen =
 
 const initialScreen = (options: FeedbackOptions): Screen => (options.screen === "mine" ? { name: "mine" } : options.kind ? { name: "form" } : { name: "start" });
 
-/** Where the trouble most likely is: what the caller knows, else what the page saw the person on, else the remote or nothing. */
 const guess = (options: FeedbackOptions, remote: boolean): { area: FeedbackArea; chosen: boolean } =>
   options.area ? { area: options.area, chosen: true } : { area: guessArea() ?? (remote ? "remote" : "unsure"), chosen: false };
 
-/** Waits for the page to be drawn twice, which is when what was just changed on it is on the screen. */
 const drawn = () =>
   Promise.race([
     new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
-    new Promise<void>((resolve) => setTimeout(resolve, 300)), // (a page in the background draws nothing and calls nothing)
+    new Promise<void>((resolve) => setTimeout(resolve, 300)),
   ]);
 
 const COUNTDOWN = 5;
 const DRAFT_SAVE_MS = 600;
 
-/** Tab goes round the form, not out to the page behind it. */
 function keepInside(panel: HTMLElement, event: KeyboardEvent): void {
   const items = [...panel.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter((item) => !item.hasAttribute("disabled") && item.getClientRects().length > 0);
   const first = items[0];
@@ -67,18 +64,12 @@ export interface HostProps {
   onClose: () => void;
 }
 
-/**
- * The feedback: a screen over everything, with the kind to choose, the form, the pictures and the marks, and the messages from the team. It is in a
- * chunk of its own (see FeedbackGate.tsx). The page behind it is not touched, and no key reaches it: the remote walks over this and nothing else.
- */
 export function FeedbackHost({ options, onClose }: HostProps) {
   const t = useT();
   const account = useAccount();
   const signedIn = account.me !== null;
   const role = useMemo(() => roleOfThisPage(), []);
   const handHeld = useMemo(() => thisIsHandHeld(), []);
-  // A screen that only a remote walks (a TV): no pictures can be taken or chosen on it, and the form says where to do that. A phone that is the screen (the
-  // TV page, held in the hand) is not one: it has a touch screen, a picture picker and a camera, whichever page it is on.
   const picturesHere = useMemo(() => handHeld || !(role === "tv" && !(typeof matchMedia === "function" && matchMedia("(pointer: fine)").matches)), [handHeld, role]);
 
   const start = useMemo(() => guess(options, role === "remote"), [options, role]);
@@ -92,7 +83,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
   const [send, setSend] = useState<SendState>({ phase: "idle" });
   const [confirming, setConfirming] = useState(false);
   const [draft, setDraft] = useState(() => (options.kind || options.screen ? undefined : readDraft()));
-  /** null: the form is showing; "ready": the form is out of the way and the bar waits; a number: the seconds before the picture is taken; "shooting": it is being taken. */
   const [capture, setCapture] = useState<null | "ready" | "shooting" | number>(null);
   const captureRef = useRef(capture);
   captureRef.current = capture;
@@ -110,7 +100,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     document.documentElement.classList.add("fb-open");
     return () => document.documentElement.classList.remove("fb-open");
   }, []);
-  // The pictures are let go with the form, and the focus goes back to what opened it.
   useEffect(
     () => () => {
       piecesRef.current.forEach(release);
@@ -122,8 +111,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
   useEffect(() => {
     if (readReceipts().length > 0 || signedIn) void refreshUnread(signedIn);
   }, [signedIn]);
-
-  /* ------------------------------ going places ------------------------------ */
 
   const go = useCallback((next: Screen) => {
     setConfirming(false);
@@ -141,7 +128,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     onClose();
   }, [needsToAsk, confirming, onClose]);
 
-  /** What Back does, on the phone's own button as on a remote's or a keyboard's: one step out, and the last step closes. */
   const back = useCallback(() => {
     if (confirming) return setConfirming(false);
     if (captureRef.current !== null) return setCapture(null);
@@ -161,9 +147,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
   }, [confirming, screen.name, options.screen, go, close]);
   useBackToClose(back);
 
-  /* ------------------------------ the draft ------------------------------ */
-
-  // (a form that a screen opened for a problem leaves the draft alone until its person has written something: see `writtenByThePerson`)
   const opened = Boolean(options.kind || options.screen);
   const wroteDraft = useRef(false);
   const keepDraft = (now: FormState) => {
@@ -180,13 +163,10 @@ export function FeedbackHost({ options, onClose }: HostProps) {
   }, [form, sent]);
   useEffect(
     () => () => {
-      // (what is on the form when it closes is kept, unless it was sent)
       if (!sentRef.current) keepDraftRef.current(formRef.current);
     },
     [],
   );
-
-  /* ------------------------------ pictures ------------------------------ */
 
   const addFiles = useCallback(
     async (files: File[], role: AddRole) => {
@@ -227,10 +207,9 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     const next = [...piecesRef.current, added.piece];
     piecesRef.current = next;
     setPieces(next);
-    go({ name: "annotate", id: added.piece.id }); // (the point of showing the screen is to point at something on it)
+    go({ name: "annotate", id: added.piece.id });
   }, [go, t]);
 
-  // The seconds before a picture is taken after a wait.
   useEffect(() => {
     if (typeof capture !== "number") return;
     const timer = window.setTimeout(() => (capture <= 1 ? void shoot() : setCapture(capture - 1)), 1000);
@@ -244,8 +223,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     setPieces((all) => all.filter((piece) => piece.id !== id));
   };
 
-  /* ------------------------------ sending ------------------------------ */
-
   const submit = async () => {
     if (send.phase === "sending") return;
     setSend({ phase: "sending", waking: false });
@@ -254,7 +231,7 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     const result = await sendReport(payload, () => setSend((now) => (now.phase === "sending" ? { phase: "sending", waking: true } : now)));
     if (!result.ok) return setSend({ phase: "failed", reason: result.reason, ...(result.retryAfter ? { retryAfter: result.retryAfter } : {}) });
     keepReceipt(payload, result.id, feedbackTitle({ message: payload.message }, t(`feedback.kind.${payload.kind}` as Key)));
-    if (!opened || wroteDraft.current) clearDraft(); // (a draft this form never touched is somebody's other words: they stay)
+    if (!opened || wroteDraft.current) clearDraft();
     setDraft(undefined);
     piecesRef.current.forEach(release);
     piecesRef.current = [];
@@ -266,11 +243,8 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     if (payload.answer) void refreshUnread(signedIn, true);
   };
 
-  /* ------------------------------ keys ------------------------------ */
-
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (captureRef.current !== null) return; // (the form is out of the way: the page is used as it always is)
-    // Nothing that is pressed here is for the page behind (the TV's play and pause, full screen, the letters that stand for things).
+    if (captureRef.current !== null) return;
     event.stopPropagation();
     if (event.altKey || event.ctrlKey || event.metaKey || !panel.current) return;
     if (event.key === "Tab") return keepInside(panel.current, event.nativeEvent);
@@ -282,7 +256,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     }
     if (action === "up" || action === "down" || action === "left" || action === "right") {
       if (target.tagName === "TEXTAREA" && (action === "up" || action === "down")) {
-        // The cursor moves between the lines of the text first; at its first or last line the next press leaves it.
         const area = target as HTMLTextAreaElement;
         const before = [area.selectionStart, area.selectionEnd];
         requestAnimationFrame(() => {
@@ -300,7 +273,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     }
   };
 
-  // A key pressed while the focus is somewhere behind the form (a click on the dim edge took it there) is for the form, not for what is behind.
   useEffect(() => {
     const catchStray = (event: KeyboardEvent) => {
       if (captureRef.current !== null || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -317,7 +289,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
       window.removeEventListener("keyup", catchStray, true);
     };
   }, []);
-  // While the form is out of the way, the page is used as usual: Escape is all that comes back here.
   useEffect(() => {
     if (capture === null) return;
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && capture !== "shooting" && (event.preventDefault(), setCapture(null));
@@ -325,7 +296,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [capture]);
 
-  // A screen's first thing has the focus when it opens (the first button for a remote; the form itself for a finger, which a keyboard must not jump up for).
   const where = `${screen.name}${screen.name === "annotate" ? screen.id : ""}${confirming}${capture === null}`;
   useEffect(() => {
     const inside = panel.current;
@@ -335,8 +305,6 @@ export function FeedbackHost({ options, onClose }: HostProps) {
     const typed = wanted && (wanted.tagName === "TEXTAREA" || wanted.tagName === "INPUT");
     (wanted && !(typed && handHeld) ? wanted : inside).focus({ preventScroll: true });
   }, [where]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* ------------------------------ what is drawn ------------------------------ */
 
   const marking = screen.name === "annotate" ? pieces.find((piece) => piece.id === screen.id) : undefined;
   const title =
@@ -368,7 +336,7 @@ export function FeedbackHost({ options, onClose }: HostProps) {
       onKeyDown={onKeyDown}
       onPaste={(event) => {
         const files = [...event.clipboardData.files];
-        if (files.length === 0 || !picturesHere || screen.name !== "form") return; // (text is pasted as it always is)
+        if (files.length === 0 || !picturesHere || screen.name !== "form") return;
         event.preventDefault();
         void addFiles(files, "screenshot");
       }}

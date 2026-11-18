@@ -63,7 +63,6 @@ describe("mergeAnswers", () => {
     const merged = mergeAnswers(screen, server, "dune");
     expect(merged.exact).toBe(2);
     expect(ids(merged.items)).toEqual(["a", "a2", "c1", "c2"]);
-    // a title the server calls close that the screen has as exact is exact
     const swapped = mergeAnswers({ items: [item("a", "Dune")], exact: 1 }, { items: [item("a", "Dune"), item("c1", "Dust")], exact: 0 }, "dune");
     expect(swapped.exact).toBe(1);
     expect(ids(swapped.items)).toEqual(["a", "c1"]);
@@ -85,7 +84,6 @@ describe("mergeAnswers", () => {
     ]);
     const merged = mergeAnswers(screen, server, "dragon");
     expect(merged.items.every((i) => i.image !== "")).toBe(true);
-    // Server's verified item should win or duplicate title is resolved once
     expect(merged.items.filter((i) => i.title === "Dragon Ball")).toHaveLength(1);
     expect(merged.items.filter((i) => i.title === "Dragon Ball Z")).toHaveLength(1);
   });
@@ -134,12 +132,10 @@ describe("the keyboard", () => {
     expect(typedCharacter({ key: "c", ctrlKey: true })).toBeNull();
     expect(typedCharacter({ key: "c", altKey: true })).toBeNull();
     expect(typedCharacter({ key: "c", metaKey: true })).toBeNull();
-    // Any language's letters and the signs in titles (the judge's "amélie" and "law & order"), lower-cased; keys with names are not characters.
     for (const [key, typed] of [["é", "é"], ["É", "é"], ["ş", "ş"], ["Ș", "ș"], ["ñ", "ñ"], ["&", "&"], ["'", "'"], ["!", "!"], ["-", "-"], ["😀", "😀"]] as const) {
       expect(typedCharacter({ key })).toBe(typed);
     }
     for (const key of ["Dead", "Process", "Unidentified", "Tab", "\t", "\n", "​"]) expect(typedCharacter({ key })).toBeNull();
-    // AltGr (Ctrl+Alt on Windows) types: ș on a Romanian Programmers keyboard, @ on a German one.
     const altGraph = (key: string) => ({ key, ctrlKey: true, altKey: true, getModifierState: (name: string) => name === "AltGraph" });
     expect(typedCharacter(altGraph("ș"))).toBe("ș");
     expect(typedCharacter(altGraph("@"))).toBe("@");
@@ -165,8 +161,8 @@ describe("editBox", () => {
 
   it("keeps the text tidy wherever the caret is: no leading space, no double space, a limit", () => {
     expect(editBox(box("", 0), { kind: "type", char: " " })).toEqual(box("", 0));
-    expect(editBox(box("a b", 2), { kind: "type", char: " " })).toEqual(box("a b", 2)); // (right after a space)
-    expect(editBox(box("a b", 1), { kind: "type", char: " " })).toEqual(box("a b", 1)); // (right before one)
+    expect(editBox(box("a b", 2), { kind: "type", char: " " })).toEqual(box("a b", 2));
+    expect(editBox(box("a b", 1), { kind: "type", char: " " })).toEqual(box("a b", 1));
     expect(editBox(box("ab", 1), { kind: "type", char: " " })).toEqual(box("a b", 2));
     expect(editBox(box("x".repeat(60), 3), { kind: "type", char: "y" })).toEqual(box("x".repeat(60), 3));
   });
@@ -196,9 +192,9 @@ describe("editBox", () => {
   });
 
   it("puts in at the caret what was copied somewhere else, as if it were typed: one line, tidy, and no longer than the box", () => {
-    expect(editBox(box("the ", 4), { kind: "paste", text: "Night Of\n" })).toEqual(box("the Night Of", 12)); // (without the end of the line it was copied with)
-    expect(editBox(box("ab", 1), { kind: "paste", text: "\t x \r\n  y" })).toEqual(box("a x yb", 5)); // (what is between the words is one space)
-    expect(editBox(box(""), { kind: "paste", text: "  Amelie \u{1F3AC}" })).toEqual(box("Amelie \u{1F3AC}")); // (any character: it is not a key of the remote)
+    expect(editBox(box("the ", 4), { kind: "paste", text: "Night Of\n" })).toEqual(box("the Night Of", 12));
+    expect(editBox(box("ab", 1), { kind: "paste", text: "\t x \r\n  y" })).toEqual(box("a x yb", 5));
+    expect(editBox(box(""), { kind: "paste", text: "  Amelie \u{1F3AC}" })).toEqual(box("Amelie \u{1F3AC}"));
     expect(editBox(box("abc"), { kind: "paste", text: "defgh" }, 5)).toEqual(box("abcde"));
     expect(editBox(box("abc", 1), { kind: "paste", text: "" })).toEqual(box("abc", 1));
   });
@@ -207,7 +203,6 @@ describe("editBox", () => {
     expect(editBox(box("night", 2), { kind: "clear" })).toEqual(box("", 0));
   });
 
-  // (the owner: "I can't highlight text to copy here or do something with it like delete")
   describe("a selection", () => {
     const picked = (text: string, anchor: number, caret: number) => ({ text, caret, anchor });
 
@@ -230,18 +225,18 @@ describe("editBox", () => {
       const once = editBox(box("night", 5), { kind: "move", to: "left", extend: true });
       expect(once).toEqual(picked("night", 5, 4));
       expect(editBox(once, { kind: "move", to: "left", extend: true })).toEqual(picked("night", 5, 3));
-      expect(editBox(once, { kind: "move", to: "right", extend: true })).toEqual(box("night", 5)); // (back to where it began: nothing is selected)
+      expect(editBox(once, { kind: "move", to: "right", extend: true })).toEqual(box("night", 5));
       expect(editBox(box("night", 2), { kind: "move", to: "start", extend: true })).toEqual(picked("night", 2, 0));
-      expect(editBox(box("night", 2), { kind: "move", to: 4, extend: true })).toEqual(picked("night", 2, 4)); // (a click with Shift)
+      expect(editBox(box("night", 2), { kind: "move", to: 4, extend: true })).toEqual(picked("night", 2, 4));
     });
 
     it("is replaced by what is typed or pasted, and taken out by Backspace or Delete, the text kept tidy", () => {
       expect(editBox(picked("the night of", 4, 9), { kind: "type", char: "d" })).toEqual(box("the d of", 5));
       expect(editBox(picked("the night of", 4, 9), { kind: "paste", text: "day" })).toEqual(box("the day of", 7));
-      expect(editBox(picked("the night of", 4, 9), { kind: "backspace" })).toEqual(box("the of", 4)); // (the two spaces left are one)
+      expect(editBox(picked("the night of", 4, 9), { kind: "backspace" })).toEqual(box("the of", 4));
       expect(editBox(picked("the night of", 9, 4), { kind: "delete" })).toEqual(box("the of", 4));
       expect(editBox(picked("night", 0, 5), { kind: "backspace" })).toEqual(box("", 0));
-      expect(editBox(picked("x".repeat(60), 0, 60), { kind: "type", char: "y" })).toEqual(box("y")); // (a full box takes a letter in place of what is selected)
+      expect(editBox(picked("x".repeat(60), 0, 60), { kind: "type", char: "y" })).toEqual(box("y"));
     });
 
     it("is let go by an arrow without Shift, which goes to that end of it, and by a click", () => {
@@ -252,9 +247,8 @@ describe("editBox", () => {
     });
   });
 
-  // (a narrow screen's own keyboard can type an emoji: two UTF-16 units, one character; cut in half it is a text the address cannot hold)
   it("steps over an emoji as one character, with the caret, Backspace and Delete alike", () => {
-    const text = "a\u{1F3AC}b"; // a, a clapper board, b: length 4
+    const text = "a\u{1F3AC}b";
     expect(editBox(box(text, 3), { kind: "move", to: "left" })).toEqual(box(text, 1));
     expect(editBox(box(text, 1), { kind: "move", to: "right" })).toEqual(box(text, 3));
     expect(editBox(box(text, 3), { kind: "backspace" })).toEqual(box("ab", 1));
@@ -265,8 +259,8 @@ describe("editBox", () => {
 
   it("never leaves the caret in the middle of an emoji, wherever it is told to go", () => {
     const text = "a\u{1F3AC}b";
-    expect(editBox(box(text), { kind: "move", to: 2 })).toEqual(box(text, 1)); // (back to where the emoji starts)
-    expect(editBox(box(text, 2), { kind: "type", char: "x" })).toEqual(box("ax\u{1F3AC}b", 2)); // (a caret that was left in the middle is mended before it types)
+    expect(editBox(box(text), { kind: "move", to: 2 })).toEqual(box(text, 1));
+    expect(editBox(box(text, 2), { kind: "type", char: "x" })).toEqual(box("ax\u{1F3AC}b", 2));
     expect(editBox(box(text, 2), { kind: "backspace" })).toEqual(box("\u{1F3AC}b", 0));
   });
 });

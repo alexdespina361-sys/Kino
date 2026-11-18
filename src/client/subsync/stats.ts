@@ -1,55 +1,37 @@
-/**
- * What the subtitle aligner has done on this page, for the `?debug` panel (a TV that nobody on the team can hold: see shared/debug.ts).
- * A page plays one film at a time, so there is one set of numbers; `SyncSession` writes them, as plain assignments.
- */
 const fresh = () => ({
-  /** A session has started on this page (until then the panel says nothing of the aligner). */
   started: false,
   status: "",
-  /** Pieces of the film's sound the tap handed over, and the seconds of it that were decoded (and how long that took, in ms). */
   pieces: 0,
   decodedSeconds: 0,
   decodeMs: 0,
-  /** Seconds of sound the voice detector went through (and how long that took, in ms). */
   vadSeconds: 0,
   vadMs: 0,
   recogniser: "none" as "none" | "starting" | "running" | "failed" | "stopped" | "not needed",
-  /** Windows the recogniser heard, the words in them, and how many seconds of sound it got through per second (the last windows). */
   windows: 0,
   words: 0,
   heardSeconds: 0,
   speed: 0,
-  /** How long the recogniser was at work, in all (ms). */
   hearMs: 0,
-  /** Solves done (and how long they took in all, in ms), and of the track on screen: the lines placed by them and the lines it has. */
   solves: 0,
   solveMs: 0,
   placed: 0,
   lines: 0,
-  /** The solves by how they placed the lines: with the heard words, as a dub (the file's timing put where people speak), or by the voice detector alone. */
   methods: {} as Record<string, number>,
-  /** Tests of the track on screen against the words (the last one's verdict and share), tracks switched to, and whether it is timed from an English one. */
   tests: 0,
   verdict: "",
   share: 0,
   switches: 0,
   bridged: false,
-  /** Where the timing that other screens left for the track on screen stands (empty when there is no server to ask), and how many lines this screen has left for them. */
   shared: "",
   sent: 0,
-  /** Times the track on screen was offered for a Kino Official subtitle (see `official.ts`). */
   offered: 0,
-  /** Why the aligner gave up on this film, if it did. */
   gaveUp: "",
-  /** Where, in the film's seconds: the sound that has come in, the stretches the recogniser heard, and the stretches of the track on screen that solves have timed ("0-118 240-300"). */
   sound: "",
   heard: "",
   covered: "",
-  /** Pieces of sound that were let go (or could not be read), when any were: "60 in, let go 30 before the subtitles + 2 after + 0 decoded, 0 unreadable". */
   lost: "",
 });
 
-/** Stretches of a film in a few characters: "0-118 240-300" (whole seconds). */
 export function spans(ranges: ReadonlyArray<{ from: number; to: number }>): string {
   return ranges.map((range) => `${Math.floor(range.from)}-${Math.ceil(range.to)}`).join(" ");
 }
@@ -57,15 +39,12 @@ export function spans(ranges: ReadonlyArray<{ from: number; to: number }>): stri
 export const alignerStats = fresh();
 export type AlignerStats = typeof alignerStats;
 
-/** A new film: the numbers start again. */
 export function resetAlignerStats(): void {
   Object.assign(alignerStats, fresh());
 }
 
-/** What the debug panel calls the ways a solve places lines. */
 const METHOD_NAMES: Record<string, string> = { "whistle+silero": "words", dub: "dub", silero: "voice" };
 
-/** The aligner's doings in a line, or null while it has not started (this page plays nothing the aligner works on). */
 export function describeAligner(stats: AlignerStats): string | null {
   if (!stats.started) return null;
   const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;

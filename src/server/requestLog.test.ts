@@ -11,7 +11,6 @@ describe("what the log says about a request", () => {
     expect(addressForLog("/api/library/search?q=a+film+somebody+looked+for&kind=movie")).toBe("/api/library/search?q=_&kind=movie");
     expect(addressForLog("/api/auth/google/callback?code=4/0AbCdEf&state=xyz123")).toBe("/api/auth/google/callback?code=_&state=_");
     expect(addressForLog("/?party=ABCD12&role=remote")).toBe("/?party=_&role=remote");
-    // (A value that is one of the plain ones by name but not by looks is dropped as well.)
     expect(addressForLog("/api/library/rows?section=<script>&cursor=3")).toBe("/api/library/rows?section=_&cursor=3");
   });
 
@@ -20,7 +19,6 @@ describe("what the log says about a request", () => {
     const line = addressForLog(`/api/proxy?url=${encodeURIComponent(link)}&referer=${encodeURIComponent("https://site.example/watch/123")}&format=hls`);
     expect(line).toBe("/api/proxy?url=media.example&referer=_&format=hls");
     expect(addressForLog("/api/proxy?url=not%20a%20link")).toBe("/api/proxy?url=_");
-    // (Only the proxy's: a `url` asked of another route is a page somebody pasted or a title.)
     expect(addressForLog(`/api/resolve?url=${encodeURIComponent(link)}`)).toBe("/api/resolve?url=_");
   });
 
@@ -30,7 +28,6 @@ describe("what the log says about a request", () => {
       url: "/api/profiles/:id/friends?since=_",
       host: "kino.example",
     });
-    // (An address that found no route is written as asked, without its questions' values: what a scanner asks for is worth seeing.)
     expect(requestForLog({ method: "GET", url: "/wp-admin/install.php?step=1", routeOptions: {} })).toEqual({ method: "GET", url: "/wp-admin/install.php?step=_" });
     expect(requestForLog({ method: "GET", url: "/assets/index-abc.js", routeOptions: { url: "/*" } }).url).toBe("/assets/index-abc.js");
   });
@@ -71,9 +68,8 @@ describe("the server's log", () => {
       expect(text()).not.toContain("SECRET-TOKEN");
       expect(text()).not.toContain("somebody");
       expect(text()).toContain("media.example");
-      expect(lines.some((line) => (line.res as { statusCode?: number } | undefined)?.statusCode !== undefined)).toBe(true); // (the answer's line is as it was)
+      expect(lines.some((line) => (line.res as { statusCode?: number } | undefined)?.statusCode !== undefined)).toBe(true);
 
-      // (Past the limit of one a minute: refused, and that line says to whom.)
       const refused = await app.inject({ url: `/api/proxy?url=${encodeURIComponent(link)}`, remoteAddress: visitor });
       expect(refused.statusCode).toBe(429);
       expect(lines.filter((line) => line.msg === "refused")).toEqual([expect.objectContaining({ status: 429, visitor })]);
@@ -92,7 +88,6 @@ describe("the server's log", () => {
         expect(answer.statusCode, page).toBe(200);
         expect(answer.body, page).toContain("<title>Kino</title>");
       }
-      // (An address that looks like a page but is none of the site's gets the page too, which says so, with a 404: the judge, 16 Nov.)
       const stray = await app.inject({ url: "/some/page", headers: html });
       expect(stray.statusCode).toBe(404);
       expect(stray.body).toContain("<title>Kino</title>");

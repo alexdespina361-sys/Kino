@@ -1,9 +1,7 @@
 import { inCueOrder, parseVtt, toVtt, type VttCue } from "../vtt";
 
-/** The kinds of subtitle file the fixer reads. Pictures of text (PGS, VobSub) are Subtitle Edit's OCR's, not ours. */
 export type SubtitleFormat = "srt" | "vtt" | "ass";
 
-/** A file's bytes as text: UTF-8 when they are, else the code page such files of that language are written in. */
 export function decodeSubtitle(bytes: Uint8Array, lang: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^﻿/, "");
@@ -18,12 +16,10 @@ export function formatOf(text: string, name = ""): SubtitleFormat {
   return "srt";
 }
 
-/** `0:01:02,5` and `00:01:02.500` alike, as WebVTT writes a time. */
 function srtTimesToVtt(text: string): string {
   return text.replace(/(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/g, (_, h: string, m: string, s: string, ms: string) => `${h.padStart(2, "0")}:${m}:${s}.${ms.padEnd(3, "0")}`);
 }
 
-/** ASS's `H:MM:SS.cc`. */
 function assTime(text: string): number | undefined {
   const match = /^(\d+):(\d{2}):(\d{2})[.,](\d{1,3})$/.exec(text.trim());
   if (!match) return undefined;
@@ -31,7 +27,6 @@ function assTime(text: string): number | undefined {
   return Number(h) * 3600 + Number(m) * 60 + Number(s) + Number(`0.${frac}`);
 }
 
-/** The dialogue of an ASS/SSA file: its italics kept as `<i>`, its other override tags, drawings and comments left out. */
 function readAss(text: string): VttCue[] {
   const cues: VttCue[] = [];
   let fields: string[] | undefined;
@@ -49,14 +44,12 @@ function readAss(text: string): VttCue[] {
     }
     if (!/^Dialogue\s*:/i.test(line) || !fields) continue;
     const values = line.replace(/^Dialogue\s*:/i, "").split(",");
-    // (The text is the last field and may itself hold commas.)
     const textAt = fields.indexOf("text");
     const parts = [...values.slice(0, textAt), values.slice(textAt).join(",")];
     const start = assTime(parts[fields.indexOf("start")] ?? "");
     const end = assTime(parts[fields.indexOf("end")] ?? "");
     let body = parts[textAt] ?? "";
     if (start === undefined || end === undefined) continue;
-    // (A drawing, `{\p1}...`, is shapes, not words.)
     if (/\{[^}]*\\p[1-9]/.test(body)) continue;
     body = body
       .replace(/\{[^}]*\\i1[^}]*\}/g, "<i>")
@@ -69,7 +62,6 @@ function readAss(text: string): VttCue[] {
   return cues;
 }
 
-/** The lines of a subtitle file in the order a browser lists them (SRT and VTT read the way the screens read them: see `parseVtt`). */
 export function readSubtitle(text: string, format: SubtitleFormat = formatOf(text)): VttCue[] {
   if (format === "ass") return inCueOrder(readAss(text));
   if (format === "vtt") return inCueOrder(parseVtt(text));

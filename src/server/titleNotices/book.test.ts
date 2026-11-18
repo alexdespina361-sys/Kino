@@ -7,7 +7,6 @@ const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const at = (day: string, hour = 0) => Date.parse(`${day}T00:00:00Z`) + hour * HOUR;
 
-/** A movie database that says what the test put in it, and counts what it was asked. */
 function fakeSource() {
   const shows = new Map<number, ShowNow | null>();
   const films = new Map<number, FilmNow | null>();
@@ -54,7 +53,6 @@ describe("what the movie database says of a show", () => {
     expect(showNowOf(raw)).toEqual({ name: "Show", image: "https://image.tmdb.org/t/p/w500/p.jpg", year: 2020, ended: false, last: { season: 3, episode: 4, day: "2026-11-08" }, nextDay: "2026-11-15" });
     expect(showNowOf({ ...raw, last_episode_to_air: { season_number: 0, episode_number: 7, air_date: "2026-11-08" } }).last).toBeNull();
     expect(showNowOf({ name: "Old", status: "Ended", last_episode_to_air: null }).ended).toBe(true);
-    // (an answer with a part that cannot be read is still an answer)
     expect(showNowOf({ name: "Odd", last_episode_to_air: "soon", next_episode_to_air: 5 })).toEqual({ name: "Odd", ended: false, last: null });
   });
 });
@@ -68,12 +66,10 @@ describe("new episodes of what a profile watches", () => {
     expect(book.of("ana")).toEqual([]);
     expect(told).toEqual([]);
 
-    // Nothing is asked again until the next episode is due (and then not before it has had its day and a half).
     clock.now = at("2026-11-14", 12);
     await book.look();
     expect(tmdb.asked).toEqual(["tv-7"]);
 
-    // The day it airs, as the movie database dates it: listed, and not news yet.
     tmdb.shows.set(7, show(2, 4, "2026-11-15", { nextDay: "2026-11-22" }));
     clock.now = at("2026-11-15") + HOLD_MS - HOUR;
     await book.look();
@@ -94,7 +90,7 @@ describe("new episodes of what a profile watches", () => {
     await book.look();
 
     clock.now += 2 * DAY;
-    tmdb.shows.set(7, show(1, 7, "2026-11-09")); // (two at once: a double episode)
+    tmdb.shows.set(7, show(1, 7, "2026-11-09"));
     await book.look();
     expect(book.of("ana")).toMatchObject([{ what: "episode", season: 1, episode: 7, count: 2 }]);
 
@@ -103,7 +99,6 @@ describe("new episodes of what a profile watches", () => {
     await book.look();
     expect(book.of("ana")).toMatchObject([{ what: "episode", season: 1, episode: 8, count: 3 }]);
 
-    // Looked at: the next one is one episode again.
     book.seen("ana");
     clock.now += 2 * DAY;
     tmdb.shows.set(7, show(1, 9, "2026-11-13"));
@@ -125,7 +120,6 @@ describe("new episodes of what a profile watches", () => {
     watch([watcher("ana", ["tv-7"])]);
     await book.look();
     const seen: Array<number | undefined> = [];
-    // Looked at every hour for four days, as the days go by: the 11th's episode is out on the 11th, and so on.
     for (let hour = 13; hour <= 5 * 24; hour++) {
       clock.now = at("2026-11-10", hour);
       const day = Math.floor(hour / 24);
@@ -134,14 +128,12 @@ describe("new episodes of what a profile watches", () => {
       const [item] = book.of("ana");
       if (item && item.episode !== seen[seen.length - 1]) {
         seen.push(item.episode);
-        // Each is news from a day and a half after the start of its day.
         expect(clock.now).toBe(at(`2026-11-${10 + item.episode! - 5}`) + HOLD_MS);
         book.seen("ana");
       }
     }
     expect(seen).toEqual([6, 7, 8]);
     expect(told).toEqual(["ana", "ana", "ana"]);
-    // (and the movie database was asked a few times a day, not every hour)
     expect(tmdb.asked.length).toBeLessThan(16);
   });
 
@@ -153,7 +145,7 @@ describe("new episodes of what a profile watches", () => {
     clock.now = at("2026-11-11", 12);
     tmdb.shows.set(7, show(1, 6, "2026-11-11"));
     await book.look();
-    tmdb.shows.set(7, show(1, 5, "2026-11-08")); // (it was listed by mistake)
+    tmdb.shows.set(7, show(1, 5, "2026-11-08"));
     clock.now = at("2026-11-11") + HOLD_MS + HOUR;
     await book.look();
     expect(book.of("ana")).toEqual([]);
@@ -166,9 +158,9 @@ describe("new episodes of what a profile watches", () => {
     await book.look();
     clock.now = at("2026-11-11", 12);
     tmdb.shows.set(7, show(1, 6, "2026-11-11"));
-    await book.look(); // (it aired today: it waits)
+    await book.look();
     clock.now += 10 * 60_000;
-    watch([watcher("ana", ["tv-7"]), watcher("bob", ["tv-7"])]); // (Bob begins the show, with that episode on its page)
+    watch([watcher("ana", ["tv-7"]), watcher("bob", ["tv-7"])]);
     await book.look();
     clock.now = at("2026-11-11") + HOLD_MS + HOUR;
     await book.look();
@@ -191,7 +183,6 @@ describe("new episodes of what a profile watches", () => {
     expect(long).toMatchObject({ what: "episode", count: 2 });
     expect(long).not.toHaveProperty("season");
     expect(long).not.toHaveProperty("episode");
-    // (the 27th of a first season is one such too: nobody can tell from here whether its page cuts it)
     expect(book.of("ana").find((item) => item.id === "tv-8")).not.toHaveProperty("episode");
   });
 
@@ -204,19 +195,18 @@ describe("new episodes of what a profile watches", () => {
     watch([watcher("ana", ["tv-7"]), watcher("bob", ["tv-7"])]);
     clock.now += 2 * DAY;
     tmdb.shows.set(7, show(1, 6, "2026-11-09"));
-    book.sweep(); // (bob is seen to watch it before anything new is known)
+    book.sweep();
     await book.look();
     expect(book.of("ana")).toHaveLength(1);
     expect(book.of("bob")).toHaveLength(1);
     expect(told.sort()).toEqual(["ana", "bob"]);
 
-    // One who comes after that has nothing to be told.
     watch([watcher("ana", ["tv-7"]), watcher("bob", ["tv-7"]), watcher("cat", ["tv-7"])]);
     book.sweep();
     clock.now += DAY;
     await book.look();
     expect(book.of("cat")).toEqual([]);
-    expect(tmdb.asked.filter((what) => what === "tv-7")).toHaveLength(3); // (one question for everybody who watches it, each time it is due)
+    expect(tmdb.asked.filter((what) => what === "tv-7")).toHaveLength(3);
   });
 
   it("tells a profile that turned the notices off nothing, and brings no backlog when they are turned on again", async () => {
@@ -274,7 +264,6 @@ describe("new episodes of what a profile watches", () => {
     watch([watcher("ana", ["tv-7"])]);
     await book.look();
     expect(tmdb.asked).toEqual(["tv-7"]);
-    // (A day later it is due again; meanwhile another profile "watches" 80 titles nobody heard of, new ones every five minutes.)
     clock.now += DAY;
     for (let round = 0; round < 3; round++) {
       const made = Array.from({ length: 80 }, (_, index) => `tv-${1000 + round * 80 + index}`);
@@ -300,7 +289,7 @@ describe("new episodes of what a profile watches", () => {
     expect(book.of("ana")).toEqual([]);
     expect(book.usage().failed).toBe(1);
     clock.now += 10 * 60_000;
-    await book.look(); // (not yet)
+    await book.look();
     expect(tmdb.asked).toHaveLength(2);
     tmdb.setDown(false);
     clock.now += 30 * 60_000;
@@ -349,11 +338,10 @@ describe("new episodes of what a profile watches", () => {
       const book = await TitleNoticeBook.open({ persistence, source: tmdb.source, followers: () => [watcher("ana", ["tv-7"])], flushMs: 5, log: { warn: (message) => void warned.push(message) } });
       tmdb.shows.set(7, show(1, 5, "2026-11-01"));
       await book.look();
-      await new Promise((resolve) => setTimeout(resolve, 60)); // (the timer's save fails)
+      await new Promise((resolve) => setTimeout(resolve, 60));
       expect(saves).toBeGreaterThan(0);
       expect(warned.some((line) => line.includes("disk full"))).toBe(true);
       expect(unhandled).toEqual([]);
-      // Once it can be kept again, it is: nothing was forgotten.
       broken = false;
       await book.flush();
       expect([...(await inner.load()).keys()].sort()).toEqual(["p:ana", "t:tv-7"]);
@@ -367,7 +355,6 @@ describe("new episodes of what a profile watches", () => {
     const { tmdb, clock, told, book, watch } = await setup();
     const keys = Array.from({ length: TELLS_PER_DAY + 2 }, (_, index) => `tv-${index + 1}`);
     for (const key of keys) tmdb.shows.set(Number(key.slice(3)), show(1, 1, "2026-11-01"));
-    // (The shows are begun an hour apart, so each is asked about again an hour after the one before it.)
     for (let count = 1; count <= keys.length; count++) {
       watch([watcher("ana", keys.slice(0, count))]);
       await book.look();
@@ -381,7 +368,6 @@ describe("new episodes of what a profile watches", () => {
     }
     expect(book.of("ana")).toHaveLength(keys.length);
     expect(told).toHaveLength(TELLS_PER_DAY);
-    // The next day it is told again.
     tmdb.shows.set(1, show(1, 3, "2026-11-10"));
     clock.now = at("2026-11-12", 13);
     await book.look();
@@ -399,7 +385,6 @@ describe("new episodes of what a profile watches", () => {
     tmdb.shows.set(8, show(1, 6, "2026-11-09", { name: "Other" }));
     await book.look();
     expect(book.of("ana").map((item) => item.read)).toEqual([false, false]);
-    // The ones its bell listed are looked at, the rest are news still.
     expect(book.seen("ana", ["tv-8", "tv-99"]).map((item) => [item.id, item.read])).toEqual(expect.arrayContaining([["tv-7", false], ["tv-8", true]]));
     expect(book.seen("ana").map((item) => item.read)).toEqual([true, true]);
     expect(book.dismiss("ana", "tv-7").map((item) => item.id)).toEqual(["tv-8"]);
@@ -425,7 +410,6 @@ describe("new episodes of what a profile watches", () => {
     expect(persistence.docs.get("p:ana")).toMatchObject({ shows: {} });
     expect(book.usage().titles).toBe(0);
 
-    // Watched again, it starts from what is out by then.
     tmdb.shows.set(7, show(1, 9, "2026-11-05"));
     watch([watcher("ana", ["tv-7"])]);
     clock.now += 6 * 60_000;
@@ -443,28 +427,26 @@ describe("a new film of a series of films", () => {
     tmdb.films.set(100, { name: "Part One", collection: 9 });
     tmdb.series.set(9, parts({ id: 102, name: "Part Three", day: "2026-10-20", year: 2026 }));
     watch([watcher("ana", ["movie-100"], more)]);
-    await book.look(); // the film: it is one of a series
+    await book.look();
     clock.now += 60_000;
-    await book.look(); // the series, for the first time
+    await book.look();
     return all;
   }
 
   it("is news once it can be watched at home, with the film the profile watched; what was out when the series was first looked at is not", async () => {
     const { tmdb, clock, told, book } = await watching();
     expect(book.of("ana")).toEqual([]);
-    // (only the film that is new was asked about: the old ones are out at home for sure)
     expect(tmdb.asked).toEqual(["movie-100", "col-9", "home-102"]);
 
     clock.now += DAY;
     await book.look();
-    expect(book.of("ana")).toEqual([]); // in cinemas only
+    expect(book.of("ana")).toEqual([]);
 
     tmdb.home.add(102);
     clock.now += DAY;
     await book.look();
     expect(book.of("ana")).toEqual([{ id: "movie-102", at: clock.now, what: "film", title: "Part Three", url: "https://filmpire.sc/watch/102", year: 2026, like: "Title movie-100", read: false }]);
     expect(told).toEqual(["ana"]);
-    // (and once it is out, the series is looked at once a week)
     clock.now += 6 * DAY;
     await book.look();
     expect(tmdb.asked.filter((what) => what === "col-9")).toHaveLength(3);

@@ -7,7 +7,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
-// `node scripts/official.mjs` (scripts/feedback.mjs official): the team's side of the Kino Official subtitles. Made-up lines only: the repo is public.
 const exec = promisify(execFile);
 const TOKEN = "never-shown-0123456789-abcdefghijklmnop";
 const ID = "0123456789abcdef0123";
@@ -39,7 +38,6 @@ const meta = {
 };
 const record = { meta, lines: [[150, 300, "- Where?\n- Home."], [360000, 360250, "The end."]], source: [[0, "-Where?\n-Home."]] };
 
-/** The site's team side for one subtitle: what it was asked, and what it was sent. */
 async function site() {
   const asked: Array<{ method: string; url: string; authorization: string; body?: unknown }> = [];
   const server = createServer((request, response) => {
@@ -67,7 +65,6 @@ async function site() {
   return { env: { KINO_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, FEEDBACK_ADMIN_TOKEN: TOKEN }, asked };
 }
 
-/** The scripts in a folder of their own, so what `show` saves goes there. */
 async function scripts(): Promise<string> {
   const folder = await mkdtemp(path.join(tmpdir(), "kino-official-cli-"));
   folders.push(folder);

@@ -6,7 +6,6 @@ import { teamGuard } from "../feedback/routes";
 import type { Officials } from "./official";
 
 const MINUTE = 60_000;
-/** An offer is every line of the longest file, a few numbers each. */
 const OFFER_LIMIT = 256 * 1024;
 const EDIT_LIMIT = 2 * 1024 * 1024;
 
@@ -20,10 +19,6 @@ const EditSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
-/**
- * Kino Official subtitles (see `official.ts`): the file a screen is given (`/api/subtitles/official/:id-:rev.vtt`), the offers screens make
- * (`POST /api/official/offer`), and the team's side under `/api/admin/official`, with the team's token.
- */
 export function officialRoutes(
   app: FastifyInstance,
   { officials, adminToken, fetchFile }: { officials: Officials; adminToken: string | undefined; fetchFile: (track: string) => Promise<string | undefined> },
@@ -37,7 +32,6 @@ export function officialRoutes(
     const found = await officials.vtt(match[1]!, match[2]!).catch(() => undefined);
     if (!found) return reply.code(404).send({ error: "Subtitle not found" });
     reply.header("Content-Type", "text/vtt; charset=utf-8");
-    // (The link names the version: the one it names never changes. A link of an older one gets the newer, for a while.)
     reply.header("Cache-Control", found.current ? "public, max-age=31536000, immutable" : "public, max-age=300");
     reply.header("Access-Control-Allow-Origin", "*");
     return reply.send(found.vtt);
@@ -53,7 +47,6 @@ export function officialRoutes(
       request.log.warn(`Kino Official subtitles: an offer failed: ${error.message}`);
       return "unavailable" as const;
     });
-    // (What became of it is said, for the debug panel; a screen does nothing more about it.)
     return reply.code(outcome === "taken" ? 201 : 200).send({ outcome });
   });
 

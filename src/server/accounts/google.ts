@@ -9,20 +9,6 @@ import { RateLimiter } from "./rateLimit";
 import type { SignUpLimits } from "./routes";
 import type { AccountStore } from "./store";
 
-/**
- * "Continue with Google": signing in, and making an account, with a Google account (docs/google-sign-in.md). The server does it all, with Google's
- * authorization code and PKCE: the button is a link to `/api/auth/google/start`, which sends the browser to Google with a new flow of its own (a state, a nonce and
- * a code verifier kept here for 10 minutes, the state also in a cookie of this browser), and Google sends it back to `/api/auth/google/callback` with a code.
- * The code is taken to Google's token endpoint straight from here, with the client's secret and the verifier, and what Google answers over that connection
- * says who the person is: only `sub`, Google's own number for them, is kept (and `given_name`, once, is the name of the first profile of an account made now).
- * Nothing is matched by e-mail: a Google account signs in to the account it made or was connected to, and to no other.
- *
- * The flow is `signin` (the account of that Google account, made if there is none and new accounts may be made), `link` (connect it to the account that is
- * signed in) or `reauth` (the person signed in proves again who they are, which is how an account that has no password anybody knows is deleted). Every way
- * back ends at a page of this site with at most a word for it (`?google=`, see `GOOGLE_OUTCOMES`), and never with a code, a token or anything of the person's.
- * Without the three settings, or at an address that is not one of `GOOGLE_REDIRECT_URIS`, none of it is on.
- */
-
 export const GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const GOOGLE_CALLBACK = "/api/auth/google/callback";
@@ -30,28 +16,19 @@ export const GOOGLE_CALLBACK = "/api/auth/google/callback";
 export interface GoogleConfig {
   clientId: string;
   clientSecret: string;
-  /** The addresses Google may send a browser back to, exactly as they are registered with Google: one for each address the site is served at. */
   redirectUris: string[];
-  /** Google's, unless a test says otherwise (a fake on this machine: see `googleFromEnv`). */
   authorizeUrl?: string;
   tokenUrl?: string;
-  /** How long Google's token endpoint is waited for (10 s unless set; tests wait less). */
   timeoutMs?: number;
 }
 
 const FLOW_COOKIE = "kino_oauth";
 const FLOW_MS = 10 * 60_000;
 const MAX_FLOWS = 2000;
-/**
- * How many sign-ins one address may have under way at once (a sixth lets go of its own oldest). With the most there can be under way, the rule that keeps
- * one address from pushing out everybody else's (the review of 18 Nov: first in, first out, about 70 addresses could fail every sign-in that was under way).
- */
 export const FLOWS_PER_ADDRESS = 5;
-/** How long a proof given by `reauth` lasts: the account has to be deleted in that time. */
 export const REAUTH_MS = 5 * 60_000;
 const TOKEN_TIMEOUT_MS = 10_000;
 const TOKEN_MAX_BYTES = 64 * 1024;
-/** How far apart the clocks of Google and of this server may be. */
 const SKEW_MS = 60_000;
 const ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -68,17 +45,11 @@ function parsed(address: string): URL | undefined {
   }
 }
 
-/** Whether this is an address Google may send a browser back to here: this site's own way back, over https (or plain http on this very machine), and nothing more. */
 function isCallback(address: string): boolean {
   const url = parsed(address);
   return Boolean(url && (url.protocol === "https:" || (url.protocol === "http:" && isLoopback(url))) && url.pathname === GOOGLE_CALLBACK && !url.search && !url.hash && !url.username && !url.password);
 }
 
-/**
- * Google sign-in from the host's settings: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URIS` (a comma between addresses), all three or it is off.
- * `GOOGLE_AUTHORIZE_URL` and `GOOGLE_TOKEN_URL` send it to a fake Google instead; they are for tests, so they count only with `ALLOW_PRIVATE_NETWORK=1` (which no
- * deployed server has) and only for an address on this machine. (What is wrong is said without the secret.)
- */
 export function googleFromEnv(env: NodeJS.ProcessEnv, warn: (message: string) => void = () => {}): GoogleConfig | undefined {
   const clientId = env.GOOGLE_CLIENT_ID?.trim() ?? "";
   const clientSecret = env.GOOGLE_CLIENT_SECRET?.trim() ?? "";
@@ -105,14 +76,8 @@ export function googleFromEnv(env: NodeJS.ProcessEnv, warn: (message: string) =>
   return { clientId, clientSecret, redirectUris, ...(authorizeUrl ? { authorizeUrl } : {}), ...(tokenUrl ? { tokenUrl } : {}) };
 }
 
-/* ------------------------------ the token endpoint ------------------------------ */
-
 export type Posted = { ok: true; body: unknown } | { ok: false; reason: "address" | "network" | "timeout" | "status" | "type" | "size" | "json" };
 
-/**
- * A form sent to `address` (Google's token endpoint) and its answer, which has to be JSON: waited for `timeoutMs` at the most, no more than `maxBytes` of it taken,
- * and a redirect is not followed (it is an answer that is not 200). Over https, or plain http to this machine (a test's fake). Never throws.
- */
 export function postForm(address: string, form: Record<string, string>, { timeoutMs = TOKEN_TIMEOUT_MS, maxBytes = TOKEN_MAX_BYTES } = {}): Promise<Posted> {
   const url = parsed(address);
   if (!url || !(url.protocol === "https:" || isLoopback(url))) return Promise.resolve({ ok: false, reason: "address" });
@@ -152,17 +117,11 @@ export function postForm(address: string, form: Record<string, string>, { timeou
   });
 }
 
-/** What an ID token says of the person, once everything in it that has to be right is. */
 export interface GoogleClaims {
   sub: string;
   givenName?: string;
 }
 
-/**
- * The claims of the ID token Google answered with, or nothing when one of them is not what it has to be: Google's issuer, this client as the audience (and as the
- * party it was given to, when it says), not expired, the nonce of this flow, and a `sub` that looks like one. Its signature is not checked: it came straight from
- * Google's token endpoint over TLS, in answer to this client's secret, which is what OpenID Connect says makes that unnecessary.
- */
 export function readIdToken(idToken: string, expected: { clientId: string; nonce: string; now: number }): GoogleClaims | undefined {
   const parts = idToken.split(".");
   if (parts.length !== 3 || !parts[1]) return undefined;
@@ -183,7 +142,6 @@ export function readIdToken(idToken: string, expected: { clientId: string; nonce
   return { sub, ...(typeof givenName === "string" ? { givenName } : {}) };
 }
 
-/** The name of the first profile of an account made with Google: the person's first name as Google has it, made fit for a profile (letters, digits, a few marks; 16 at most), or "Me". */
 export function profileNameOf(givenName: string | undefined): string {
   const cleaned = (givenName ?? "").slice(0, 200).normalize("NFC").replace(/[^\p{L}\p{M}\p{N} '’.-]/gu, " ").replace(/\s+/g, " ").trim();
   let name = "";
@@ -194,8 +152,6 @@ export function profileNameOf(givenName: string | undefined): string {
   return name.trim() || "Me";
 }
 
-/* ------------------------------ the routes ------------------------------ */
-
 interface Flow {
   nonce: string;
   verifier: string;
@@ -203,39 +159,22 @@ interface Flow {
   mode: Mode;
   device: DeviceKind;
   next: "/" | "/tv";
-  /** `link` and `reauth`: the account that asked, which has to be the one signed in when the browser comes back. */
   accountId?: string;
   startedAt: number;
-  /** The address it was started from (in memory only, as the limits have it: see `FLOWS_PER_ADDRESS`). */
   from: string;
-  /** A round trip for the Android app (see `AppTrip`). */
   app?: AppTrip;
 }
 
-/**
- * The Android app shows the site in a WebView, which Google does not sign anybody in from (`disallowed_useragent`): its "Continue with Google" goes out to the
- * phone's browser (a Custom Tab), and comes back to the app with a code that only the app can use. The app makes a secret of its own and gives the start its hash
- * (`app=`, as PKCE does); the way back does not sign the browser in, connect or confirm anything, but leaves what came of it under a one-time code, and sends
- * the browser to the app (`appAddress`: an Android intent for this app's package alone, so no other app on the phone can be given it, the judge, 17 Nov), which
- * brings the code and its secret to `/api/auth/google/app-claim` in its WebView: that is where it is signed in. A code caught all the same is no use without the
- * secret. Connecting Google, or confirming who is here, needs the WebView's own session: the WebView asks for a ticket first (`/api/auth/google/app-ticket`, this
- * site's own page only), the browser starts with the ticket, and the claim is done only by that very session, still signed in (the judge, 17 Nov: done in the
- * browser, a stolen ticket, or one of a session ended since, would have connected somebody's Google account to the account).
- */
 interface AppTrip {
   challenge: string;
-  /** `link` and `reauth`: the WebView's session, the only one that may claim what comes of it. */
   sessionId?: string;
 }
 
-/** What the claim does once the app proved it is the one that started: sign the WebView in, connect a Google account to the WebView's, or confirm its session. */
 type HandoffThen =
   | { kind: "signIn"; accountId: string }
-  // (A Google account with no account here: it is made when the app claims it, not before - see the claim.)
   | { kind: "signUp"; sub: string; name: string }
   | { kind: "link" | "reauth"; accountId: string; sessionId: string; sub: string };
 
-/** What a round trip of the app came to, kept for the app to claim (see `AppTrip`). */
 interface Handoff {
   challenge: string;
   next: "/" | "/tv";
@@ -245,29 +184,14 @@ interface Handoff {
   at: number;
 }
 
-/** The app's own address scheme and package (android/app/src/main/AndroidManifest.xml, android/app/build.gradle). */
 export const APP_SCHEME = "kino4tv";
 export const APP_PACKAGE = "com.kino4tv.app";
 
-/**
- * Where the browser is sent back to the app: an intent for the app's package alone (Chrome, and the other browsers of Android, open an `intent:` address only in
- * the app it names; another app that says it opens `kino4tv:` addresses is not asked). A browser on a phone without the app goes to the site.
- *
- * `trip` is the start of the app's hash (`app=`, or the ticket's), which only the app and this site know: the app takes a way back only with its own trip's,
- * so another app that opens the app with a made-up code cannot use up the secret of a trip on its way (the judge, 17 Nov).
- */
 export const appAddress = (code: string, challenge: string, origin: string, next: string) =>
   `intent://google?code=${code}&trip=${challenge.slice(0, APP_TRIP_LENGTH)}#Intent;scheme=${APP_SCHEME};package=${APP_PACKAGE};S.browser_fallback_url=${encodeURIComponent(new URL(next, origin).toString())};end`;
-/** How much of the app's hash comes back with the way back. */
 export const APP_TRIP_LENGTH = 16;
 const APP_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
 
-/**
- * Whether a start is a round trip of the app (`AppTrip`): a sign-in with the hash of the app's secret (`app=`, and no other mode), or one with a ticket. The app opens
- * it in a Custom Tab, which Chrome says comes from another site (the app is its referrer: `Sec-Fetch-Site: cross-site`), so the gate lets these in when they are a
- * navigation (guard.ts): what comes of one goes to this app's package alone, and is no use without the secret only the app knows, or the ticket only its WebView was
- * given. A start of another mode, or with no `app=`, is still only this site's own button (the owner, 17 Nov: "cross_site" in the app's browser).
- */
 export function isAppStart(query: Record<string, unknown>): boolean {
   if (typeof query.ticket === "string" && query.ticket !== "") return true;
   const mode = MODES.find((each) => each === query.mode) ?? "signin";
@@ -282,7 +206,6 @@ export interface GoogleHelpers {
   signIn(request: FastifyRequest, reply: FastifyReply, accountId: string, kind: DeviceKind): void;
   readCookie(header: string | undefined, name: string): string | undefined;
   registrationNow(): Registration;
-  /** The sign-ups of an address and of the site, counted with the ones made with a password. */
   signUps: SignUpLimits;
   passwordCost?: PasswordCost | undefined;
 }
@@ -292,26 +215,19 @@ const challengeOf = (verifier: string) => createHash("sha256").update(verifier).
 const flowCookie = (value: string, secure: boolean, maxAgeSeconds: number) =>
   `${FLOW_COOKIE}=${value}; Path=/api/auth/google; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
 
-/**
- * The address Google sends this browser back to: the one of `redirectUris` at the very origin the request came to (each address of the site has its own), or none,
- * and then Google sign-in is not on here. It is picked from the list, never made from the request.
- */
 function redirectFor(config: GoogleConfig, request: FastifyRequest): string | undefined {
   const here = parsed(`${request.protocol}://${request.host}`);
   if (!here || here.pathname !== "/" || here.username || here.password || here.search || here.hash) return undefined;
   return config.redirectUris.find((address) => parsed(address)?.origin === here.origin);
 }
 
-/** `/api/auth/google/start` and `/api/auth/google/callback`. They are there with Google off as well, and then only send the browser back saying so. Whether Google sign-in is on for a request is `here`. */
 export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, config: GoogleConfig | undefined): { here(request: FastifyRequest): boolean } {
   const { store } = helpers;
   const flows = new Map<string, Flow>();
   const startsByIp = new RateLimiter(30, FLOW_MS, undefined, "google.startsByIp");
-  // (The app's: see `AppTrip`.)
   const tickets = new Map<string, { mode: "link" | "reauth"; device: DeviceKind; next: "/" | "/tv"; accountId: string; sessionId: string; challenge: string; at: number }>();
   const handoffs = new Map<string, Handoff>();
   const claimsByIp = new RateLimiter(30, FLOW_MS, undefined, "google.claimsByIp");
-  // (Each ticket is counted, by the address and by the account: one account could otherwise make so many that the tickets of others are pushed out, the judge, 17 Nov.)
   const ticketsByAccount = new RateLimiter(10, FLOW_MS, () => store.clock(), "google.ticketsByAccount");
 
   app.post<{ Body: Record<string, unknown> }>("/api/auth/google/app-ticket", async (request, reply) => {
@@ -334,7 +250,7 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     const query = request.query ?? {};
     const ticketId = typeof query.ticket === "string" ? query.ticket : "";
     const ticket = ticketId ? tickets.get(ticketId) : undefined;
-    if (ticket) tickets.delete(ticketId); // (good once)
+    if (ticket) tickets.delete(ticketId);
     const fresh = ticket && store.clock() - ticket.at <= TICKET_MS ? ticket : undefined;
     const next = fresh?.next ?? (query.next === "/tv" ? "/tv" : "/");
     const device = fresh?.device ?? DeviceKindSchema.safeParse(query.device).data ?? "browser";
@@ -346,11 +262,8 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     if (!config || !redirectUri) return back("unavailable");
     if (ticketId && !fresh) return back("failed");
     if (startsByIp.wait(request.ip) > 0) return back("busy");
-    // (The app's browser has no session: a ticket says whose account it is.)
     const auth = mode === "signin" || fresh ? undefined : helpers.authenticate(request);
     if (mode !== "signin" && !auth && !fresh) return back("failed");
-    // (Room for this one: what ran out goes first, then this address's own oldest past its few. When there is no room still, this one waits: a sign-in
-    // that is under way is never pushed out for it.)
     const now = store.clock();
     let oldestOfMine: string | undefined;
     let mine = 0;
@@ -381,22 +294,19 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
       nonce,
       code_challenge: challengeOf(verifier),
       code_challenge_method: "S256",
-      // (Proving it again is choosing the account again, and Google is asked for a fresh sign-in: `max_age=0`. Google has no `prompt=login`.)
       prompt: "select_account",
       ...(mode === "reauth" ? { max_age: "0" } : {}),
     }).toString();
     return reply.redirect(target.toString());
   });
 
-  // (Its address has the code and the state in it: Fastify's line for each request is not written for this route, and what is written says why, not what.)
   app.get<{ Querystring: Record<string, unknown> }>("/api/auth/google/callback", { logLevel: "warn" }, async (request, reply) => {
     const query = request.query ?? {};
     reply.header("Set-Cookie", flowCookie("", request.protocol === "https", 0));
     const state = typeof query.state === "string" ? query.state : "";
     const flow = state ? flows.get(state) : undefined;
-    if (flow) flows.delete(state); // (good once, whatever comes of it)
+    if (flow) flows.delete(state);
     const next = flow?.next ?? "/";
-    // (A round trip of the app goes back to the app, which claims what came of it in its WebView: see `AppTrip`.)
     const toApp = (handoff: Pick<Handoff, "then" | "outcome">) => {
       const code = secret();
       const origin = new URL(flow!.redirectUri).origin;
@@ -415,7 +325,6 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     if (query.error !== undefined) return back(query.error === "access_denied" ? "denied" : "failed");
     const code = typeof query.code === "string" && query.code.length <= 2048 ? query.code : "";
     if (!code) return refuse("no code");
-    // (The app's browser has no session: nothing is connected or confirmed here, but when the WebView claims it, by the session that asked for the ticket.)
     const auth = flow.mode === "signin" || flow.app ? undefined : helpers.authenticate(request);
     if (flow.mode !== "signin" && !flow.app && (!auth || auth.accountId !== flow.accountId)) return refuse("not the account that started it");
     if (flow.mode !== "signin" && flow.app && (!flow.accountId || !flow.app.sessionId)) return refuse("no session asked for it");
@@ -449,10 +358,7 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
       helpers.signIn(request, reply, found.id, flow.device);
       return back();
     }
-    // Nobody yet: an account is made, as one with a password would be (only while new ones may be, and not too many from one address).
     if (helpers.registrationNow() === "closed") return back("closed");
-    // (The app's trip makes the account only when the app claims it, with the secret only it knows: a page of another site that sent someone through Google's chooser
-    // with a hash of its own - which the gate lets in, as the app's browser says it comes from another site - makes nothing. The judge, 17 Nov.)
     if (flow.app) return toApp({ then: { kind: "signUp", sub: claims.sub, name: profileNameOf(claims.givenName) } });
     if (helpers.signUps.wait(request.ip) > 0) return back("busy");
     helpers.signUps.hit(request.ip);
@@ -471,13 +377,11 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     return back();
   });
 
-  // The app's WebView brings the code its browser came back with, and the secret only the app knows: the WebView is signed in here (see `AppTrip`).
-  // (Its address has the code and the secret in it: Fastify's line for each request is not written for this route.)
   app.get<{ Querystring: Record<string, unknown> }>("/api/auth/google/app-claim", { logLevel: "warn" }, async (request, reply) => {
     const query = request.query ?? {};
     const code = typeof query.code === "string" ? query.code : "";
     const handoff = code ? handoffs.get(code) : undefined;
-    if (handoff) handoffs.delete(code); // (good once, whatever comes of it)
+    if (handoff) handoffs.delete(code);
     const next = handoff?.next ?? "/";
     const failed = (why: string) => {
       request.log.warn(`The app's Google sign-in refused: ${why}.`);
@@ -497,7 +401,6 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
       return reply.redirect(next);
     }
     if (then.kind === "signUp") {
-      // (Made by another trip since: signed in to it.)
       const found = store.findByGoogle(then.sub);
       if (found) {
         helpers.signIn(request, reply, found.id, handoff.device);
@@ -519,7 +422,6 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
       helpers.signIn(request, reply, made.value.id, handoff.device);
       return reply.redirect(next);
     }
-    // (Connecting and confirming: only by the session that asked for the ticket, still signed in to that account, here and now.)
     const auth = helpers.authenticate(request);
     if (!auth || auth.sessionId !== then.sessionId || auth.accountId !== then.accountId) return failed("not the session that asked for it");
     if (then.kind === "link") {

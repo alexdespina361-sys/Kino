@@ -2,9 +2,7 @@ import { useT } from "../i18n";
 import { CheckIcon, MessageIcon } from "../shared/icons";
 
 export interface SentProps {
-  /** The report can be answered here (it kept a receipt). */
   answerable: boolean;
-  /** Pictures the server did not take (a type or a size it does not accept), and the plain ones that did not fit behind the marked ones. */
   rejected: number;
   dropped: number;
   onMine: () => void;

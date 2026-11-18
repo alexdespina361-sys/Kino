@@ -8,7 +8,6 @@ const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_00
 const friendsOf = (...people: Friend[]): FriendsState => ({ friends: people, inbox: [], activity: [], invites: [], requests: [], sent: [] });
 const rated = (key: string, score: number): LiveRating => ({ key: `rate:${key}`, at: 1, title: key, url: `https://x.example/${key}`, score, ratedAt: 1 });
 
-/** A signed-in profile with everything on and nothing in it yet. */
 const facts = (changes: Partial<ProfileFacts> = {}): ProfileFacts => ({ name: "Ann", signedIn: true, ratingsOn: true, ratings: [], friendsOn: true, friends: friendsOf(), unread: 0, watched: 0, progress: [], ...changes });
 const tiles = (changes?: Partial<ProfileFacts>) => profileRows(facts(changes))[0]!.entries;
 const ids = (changes?: Partial<ProfileFacts>) => tiles(changes).map((entry) => entry.id);
@@ -39,7 +38,7 @@ describe("the profile's page", () => {
       ["profile:recent", "continue", t("profile.recent")],
       ["profile:best", "wide", t("profile.best")],
     ]);
-    expect(rows[1]!.entries.map((entry) => entry.title)).toEqual(progress.slice(0, 12).map((each) => each.title)); // (newest first, as History has them)
+    expect(rows[1]!.entries.map((entry) => entry.title)).toEqual(progress.slice(0, 12).map((each) => each.title));
     expect(rows[2]!.entries.map((entry) => [entry.title, entry.note])).toEqual([
       ["best", "10/10"],
       ["good", "8/10"],
@@ -65,7 +64,6 @@ describe("the profile's page", () => {
     const rows = profileRows(facts({ signedIn: false, name: "", friendsOn: false }));
     expect(rows[0]?.title).toBe(t("profile.guest"));
     expect(rows[0]?.entries.map((entry) => entry.id)).toEqual(["profile:ratings", "profile:history"]);
-    // (a name that is left over from a profile that signed out is not shown)
     expect(profileRows(facts({ signedIn: false, name: "Ann" }))[0]?.title).toBe(t("profile.guest"));
     expect(ids({ signedIn: false })).not.toContain("profile:friends");
   });

@@ -18,7 +18,7 @@ function makeZip(files: Array<{ name: string; content: string }>): Buffer {
     header.writeUInt32LE(0x04034b50, 0);
     header.writeUInt16LE(20, 4);
     header.writeUInt16LE(0, 6);
-    header.writeUInt16LE(8, 8); // deflate
+    header.writeUInt16LE(8, 8);
     header.writeUInt16LE(0, 10);
     header.writeUInt16LE(0, 12);
     header.writeUInt32LE(0, 14);
@@ -88,32 +88,28 @@ describe("fallbackSubtitles", () => {
 
     const manager = new FallbackSubtitleManager(undefined, fakeFetch);
 
-    // Ask for Episode 1
     const ep1Subs = await manager.getSubtitles({ title: "Sakamoto Days", season: 1, episode: 1 });
     expect(ep1Subs).toHaveLength(1);
     expect(ep1Subs[0]!.url).toMatch(/^\/api\/subtitles\/fallback\/tvs_3593_s1e1_/);
     expect(ep1Subs[0]!.label).toContain("TVSubtitles");
 
-    // Check that getVtt returns the converted content
     const subId = ep1Subs[0]!.url.replace("/api/subtitles/fallback/", "").replace(".vtt", "");
     const vtt = manager.getVtt(subId);
     expect(vtt).toContain("WEBVTT");
     expect(vtt).toContain("Episode 1");
 
     const callsAfterFirst = networkCalls;
-    expect(callsAfterFirst).toBe(4); // search, season page, pack page, zip file
+    expect(callsAfterFirst).toBe(4);
 
-    // Ask for Episode 2: should resolve from in-memory cache without ANY new network calls!
     const ep2Subs = await manager.getSubtitles({ title: "Sakamoto Days", season: 1, episode: 2 });
     expect(ep2Subs).toHaveLength(1);
     expect(ep2Subs[0]!.url).toMatch(/^\/api\/subtitles\/fallback\/tvs_3593_s1e2_/);
-    expect(networkCalls).toBe(callsAfterFirst); // 0 additional network calls!
+    expect(networkCalls).toBe(callsAfterFirst);
 
     const subId2 = ep2Subs[0]!.url.replace("/api/subtitles/fallback/", "").replace(".vtt", "");
     const vtt2 = manager.getVtt(subId2);
     expect(vtt2).toContain("Episode 2");
   });
-  /** A site with one show and one season pack holding `files`; counts what is asked. */
   function siteWith(files: Array<{ name: string; content: string }>) {
     const zip = makeZip(files);
     const asked: string[] = [];

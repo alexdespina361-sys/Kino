@@ -1,8 +1,6 @@
-/** Which folder the aligner's files are in (see public/subtitle-sync/1/README.md). A changed file gets a new folder, so these are kept by the browser for good. */
 export const ASSET_VERSION = "1";
 export const ASSET_BASE = `/subtitle-sync/${ASSET_VERSION}/`;
 
-/** The speech recogniser's model: its size and checksum are checked by the worker while it loads. */
 export const WHISTLE_MODEL = {
   file: "whistle.cact",
   size: 16_919_407,

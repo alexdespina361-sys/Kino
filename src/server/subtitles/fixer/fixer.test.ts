@@ -11,7 +11,6 @@ import { checkLine, type Polisher } from "./polish";
 import { runSeconv } from "./seconv";
 import { timeToSound } from "./sync";
 
-// (Made-up lines only: the repo is public.)
 const run = promisify(execFile);
 
 describe("reading a subtitle file", () => {
@@ -44,7 +43,7 @@ describe("reading a subtitle file", () => {
   });
 
   it("decodes a Romanian file in its old code page, and writes SRT back", () => {
-    const bytes = Uint8Array.from([0xba, 0x69, 0x20, 0xe3, 0x73, 0x74, 0x61]); // (windows-1250, as the old files are written)
+    const bytes = Uint8Array.from([0xba, 0x69, 0x20, 0xe3, 0x73, 0x74, 0x61]);
     expect(decodeSubtitle(bytes, "ro")).toBe("şi ăsta");
     expect(toSrt([{ start: 3661.5, end: 3662, text: "One\n\nTwo" }])).toBe("1\r\n01:01:01,500 --> 01:01:02,000\r\nOne\r\nTwo\r\n");
   });
@@ -110,13 +109,11 @@ describe("timing a file to the film's sound with the screens' aligner", () => {
     const timed = await timeToSound(late, pieces, new LoudnessVad());
     const near = timed.cues.filter((cue, i) => film.truth[i]!.start > 20 && Math.abs(cue.start - film.truth[i]!.start) < 0.5).length;
     expect(near / film.truth.filter((cue) => cue.start > 20).length).toBeGreaterThan(0.9);
-    // (Video time minus the file's: the file is three seconds late.)
     expect(timed.shift).toBeCloseTo(-3, 0);
     expect(timed.methods.silero).toBeGreaterThan(0);
   });
 });
 
-// Subtitle Edit itself, when the team has it (SECONV=<path to seconv>); not part of the usual run.
 describe.runIf(Boolean(process.env.SECONV))("Subtitle Edit's fixes (the real seconv)", () => {
   it("mends spaces, commas, a lone i and a long line, and keeps every line", async () => {
     const lines = [

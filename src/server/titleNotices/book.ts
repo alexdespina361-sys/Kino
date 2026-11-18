@@ -3,59 +3,30 @@ import { TITLE_NOTICE_KEEP_MS, TITLE_NOTICES_MAX, TitleNoticeSchema, type TitleN
 import { FilePersistence, MemoryPersistence, PostgresPersistence, type Persistence } from "../accounts/persistence";
 import type { FilmPart, TitleSource } from "./source";
 
-/**
- * The notices of what is new of the titles a profile watches (shared/titleNotices.ts): a new episode or season of a show, a new film of a series of
- * films. How it is kept cheap, and quiet:
- *
- * - A title is asked about once for everybody who watches it, and only when something may have changed: a show that is over once a week, one that
- *   is running on the day its next episode is due, a series of films once a week (every day while one of them is about to come out). A few titles
- *   a minute at most, so a start with everything due takes a while and hurts nobody.
- * - What is known is kept (a table or a file of its own, next to the accounts): a restart asks about nothing again and tells nobody twice.
- * - The first time a profile is seen to watch a title, it is told nothing: what is out by then is what it knows (its `base`). Only what comes out
- *   after that is news. So is a profile that turned the notices off: its base moves on, and turning them on again brings no backlog.
- * - An episode is news a day and a half after the start of the day it aired (`HOLD_MS`): the movie database dates an episode by the day in its own
- *   country, which begins up to a day before the episode is shown, and the places it plays from have it some hours after that. A film is news once
- *   it can be watched at home (a digital, a physical or a TV release), as the library's own rule has it.
- * - Only titles with a number in the movie database can be followed (the library's own links): a link pasted from somewhere else is not.
- *
- * It decides and keeps; `tell` is how a profile's phone hears (the Android app, through the push hub), a few times a day at most.
- */
-
 const HOUR = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR;
 export const HOLD_MS = 36 * HOUR;
-/** How far into the day of its next episode a running show is asked about. */
 const AIR_LOOK_MS = 12 * HOUR;
-/** How many titles of a profile are followed (the newest first), and how many titles are asked about at each look. */
 export const FOLLOWED_MAX = 80;
 export const TITLES_PER_LOOK = 6;
-/** How often it looks, and how often it reads again who watches what. */
 export const LOOK_MS = 60_000;
 export const SWEEP_MS = 5 * 60_000;
-/** How many times a day a profile's phone is told. */
 export const TELLS_PER_DAY = 3;
-/** A film that came out longer ago than this is out at home: nobody is asked. */
 const SURELY_HOME_MS = 365 * DAY_MS;
-/** How many films of one series are asked about at one look (the rest at the next). */
 const HOME_CHECKS = 4;
 const PARTS_MAX = 60;
-/** A first season longer than this is one a page may show in parts (a long anime): its episodes are not told of by number. */
 export const ONE_SEASON_MAX = 26;
-/** How often a line of the journal says that the movie database cannot be asked. */
 const WARN_EVERY_MS = 6 * HOUR;
 const FLUSH_MS = 5_000;
 const RETRY_SAVE_MS = 60_000;
 
-/** A title a profile watches: `tv-1399` or `movie-603`, and its name as the profile has it. */
 export interface Followed {
   key: string;
   title: string;
 }
 export interface Follower {
   profile: string;
-  /** Whether it wants to be told (its setting): one that does not is told nothing, and gets no backlog later. */
   on: boolean;
-  /** A child's profile: told of the shows it watches, never of a film it has not seen (which may not be for children). */
   child: boolean;
   titles: Followed[];
 }
@@ -74,9 +45,7 @@ interface ShowDoc {
   image?: string;
   backdrop?: string;
   year?: number;
-  /** The last episode that is out, and news by now. */
   last: Ep | null;
-  /** The first episode after it that aired and is not news yet, and when it is. */
   waiting?: Ep & { ripeAt: number };
 }
 interface FilmDoc {
@@ -85,7 +54,6 @@ interface FilmDoc {
   key: string;
   checkedAt: number;
   nextAt: number;
-  /** The series of films it is one of; null for a film that is one of none. */
   collection: number | null;
 }
 interface SeriesDoc {
@@ -95,31 +63,24 @@ interface SeriesDoc {
   checkedAt: number;
   nextAt: number;
   parts: FilmPart[];
-  /** The films of it that can be watched at home. */
   out: number[];
 }
 type TitleDoc = ShowDoc | FilmDoc | SeriesDoc;
 interface ProfileDoc {
   v: 1;
-  /** What was out of each show when the profile was last told (or first seen to watch it). */
   shows: Record<string, Ep>;
-  /** The films of each series that were out then. */
   films: Record<string, number[]>;
   items: TitleNotice[];
-  /** How many times its phone was told on which day. */
   told?: { day: string; n: number };
 }
 
 export interface TitleNoticeOptions {
   persistence: Persistence;
   source: TitleSource;
-  /** Who watches what, read from the accounts (followers.ts). */
   followers: () => Follower[];
-  /** A profile has news: its phone is told (never what, nor of which title). */
   tell?: (profile: string) => void;
   now?: () => number;
   log?: { warn(message: string): void };
-  /** 0: nothing is written by itself (tests call `flush`). */
   flushMs?: number;
 }
 
@@ -132,7 +93,6 @@ const isEp = (value: unknown): value is Ep => !!value && typeof value === "objec
 export class TitleNoticeBook {
   private readonly titles = new Map<string, TitleDoc>();
   private readonly profiles = new Map<string, ProfileDoc>();
-  /** Who watches each show and film, and who watches a film of each series (with the name of that film), as last read. */
   private watchers = new Map<string, Follower[]>();
   private seriesWatchers = new Map<string, Array<{ follower: Follower; like: string }>>();
   private sweptAt = -Infinity;
@@ -145,11 +105,9 @@ export class TitleNoticeBook {
   private lookTimer: ReturnType<typeof setInterval> | undefined;
   private looking: Promise<void> | undefined;
   private tell: ((profile: string) => void) | undefined;
-  /** Who tells a profile's phone (the push hub, once the site has one). */
   onTell(tell: (profile: string) => void): void {
     this.tell = tell;
   }
-  /** What it did (tests and the owner's numbers read it). */
   readonly counts = { asked: 0, failed: 0, notices: 0, told: 0 };
 
   private constructor(private readonly options: TitleNoticeOptions) {}
@@ -167,7 +125,6 @@ export class TitleNoticeBook {
     return new Date(this.now()).toISOString().slice(0, 10);
   }
 
-  /** One kept document: what cannot be read is let go of (it is found out again). */
   private take(key: string, value: unknown) {
     const doc = value as Partial<TitleDoc & ProfileDoc> | null;
     if (!doc || typeof doc !== "object" || doc.v !== 1) return void this.removed.add(key);
@@ -186,11 +143,8 @@ export class TitleNoticeBook {
     } else this.removed.add(key);
   }
 
-  /* ------------------------------ keeping ------------------------------ */
-
   private schedule(delay = this.options.flushMs ?? FLUSH_MS) {
     if ((this.options.flushMs ?? FLUSH_MS) <= 0) return;
-    // (A save that failed has said so and is tried again by itself: nothing is left to hear of it here.)
     this.saveTimer ??= setTimeout(() => void this.flush().catch(() => {}), delay);
     this.saveTimer.unref?.();
   }
@@ -208,7 +162,6 @@ export class TitleNoticeBook {
     this.touch(`t:${doc.key}`);
   }
 
-  /** Write what changed. A failure is kept to try again. */
   flush(): Promise<void> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = undefined;
@@ -237,8 +190,6 @@ export class TitleNoticeBook {
     return this.saving;
   }
 
-  /* ------------------------------ what a profile is shown ------------------------------ */
-
   private profile(id: string): ProfileDoc {
     let doc = this.profiles.get(id);
     if (!doc) {
@@ -248,7 +199,6 @@ export class TitleNoticeBook {
     return doc;
   }
 
-  /** A profile's notices, the newest first (those older than a month are let go of). */
   of(profileId: string): TitleNotice[] {
     const doc = this.profiles.get(profileId);
     if (!doc) return [];
@@ -260,7 +210,6 @@ export class TitleNoticeBook {
     return doc.items.map((item) => ({ ...item }));
   }
 
-  /** The profile has looked at them: at the ones its bell listed (`ids`), or at all of them. */
   seen(profileId: string, ids?: readonly string[]): TitleNotice[] {
     const doc = this.profiles.get(profileId);
     const looked = (item: TitleNotice) => !item.read && (!ids || ids.includes(item.id));
@@ -271,7 +220,6 @@ export class TitleNoticeBook {
     return this.of(profileId);
   }
 
-  /** One is cleared away. */
   dismiss(profileId: string, id: string): TitleNotice[] {
     const doc = this.profiles.get(profileId);
     if (doc?.items.some((item) => item.id === id)) {
@@ -281,19 +229,11 @@ export class TitleNoticeBook {
     return this.of(profileId);
   }
 
-  /** How much it keeps and did (the owner's numbers). */
   usage(): { titles: number; profiles: number; due: number; asked: number; failed: number; notices: number; told: number } {
     const now = this.now();
     return { titles: this.titles.size, profiles: this.profiles.size, due: [...this.titles.values()].filter((doc) => doc.nextAt <= now).length, ...this.counts };
   }
 
-  /* ------------------------------ who watches what ------------------------------ */
-
-  /**
-   * Reads who watches what, makes a place for each title that is new, and lets go of what nobody watches any more. A new title is due from now: it
-   * waits behind the ones that were due before it (the review of 18 Nov: started at 0, the titles of one profile that kept changing what it watches
-   * would go before every show that is due, every time, and the real ones would never be asked about).
-   */
   sweep(now = this.now()): void {
     const followers = this.options.followers();
     const watchers = new Map<string, Follower[]>();
@@ -331,7 +271,6 @@ export class TitleNoticeBook {
           if (whole.kind === "col" && whole.checkedAt > 0) this.firstSightOfSeries(follower.profile, seriesKey, whole.out);
         }
       }
-      // (What it no longer watches is forgotten: watched again later, it starts from what is out then.)
       const kept = this.profiles.get(follower.profile);
       if (kept) {
         const gone = [...Object.keys(kept.shows).filter((key) => !keys.has(key)), ...Object.keys(kept.films).filter((key) => !series.has(key))];
@@ -361,7 +300,6 @@ export class TitleNoticeBook {
     this.stale = false;
   }
 
-  /** (What a show has out when a profile is first seen to watch it: an episode that aired and waits to be news is out too, and is none to who begins now.) */
   private firstSight(profileId: string, key: string, last: Ep | null) {
     const doc = this.profile(profileId);
     if (doc.shows[key]) return;
@@ -375,12 +313,6 @@ export class TitleNoticeBook {
     this.touch(`p:${profileId}`);
   }
 
-  /* ------------------------------ looking ------------------------------ */
-
-  /**
-   * One look: who watches what is read again when it is time, then the few titles that are due the longest are asked about. What changed is kept
-   * before anybody is told, so that a server stopped in between tells nobody twice.
-   */
   async look(): Promise<void> {
     if (this.looking) return this.looking;
     this.looking = this.lookOnce().finally(() => {
@@ -393,9 +325,7 @@ export class TitleNoticeBook {
     const now = this.now();
     if (this.stale || now - this.sweptAt >= SWEEP_MS) {
       const first = this.sweptAt === -Infinity;
-      // (With this look's own time: a title that is new now is due in it.)
       this.sweep(now);
-      // (One line when it starts, so the journal shows it running and how much there is to ask.)
       if (first) this.options.log?.warn(`New episodes: ${this.titles.size} titles watched by ${this.watchers.size > 0 ? this.profiles.size : 0} profiles with something kept, ${[...this.titles.values()].filter((doc) => doc.nextAt <= now).length} to ask about now (${TITLES_PER_LOOK} a minute).`);
     }
     const due = [...this.titles.values()]
@@ -410,7 +340,6 @@ export class TitleNoticeBook {
         else if (doc.kind === "movie") await this.lookAtFilm(doc);
         else await this.lookAtSeries(doc, toTell);
       } catch (error) {
-        // (The movie database could not be asked: what is known stays, and it is asked again in a while.)
         this.counts.failed++;
         doc.nextAt = this.now() + HOUR / 2;
         if (this.now() - this.warnedAt >= WARN_EVERY_MS) {
@@ -425,7 +354,6 @@ export class TitleNoticeBook {
       () => true,
       () => false,
     );
-    // (Not kept: it is in the bell all the same, and the phone is told when the next thing comes, rather than twice after a restart.)
     if (!kept) return;
     for (const profile of toTell) {
       this.counts.told++;
@@ -446,24 +374,19 @@ export class TitleNoticeBook {
     if (show.name) doc.name = show.name;
     for (const part of ["image", "backdrop", "year"] as const) if (show[part] !== undefined) (doc as unknown as Record<string, unknown>)[part] = show[part];
 
-    // An episode that waits to be news (`waiting`) is news when its time has come, whatever aired after it: a show with an episode every day would
-    // otherwise never have one that is (each look would find a newer one, not yet news). The one after it then waits its own time.
-    if (doc.waiting && (!show.last || later(doc.waiting, show.last))) delete doc.waiting; // (the movie database took it back)
+    if (doc.waiting && (!show.last || later(doc.waiting, show.last))) delete doc.waiting;
     if (doc.waiting && now >= doc.waiting.ripeAt) {
       if (later(doc.waiting, doc.last ?? ZERO)) doc.last = { season: doc.waiting.season, episode: doc.waiting.episode };
       delete doc.waiting;
     }
     if (show.last && later(show.last, doc.last ?? ZERO)) {
       const ripeAt = show.last.day ? dayStart(show.last.day) + HOLD_MS : now;
-      // (The first look at a show tells nobody anything: what is out by then is what everybody starts from.)
       if (first || now >= ripeAt) {
         doc.last = { season: show.last.season, episode: show.last.episode };
         delete doc.waiting;
       } else if (!doc.waiting) doc.waiting = { season: show.last.season, episode: show.last.episode, ripeAt };
     } else delete doc.waiting;
     const today = this.today();
-    // (A running show is asked about on the day of its next episode, which then waits its time: asked only once that time has come, a show with an
-    // episode every day would have the one after it by then, and the first of them would never be news by itself.)
     const usual = show.ended ? now + 7 * DAY_MS : show.nextDay && show.nextDay > today ? Math.min(Math.max(dayStart(show.nextDay) + AIR_LOOK_MS, now + HOUR), now + 7 * DAY_MS) : now + (show.nextDay ? 3 * HOUR : DAY_MS);
     doc.nextAt = doc.waiting ? Math.min(Math.max(doc.waiting.ripeAt, now + HOUR / 4), usual) : usual;
 
@@ -491,8 +414,6 @@ export class TitleNoticeBook {
         ...(doc.image ? { image: doc.image } : {}),
         ...(doc.backdrop ? { backdrop: doc.backdrop } : {}),
         ...(doc.year ? { year: doc.year } : {}),
-        // (A show the movie database keeps as one long season is played in parts, numbered otherwise on its page - library/filmpire.ts `partsOf`:
-        // its notice says that an episode is out, and not which number.)
         ...(fresh.season === 1 && fresh.episode > ONE_SEASON_MAX ? {} : { season: fresh.season, episode: fresh.episode }),
         ...(count !== undefined && count >= 2 ? { count: Math.min(count, 5000) } : {}),
         read: false,
@@ -504,12 +425,11 @@ export class TitleNoticeBook {
     const now = this.now();
     const film = await this.options.source.film(numberOf(doc.key));
     doc.checkedAt = now;
-    // (Which series a film is one of hardly ever changes: a film that is one of none may be made one when its sequel is announced.)
     doc.nextAt = now + 30 * DAY_MS;
     const collection = film?.collection ?? null;
     if (collection !== doc.collection) {
       doc.collection = collection;
-      this.stale = true; // (who watches a film of which series is read again)
+      this.stale = true;
     }
   }
 
@@ -530,7 +450,7 @@ export class TitleNoticeBook {
     for (const part of doc.parts) {
       if (out.has(part.id)) continue;
       if (!part.day || part.day > today) {
-        waiting = true; // (announced, or in cinemas later)
+        waiting = true;
         continue;
       }
       if (now - dayStart(part.day) >= SURELY_HOME_MS) {
@@ -564,7 +484,7 @@ export class TitleNoticeBook {
       const watched = new Set(follower.titles.map((title) => title.key));
       for (const id of fresh) {
         const part = doc.parts.find((each) => each.id === id);
-        if (!part || !part.name || watched.has(`movie-${id}`)) continue; // (one it has watched already is no news to it)
+        if (!part || !part.name || watched.has(`movie-${id}`)) continue;
         this.add(follower.profile, toTell, {
           id: `movie-${id}`,
           at: now,
@@ -581,7 +501,6 @@ export class TitleNoticeBook {
     }
   }
 
-  /** A notice for a profile: the one line of its title, the newest first; and its phone is to be told, a few times a day at most. */
   private add(profileId: string, toTell: Set<string>, notice: TitleNotice) {
     const doc = this.profile(profileId);
     doc.items = [notice, ...doc.items.filter((item) => item.id !== notice.id)].slice(0, TITLE_NOTICES_MAX);
@@ -595,9 +514,6 @@ export class TitleNoticeBook {
     this.touch(`p:${profileId}`);
   }
 
-  /* ------------------------------ running ------------------------------ */
-
-  /** Looks every minute from now on (the first look a little after the start, when the site is up). */
   start(): void {
     if (this.lookTimer) return;
     this.lookTimer = setInterval(() => void this.look().catch((error: Error) => this.options.log?.warn(`The look for new episodes failed: ${error.message}`)), LOOK_MS);
@@ -613,10 +529,8 @@ export class TitleNoticeBook {
   }
 }
 
-/** Where it is kept: next to the accounts, but not among them (a table, or a file, of its own), as the visitor count is. */
 export function titleNoticePersistenceFor(persistence: Persistence, kind: "postgres" | "file" | "memory", env: NodeJS.ProcessEnv = process.env): Persistence {
   if (persistence instanceof PostgresPersistence) {
-    // (The accounts' pool is shared, so closing this one must not end it: the accounts close it.)
     return new PostgresPersistence({ query: (text, params) => persistence.db.query(text, params) }, "kino_title_notices");
   }
   if (kind === "file") return new FilePersistence(path.resolve(env.DATA_DIR ?? "data", "title-notices.json"));

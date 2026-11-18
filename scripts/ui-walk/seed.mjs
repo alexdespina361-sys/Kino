@@ -1,4 +1,3 @@
-// The guest of the TV walks (tv.mjs, tv-keys.mjs): things to continue, a favourites list and two lists of its own, some ratings, a few finished films.
 import { base, guestData, movies, series } from "./lib.mjs";
 
 const at = Date.now();
@@ -9,7 +8,6 @@ const progress = (i, position, duration, extra = {}) => ({ key: `url:${watch(i)}
 const saved = (i, list) => ({ key: list ? `${list}|url:${watch(i)}` : `url:${watch(i)}`, at: day(i % 5), ...(list ? { list } : {}), id: movies[i].id, description: movies[i].description, ...card(i) });
 const rated = (i, score, note) => ({ key: `rate:${watch(i)}`, at: day(i % 6), kind: "movie", score, ratedAt: day(i % 6), ...(note ? { note } : {}), ...card(i) });
 
-/** A guest who has been using the TV for a while: things to continue, a favourites list and two of its own, some ratings, a few finished films. */
 export const seed = guestData({
   progress: [
     progress(5, 2700, 6600),

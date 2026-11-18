@@ -19,14 +19,14 @@ describe("spreading the first rows (`spreadRows`)", () => {
   it(`leaves out a title already in two rows above, but never takes a row under ${MIN_KEEP} titles`, () => {
     const long = many("t", MIN_KEEP);
     const rows = spreadRows([row("one", ["a", "b"]), row("two", ["a", "b"]), row("three", [...long, "a", "b"]), row("four", ["a", "b", "c"])]);
-    expect(ids(rows)[2]).toBe(long.join(" ")); // (a and b were in two rows above: out, and the row still has twelve)
-    expect(ids(rows)[3]).toBe("c a b"); // (a short row keeps them, at its end)
+    expect(ids(rows)[2]).toBe(long.join(" "));
+    expect(ids(rows)[3]).toBe("c a b");
   });
 
   it("leaves out the titles shown most first when only some can go", () => {
     const long = many("t", MIN_KEEP - 1);
     const rows = spreadRows([row("one", ["a", "b"]), row("two", ["a", "b"]), row("three", ["a"]), row("four", [...long, "a", "b"])]);
-    expect(ids(rows)[3]).toBe([...long, "b"].join(" ")); // (a was in three rows above, b in two: room for one to go)
+    expect(ids(rows)[3]).toBe([...long, "b"].join(" "));
   });
 
   it("gives back the very same row when nothing in it moves, and works out a list of rows once", () => {

@@ -9,7 +9,7 @@ const MAX_SEARCH_CACHE = 500;
 const MAX_EPISODE_CACHE = 500;
 const MAX_SERVER_CACHE = 1000;
 const MAX_AIRED_CACHE = 500;
-const CACHE_TTL_MS = 3600_000; // 1 hour
+const CACHE_TTL_MS = 3600_000;
 
 export interface HiAnimeSearchResult {
   title: string;
@@ -45,16 +45,11 @@ export interface HiAnimeStreamResult {
   };
 }
 
-/** In-memory bounded caches for searches and episode lists to make repeated lookups instant */
 const searchCache = new Map<string, { expires: number; results: HiAnimeSearchResult[] }>();
 const episodeCache = new Map<string, { expires: number; episodes: HiAnimeEpisode[] }>();
 const serverCache = new Map<string, { expires: number; servers: HiAnimeServerInfo[] }>();
 const airedCache = new Map<string, { expires: number; time: number | null }>();
 
-/**
- * Deobfuscates the base64 config payload from ZokoAnime player (`window.__P = "..."`).
- * Upstream encrypts the JSON config by XORing byte-by-byte with "otaku-embed-v1".
- */
 export function deobfuscateZokoBlob(blob: string): string {
   const buf = Buffer.from(blob, "base64");
   const keyBuf = Buffer.from(XOR_KEY, "utf8");
@@ -65,9 +60,6 @@ export function deobfuscateZokoBlob(blob: string): string {
   return out.toString("utf8");
 }
 
-/**
- * Normalizes title for strict comparison (strips accents, lowercases, removes punctuation).
- */
 export function normalizeAnimeTitle(str: string): string {
   return str
     .normalize("NFD")
@@ -78,9 +70,6 @@ export function normalizeAnimeTitle(str: string): string {
     .trim();
 }
 
-/**
- * Searches HiAnime for matching series/movies.
- */
 export async function searchHiAnime(
   query: string,
   fetcher: typeof fetch = providerFetch(),
@@ -110,7 +99,6 @@ export async function searchHiAnime(
   const sidebarIdx = html.indexOf('id="main-sidebar"');
   if (sidebarIdx !== -1) {
     const wrapStart = html.indexOf('class="film_list-wrap"');
-    // A real HiAnime search page with zero matches omits `film_list-wrap` while still rendering `#main-sidebar` (One Piece, etc.).
     if (wrapStart === -1 || wrapStart > sidebarIdx) {
       remember(searchCache, cleanQuery, { expires: Date.now() + CACHE_TTL_MS, results: [] }, MAX_SEARCH_CACHE);
       return [];
@@ -150,10 +138,6 @@ export async function searchHiAnime(
   return results;
 }
 
-/**
- * Fetches the start air timestamp (epoch ms) from a HiAnime title page ("Aired: Oct 10, 2022 to ...")
- * so multi-cour entries can be ordered chronologically rather than by search rank.
- */
 export async function getHiAnimeAiredTime(
   href: string,
   fetcher: typeof fetch = providerFetch(),
@@ -184,9 +168,6 @@ export async function getHiAnimeAiredTime(
   }
 }
 
-/**
- * Fetches the list of episodes for a given HiAnime anime ID.
- */
 export async function getHiAnimeEpisodes(
   animeId: string,
   fetcher: typeof fetch = providerFetch(),
@@ -241,9 +222,6 @@ export async function getHiAnimeEpisodes(
   return episodes;
 }
 
-/**
- * Fetches the server list (ZokoAnime, MegaPlay, etc.) for a specific episode.
- */
 export async function getHiAnimeServers(
   episodeId: string,
   fetcher: typeof fetch = providerFetch(),
@@ -285,7 +263,6 @@ export async function getHiAnimeServers(
           servers.push({ type, serverName, embedUrl });
         }
       } catch {
-        // ignore malformed base64
       }
     }
   }
@@ -294,9 +271,6 @@ export async function getHiAnimeServers(
   return servers;
 }
 
-/**
- * Extracts raw stream URL and subtitles from a ZokoAnime embed player page.
- */
 export async function extractZokoStream(
   embedUrl: string,
   fetcher: typeof fetch = providerFetch(),
@@ -357,9 +331,6 @@ export interface ResolvedHiAnimeStream {
   altDubStream?: { stream: HiAnimeStreamResult; embedUrl: string };
 }
 
-/**
- * Resolves a stream for a specific anime ID and episode number from HiAnime.
- */
 export async function resolveHiAnimeEpisodeStream(
   animeId: string,
   episodeNum: number,
@@ -388,13 +359,11 @@ export async function resolveHiAnimeEpisodeStream(
     }
   };
 
-  // Only ZokoAnime embeds can be extracted with extractZokoStream; skip other players (e.g. MegaPlay).
   const zokoServers = servers.filter(isZokoServer);
   if (zokoServers.length === 0) {
     return null;
   }
 
-  // Rank Zoko servers: wanted mode first, then opposite mode; try each in turn when extraction fails.
   const rankedPrimary = [
     ...zokoServers.filter((s) => s.type === mode),
     ...zokoServers.filter((s) => s.type !== mode),
@@ -415,7 +384,6 @@ export async function resolveHiAnimeEpisodeStream(
         break;
       }
     } catch {
-      // try next server
     }
   }
 
@@ -423,7 +391,6 @@ export async function resolveHiAnimeEpisodeStream(
     return null;
   }
 
-  // Check if opposite mode (dub if primary is sub, or sub if primary is dub) is available as alternate
   const otherMode = primaryServer.type === "dub" ? "sub" : "dub";
   let alternate: { stream: HiAnimeStreamResult; embedUrl: string; type: "sub" | "dub" } | undefined;
   const rankedOther = zokoServers.filter((s) => s.type === otherMode);
@@ -438,7 +405,6 @@ export async function resolveHiAnimeEpisodeStream(
         break;
       }
     } catch {
-      // non-fatal, try next server
     }
   }
 

@@ -2,17 +2,12 @@ import { useT } from "../i18n";
 import { ScreenshotIcon } from "../shared/icons";
 
 export interface CaptureBarProps {
-  /** Seconds left, when the picture is being taken after a wait. */
   counting: number | null;
   onNow: () => void;
   onLater: () => void;
   onCancel: () => void;
 }
 
-/**
- * What is on screen while the form is out of the way and the person goes to the screen they want to show: a small bar at the bottom with the button
- * that takes the picture (now, or in a few seconds, for a menu that goes when it is touched). It is not part of the picture.
- */
 export function CaptureBar({ counting, onNow, onLater, onCancel }: CaptureBarProps) {
   const t = useT();
   return (
@@ -38,7 +33,6 @@ export function CaptureBar({ counting, onNow, onLater, onCancel }: CaptureBarPro
   );
 }
 
-/** Over everything for the moment the picture is taken (the page under it is moved about to be copied, and is not to be seen so). */
 export function Shutter() {
   const t = useT();
   return (

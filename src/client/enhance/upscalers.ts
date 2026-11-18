@@ -1,20 +1,16 @@
 import { EASU_FRAGMENT, FULLSCREEN_VERTEX, RCAS_FRAGMENT } from "./fsrShaders";
 
-/** The film's ✦ 2K, drawn by the graphics chip: AMD FSR 1 on WebGL 2 (`GlUpscaler`), or Anime4K's biggest 2x network on WebGPU (`GpuUpscaler`). */
-
 export interface Size {
   width: number;
   height: number;
 }
 
-/** AMD's `FsrEasuCon` (ffx_fsr1.h), its first constant: `input / output` for each axis, and the offset `0.5 * input / output - 0.5`. */
 export const easuScale = (inWidth: number, inHeight: number, outWidth: number, outHeight: number): [number, number, number, number] => {
   const x = inWidth / outWidth;
   const y = inHeight / outHeight;
   return [x, y, 0.5 * x - 0.5, 0.5 * y - 0.5];
 };
 
-/** AMD's `FsrRcasCon`: sharpness in stops (0 = the most) to the amount the shader multiplies by. AMD's sample uses 0.2. */
 export const rcasAmount = (stops: number): number => 2 ** -Math.max(0, stops);
 
 interface Program {
@@ -22,7 +18,6 @@ interface Program {
   uniform: (name: string) => WebGLUniformLocation | null;
 }
 
-/** Draws a playing <video> into a WebGL 2 canvas at a chosen size with FSR 1 (EASU, then RCAS). The video must be readable by the page. */
 export class GlUpscaler {
   private readonly gl: WebGL2RenderingContext;
   private readonly easu: Program;
@@ -45,12 +40,11 @@ export class GlUpscaler {
     this.middleTarget = gl.createFramebuffer()!;
   }
 
-  /** Draws the frame the video shows now at `out` (the canvas is made that size). */
   draw(video: HTMLVideoElement, out: Size): void {
     const gl = this.gl;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.source);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // (row 0 = the top of the picture: the shaders count from there)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     if (this.sourceSize.width !== video.videoWidth || this.sourceSize.height !== video.videoHeight) {
       this.sourceSize = { width: video.videoWidth, height: video.videoHeight };
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, video);
@@ -67,7 +61,6 @@ export class GlUpscaler {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.middleTarget);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.middle, 0);
     }
-    // EASU into a texture of the output's size, the image's top row first...
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.middleTarget);
     gl.viewport(0, 0, out.width, out.height);
     gl.useProgram(this.easu.program);
@@ -75,7 +68,6 @@ export class GlUpscaler {
     gl.uniform2i(this.easu.uniform("srcSize"), size.width, size.height);
     gl.uniform4f(this.easu.uniform("con0"), ...easuScale(size.width, size.height, out.width, out.height));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    // ...then RCAS from it onto the canvas, the right way up.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, out.width, out.height);
     gl.useProgram(this.rcas.program);
@@ -85,7 +77,6 @@ export class GlUpscaler {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  /** Whether the graphics chip has finished all it was given before (a frame still being drawn when the next comes has fallen behind). Never waits. */
   caughtUp(): boolean {
     const gl = this.gl;
     if (!this.fence) return true;
@@ -97,7 +88,6 @@ export class GlUpscaler {
     return done;
   }
 
-  /** Marks the end of what was given so far, for `caughtUp`. */
   mark(): void {
     const gl = this.gl;
     if (this.fence) gl.deleteSync(this.fence);
@@ -109,7 +99,6 @@ export class GlUpscaler {
     return this.gl.isContextLost();
   }
 
-  /** Gives the context back at once: the browser keeps only a few, and a dropped canvas holds its own until it is collected. */
   dispose(): void {
     if (this.fence) this.gl.deleteSync(this.fence);
     this.fence = null;
@@ -159,7 +148,6 @@ export class GlUpscaler {
   }
 }
 
-/** Anime4K's steps for a video of `native` size drawn at `out`: its biggest 2x network, and its small one again for a picture more than 2.4 times as big. */
 export const bestSteps = (native: Size, out: Size): { network: "CNNx2UL" | "CNNx2M"; size: Size }[] => {
   const times = (factor: number): Size => ({ width: native.width * factor, height: native.height * factor });
   const first = { network: "CNNx2UL" as const, size: times(2) };
@@ -171,7 +159,7 @@ interface Pipeline {
   getOutputTexture(): GPUTexture;
 }
 
-const BLIT = /* wgsl */ `
+const BLIT = `
 struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
 @vertex fn vs(@builtin(vertex_index) index: u32) -> Out {
   var corners = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
@@ -186,7 +174,6 @@ struct Out { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
   return vec4f(textureSample(picture, linearSampler, in.uv).rgb, 1.0);
 }`;
 
-/** The graphics chip WebGPU would use, or why there is none (WebGPU is in recent Chrome and Edge on a computer, not on old TVs). */
 export async function webgpuAdapter(): Promise<{ adapter?: GPUAdapter; problem?: string }> {
   if (!("gpu" in navigator) || !navigator.gpu) return { problem: "This browser has no WebGPU (recent Chrome or Edge on a computer have it)." };
   try {
@@ -209,7 +196,6 @@ export class GpuUpscaler {
   private pipeline: Pipeline | undefined;
   private bindGroup: GPUBindGroup | undefined;
   private built = "";
-  /** What the networks built last made (their textures and buffers), freed when others are built: a few at 4K would fill a small card. */
   private made: (GPUTexture | GPUBuffer)[] = [];
   private unfinished = 0;
   lost = false;
@@ -232,13 +218,11 @@ export class GpuUpscaler {
     });
   }
 
-  /** Starts WebGPU on `canvas` and loads Anime4K (about 3.5 MB, fetched only here, only when WebGPU is there). */
   static async create(adapter: GPUAdapter, canvas: HTMLCanvasElement): Promise<GpuUpscaler> {
     const [device, library] = await Promise.all([adapter.requestDevice(), import("anime4k-webgpu")]);
     return new GpuUpscaler(device, canvas, library);
   }
 
-  /** Draws the frame the video shows now at `out`. */
   draw(video: HTMLVideoElement, out: Size): void {
     if (this.lost) throw new Error("The graphics chip was lost (its driver restarted): reload the page");
     const native = { width: video.videoWidth, height: video.videoHeight };
@@ -258,12 +242,10 @@ export class GpuUpscaler {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  /** Whether the graphics chip has finished all it was given before. Never waits. */
   caughtUp(): boolean {
     return this.unfinished === 0;
   }
 
-  /** Marks the end of what was given so far, for `caughtUp`. */
   mark(): void {
     this.unfinished++;
     void this.device.queue.onSubmittedWorkDone().then(() => {
@@ -271,7 +253,6 @@ export class GpuUpscaler {
     });
   }
 
-  /** Frees what the networks made and the graphics device itself (the player's ✦ 2K makes one for each film). */
   dispose(): void {
     for (const thing of this.made) thing.destroy();
     this.made = [];
@@ -279,14 +260,12 @@ export class GpuUpscaler {
     this.device.destroy();
   }
 
-  /** (Re)makes the networks for this size of video and this target: once, not every frame. */
   private build(native: Size, out: Size): void {
     const key = `${native.width}x${native.height} ${out.width}x${out.height}`;
     if (key === this.built) return;
     for (const thing of this.made) thing.destroy();
     this.made = [];
     this.built = "";
-    // (Everything the package makes while the networks are built is noted, to be freed with them: it keeps no list of its own.)
     const device = this.device;
     const createTexture = device.createTexture.bind(device);
     const createBuffer = device.createBuffer.bind(device);

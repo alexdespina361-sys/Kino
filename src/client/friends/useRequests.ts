@@ -6,13 +6,8 @@ import { useT } from "../i18n";
 import { useFriends } from "./FriendsProvider";
 import { useTagPeek } from "./usePeek";
 
-/** Whether this profile has asked that person already and has not had an answer. */
 export const asked = (sent: ReadonlyArray<{ to: Person }> | undefined, who: Pick<TagView, "name" | "tag">): boolean => (sent ?? []).some((each) => sameTag(each.to, who));
 
-/**
- * Asking the profile with a tag to be friends, and saying what came of it in a line: that the request is waiting for a yes, or that the two
- * are friends now (they had asked first). Fails with the reason the server gave.
- */
 function useAsker(): (who: Pick<TagView, "name" | "tag">) => Promise<void> {
   const t = useT();
   const account = useAccount();
@@ -24,10 +19,6 @@ function useAsker(): (who: Pick<TagView, "name" | "tag">) => Promise<void> {
   };
 }
 
-/**
- * Finding the profile with a tag, the way a screen does it: who it is is looked up first (`seen`, or why there is nobody), then `send` asks.
- * `onDone` is called when it has gone.
- */
 export function useTagAsk(text: string, onDone: () => void) {
   const friends = useFriends();
   const ask = useAsker();
@@ -51,10 +42,6 @@ export function useTagAsk(text: string, onDone: () => void) {
   return { seen, problem: refused ?? found, waiting: seen !== null && asked(friends.state?.sent, seen), busy, send };
 }
 
-/**
- * What a guest of a watch party who is signed in as a profile can be asked: nothing for this profile itself, for a friend already, or when
- * friends are off here; "add" for anybody else, and "asked" while there is no answer to the request made.
- */
 export function useAddable(profile: PartyProfile | undefined): "add" | "asked" | null {
   const account = useAccount();
   const friends = useFriends();
@@ -65,7 +52,6 @@ export function useAddable(profile: PartyProfile | undefined): "add" | "asked" |
   return asked(state.sent, profile) ? "asked" : "add";
 }
 
-/** The button of a party's list of guests: asks the profile on that screen to be friends, and says what came of it. */
 export function useAddFromParty(): (profile: PartyProfile) => Promise<void> {
   const account = useAccount();
   const ask = useAsker();
@@ -78,7 +64,6 @@ export function useAddFromParty(): (profile: PartyProfile) => Promise<void> {
   };
 }
 
-/** Saying yes or no to a request to be friends, with a line for what came of it. */
 export function useAnswerRequests() {
   const t = useT();
   const account = useAccount();

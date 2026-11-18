@@ -2,8 +2,6 @@ import { useSyncExternalStore } from "react";
 import type { FeedbackAttachmentInput, FeedbackSend, FeedbackSummary, FeedbackThread } from "../../shared";
 import { addReceipt, readReceipts, type Receipt } from "./receipts";
 
-/** The server's side of the feedback, asked for with the browser's own cookie (so a signed-in account is known) and a receipt key (so a report is known). */
-
 export type SendFailure = "offline" | "rate" | "big" | "empty" | "server" | "inboxFull";
 export type Sent = { ok: true; id: string; rejected: Array<{ id: string; reason: string }> } | { ok: false; reason: SendFailure; retryAfter?: number };
 
@@ -13,7 +11,6 @@ interface Answer {
   retryAfter?: number;
 }
 
-/** A free host that has slept takes up to a minute to wake: an ask waits this long before it is given up. */
 const ASK_TIMEOUT_MS = 75_000;
 const WAKING_AFTER_MS = 6_000;
 
@@ -39,14 +36,8 @@ async function ask(method: "GET" | "POST", path: string, body?: unknown): Promis
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** The server has no room for a new report (every one it keeps is still open). It is a 503 like the one of a host that is waking up, but asking again within the hour changes nothing. */
 const isInboxFull = (answer: Answer) => answer.status === 503 && answer.data?.error === "full";
 
-/**
- * Sends a report. The key in it is the report's name on the server, so asking again after an answer that never came is safe (the server keeps one
- * report for a key): a bad connection, a server that is waking up or one that is just then restarting are tried again, a few times, before the person
- * is told. `onWaking` is called when it is taking long (the server is probably waking up).
- */
 export async function sendReport(payload: FeedbackSend, onWaking?: () => void, delays: number[] = [0, 1500, 4000, 9000]): Promise<Sent> {
   const body = JSON.stringify(payload);
   const slow = setTimeout(() => onWaking?.(), WAKING_AFTER_MS);
@@ -56,8 +47,8 @@ export async function sendReport(payload: FeedbackSend, onWaking?: () => void, d
       if (delay > 0) await wait(delay);
       last = await ask("POST", "/api/feedback", body);
       if (last.status === 200 || last.status === 201) break;
-      if (last.status !== 0 && last.status < 500 && last.status !== 408) break; // (a no that asking again will not change)
-      if (isInboxFull(last)) break; // (nor this one: the next try gets the same answer, and the person is told at once)
+      if (last.status !== 0 && last.status < 500 && last.status !== 408) break;
+      if (isInboxFull(last)) break;
     }
     if (last.status === 200 || last.status === 201) {
       const rejected = Array.isArray(last.data?.rejected) ? (last.data.rejected as Array<{ id: string; reason: string }>) : [];
@@ -77,14 +68,12 @@ export interface Checked extends FeedbackSummary {
   key: string;
 }
 
-/** What became of the reports this browser holds receipts for (those the server no longer has are not in the answer); null when the server could not be asked. */
 export async function checkReceipts(receipts: Receipt[]): Promise<Checked[] | null> {
   if (receipts.length === 0) return [];
   const answer = await ask("POST", "/api/feedback/check", { keys: receipts.map((receipt) => receipt.key) });
   return answer.status === 200 && Array.isArray(answer.data?.items) ? (answer.data.items as Checked[]) : null;
 }
 
-/** The reports of the account that is signed in (none when nobody is); null when the server could not be asked. */
 export async function mineOfAccount(): Promise<FeedbackSummary[] | null> {
   const answer = await ask("GET", "/api/feedback/mine");
   return answer.status === 200 && Array.isArray(answer.data?.items) ? (answer.data.items as FeedbackSummary[]) : null;
@@ -112,14 +101,10 @@ export async function sendReply(who: Who, text: string, attachments: FeedbackAtt
   return { ok: false, reason: answer.status === 0 ? "offline" : "server" };
 }
 
-/** Keeps the receipt of a report that went through. */
 export function keepReceipt(payload: FeedbackSend, id: string, title: string): void {
   if (payload.answer) addReceipt({ key: payload.key, id, title, kind: payload.kind, at: Date.now() });
 }
 
-/* ------------------------------ "you have an answer" ------------------------------ */
-
-/** How many lines from the team the person has not read, over the receipts of this browser and the signed-in account's reports. */
 let unread = 0;
 let refreshedAt = 0;
 const listeners = new Set<() => void>();
@@ -135,25 +120,19 @@ export function setUnread(count: number): void {
   listeners.forEach((listener) => listener());
 }
 
-/** The same report may be in both lists (a receipt, and the account's own): it counts once. */
 export function totalUnread(checked: Array<{ id: string; unread: number }>, mine: Array<{ id: string; unread: number }>): number {
   const byId = new Map<string, number>();
   for (const each of [...checked, ...mine]) byId.set(each.id, Math.max(byId.get(each.id) ?? 0, each.unread));
   return [...byId.values()].reduce((sum, count) => sum + count, 0);
 }
 
-/**
- * Asks whether there is an answer to what this browser sent (at most once in a few minutes; nothing is asked when nothing was sent and nobody
- * is signed in). Called when a button that leads to the feedback is on screen, never on a timer: a page that asked on a timer would keep a sleeping
- * host awake.
- */
 export async function refreshUnread(signedIn: boolean, force = false): Promise<Checked[]> {
   const receipts = readReceipts();
   if (receipts.length === 0 && !signedIn) return [];
   if (!force && Date.now() - refreshedAt < 5 * 60_000) return [];
   refreshedAt = Date.now();
   const [checked, mine] = await Promise.all([checkReceipts(receipts), signedIn ? mineOfAccount() : Promise.resolve([])]);
-  if (checked === null && mine === null) return []; // (the server could not be asked: what was known stays)
+  if (checked === null && mine === null) return [];
   setUnread(totalUnread(checked ?? [], mine ?? []));
   return checked ?? [];
 }

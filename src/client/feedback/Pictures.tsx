@@ -9,11 +9,8 @@ export type AddRole = "screenshot" | "photo" | "file";
 
 export interface PicturesProps {
   pieces: Piece[];
-  /** Pictures can be added here at all (not on a TV that has only a remote to walk it with). */
   available: boolean;
-  /** A phone or a tablet has a camera to take a photo with. */
   camera: boolean;
-  /** A computer: a screenshot is pasted, or dropped on the form. */
   paste: boolean;
   busy: boolean;
   problem: string | null;
@@ -26,7 +23,6 @@ export interface PicturesProps {
 
 const size = (bytes: number) => (bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1000))} KB`);
 
-/** "Show us": the screen as it is, a picture, a photo of the TV, a file, and the marks that point at the trouble. */
 export function Pictures(props: PicturesProps) {
   const t = useT();
   const picture = useRef<HTMLInputElement>(null);
@@ -34,7 +30,7 @@ export function Pictures(props: PicturesProps) {
   const file = useRef<HTMLInputElement>(null);
   const take = (role: AddRole) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = [...(event.target.files ?? [])];
-    event.target.value = ""; // (the same file can be chosen again)
+    event.target.value = "";
     if (files.length > 0) props.onFiles(files, role);
   };
   const full = props.pieces.length >= FEEDBACK_LIMITS.attachments;

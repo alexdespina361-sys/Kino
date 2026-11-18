@@ -51,7 +51,7 @@ describe("timingKeys", () => {
 
   it("tells files, cuts, sounds apart", () => {
     const key = timingKeys(base)![0];
-    expect(timingKeys({ ...base, cues: cues(50, 10.5) })![0]).not.toBe(key); // (other times)
+    expect(timingKeys({ ...base, cues: cues(50, 10.5) })![0]).not.toBe(key);
     expect(timingKeys({ ...base, cues: cues(50).map((cue, i) => (i === 7 ? { ...cue, text: "other" } : cue)) })![0]).not.toBe(key);
     expect(timingKeys({ ...base, cues: cues(51) })![0]).not.toBe(key);
     expect(timingKeys({ ...base, audio: "fr" })![0]).not.toBe(key);
@@ -101,10 +101,8 @@ describe("timingKeys", () => {
 
 describe("Borrowed", () => {
   const file = cues(40);
-  /** Placements of the first `count` lines, `moved` seconds from the file's. */
   const moved = (count: number, seconds: number, words = 1 as 0 | 1, from = 0): SharedPlacement[] =>
     Array.from({ length: count }, (_, i) => [from + i, Math.round(seconds * 100), Math.round(seconds * 100), words] as SharedPlacement);
-  /** What a solve of the lines `from..from+count` would say, if it found them `seconds` from the file's times. */
   const solve = (from: number, count: number, seconds: number) => Array.from({ length: count }, (_, i) => ({ index: from + i, start: file[from + i]!.start + seconds }));
 
   it("reads the lines as absolute times, and leaves out lines the file does not have", () => {
@@ -125,7 +123,7 @@ describe("Borrowed", () => {
 
   it("is believed after stretches of work that agree with it, and not before", () => {
     const borrowed = new Borrowed(timing(40, ...moved(40, -3)), file);
-    borrowed.check(solve(0, MIN_COMMON - 1, -3)); // (too few lines in common to say)
+    borrowed.check(solve(0, MIN_COMMON - 1, -3));
     expect(borrowed.state).toBe("checking");
     borrowed.check(solve(0, 12, -3));
     expect(borrowed.state).toBe("checking");
@@ -135,32 +133,31 @@ describe("Borrowed", () => {
 
   it("allows a stretch that is mostly right (the voice detector is a little off now and then)", () => {
     const borrowed = new Borrowed(timing(40, ...moved(40, -3)), file);
-    const rough = solve(0, 10, -3).map((line, i) => (i < 4 ? { ...line, start: line.start + 7 } : line)); // (6 of 10 within the bar)
+    const rough = solve(0, 10, -3).map((line, i) => (i < 4 ? { ...line, start: line.start + 7 } : line));
     borrowed.check(rough);
     borrowed.check(rough);
     expect(borrowed.state).toBe("trusted");
   });
 
   it("allows the voice detector's second or three of error on real sound, and not a timing for another cut", () => {
-    // (Measured on a real film: a timing right to 0.2 s, against the first solves of a screen that had only the voice detector: 1 to 4.5 s, mostly under 3.)
     const noisy = (from: number) => solve(from, 14, -3).map((line, i) => ({ ...line, start: line.start + [-0.4, -1.2, -2.3, -1.3, -1.9, -2.2, -3.1, -1.1, -2.2, -3.3, -0.6, -1.9, -2.2, -4.2][i]! }));
     const right = new Borrowed(timing(40, ...moved(40, -3)), file);
     right.check(noisy(0));
     right.check(noisy(12));
     expect(right.state).toBe("trusted");
 
-    const otherCut = new Borrowed(timing(40, ...moved(40, -3 + 9)), file); // (nine seconds later than this screen finds the lines)
+    const otherCut = new Borrowed(timing(40, ...moved(40, -3 + 9)), file);
     for (const from of [0, 8, 16, 24]) otherCut.check(noisy(from));
     expect(otherCut.state).toBe("rejected");
   });
 
   it("says whether a stretch of work is where the timing has its lines by most of the lines, not by each one", () => {
     const borrowed = new Borrowed(timing(40, ...moved(40, -3)), file);
-    expect(borrowed.agrees(solve(0, MIN_COMMON - 1, -3))).toBeUndefined(); // (too few lines in common to say)
+    expect(borrowed.agrees(solve(0, MIN_COMMON - 1, -3))).toBeUndefined();
     expect(borrowed.agrees(solve(0, 12, -3))).toBe(true);
-    expect(borrowed.agrees(solve(0, 12, -3 + 2.4))).toBe(true); // (the voice detector's usual error over a stretch)
-    expect(borrowed.agrees(solve(0, 12, 17))).toBe(false); // (another cut)
-    const rough = solve(0, 15, -3).map((line, i) => (i % 5 === 0 ? { ...line, start: line.start + 6 } : line)); // (one line in five far off)
+    expect(borrowed.agrees(solve(0, 12, -3 + 2.4))).toBe(true);
+    expect(borrowed.agrees(solve(0, 12, 17))).toBe(false);
+    const rough = solve(0, 15, -3).map((line, i) => (i % 5 === 0 ? { ...line, start: line.start + 6 } : line));
     expect(borrowed.agrees(rough)).toBe(true);
     const mostlyWrong = solve(0, 15, -3).map((line, i) => (i % 5 === 0 ? line : { ...line, start: line.start + 6 }));
     expect(borrowed.agrees(mostlyWrong)).toBe(false);
@@ -191,7 +188,7 @@ describe("Borrowed", () => {
 
   it("counts only the lines it has", () => {
     const borrowed = new Borrowed(timing(40, ...moved(6, -3)), file);
-    for (let n = 0; n < 5; n++) borrowed.check(solve(0, 20, 99)); // (only 6 in common: says nothing)
+    for (let n = 0; n < 5; n++) borrowed.check(solve(0, 20, 99));
     expect(borrowed.state).toBe("checking");
   });
 
@@ -207,8 +204,8 @@ describe("Borrowed", () => {
     const ranges = borrowed.ranges();
     expect(ranges).toHaveLength(2);
     expect(ranges[0]!.from).toBeCloseTo(7);
-    expect(ranges[0]!.to).toBeCloseTo(28 - 3); // (the fifth line, 26 to 28 in the file)
-    expect(ranges[1]!.from).toBeCloseTo(420 - 3); // (the sixth, a good way on)
+    expect(ranges[0]!.to).toBeCloseTo(28 - 3);
+    expect(ranges[1]!.from).toBeCloseTo(420 - 3);
     expect(borrowed.shift()).toBeCloseTo(-3);
   });
 });
@@ -231,7 +228,7 @@ describe("Lent", () => {
     lent.confirm(lent.take(30)!);
     expect(lent.pending()).toBe(0);
     expect(lent.take(30)).toBeUndefined();
-    lent.note(1, file[1]!, file[1]!.start - 3, file[1]!.end - 3, true); // (the same)
+    lent.note(1, file[1]!, file[1]!.start - 3, file[1]!.end - 3, true);
     expect(lent.pending()).toBe(0);
     lent.note(2, file[2]!, file[2]!.start - 3.2, file[2]!.end - 3.2, true);
     expect(lent.take(30)).toEqual(timing(30, [2, -320, -320, 1]));
@@ -240,7 +237,7 @@ describe("Lent", () => {
   it("does not count what the server did not take", () => {
     const lent = new Lent();
     lent.note(1, file[1]!, file[1]!.start - 3, file[1]!.end - 3, true);
-    lent.take(30); // (asked for, not confirmed)
+    lent.take(30);
     expect(lent.pending()).toBe(1);
   });
 
@@ -249,7 +246,7 @@ describe("Lent", () => {
     lent.note(1, file[1]!, file[1]!.start - 3, file[1]!.end - 3, true);
     lent.note(1, file[1]!, file[1]!.start - 2, file[1]!.end - 2, false);
     expect(lent.take(30)).toEqual(timing(30, [1, -300, -300, 1]));
-    lent.note(1, file[1]!, file[1]!.start - 2.9, file[1]!.end - 2.9, true); // (words again: the newer)
+    lent.note(1, file[1]!, file[1]!.start - 2.9, file[1]!.end - 2.9, true);
     expect(lent.take(30)).toEqual(timing(30, [1, -290, -290, 1]));
   });
 
@@ -267,7 +264,7 @@ describe("Lent", () => {
     lent.note(1, file[1]!, file[1]!.start - 3, file[1]!.end - 3, false);
     lent.note(2, file[2]!, file[2]!.start - 3, file[2]!.end - 3, false);
     lent.drop(1);
-    lent.drop(7); // (a line that was never noted: nothing happens)
+    lent.drop(7);
     expect(lent.pending()).toBe(1);
     expect(lent.take(30)?.placed.map((each) => each[0])).toEqual([2]);
   });
@@ -298,7 +295,7 @@ describe("httpShared", () => {
   it("says nothing was found when the server has none, says something odd, or cannot be reached", async () => {
     vi.stubGlobal("fetch", async () => reply(204));
     expect(await httpShared().get(key)).toBeUndefined();
-    vi.stubGlobal("fetch", async () => reply(404, { error: "not_found" })); // (what a server of before said)
+    vi.stubGlobal("fetch", async () => reply(404, { error: "not_found" }));
     expect(await httpShared().get(key)).toBeUndefined();
     vi.stubGlobal("fetch", async () => reply(200, { v: 1, lines: 3, placed: [[9, 0, 0, 0]] }));
     expect(await httpShared().get(key)).toBeUndefined();

@@ -7,25 +7,17 @@ import { checkLine, type Polisher, type Strength } from "./polish";
 import { runSeconv } from "./seconv";
 import { timeToSound } from "./sync";
 
-/**
- * The subtitle fixer (docs/subtitle-fixer.md): an existing file made better, step by step, every change written down and the file itself
- * kept. The same tidying as a Kino Official file (`clean.ts`), then what is asked for: Subtitle Edit's fixes, the screens' aligner on the
- * film's sound, a language model's wording. Each step can be left out; without any of them it needs nothing but this code.
- */
 export const FIXER_VERSION = 1;
 
 export interface FixOptions {
   lang: OfficialLang;
-  /** Subtitle Edit's `seconv` (true: found as `SECONV` or on the PATH). */
   seconv?: boolean | string;
-  /** The film's sound, from its start (`soundOf` reads it from a file), and the voice detector to hear it with (`sileroVad`). */
   sound?: { pieces: AsyncIterable<Float32Array> | Iterable<Float32Array>; vad: Vad };
   polish?: { polisher: Polisher; strength: Strength; batch?: number };
   log?: (line: string) => void;
 }
 
 export interface LineChange {
-  /** Line of the fixed file, and of the file it was made from. */
   line: number;
   from: number;
   by: string[];
@@ -37,14 +29,12 @@ export interface FixReport {
   v: 1;
   fixer: number;
   cleanRules: number;
-  /** sha256 of the file's text, so that the same file is not done twice. */
   source: string;
   lines: { in: number; out: number };
   steps: Array<{ step: string; done: boolean; note: string }>;
   dropped: Array<{ from: number; start: number; text: string }>;
   changes: LineChange[];
   timing?: { placed: number; of: number; shift: number | null; median: number; largest: number; methods: Record<string, number>; heard: number };
-  /** Lines of the model's that were turned away, and why. */
   refused: Array<{ line: number; text: string; why: string }>;
 }
 
@@ -61,7 +51,6 @@ export async function fixSubtitle(source: readonly VttCue[], sourceText: string,
   const refused: FixReport["refused"] = [];
   let timing: FixReport["timing"];
 
-  // 1. Tidy: credits and advertising, code pages, dashes, spaces (the Kino Official rules).
   const cleaned = cleanCues(source, options.lang);
   let work: Work[] = cleaned.cues.map((cue, i) => {
     const from = cleaned.from[i] as number;
@@ -69,7 +58,6 @@ export async function fixSubtitle(source: readonly VttCue[], sourceText: string,
   });
   steps.push({ step: "tidy", done: true, note: `rules ${CLEAN_RULES}: ${cleaned.dropped.length} left out, ${cleaned.changed} changed` });
 
-  // 2. Subtitle Edit's fixes (its timing ones only when the sound will not time the file).
   if (options.seconv) {
     const done = await runSeconv(work, { lang: options.lang, timing: !options.sound, ...(typeof options.seconv === "string" ? { bin: options.seconv } : {}) });
     if ("failed" in done) steps.push({ step: "subtitle-edit", done: false, note: done.failed });
@@ -80,7 +68,6 @@ export async function fixSubtitle(source: readonly VttCue[], sourceText: string,
     log(`subtitle-edit: ${steps[steps.length - 1]!.note}`);
   }
 
-  // 3. The screens' aligner on the film's sound.
   if (options.sound) {
     const timed = await timeToSound(work, options.sound.pieces, options.sound.vad);
     const moves = timed.cues.map((cue, i) => Math.abs(cue.start - work[i]!.start)).sort((a, b) => a - b);
@@ -98,7 +85,6 @@ export async function fixSubtitle(source: readonly VttCue[], sourceText: string,
     log(`aligner: ${steps[steps.length - 1]!.note}`);
   }
 
-  // 4. Wording, by a model, line by line with the lines around it; only what passes the checks.
   if (options.polish) {
     const { polisher, strength } = options.polish;
     const size = options.polish.batch ?? 20;
@@ -131,7 +117,6 @@ export async function fixSubtitle(source: readonly VttCue[], sourceText: string,
     if (!steps.some((s) => s.step === "polish")) steps.push({ step: "polish", done: true, note: `${polisher.name}, ${strength}: ${taken} lines reworded, ${refused.length} turned away` });
   }
 
-  // 5. What every file must be: a line ends after it starts, in the order a browser shows them.
   let mended = 0;
   work = work.map((line) => {
     if (line.end > line.start + 0.05) return line;
@@ -172,7 +157,6 @@ export async function fixSubtitle(source: readonly VttCue[], sourceText: string,
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
 
-/** `line` with what `next` has, `step` noted where something changed. */
 function mark(line: Work, next: VttCue, step: string): Work {
   const changed = next.text !== line.text || Math.abs(next.start - line.start) > 0.0005 || Math.abs(next.end - line.end) > 0.0005;
   return changed ? { ...line, start: next.start, end: next.end, text: next.text, by: new Set([...line.by, step]) } : line;

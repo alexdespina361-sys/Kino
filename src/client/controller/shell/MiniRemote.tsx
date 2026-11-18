@@ -4,10 +4,6 @@ import { PauseIcon, PlayIcon } from "../../shared/icons";
 import { Poster } from "../../shared/Poster";
 import { mediaTitle, stateLabel } from "../Remote";
 
-/**
- * What is playing on the TV, on every page of the phone while the remote is not the page: its picture, its name, how it is doing, and a button that
- * plays or pauses it (R4). A tap on the rest of it opens the remote. A thin line along its top edge says how far the film has got.
- */
 export function MiniRemote({ media, player, tvName, online, onOpen, onToggle }: { media: NormalizedMedia; player: PlayerState; tvName: string; online: boolean; onOpen: () => void; onToggle: () => void }) {
   const t = useT();
   const title = mediaTitle(media);

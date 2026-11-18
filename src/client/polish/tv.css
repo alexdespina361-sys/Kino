@@ -1,65 +1,48 @@
-/*
- * The TV screen in the refined look (docs/ui-polish). Loaded after tv.css; every rule starts with :root[data-ui="polish"] (polish.test.ts).
- *
- * The classic sheet sizes things in em that nest (a button is 1.5em of a banner that is 1em of the screen), which is how it came to use
- * fifty type sizes and fifteen corners. This one says what a thing is in tokens that are the same wherever they are used: they are all
- * multiples of --em (1% of the screen's width, set on .tv), so a ring is as thick on a button as on a picture, and a size means one size.
- */
-
-/* ------------------------------ tokens ------------------------------ */
-
 :root[data-ui="polish"] .tv {
-  /* what is written: seven sizes (the classic look has about fifty) */
-  --fs-1: calc(var(--em) * 1.3); /* a caption: a year, a count, a title's name under its picture */
-  --fs-2: calc(var(--em) * 1.5); /* small text: the line under a title, a button in a crowded place */
-  --fs-3: calc(var(--em) * 1.7); /* body: buttons, the menu, the title of a row */
-  --fs-4: calc(var(--em) * 2); /* a lead, a heading in a panel */
-  --fs-5: calc(var(--em) * 2.6); /* a heading */
-  --fs-6: calc(var(--em) * 3.2); /* a title */
-  --fs-7: calc(var(--em) * 4.2); /* a title that is the whole page */
-  /* corners: keys and small chips, buttons and pictures, panels (a pill or a circle is its own thing) */
+  --fs-1: calc(var(--em) * 1.3);
+  --fs-2: calc(var(--em) * 1.5);
+  --fs-3: calc(var(--em) * 1.7);
+  --fs-4: calc(var(--em) * 2);
+  --fs-5: calc(var(--em) * 2.6);
+  --fs-6: calc(var(--em) * 3.2);
+  --fs-7: calc(var(--em) * 4.2);
   --r-1: calc(var(--em) * 0.45);
   --r-2: calc(var(--em) * 0.7);
   --r-3: calc(var(--em) * 1.1);
-  /* what the remote is on: a ring with a gap of the page's own colour inside it, so it reads on a bright picture and on black alike */
   --ring: calc(var(--em) * 0.2);
   --ring-gap: calc(var(--em) * 0.1);
   --focus-ring: 0 0 0 var(--ring-gap) var(--bg), 0 0 0 calc(var(--ring-gap) + var(--ring)) #fff;
   --focus-ring-accent: 0 0 0 var(--ring-gap) var(--bg), 0 0 0 calc(var(--ring-gap) + var(--ring) * 1.5) var(--accent);
   --lift: 0 calc(var(--em) * 0.7) calc(var(--em) * 1.8) rgba(0, 0, 0, 0.6);
-  /* the page's edges: where the words start, and the least a thing is from an edge of the screen */
   --gutter: calc(var(--em) * 7);
   --edge: calc(var(--em) * 2.6);
-  --edge-r: calc(var(--em) * 5); /* the least a button is from the right edge (the top bar's corner buttons, a title page's Close, the player's controls): 5%, inside what a TV with overscan shows */
-  --page-r: calc(var(--em) * 4); /* the least between the end of a row and the right edge */
+  --edge-r: calc(var(--em) * 5);
+  --page-r: calc(var(--em) * 4);
   --tile-gap: calc(var(--em) * 1.3);
-  --top: calc(var(--em) * 2.9); /* from the top edge to the first line of the top bar (and to a title page's Close) */
-  --hero-h: calc(var(--em) * 17.6); /* the banner is as tall as its fullest state: eyebrow, title, facts, two lines of synopsis, buttons */
-  --hero-h-deep: calc(var(--em) * 8.8); /* ...and this tall once the page is scrolled and the banner is down to three lines */
+  --top: calc(var(--em) * 2.9);
+  --hero-h: calc(var(--em) * 17.6);
+  --hero-h-deep: calc(var(--em) * 8.8);
   --fs-deep: calc(var(--em) * 2.6);
   --rail-w: calc(var(--em) * 7.2);
-  --rail-w-open: calc(var(--em) * 27.8); /* wide enough for "Connect a phone" with room to spare */
+  --rail-w-open: calc(var(--em) * 27.8);
   --detail-b: calc(var(--em) * 4.5);
   --eps-t: calc(var(--em) * 1);
   --eps-b: calc(var(--em) * 6);
   --text-1: #f5f5f7;
   --text-2: #c9c9d1;
   --text-3: #9b9ba3;
-  /* surfaces on a page are solid, so that the page's glow does not tint some rows and not others; white at an alpha (--fill) is for what lies over a picture or the film */
   --surf-1: #18181b;
   --surf-2: #232327;
   --surf-3: #313136;
-  --surf-4: #3f3f46; /* a wide row the remote is on: lighter than any row beside it, still dark enough for its own small words */
+  --surf-4: #3f3f46;
   --fill-1: rgba(255, 255, 255, 0.08);
   --fill-2: rgba(255, 255, 255, 0.14);
   --fill-3: rgba(255, 255, 255, 0.22);
-  --fill-track: rgba(255, 255, 255, 0.28); /* the groove of anything that fills up or turns on: a progress bar, a switch */
+  --fill-track: rgba(255, 255, 255, 0.28);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --t-fast: 0.12s;
   --t-base: 0.18s;
 }
-
-/* ------------------------------ the top of the library ------------------------------ */
 
 :root[data-ui="polish"] .tv-browse-top { padding: var(--top) var(--edge-r) 0 var(--gutter); }
 :root[data-ui="polish"] .tv-browse-corner { font-size: var(--fs-2); }
@@ -80,9 +63,6 @@
   transform: scale(1.05);
 }
 
-/* ------------------------------ the menu down the left ------------------------------ */
-
-/* Shut: a strip of icons, every one at least --edge from the screen's left. Open: a panel that covers what is behind it, and what is behind it dims. */
 :root[data-ui="polish"] .tv-rail { width: var(--rail-w); }
 :root[data-ui="polish"] .tv-rail[data-open="true"] {
   width: var(--rail-w-open);
@@ -100,11 +80,9 @@
   font-weight: 600;
   transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), margin-right var(--t-base) var(--ease);
 }
-/* Shut, a line is its icon with the same room on both sides (its padding), so that the box that lights as the menu opens starts as a tidy block around the icon. */
 :root[data-ui="polish"] .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: calc(var(--rail-w) - var(--edge) - var(--em) * 1.6 - var(--fs-3) * 1.15); }
 :root[data-ui="polish"] .tv-rail-item[data-apart="true"] { margin-top: calc(var(--em) * 1.4); }
 :root[data-ui="polish"] .tv-rail-item:hover { color: var(--text-1); }
-/* Where you are: the entry's own words go white and a short bar of the accent sits at its edge (the classic look has the bar the whole height of the entry). */
 :root[data-ui="polish"] .tv-rail-item[aria-current="page"] { color: var(--text-1); box-shadow: none; }
 :root[data-ui="polish"] .tv-rail-item[aria-current="page"]::before {
   content: "";
@@ -129,10 +107,8 @@
   text-transform: none;
 }
 :root[data-ui="polish"] .tv-rail-category { margin-left: calc(var(--em) * 3.4); padding-left: calc(var(--em) * 0.6); font-size: var(--fs-2); }
-/* Open, the menu covers the page's own wordmark: it carries the name itself, in the same place and size, so the name stays where it was and only the panel opens under it. (A screen too small for that has the wordmark covered, as before.) */
 :root[data-ui="polish"] .tv-rail-brand { display: none; }
 @media (min-width: 900px) and (min-height: 521px) {
-  /* (The entries start below the wordmark, shut as well as open, so that opening the menu moves none of them.) */
   :root[data-ui="polish"] .tv-rail { padding-top: calc(var(--top) + var(--em) * 4.9); }
   :root[data-ui="polish"] .tv-rail-brand {
     position: absolute;
@@ -146,12 +122,6 @@
   :root[data-ui="polish"] .tv-rail[data-open="true"] .tv-rail-brand { opacity: 1; }
 }
 
-/* ------------------------------ the wordmark ------------------------------ */
-
-/* The library draws the wordmark at the page's left edge (--gutter), level with the corner buttons; the pages that fill the screen (settings, sign-in, connect, party) and the open menu put it in the same place and size, so the name never moves.
-   Its box is as tall as a corner button (3.6em) with the picture in the middle of it, so that a wordmark taller than the buttons (it is, on a big screen) sticks out above and below them and does not make the top bar taller.
-   The width is one for all three places: 9.2% of the screen's width, and no more than 10.7em (19% of its height: a window wider than a TV's 16:9 gets no bigger a wordmark than a TV does, which would crowd the banner's first line).
-   The picture's "o" is lower than the middle of its box (the "k" and the dot of the "i" are tall), so the picture is lifted by that much (0.054 of its width): the "o", as the play button was, is level with the buttons, and what sticks out sticks out upwards, away from the banner's first line. */
 @media (min-width: 900px) {
   :root[data-ui="polish"] .tv { --logo-w: min(9.2vw, calc(var(--em) * 10.7)); }
   :root[data-ui="polish"] .tv-browse-logo,
@@ -166,16 +136,9 @@
   :root[data-ui="polish"] .tv-screen { padding-left: var(--gutter); padding-right: var(--gutter); }
 }
 
-/* ------------------------------ the banner ------------------------------ */
-
-/* As tall as its fullest state, so that a title is never squeezed and the rows below never jump (the scanner flags text cut off at the bottom). */
 :root[data-ui="polish"] .tv-hero { height: var(--hero-h); padding: 0 var(--page-r) calc(var(--em) * 0.6) var(--gutter); }
 :root[data-ui="polish"] .tv-browse[data-deep="true"] .tv-hero { height: var(--hero-h-deep); }
 :root[data-ui="polish"] .tv-hero-text { gap: calc(var(--em) * 0.3); }
-/*
- * The library's pages of rows (TV, computer): the banner's picture is a large one on the right that fades into the page, bright while the remote is on the
- * first row (`data-billboard`), dimmed further down as before. Only the shades fade into each other: the picture never moves. Gradients only (old TVs).
- */
 :root[data-ui="polish"] .tv-browse[data-stage="rows"] > .tv-hero-bg { inset: 0 0 auto 24%; height: 80%; background-position: center 22%; }
 :root[data-ui="polish"] .tv-browse[data-stage="rows"] > .tv-hero-bg::after {
   content: "";
@@ -193,12 +156,9 @@
 }
 :root[data-ui="polish"] .tv-browse[data-billboard="true"] > .tv-browse-shade { opacity: 0; }
 :root[data-ui="polish"] .tv-browse[data-billboard="true"] > .tv-browse-bill { opacity: 1; }
-/* (The buttons in the corner are over the picture: a dark ground of their own, so a bright one does not take their words away.) */
 :root[data-ui="polish"] .tv-browse[data-billboard="true"] .tv-browse-corner .tv-account-chip:not(:hover):not(:focus-visible),
 :root[data-ui="polish"] .tv-browse[data-billboard="true"] .tv-corner-button:not(:hover):not(:focus-visible) { background: rgba(11, 11, 12, 0.62); color: var(--text-1); }
-/* (What is written stays on the dark side of the picture.) */
 :root[data-ui="polish"] .tv-browse[data-billboard="true"] .tv-hero { max-width: calc(var(--em) * 50); }
-/* What the banner is showing, said quietly: no capitals and no accent (the accent is for what can be pressed and where you are). */
 :root[data-ui="polish"] .tv-hero-eyebrow {
   font-size: var(--fs-2);
   font-weight: 600;
@@ -208,8 +168,6 @@
 }
 :root[data-ui="polish"] .tv-hero-title { flex-shrink: 0; font-size: var(--fs-6); font-weight: 700; line-height: 1.12; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-browse[data-deep="true"] .tv-hero-title { font-size: var(--fs-deep); }
-/* The page of friends has a heading, not a banner: just under the top bar, as tall as its two lines (at a banner's height it stood at the foot of an empty band,
-   and the row of what a friend watched was pushed off the screen - the owner's report of 15 Nov). Its size stays when the remote goes down, so nothing jumps. */
 :root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-hero.tv-hero-friends { height: auto; min-height: 0; padding-top: calc(var(--em) * 1.1); padding-bottom: calc(var(--em) * 0.5); }
 :root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-hero-friends .tv-hero-title { font-size: var(--fs-6); }
 :root[data-ui="polish"] .tv-hero .tv-hero-status { font-size: var(--fs-5); }
@@ -237,21 +195,14 @@
   transform: scale(1.04);
 }
 
-/* ------------------------------ rows of pictures ------------------------------ */
-
 :root[data-ui="polish"] .tv-row-title { margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-3); font-weight: 600; color: var(--text-1); }
 :root[data-ui="polish"] .tv-row-tiles { gap: var(--tile-gap); padding: calc(var(--em) * 0.6) var(--page-r) calc(var(--em) * 1) var(--gutter); }
-/* Room between the library's rows (the owner's "breathing room", 16 Nov: yes, more space between rows). Not on the friends page, which spaces its
-   rows by what waits for an answer (below), nor on the profile page, whose rows are its places. */
 :root[data-ui="polish"] .tv-browse:not([data-view="friends"]):not([data-view="profile"]) .tv-row + .tv-row { margin-top: calc(var(--em) * 0.8); }
-/* The friends page tells what waits for an answer from the rest by weight and room, not by lines: one heading ("Waiting for you", with the dot the bell has) over its rows, which are named
-   quietly under it, and the rows that are not waiting (what friends watch, the friends) have a heading of their own size with room above it. */
 :root[data-ui="polish"] .tv-row-group { display: flex; align-items: center; gap: calc(var(--em) * 0.7); margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-4); font-weight: 700; color: var(--text-1); }
 :root[data-ui="polish"] .tv-row-group::before { content: ""; flex: none; width: calc(var(--em) * 0.9); height: calc(var(--em) * 0.9); border-radius: 50%; background: var(--accent); }
 :root[data-ui="polish"] .tv-row[data-grouped="true"] .tv-row-title { font-size: var(--fs-2); font-weight: 600; color: var(--text-3); }
 :root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-row:not([data-grouped="true"]) .tv-row-title { font-size: var(--fs-4); font-weight: 700; }
 :root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-row + .tv-row:not([data-grouped="true"]) .tv-row-title { margin-top: calc(var(--em) * 1.2); }
-/* What runs off the bottom fades out instead of being cut through a line of words (sticky: it stays at the bottom of what is shown; at the end of the page it is the room under the last row). */
 :root[data-ui="polish"] .tv-rows::after {
   content: "";
   position: sticky;
@@ -277,7 +228,6 @@
 :root[data-ui="polish"] .tv-tile:focus .tv-tile-art { box-shadow: var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-tile-progress { height: calc(var(--em) * 0.32); background: var(--fill-track); }
 
-/* For a mouse: the round buttons in a picture's corner. Quiet while nobody is on the tile, and one look for all of them: the glyph (＋ keeps a title, × lets it go or clears it off Continue watching) says which, not a colour. */
 :root[data-ui="polish"] .tv-tile-corner {
   top: calc(var(--em) * 0.6);
   right: calc(var(--em) * 0.6);
@@ -300,7 +250,6 @@
   :root[data-ui="polish"] .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #0b0b0c; }
 }
 
-/* An arrow at each end of a row that runs off the screen, for a mouse: it shows while the pointer is over the row, on the side that has more (a finger swipes a row, and the remote walks the titles). It is the one look of a button over a picture: the dark disc that lights white. */
 :root[data-ui="polish"] .tv-row-box { position: relative; }
 :root[data-ui="polish"] .tv-row-more { display: none; }
 @media (hover: hover) and (pointer: fine) {
@@ -327,8 +276,6 @@
   :root[data-ui="polish"] .tv-row-more[data-side="after"] { right: calc(var(--em) * 1.4); }
 }
 
-/* The same arrows at the ends of a show's seasons, for a mouse. A row of seasons is short, so they stay on while there is more that way,
-   over a fade that says the row goes on. */
 :root[data-ui="polish"] .tv-filters-box { position: relative; }
 :root[data-ui="polish"] .tv-filters-more { display: none; }
 @media (hover: hover) and (pointer: fine) {
@@ -359,15 +306,12 @@
   }
 }
 
-/* ------------------------------ a title's own page ------------------------------ */
-
 :root[data-ui="polish"] .tv-detail-text { gap: calc(var(--em) * 0.6); padding: 0 var(--page-r) var(--detail-b) var(--gutter); }
 :root[data-ui="polish"] .tv-detail-title { font-size: var(--fs-7); font-weight: 700; line-height: 1.08; letter-spacing: -0.02em; }
 :root[data-ui="polish"] .tv-detail-about { margin-top: calc(var(--em) * 0.4); font-size: var(--fs-3); line-height: 1.45; color: var(--text-2); }
 :root[data-ui="polish"] .tv-detail .about-more { font-size: var(--fs-3); color: var(--text-1, #fff); }
 :root[data-ui="polish"] .tv-detail .tv-hero-actions { margin-top: calc(var(--em) * 1); }
 :root[data-ui="polish"] .tv-detail .tv-hero-button { font-size: var(--fs-3); }
-/* Close is the pill that Back is on the pages that fill the screen, in the same corner: level with the library's corner buttons, at the same distance from the edges. */
 :root[data-ui="polish"] .tv-detail .tv-detail-close {
   top: var(--top);
   right: var(--edge-r);
@@ -383,11 +327,6 @@
 :root[data-ui="polish"] .tv-detail-eps-title { font-size: var(--fs-4); font-weight: 700; letter-spacing: -0.01em; }
 :root[data-ui="polish"] .tv-detail-eps-note { font-size: var(--fs-2); }
 
-/*
- * What the movie database knows of a title. Its age rating and genres are a line under the year and the people (who made it, who is in it) are under what it is about:
- * the words are the size of the line under the title, and they are above the buttons, so that the page (whose words are at its foot) grows upward and Play stays where it was.
- * Under the first screen, and under a show's episodes, are the rows of the titles that go with it: the library's own rows, on a ground of the page's colour (the picture stays behind the page).
- */
 :root[data-ui="polish"] .tv-detail .about-facts { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--em) * 0.3) calc(var(--em) * 1); margin: 0; font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
 :root[data-ui="polish"] .tv-detail .about-age { display: inline-flex; align-items: baseline; gap: calc(var(--em) * 0.4); padding: 0 calc(var(--em) * 0.7); border-radius: var(--r-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.15) var(--text-3); color: var(--text-1); font-weight: 800; line-height: 1.5; }
 :root[data-ui="polish"] .tv-detail .about-age small { font-size: 0.7em; font-weight: 700; color: var(--text-3); }
@@ -401,26 +340,19 @@
 :root[data-ui="polish"] .tv-detail-hero + .tv-detail-more { background: linear-gradient(to bottom, transparent, var(--bg) 5em); }
 :root[data-ui="polish"] .tv-detail-more:last-child { padding-bottom: var(--eps-b); }
 
-/* ------------------------------ pages of a few things: headlines, leads, hints ------------------------------ */
-
 :root[data-ui="polish"] .tv-headline { font-size: var(--fs-7); font-weight: 700; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-headline-small { font-size: var(--fs-6); }
 :root[data-ui="polish"] .tv-lead { font-size: var(--fs-4); color: var(--text-3); }
 :root[data-ui="polish"] .tv-hint { font-size: var(--fs-2); color: var(--text-3); }
 :root[data-ui="polish"] .tv-view-title { font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-view-meta { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
-/* (A row of buttons right under the line of a page's name had it nearly touching them: "0 titles" over the list's buttons - the judge, 16 Nov.) */
 :root[data-ui="polish"] .tv-view > .tv-view-meta + .tv-filters,
 :root[data-ui="polish"] .tv-view > .tv-view-hint + .tv-filters { margin-top: 0.3em; }
 :root[data-ui="polish"] .tv-view-hint { font-size: var(--fs-1); font-weight: 500; color: var(--text-3); }
 :root[data-ui="polish"] .tv-view-empty { font-size: var(--fs-4); color: var(--text-3); }
 :root[data-ui="polish"] .tv-welcome p { font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-4); color: var(--text-2); }
-/* (What Kino is, in a line, on the welcome that waits for a press: the judge, 16 Nov, found only "Welcome" and a button.) */
 :root[data-ui="polish"] .tv-welcome p.tv-welcome-about { max-width: 40em; margin-top: calc(var(--em) * -0.4); padding: 0 1em; font-size: var(--fs-2); font-weight: 500; letter-spacing: 0; line-height: 1.4; text-align: center; color: var(--text-3); }
 
-/* ------------------------------ buttons, and everything that is a button for a remote ------------------------------ */
-
-/* Three ways of being on. Anything that is a button for the remote (a button, a chip, a key, a score, a switch, a choice of the party) turns light (white, dark words), rises a little and takes the ring a picture has (a gap of the page's colour, then white): the ring is what is seen from the sofa, the light is what is read. A picture is a ring and a lift (see the tiles). A line of a list or a menu (an option, an episode, a line of the bell) stays dark, one step lighter, with a thick ring inside its edge: it is one of many lines, and a white slab on every one of them would be glare, and would hide the small words under the name. (A blind jury found the dark version of a switch and of the party card clearly weaker than the old look's white one, three critics in two rounds; the lines of a list won.) */
 :root[data-ui="polish"] .tv-btn,
 :root[data-ui="polish"] .tv-action,
 :root[data-ui="polish"] .tv-choice,
@@ -449,7 +381,6 @@
   box-shadow: var(--focus-ring), var(--lift);
   transform: scale(1.04);
 }
-/* The main action keeps its colour in the ring (light fill alone would make it any other button). */
 :root[data-ui="polish"] .tv-action-primary:focus-visible,
 :root[data-ui="polish"] .tv-btn-red:focus-visible,
 :root[data-ui="polish"] .tv-hero-button.is-primary:focus-visible { box-shadow: var(--focus-ring-accent), var(--lift); }
@@ -457,7 +388,6 @@
 :root[data-ui="polish"] .tv-switch-row:focus-visible { transform: scale(1.02); }
 :root[data-ui="polish"] .tv-party-choice:focus-visible { transform: scale(1.03); }
 :root[data-ui="polish"] .tv-party-choice:focus-visible small { color: #55555c; }
-/* (a switch that is off is a groove the light row would swallow; on, it is the accent as always) */
 :root[data-ui="polish"] .tv-switch-row:focus-visible:not([aria-checked="true"]) .tv-switch { background: #8d8d97; }
 :root[data-ui="polish"] .tv-opt:focus-visible,
 :root[data-ui="polish"] .tv-bell-line:focus-visible {
@@ -470,7 +400,6 @@
 :root[data-ui="polish"] .tv-bell-line:focus-visible .tv-bell-text small,
 :root[data-ui="polish"] .tv-opt:focus-visible .tv-ep-meta,
 :root[data-ui="polish"] .tv-opt:focus-visible .tv-ep-about { color: var(--text-2); }
-/* A press is felt (after the focus rules, as in the classic look). */
 :root[data-ui="polish"] .tv-btn:active,
 :root[data-ui="polish"] .tv-action:active,
 :root[data-ui="polish"] .tv-choice:active,
@@ -491,7 +420,6 @@
 :root[data-ui="polish"] .tv-btn-icon:hover { background: var(--fill-2); }
 :root[data-ui="polish"] .tv-btn-play { background: #fff; color: #0b0b0c; }
 :root[data-ui="polish"] .tv-btn-play:hover { background: #e8e8ec; }
-/* The play button is already light, and round like the other buttons of the controls: what the remote is on shows as a heavier ring. */
 :root[data-ui="polish"] .tv-btn-play { border-radius: 50%; }
 :root[data-ui="polish"] .tv-btn-play:focus-visible { background: #fff; box-shadow: 0 0 0 calc(var(--ring-gap) * 1.3) var(--bg), 0 0 0 calc(var(--ring-gap) * 1.3 + var(--ring) * 1.5) #fff, var(--lift); transform: scale(1.08); }
 :root[data-ui="polish"] .tv-btn-red { background: var(--accent); color: var(--accent-ink); }
@@ -513,7 +441,6 @@
 :root[data-ui="polish"] .tv-action-danger:hover { background: rgba(255, 107, 107, 0.3); color: #fff; }
 :root[data-ui="polish"] .tv-action-danger:focus-visible { background: #fff; color: #b3261e; }
 :root[data-ui="polish"] .tv-notice { font-size: var(--fs-3); }
-/* The way back from a page that fills the screen: the same quiet pill on every one of them (a red one on a page is a main action, and this is not). Where the library has its corner buttons, so does the page: level with them and the wordmark, at the edge the profile's Settings button keeps. */
 :root[data-ui="polish"] .tv-back {
   gap: calc(var(--em) * 0.3);
   min-width: 0;
@@ -528,7 +455,6 @@
 @media (min-width: 900px) {
   :root[data-ui="polish"] .tv-screen .tv-back { position: absolute; top: var(--top); right: var(--edge-r); }
 }
-/* In the library's top bar the way back is one of the corner's buttons, as tall as the round ones (the pill of a full-screen page is a little taller on a small screen). On a screen narrower than the TV's it is only its arrow, in the shape of the round ones: its name would take the room the account button needs. And there a long profile name is cut short with an ellipsis (the buttons keep their size) rather than push the last button off the screen. */
 :root[data-ui="polish"] .tv-browse-corner .tv-back { flex: none; height: 2.4em; }
 @media (max-width: 899px) {
   :root[data-ui="polish"] .tv-browse-corner .tv-back { width: 2.4em; padding: 0; }
@@ -541,15 +467,12 @@
 :root[data-ui="polish"] .tv-action:disabled,
 :root[data-ui="polish"] .tv-action[aria-disabled="true"],
 :root[data-ui="polish"] .tv-opt[aria-disabled="true"] { opacity: 0.55; }
-/* A main button that cannot be pressed yet (Save, before there is a name) does not go to a dimmer red, which reads as a button that is only unlit: it goes grey and quiet, as it does on the phone. */
 :root[data-ui="polish"] .tv-action-primary:disabled,
 :root[data-ui="polish"] .tv-action-primary:disabled:hover { opacity: 1; background: var(--surf-2); color: var(--text-3); }
 :root[data-ui="polish"] .tv .role-switch:focus-visible { outline: none; }
-/* The welcome's one button is the chosen one from the start (OK can only mean it): it looks as a button the remote is on looks everywhere. */
 :root[data-ui="polish"] .tv-welcome .tv-action,
 :root[data-ui="polish"] .tv-welcome .tv-action:hover { background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.04); }
 
-/* Choosing one of a few (the language, the look, the lists a title is in, a filter): what is chosen has the accent as a ring, what the remote is on is light. */
 :root[data-ui="polish"] .tv-choice {
   border-radius: var(--r-2);
   background: var(--surf-2);
@@ -563,13 +486,11 @@
   color: var(--text-1);
   box-shadow: inset 0 0 0 calc(var(--em) * 0.14) var(--accent);
 }
-/* Chosen and the remote on it: both show (light, as on anything the remote is on, and the accent ring of what is chosen, heavier). */
 :root[data-ui="polish"] .tv-choice[aria-checked="true"]:focus-visible,
 :root[data-ui="polish"] .tv-list-picks .tv-action[aria-pressed="true"]:focus-visible { background: #fff; color: #0b0b0c; box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-choice-danger { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
 :root[data-ui="polish"] .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.3); color: #fff; }
 :root[data-ui="polish"] .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
-/* A friend's page (see tv/tv.css): watching together is the main thing to do there, in the accent; their lists and ratings are one switch of two; removing them is a quiet line. */
 :root[data-ui="polish"] .tv-choice-primary { background: var(--accent); color: #fff; }
 :root[data-ui="polish"] .tv-choice-primary:hover { background: rgb(var(--accent-rgb) / 0.85); color: #fff; }
 :root[data-ui="polish"] .tv-choice-primary:focus-visible { background: #fff; color: #0b0b0c; box-shadow: var(--focus-ring-accent), var(--lift); }
@@ -579,7 +500,6 @@
 :root[data-ui="polish"] .tv-friend-foot .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
 :root[data-ui="polish"] .tv-friend-foot .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
 
-/* A switch row: the words on the left, the switch on the right. */
 :root[data-ui="polish"] .tv-switch-row { border-radius: var(--r-2); background: var(--surf-1); color: var(--text-1); font-size: var(--fs-3); }
 :root[data-ui="polish"] .tv-switch-row:hover { background: var(--surf-2); }
 :root[data-ui="polish"] .tv-switch { background: var(--fill-track); transition: background var(--t-base) var(--ease); }
@@ -592,7 +512,6 @@
 
 :root[data-ui="polish"] .tv-key { border-radius: var(--r-1); background: var(--surf-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-key:hover { background: var(--surf-3); }
-/* A key is about one and a tenth as wide as it is tall (the classic keys were half as wide again as tall, which looked like slabs; a square would look like a calculator). The names' keys, twelve to a row, keep their own shape. */
 @media (min-width: 900px) and (min-height: 521px) {
   :root[data-ui="polish"] .tv-keys:not(.tv-name-keys) .tv-key,
   :root[data-ui="polish"] .tv-pad .tv-key { min-height: calc(var(--em) * 4.4); }
@@ -604,13 +523,10 @@
 :root[data-ui="polish"] .tv-score:focus-visible { transform: scale(1.1); }
 :root[data-ui="polish"] .tv-score[aria-checked="true"]:focus-visible { background: #fff; color: #0b0b0c; box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring); }
 
-/* ------------------------------ lists of options (the player's menus) ------------------------------ */
-
-:root[data-ui="polish"] .tv-opts { padding-inline: 0; } /* (the classic look keeps room for a ring; this one has none to keep) */
+:root[data-ui="polish"] .tv-opts { padding-inline: 0; }
 :root[data-ui="polish"] .tv-opt { border-radius: var(--r-2); background: var(--fill-1); color: var(--text-1); }
 :root[data-ui="polish"] .tv-opt:hover { background: var(--fill-2); }
 :root[data-ui="polish"] .tv-opt[data-active="true"] { background: rgb(var(--accent-rgb) / 0.22); color: var(--text-1); }
-/* Chosen and the remote on it: the tint of what is chosen stays (a little stronger), with the ring inside. An episode (a picture and three lines) is a row like the others. */
 :root[data-ui="polish"] .tv-opt[data-active="true"]:focus-visible { background: rgb(var(--accent-rgb) / 0.34); }
 :root[data-ui="polish"] .tv-opt.tv-ep[data-active="true"]:focus-visible { background: var(--surf-4); }
 :root[data-ui="polish"] .tv-ep-about { font-size: var(--fs-1); color: var(--text-3); }
@@ -624,9 +540,6 @@
 :root[data-ui="polish"] .tv-menu-note { margin: calc(var(--em) * -0.9) 0 calc(var(--em) * 1.2); font-size: var(--fs-2); color: var(--text-3); }
 :root[data-ui="polish"] .tv-menu[data-kind="captions"] .tv-menu-top h2 { font-size: var(--fs-4); }
 
-/* ------------------------------ the pages of what you have and who you are ------------------------------ */
-
-/* (the sheet below clips the name to two lines at 1.1: a bold g or y lost its tail) */
 :root[data-ui="polish"] .tv-category-name { font-size: var(--fs-3); font-weight: 700; line-height: 1.25; letter-spacing: -0.005em; }
 :root[data-ui="polish"] .tv-category-count { font-size: var(--fs-1); font-weight: 400; color: var(--text-2); }
 :root[data-ui="polish"] .tv-tile-category { border-radius: var(--r-2); padding: calc(var(--em) * 1) calc(var(--em) * 1.2); transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
@@ -639,8 +552,6 @@
 :root[data-ui="polish"] .tv-party-choice { border-radius: var(--r-3); background: var(--surf-1); color: var(--text-1); }
 :root[data-ui="polish"] .tv-party-choice small { color: var(--text-3); }
 :root[data-ui="polish"] .tv-party-choice:hover { background: var(--surf-2); color: var(--text-1); }
-
-/* ------------------------------ the player ------------------------------ */
 
 :root[data-ui="polish"] .hud-top { padding-top: calc(var(--em) * 2.8); padding-left: var(--edge-r); padding-right: var(--edge-r); }
 :root[data-ui="polish"] .hud-bottom { padding-bottom: calc(var(--em) * 2.8); padding-left: var(--edge-r); padding-right: var(--edge-r); }
@@ -686,36 +597,19 @@
 :root[data-ui="polish"] .tv-toast { font-size: var(--fs-3); }
 :root[data-ui="polish"] .tv-banner { border-color: rgba(255, 255, 255, 0.12); font-size: var(--fs-3); }
 
-/* ------------------------------ a title's actions: the ring-room of the buttons does not push them off the text's edge ------------------------------ */
-
 :root[data-ui="polish"] .tv-hero-actions { margin-left: calc(var(--em) * -0.25); }
 
-/* ------------------------------ the search box: text with a caret in it ------------------------------ */
-
-/* A click puts the caret where it landed, so the pointer is a text one. The text keeps its spaces (a word is typed, then a space, before the next letter), and the caret takes no room of its own: it is a line drawn on the edge between two letters, so the text does not shift as the caret moves through it. */
 :root[data-ui="polish"] p.tv-query { cursor: text; }
 :root[data-ui="polish"] .tv-query-text { flex: none; white-space: pre; }
 :root[data-ui="polish"] .tv-caret { position: relative; display: inline-block; flex: none; width: 0; height: 1.1em; margin: 0; background: none; vertical-align: -0.2em; }
 :root[data-ui="polish"] .tv-caret::after { content: ""; position: absolute; top: 0; bottom: 0; left: -0.035em; width: 0.07em; border-radius: 999px; background: var(--accent); }
 
-/* ------------------------------ friends and the bell ------------------------------ */
-
 :root[data-ui="polish"] .tv-bell-heading { margin: 0 0 calc(var(--em) * 0.8) calc(var(--em) * 0.3); font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-2); }
-/*
- * The bell's list (the owner, 15 Nov: "keep the X, but inside the notification card, with better looks, animation and spacing"): each line is a card, the cross
- * inside it at its right. The card is lit as a whole while the remote is on its line (`data-lit`, set by Friends.tsx: a card has two buttons, and an old TV
- * has no :has()); on the cross, only the cross lights. The cards come in one just after the other, and a cleared one slides off and the list closes up under it.
- */
 :root[data-ui="polish"] .tv-bell-lists { gap: calc(var(--em) * 2.2); }
-/*
- * (A hand-held screen scrolls the page itself: tv/friends.css.) On a big screen the lists scroll in their box, and a card cut by its top or bottom edge
- * fades out there instead of being sliced; the room over the first card and under the last, as long as the fades, lets them come clear of them, and the
- * scroll padding keeps a card the remote goes to out of the faded strips (measured: the last card stops 47 of the fade's 48 pixels above the edge).
- */
 @media (min-width: 900px) {
   :root[data-ui="polish"] .tv-bell-lists {
     max-height: 56vh;
-    margin-top: calc(var(--em) * -0.7); /* (the room over the first card is the fade's: the list stands where it stood with less) */
+    margin-top: calc(var(--em) * -0.7);
     padding: calc(var(--em) * 1.2) calc(var(--em) * 0.5) calc(var(--em) * 2.5);
     scroll-padding: calc(var(--em) * 1.2) 0 calc(var(--em) * 2.5);
     -webkit-mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--em) * 1.2), #000 calc(100% - var(--em) * 2.5), transparent);
@@ -729,7 +623,7 @@
   background: var(--fill-1);
   touch-action: pan-y;
   transition: background var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease), transform var(--t-base) var(--ease), opacity 0.2s var(--ease);
-  animation: polish-bell-in 0.36s var(--ease) backwards; /* (backwards, not both: once in, the card is its own again, for a finger to drag) */
+  animation: polish-bell-in 0.36s var(--ease) backwards;
   animation-delay: calc(var(--i, 0) * 45ms);
 }
 :root[data-ui="polish"] .tv-bell-row:hover { background: var(--fill-2); }
@@ -755,7 +649,6 @@
 :root[data-ui="polish"] .tv-bell-row[data-lit="line"] .tv-bell-clear { color: var(--text-2); }
 :root[data-ui="polish"] .tv-bell-clear:focus-visible { background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.08); }
 :root[data-ui="polish"] .tv-bell-text small { font-size: var(--fs-1); color: var(--text-3); }
-/* (A card that is cleared: it slides off, then closes up to nothing. Its height is the one it had, put on it by Friends.tsx as --h.) */
 :root[data-ui="polish"] .tv-bell-row[data-leaving="true"] { overflow: hidden; opacity: 0; transform: translateX(calc(var(--em) * 3)); pointer-events: none; animation: polish-bell-close 0.26s var(--ease) 0.12s forwards; }
 @keyframes polish-bell-in {
   from { opacity: 0; transform: translateY(calc(var(--em) * 0.9)); }
@@ -764,7 +657,6 @@
   from { height: var(--h); }
   to { height: 0; margin-bottom: calc(var(--em) * -0.8); }
 }
-/* Nothing new: the bell drawn quietly in a round, a line that says so and the one under it, with room round them. */
 :root[data-ui="polish"] .tv-bell-empty { display: flex; flex-direction: column; align-items: center; gap: calc(var(--em) * 0.7); margin: calc(var(--em) * 1.5) 0 calc(var(--em) * 2.6); text-align: center; animation: polish-bell-in 0.4s var(--ease) both; }
 :root[data-ui="polish"] .tv-bell-empty-icon {
   display: grid;
@@ -790,21 +682,16 @@
 :root[data-ui="polish"] .tv-friend-ask span { color: var(--text-3); }
 :root[data-ui="polish"] .tv-friend-switches .tv-switch-row { font-size: var(--fs-2); }
 
-/* ------------------------------ watch party ------------------------------ */
-
 :root[data-ui="polish"] .tv-party-member { background: var(--surf-1); font-size: var(--fs-3); }
 :root[data-ui="polish"] .tv-party-member small { letter-spacing: 0; text-transform: none; color: var(--text-3); font-weight: 600; }
 :root[data-ui="polish"] .tv-party-remove { background: var(--surf-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-code { font-weight: 700; }
-/* A code is selected whole by one click (a right click then copies it); the small button under it copies it and says so. */
 :root[data-ui="polish"] .tv-code-box { display: flex; flex-direction: column; align-items: center; gap: calc(var(--em) * 0.7); }
 :root[data-ui="polish"] .tv-steps .tv-code-box { align-items: flex-start; }
 :root[data-ui="polish"] .tv-code-box .tv-code { cursor: text; }
 :root[data-ui="polish"] .tv-code-box .copy-link-button { padding: calc(var(--em) * 0.5) calc(var(--em) * 1.2); font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-code-boxes i { border-radius: var(--r-1); background: var(--surf-1); font-weight: 700; }
 :root[data-ui="polish"] .tv-code-boxes i[data-filled="true"] { background: var(--surf-3); }
-/* The party's code typed into the boxes themselves: a pointer over them says they take text, and with the cursor in them the box the next digit goes in is
-   ringed and has a blinking bar; the Paste button under them, small; a paste that found no code says so in a quieter colour than a refused code. */
 :root[data-ui="polish"] .tv-code-entry:hover .tv-code-boxes i:not([data-filled="true"]) { background: var(--surf-2); }
 :root[data-ui="polish"] .tv-code-entry[data-typing="true"] .tv-code-boxes i[data-caret="true"] { background: var(--surf-2); box-shadow: inset 0 0 0 calc(var(--em) * 0.14) var(--text-1); }
 :root[data-ui="polish"] .tv-code-boxes i[data-caret="true"]::after { content: ""; width: 0.06em; height: 0.8em; border-radius: 0.03em; background: var(--text-1); animation: polish-caret 1.06s steps(1) infinite; }
@@ -817,7 +704,6 @@
 @media (prefers-reduced-motion: reduce) {
   :root[data-ui="polish"] .tv-code-boxes i[data-caret="true"]::after { animation: none; }
 }
-/* A screen as flat as a phone on its side: Paste beside the boxes (tv.css), not under them. */
 @media (max-height: 520px) {
   :root[data-ui="polish"] .tv-code-line .tv-code-paste { margin-top: 0; }
 }
@@ -826,10 +712,6 @@
 :root[data-ui="polish"] .tv-party-start p { font-size: var(--fs-3); color: var(--text-2); }
 :root[data-ui="polish"] .tv-party-error { font-size: var(--fs-3); }
 
-/* ------------------------------ the profile's page ------------------------------ */
-
-/* Who is watching, where the other pages have a banner; Settings in its corner, level with the corner buttons' right edge. A guest's has two more lines (what signing in is for, and the button), so it is as tall as it needs, not a fixed height.
-   It is a panel of its own, lit by the accent from its corner, the picture ringed in the accent and the buttons level with it (the owner: "it could look better, especially on pc/laptops"). */
 :root[data-ui="polish"] .tv-hero-profile { max-width: none; height: auto; min-height: calc(var(--em) * 14.5); padding-top: calc(var(--em) * 1.4); padding-right: var(--edge-r); justify-content: center; }
 :root[data-ui="polish"] .tv-profile-head {
   display: flex;
@@ -858,33 +740,23 @@
 :root[data-ui="polish"] .tv-profile-name { margin: 0; max-width: 100%; overflow: hidden; font-size: var(--fs-7); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
 :root[data-ui="polish"] .tv-profile-line { margin: 0; max-width: calc(var(--em) * 46); font-size: var(--fs-3); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
 :root[data-ui="polish"] .tv-profile-signin { margin-top: calc(var(--em) * 0.6); }
-/* The profile's name#tag, what a friend types to find them: the tag itself plain to read, the word for it quiet. The button that copies it is the last of the buttons, and green for a moment once it has. */
 :root[data-ui="polish"] .tv-profile-tag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 calc(var(--em) * 0.6); max-width: 100%; margin: 0; font-size: var(--fs-3); line-height: 1.35; color: var(--text-2); }
 :root[data-ui="polish"] .tv-profile-tag b { min-width: 0; color: var(--text-1); font-weight: 700; overflow-wrap: anywhere; }
 :root[data-ui="polish"] .tv-profile-tag-note { margin: 0; color: #ffb4b4; font-size: var(--fs-2); font-weight: 600; }
 :root[data-ui="polish"] .tv-profile-copy-tag[data-state="copied"]:not(:focus-visible) { background: var(--ok); color: #0b0b0c; }
 :root[data-ui="polish"] .tv-profile-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; align-items: center; align-self: center; gap: calc(var(--em) * 0.8); max-width: 55%; }
-/* A computer is looked at from closer than a TV: the name and the picture a size down. */
 :root[data-ui="polish"][data-fit="desk"] .tv-profile-name { font-size: var(--fs-6); }
 :root[data-ui="polish"][data-fit="desk"] .tv-profile-avatar { font-size: calc(var(--em) * 7.2); }
 :root[data-ui="polish"][data-fit="desk"] .tv-profile-guest { width: calc(var(--em) * 7.2); height: calc(var(--em) * 7.2); }
-/* How many answers from the team wait in the feedback: the accent reads on the button's quiet fill and on the white of its focus alike. */
 :root[data-ui="polish"] .tv-profile-badge { display: inline-grid; flex: none; place-items: center; min-width: 1.7em; height: 1.7em; padding: 0 0.45em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.8em; font-weight: 800; }
-/* In the corner the chip says where you are: the profile's page, or one of the pages that belong to it. */
 :root[data-ui="polish"] .tv-browse-corner .tv-account-chip[aria-current="page"]:not(:focus-visible) { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 calc(var(--em) * 0.12) rgb(var(--accent-rgb) / 0.8); color: var(--text-1); }
 
-/* What the profile holds: a few places, each a card that says what is in it. Quiet surfaces (the picture's hue was the card's only difference), with the glyph first.
-   The words hang under the glyph, so the names of the cards stand in one line whether the line under them takes one line or two (History's took two, and its name stood higher). */
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-title { display: none; }
-/* The places are four equal cards as wide as the head over them (a guest's three take three of the four): on a wide computer screen they stood at the left of an empty half. */
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding-top: calc(var(--em) * 1); padding-right: var(--edge-r); }
 :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-tile-place { width: auto; }
-/* (Under 800 px of width, a phone on its side or a small window, four across left each card too narrow for its words, cut after three lines: two across, the others under them, as on the upright phone.) */
 @media (max-width: 799px) {
   :root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row[data-layout="categories"] .tv-row-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-/* (At least that tall, and taller when the words need it: at a fixed height a name over a note of two lines was squeezed, and the bottom of its letters cut
-   - "My ratings", the owner's report of 15 Nov. The cards of a row stay one height: the row stretches them to the tallest.) */
 :root[data-ui="polish"] .tv-tile-place {
   width: calc(var(--em) * 27);
   height: auto;
@@ -912,11 +784,9 @@
   font-size: calc(var(--em) * 2.4);
 }
 :root[data-ui="polish"] .tv-tile-place .tv-category-name { flex-shrink: 0; font-size: var(--fs-4); font-weight: 700; }
-/* (Three lines at most: a narrow card, or Italian, needs a third for what a place is for; the card grows to it.) */
 :root[data-ui="polish"] .tv-tile-place .tv-category-count { flex-shrink: 0; display: -webkit-box; overflow: hidden; font-size: var(--fs-2); -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 :root[data-ui="polish"] .tv-tile-place:focus { box-shadow: var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-tile-place:focus .tv-place-icon { background: var(--fill-3); }
-/* Friends (see tv/tv.css): one quiet surface each, the picture or a glyph first; adding one is the card drawn in outline, its glyph in the accent. */
 :root[data-ui="polish"] .tv-tile-person { padding: calc(var(--em) * 1) calc(var(--em) * 1.2); border-radius: var(--r-3); background: linear-gradient(155deg, var(--surf-3), var(--surf-1) 72%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
 :root[data-ui="polish"] .tv-tile-person .tv-category-name { font-size: var(--fs-4); font-weight: 700; }
 :root[data-ui="polish"] .tv-tile-person .tv-category-count { color: var(--text-2); font-size: var(--fs-2); font-weight: 500; }
@@ -927,19 +797,9 @@
 :root[data-ui="polish"] .tv-tile-tool[data-tool="add-friend"] .tv-tool-icon { background: var(--accent); color: #fff; }
 :root[data-ui="polish"] .tv-tile-tool[data-tool="add-friend"]:focus { box-shadow: var(--focus-ring), var(--lift); }
 
-/* ------------------------------ the settings ------------------------------ */
-
-/* Three columns of groups. A group has its name over it and one surface under it; rows on that surface have a hairline between them, so a long run of the same kind of thing reads as a few, and the kinds differ: words to choose from in a row (language), dots (colour), switches, and rows that lead on. */
-/* It hangs from the top of the screen, not from its middle: a guest's first column is taller than a member's, and the title must stand where it stands for both. */
 :root[data-ui="polish"] .tv-set { display: flex; flex: 1 0 auto; flex-direction: column; gap: calc(var(--em) * 2.2); width: 100%; max-width: calc(var(--em) * 88); padding-top: calc(var(--em) * 2.4); text-align: left; }
-/* (The settings' own page has the most on it: its heading stands closer to the top and to the columns, so that they end on a 720p screen in every language.) */
 :root[data-ui="polish"] .tv-set-main { gap: calc(var(--em) * 1.4); padding-top: calc(var(--em) * 1); }
-/* On a wide screen that heading is on the wordmark's line, after it, with Back at the line's other end: the page begins at the top bar's line and not under it. A
-   screen's page is in the middle of what is left under the wordmark, and one taller than that went out of it at both ends alike: the heading went up under the
-   wordmark (in Italian, whose words are the longest, by half its height). From the top, what is too long could only go down, and with the line won it is not. */
 @media (min-width: 900px) {
-  /* (An account with several profiles and no Google account yet has two more lines in its first column, and that one can still be a few lines too long in a
-     language of long words: the page then moves under the remote, as a narrow screen's does, and nothing of it is out of reach.) */
   :root[data-ui="polish"] .tv-screen-settings { justify-content: flex-start; padding-top: var(--top); padding-bottom: calc(var(--em) * 1); overflow-y: auto; scrollbar-width: none; }
   :root[data-ui="polish"] .tv-screen-settings::-webkit-scrollbar { display: none; }
   :root[data-ui="polish"] .tv-screen-settings .tv-set-main { padding-top: 0; }
@@ -950,16 +810,12 @@
 :root[data-ui="polish"] .tv-flip { transform: scaleX(-1); }
 :root[data-ui="polish"] .tv-set-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(var(--em) * 2.4); align-items: start; }
 :root[data-ui="polish"] .tv-set-col { display: flex; flex-direction: column; gap: calc(var(--em) * 2); min-width: 0; }
-/* The settings' own page: its columns end on one line, whatever the language and whoever is watching (the owner: "it's not aesthetic how the cat square is slightly lower
-   than it should be"). Each column is as tall as the tallest and its cards spread down it, so the last card of each ends where the others' do; a column of one card
-   (a guest's) has that card reach down, the way to sign in at its foot. One column (a narrow screen) is only as tall as what it holds. */
 :root[data-ui="polish"] .tv-set-grid-panel { align-items: stretch; }
 :root[data-ui="polish"] .tv-set-grid-panel > .tv-set-col { justify-content: space-between; }
 :root[data-ui="polish"] .tv-set-grid-panel > .tv-set-col > .tv-group:only-child { display: flex; flex: 1 1 auto; flex-direction: column; }
 :root[data-ui="polish"] .tv-set-grid-panel > .tv-set-col > .tv-group:only-child > .tv-group-body { flex: 1 1 auto; }
 :root[data-ui="polish"] .tv-set-grid-panel .tv-group:only-child .tv-who-cta { margin-top: auto; }
 
-/* The subtitle languages' page: what is chosen, in its order, over every language as a button that stays where it is (a chosen one has the accent's ring and its number). */
 :root[data-ui="polish"] .tv-set-languages .tv-set-col { gap: calc(var(--em) * 1.4); }
 :root[data-ui="polish"] .tv-lang-order { margin: 0; color: var(--text-1); font-size: var(--fs-3); font-weight: 600; line-height: 1.35; }
 :root[data-ui="polish"] .tv-lang-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: calc(var(--em) * 0.7); padding: calc(var(--em) * 0.4) calc(var(--em) * 1) calc(var(--em) * 1.2); }
@@ -995,7 +851,6 @@
   background: var(--surf-1);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
-/* the hairline between two things of one surface */
 :root[data-ui="polish"] .tv-group-body > .tv-line,
 :root[data-ui="polish"] .tv-group-body > .tv-switch-row,
 :root[data-ui="polish"] .tv-group-body > .tv-field { position: relative; }
@@ -1014,7 +869,6 @@
 :root[data-ui="polish"] .tv-group-body > .tv-line:focus-visible::before,
 :root[data-ui="polish"] .tv-group-body > .tv-switch-row:focus-visible::before { opacity: 0; }
 
-/* who is watching, at the top of the first group */
 :root[data-ui="polish"] .tv-who { display: flex; align-items: center; gap: calc(var(--em) * 1.4); padding: calc(var(--em) * 1.1) calc(var(--em) * 1) calc(var(--em) * 1.2); }
 :root[data-ui="polish"] .tv-who-avatar { flex: none; font-size: calc(var(--em) * 5.4); border-radius: 50%; }
 :root[data-ui="polish"] .tv-who-guest { display: grid; flex: none; place-items: center; width: calc(var(--em) * 5.4); height: calc(var(--em) * 5.4); border-radius: 50%; background: var(--surf-2); color: var(--text-2); font-size: calc(var(--em) * 2.4); }
@@ -1025,7 +879,6 @@
 :root[data-ui="polish"] .tv-who-cta { padding: calc(var(--em) * 0.3) calc(var(--em) * 0.5) calc(var(--em) * 0.5); }
 :root[data-ui="polish"] .tv-who-cta .tv-action { width: 100%; min-width: 0; }
 
-/* a row that leads on to another page, or does something to the account: an icon in a small tile, the words, and for a page an arrow */
 :root[data-ui="polish"] .tv-line {
   display: flex;
   align-items: center;
@@ -1056,10 +909,8 @@
 :root[data-ui="polish"] .tv-line-danger:focus-visible { background: #fff; color: #b3261e; }
 :root[data-ui="polish"] .tv-line-danger:focus-visible .tv-line-icon { background: rgba(179, 38, 30, 0.12); color: #b3261e; }
 
-/* a labelled field: language is chosen from words in a row, colour from dots */
 :root[data-ui="polish"] .tv-field { display: flex; flex-direction: column; gap: calc(var(--em) * 0.8); padding: calc(var(--em) * 1.1) calc(var(--em) * 1) calc(var(--em) * 1.2); }
 :root[data-ui="polish"] .tv-field-label { color: var(--text-3); font-size: var(--fs-1); font-weight: 600; }
-/* (On the settings' own page a field is a little closer set: its middle column has three of them, and with the anime's audio it was taller than a 720p screen.) */
 :root[data-ui="polish"] .tv-set-grid-panel .tv-field { gap: calc(var(--em) * 0.6); padding: calc(var(--em) * 0.8) calc(var(--em) * 1) calc(var(--em) * 0.9); }
 :root[data-ui="polish"] .tv-segmented { display: flex; gap: calc(var(--em) * 0.2); padding: calc(var(--em) * 0.3); border-radius: var(--r-2); background: var(--bg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
 :root[data-ui="polish"] .tv-segmented .tv-choice { flex: 1 1 0; justify-content: center; min-width: 0; padding: calc(var(--em) * 0.65) calc(var(--em) * 0.4); border-radius: var(--r-1); background: transparent; color: var(--text-2); font-size: var(--fs-2); }
@@ -1071,22 +922,13 @@
 :root[data-ui="polish"] .tv-set .tv-swatches { gap: calc(var(--em) * 1); padding: calc(var(--em) * 0.4) calc(var(--em) * 0.3); }
 :root[data-ui="polish"] .tv-set .tv-swatch { width: calc(var(--em) * 3.5); height: calc(var(--em) * 3.5); font-size: calc(var(--em) * 1.6); }
 
-/* switches on the same surface: no surface of their own */
 :root[data-ui="polish"] .tv-group-body .tv-switch-row { max-width: none; padding: calc(var(--em) * 0.9) calc(var(--em) * 1); background: transparent; font-size: var(--fs-2); line-height: 1.3; }
 :root[data-ui="polish"] .tv-group-body .tv-switch-row:hover { background: var(--fill-1); }
-/* a short line under a switch (the child's profile): in line with the switch's own words */
 :root[data-ui="polish"] .tv-group-body > .tv-set-note { padding: 0 calc(var(--em) * 1) calc(var(--em) * 0.4); }
 :root[data-ui="polish"] .tv-group-body .tv-switch-row:focus-visible { z-index: 2; background: #fff; }
 :root[data-ui="polish"] .tv-set-hint { display: flex; align-items: flex-start; gap: calc(var(--em) * 0.8); margin: 0; padding: 0 calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-1); line-height: 1.4; }
 :root[data-ui="polish"] .tv-set-hint svg { flex: none; margin-top: 0.15em; }
 
-/* ------------------------------ what the classic sheet sized by itself ------------------------------ */
-
-/*
- * Found by the drift scan (scripts/ui-walk/drift.mjs): sizes, corners, greys and timings a few percent away from a token with nothing to say why,
- * said in the tokens here. What is left that is not a token is on purpose: the keyboard's keys (their boxes grow with their letters), the numerals of
- * the rating row and of the ranked rows, the codes to type (the biggest thing on their pages), the wordmark, and thin bars (a corner of half their height).
- */
 :root[data-ui="polish"] .tv-step-no { font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-friend-ask b { font-size: inherit; }
 :root[data-ui="polish"] .tv-friend-ask span { font-size: var(--fs-2); }
@@ -1100,13 +942,11 @@
 :root[data-ui="polish"] .tv .copy-link-url { border-radius: var(--r-1); background: var(--fill-1); color: var(--text-2); }
 :root[data-ui="polish"] .tv-ep-no { color: var(--text-3); }
 :root[data-ui="polish"] .profile-tv .profile-tile { color: var(--text-3); transition: color var(--t-base) var(--ease); }
-/* a box to type in: a button's corner, the page's grey, the same ease as the rest */
 :root[data-ui="polish"] .tv .auth-field input {
   border-radius: var(--r-2);
   background: var(--surf-1);
   transition: border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
 }
-/* timings: the base time and the one ease (the classic look has six times and a few eases) */
 :root[data-ui="polish"] .tv-tile-corner { transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-rail { transition: width var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-rail-item span,
@@ -1115,20 +955,11 @@
 :root[data-ui="polish"] .hud-bar-track { transition: height var(--t-fast) var(--ease); }
 :root[data-ui="polish"] .tv-rank b { transition: -webkit-text-stroke-color var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv .profile-editor-tv .avatar-choice { transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
-/* what arrives slows down as it lands, on the same ease (the browser's own "ease" starts fast and lands hard): the rows, the banner's words and a title page's words rise over 0.4 s */
 :root[data-ui="polish"] .tv-row,
 :root[data-ui="polish"] .tv-hero-text,
 :root[data-ui="polish"] .tv-detail-text { animation-duration: 0.4s; animation-timing-function: var(--ease); }
 
-/* ------------------------------ reduced motion ------------------------------ */
-
-/*
- * The classic look names, one by one, what stops moving for someone who asked for less; this one has more things that move (its own transitions
- * are more specific than those names), so here it is everything: nothing eases, and a picture the remote is on stays its size (the ring says it).
- * A countdown is not decoration: the bar of the next episode still fills.
- */
 @media (prefers-reduced-motion: reduce) {
-  /* (what arrives sets its own time above, and a rule that says more than the classic look's 0.01 s for it wins: so it says 0.01 s again; and a picture that arrives late is simply there) */
   :root[data-ui="polish"] .tv-row,
   :root[data-ui="polish"] .tv-hero-text,
   :root[data-ui="polish"] .tv-detail-text { animation-duration: 0.01s; }
@@ -1142,12 +973,6 @@
   :root[data-ui="polish"] .tv-end-tile:focus-visible { transform: none; }
 }
 
-/* ------------------------------ small screens ------------------------------ */
-
-/*
- * The classic look has compact rules for a window narrower than 900 px (a phone held sideways, a small browser window: --em is 10px there)
- * and for one as flat as a phone held sideways. They are said here in the tokens, so that every rule above steps down together.
- */
 @media (max-width: 899px) {
   :root[data-ui="polish"] .tv {
     --fs-1: calc(var(--em) * 1.25);
@@ -1178,10 +1003,8 @@
   :root[data-ui="polish"] .tv-rail-category { margin-left: calc(var(--em) * 2.6); }
   :root[data-ui="polish"] .tv-hero-button,
   :root[data-ui="polish"] .tv-detail .tv-hero-button { padding: calc(var(--em) * 0.7) calc(var(--em) * 1.3); }
-  /* a button that is wider than the screen's room (the longest, on the narrowest phones) wraps its words instead of leaving the screen */
   :root[data-ui="polish"] .tv-hero-actions .tv-hero-button { max-width: 100%; white-space: normal; }
   :root[data-ui="polish"] .tv-tile-corner { width: calc(var(--em) * 2.6); height: calc(var(--em) * 2.6); }
-  /* the profile's page and the settings: the head is smaller, the groups come one under the other */
   :root[data-ui="polish"] .tv-hero-profile { min-height: calc(var(--em) * 11); padding-top: calc(var(--em) * 0.8); }
   :root[data-ui="polish"] .tv-profile-head { flex-wrap: wrap; gap: calc(var(--em) * 1.6); }
   :root[data-ui="polish"] .tv-profile-actions { flex-basis: 100%; margin-top: 0; }
@@ -1200,7 +1023,6 @@
   :root[data-ui="polish"] .tv-lang-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* Flat (a phone held sideways, a window as flat as one): the banner and the page's top give height back. */
 @media (max-height: 520px) {
   :root[data-ui="polish"] .tv {
     --fs-6: calc(var(--em) * 2.4);
@@ -1211,7 +1033,6 @@
   }
   :root[data-ui="polish"] .tv-rail { gap: calc(var(--em) * 0.2); }
   :root[data-ui="polish"] .tv-rail-item { padding-top: calc(var(--em) * 0.4); padding-bottom: calc(var(--em) * 0.4); }
-  /* (the people of a title are one line more than a flat screen has room for over the buttons: the genres and the age rating stay) */
   :root[data-ui="polish"] .tv-detail .about-people { display: none; }
 }
 
@@ -1220,35 +1041,25 @@
   :root[data-ui="polish"] .tv-rail-item { padding-top: calc(var(--em) * 0.2); padding-bottom: calc(var(--em) * 0.2); font-size: calc(var(--em) * 1.45); }
 }
 
-/* A phone on its side (compact.ts `isFlatHand`): its four places down the left, each a thumb high (48 px, what Android asks of a button) with room between
-   them, the icons no bigger than they were. (The TV's ten lines squeezed into a screen this low came out 24 px each, touching.) */
 :root[data-ui="polish"] .tv-rail[data-flat="true"] { gap: 10px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item { min-height: 48px; margin-left: 4px; padding-top: 0; padding-bottom: 0; font-size: 15px; }
-/* (shut, a line is a 48 px square around its icon: the menu is 56 px wide) */
 :root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-item { align-self: flex-start; justify-content: center; width: 48px; margin-right: 0; padding-inline: 0; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item svg { font-size: 18px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item[aria-current="page"]::before { left: -2px; }
-/* The sections, as buttons over the titles (as on the upright phone), start where the page does, right of the menu, and are a thumb's size, not a TV's. */
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections { gap: 8px; margin: 0; padding: 2px var(--edge-r) 4px var(--gutter); scroll-padding-inline: var(--gutter); }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections .tv-choice { min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; font-weight: 600; white-space: nowrap; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections .tv-choice:focus-visible { transform: none; }
-/* (the banner gives back what the row of sections takes, so that a row of titles still fits under it: it leaves out the line over the title, which is the name of the
-   row under it, and keeps the title to one line, the whole of it on the title's page) */
 :root[data-ui="polish"] .tv-browse:not([data-deep="true"]) > .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) { height: calc(var(--hero-h) - 34px); }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-eyebrow { display: none; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* ...and a title's page has the width of the screen for its buttons (with two lists and a TV to play on there are five), not the column its words keep to on a TV. */
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-detail .tv-detail-text { max-width: none; }
 
-/* ...and what a thumb presses is 44 px high (Apple's; they were 31 to 32, the corner's 32 by 32: the judge, 16 Nov). A title's Play, the lists, Play on TV and Rate, and
-   the profile's page's buttons are that high; the banner's and the corner's keep the size they have, as the page has no height to give them and still show a row of
-   titles under the banner (handheld.spec.ts), and what a thumb lands on reaches 7 px past them, up and down. */
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-detail .tv-hero-button,
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero-profile .tv-hero-button { min-height: 44px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero:not(.tv-hero-profile) .tv-hero-button,
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-corner-button,
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-account-chip,
-:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-back { position: relative; inset: auto; } /* (the chip's own offsets are a TV's, kept out) */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-back { position: relative; inset: auto; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-hero:not(.tv-hero-profile) .tv-hero-button::after,
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-corner-button::after,
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-account-chip::after,
@@ -1256,9 +1067,6 @@
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-corner-button::after,
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-browse-top .tv-back::after { inset: -7px -5px; }
 
-/* The search field of a page under 900 px wide (Browse.tsx `narrow`: a phone either way up, a small window), whatever the height: one cross that empties
-   it, a button a thumb's size in the field's right end, and not the browser's own as well. (A phone on its side had both, the app's at 10 by 14 px and
-   unstyled, as these rules were only said for a phone held upright: the judge, 16 Nov. tv-phone.css still gives the upright field its look.) */
 :root[data-ui="polish"] .tv .tv-query-field { position: relative; }
 :root[data-ui="polish"] .tv .tv-query-field input.tv-query { box-sizing: border-box; padding-right: 52px; }
 :root[data-ui="polish"] .tv input.tv-query::-webkit-search-cancel-button { display: none; -webkit-appearance: none; appearance: none; }
@@ -1266,7 +1074,6 @@
 :root[data-ui="polish"] .tv .tv-query-clear svg { width: 22px; height: 22px; }
 :root[data-ui="polish"] .tv .tv-query-clear:active { color: var(--text-1, #fff); background: var(--surf-3, rgb(255 255 255 / 0.08)); }
 
-/* What a profile watches (account/ProfileSetup.tsx): four buttons that are on or off, on the page of the settings and when a profile is set up. */
 :root[data-ui="polish"] .section-picker-tv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--em) * 1); max-width: calc(var(--em) * 64); padding: calc(var(--em) * 0.4) 0 calc(var(--em) * 1.2); }
 :root[data-ui="polish"] .section-picker-tv .section-choice {
   position: relative;

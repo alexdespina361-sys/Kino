@@ -2,34 +2,19 @@ import { Fragment, useState, type MouseEvent, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { Logo } from "../shared/Logo";
 
-/** One line of the library's menu. */
 export interface RailEntry {
   id: string;
   label: string;
-  /** The pages and actions have one and stay in view as icons while the menu is closed; the categories under them have none and show only when it is open. */
   icon?: ReactNode;
-  /** A heading above this line, for the first of a group (only shown while the menu is open). */
   group?: string;
-  /** A space above this line, to set what follows (the party, a phone, the profile) apart from the places above it. */
   apart?: boolean;
-  /** The page that is open. */
   current?: boolean;
-  /** A short count beside the name (how many are in the party). */
   badge?: string;
-  /** The entry stands for something that is on right now (a phone is connected): while the menu is shut, a dot on its icon says so; open, its name does. */
   lit?: boolean;
   testId: string;
   onPress: () => void;
 }
 
-/**
- * The menu down the left: a strip of icons that opens into names while the remote is on it, or while a mouse rests on it (a press with
- * the mouse takes no focus, so focus alone would open it only for as long as the button is held down). A click on a line goes there and
- * shuts the menu, as a press of OK does; it opens again once the pointer has left and come back.
- * On a phone held upright (`bar`, see compact.ts) it is a bar of a few places along the bottom instead, each with its name under its icon: it is never open or shut,
- * and its places are one row (`data-col`) for the arrow keys.
- * On a phone on its side (`flat`, see compact.ts) it is the menu down the left with those few places, each a thumb high (polish/tv.css).
- */
 export function Rail({
   open,
   onOpen,
@@ -43,7 +28,6 @@ export function Rail({
   onOpen: (open: boolean) => void;
   entries: readonly RailEntry[];
   onArrive: (element: HTMLElement) => void;
-  /** What the page's wordmark does when it is pressed (it goes home): open, the menu lies over it, and a click or a tap there is still that, and shuts the menu. */
   onHome?: () => void;
   bar?: boolean;
   flat?: boolean;
@@ -51,11 +35,6 @@ export function Rail({
   const t = useT();
   const [resting, setResting] = useState(false);
   const wide = !bar && (open || resting);
-  /**
-   * Whether a click on the menu's own ground (not one of its lines) fell where the page's wordmark is, under it (the owner, 15 Nov: "clicking it should close the
-   * menu and go to Home"). Not asked whether the menu is open: a finger's tap there takes the focus out of the menu first, which shuts it before the click comes
-   * (it is still over the wordmark while it closes), and a shut menu is not over the wordmark at all.
-   */
   const onWordmark = (event: MouseEvent<HTMLElement>): boolean => {
     if (bar || (event.target as Element).closest("button")) return false;
     const mark = document.querySelector('[data-testid="tv-logo-home"]')?.getBoundingClientRect();
@@ -73,7 +52,6 @@ export function Rail({
       onBlur={(event) => {
         if (!bar && !event.currentTarget.contains(event.relatedTarget as Node | null)) onOpen(false);
       }}
-      // (A finger on a touch screen is no pointer that rests: its tap takes the focus, and that opens the menu.)
       onPointerEnter={(event) => !bar && event.pointerType !== "touch" && setResting(true)}
       onPointerLeave={() => setResting(false)}
       onClick={(event) => {
@@ -83,7 +61,6 @@ export function Rail({
         onHome();
       }}
     >
-      {/* Open, the menu covers the page's wordmark: it carries the name itself, where the page has it (the stylesheet shows it only while the menu is open). */}
       {!bar && (
         <span className="tv-rail-brand" aria-hidden="true">
           <Logo />

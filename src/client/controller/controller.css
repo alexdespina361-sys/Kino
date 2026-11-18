@@ -1,4 +1,3 @@
-/* The phone: a Netflix-style remote. Built for one thumb, in a dark room, with a TV as the main screen. */
 .phone {
   display: flex;
   flex-direction: column;
@@ -12,14 +11,11 @@
   .phone { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 }
 .phone h1, .phone h2, .phone h3, .phone p { margin: 0; }
-/* Groups that exist for the refined look's layouts (polish/phone.css, a phone held sideways): here they are not boxes at all, their children are the page's own. */
 .remote, .remote-controls, .remote-extras, .pair-copy, .pair-actions, .title-top, .title-main, .cap-layout, .cap-controls, .layers { display: contents; }
 .muted { color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
 .muted.small { font-size: 0.8rem; }
 .center { text-align: center; }
 .error { color: var(--bad); }
-
-/* ------------------------------ buttons ------------------------------ */
 
 .btn {
   display: inline-flex;
@@ -36,12 +32,12 @@
   transition: transform 0.08s ease, background 0.15s ease;
 }
 .btn:active:not(:disabled) { transform: scale(0.97); }
-.btn[aria-disabled="true"] { opacity: 0.4; } /* nothing to do (a list already at the end): it stays where it is, so a finger or the remote does not lose its place */
+.btn[aria-disabled="true"] { opacity: 0.4; }
 .btn[aria-disabled="true"]:active { transform: none; }
 .btn svg { font-size: 1.2em; flex: none; }
 .btn small { font-size: 0.8em; font-weight: 500; opacity: 0.8; }
 .btn-red { background: var(--accent); color: var(--accent-ink); }
-.btn-red[aria-disabled="true"] { opacity: 0.6; cursor: progress; } /* (a title's Play while the episode a friend sent is looked up) */
+.btn-red[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
 .btn-red:active:not(:disabled) { background: var(--accent-hover); }
 .btn-danger { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .btn-block { width: 100%; }
@@ -61,14 +57,11 @@
 }
 .icon-btn:active { background: var(--surface-2); color: var(--text); }
 
-/* ------------------------------ pairing ------------------------------ */
-
-/* The first screen: the logo and the corner's buttons share the top row; the rest is centered in what is left below it. */
 .pair { justify-content: flex-start; gap: 18px; text-align: center; }
 .pair-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: auto; }
 .pair > :last-child { margin-bottom: auto; }
 .brand { align-self: center; font-size: 1.05rem; }
-.pair-top .logo { top: -0.216em; } /* (the "o" of the wordmark, not its box, is level with the buttons beside it: see polish/tv.css) */
+.pair-top .logo { top: -0.216em; }
 .pair-icon {
   display: grid;
   place-items: center;
@@ -97,7 +90,6 @@
 }
 .code-input::placeholder { color: rgba(255, 255, 255, 0.18); }
 .code-input:focus, .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* A short screen (a small phone, or one held sideways): the picture over the title goes, and what is left is packed closer, so the language row is still on screen. */
 @media (max-height: 740px) {
   .pair { gap: 12px; }
   .pair-icon { display: none; }
@@ -107,8 +99,6 @@
   .pair h1 { font-size: 1.45rem; }
   .code-input { padding-block: 9px; font-size: 1.8rem; }
 }
-
-/* ------------------------------ header and banners ------------------------------ */
 
 .top { display: flex; align-items: center; gap: 10px; }
 .top-tv { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; color: var(--muted); font-size: 1.3rem; }
@@ -122,13 +112,10 @@
 .banner { padding: 12px 14px; border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 0.9rem; line-height: 1.4; }
 .banner b { color: var(--text); }
 .error.banner { background: rgba(255, 107, 107, 0.12); color: var(--bad); }
-/* The TV is gone: a sentence and the way out, where the remote was. */
 .away { display: flex; flex-direction: column; gap: 12px; }
 
 .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.95rem; }
 .status.failed { color: var(--bad); }
-
-/* ------------------------------ home: play a link ------------------------------ */
 
 .home { display: flex; flex-direction: column; gap: 12px; }
 .play-link { display: flex; flex-direction: column; gap: 14px; }
@@ -141,7 +128,7 @@
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
-  font-size: 1rem; /* 16px: anything smaller makes iPhones zoom in on focus */
+  font-size: 1rem;
 }
 .field-btn {
   position: absolute;
@@ -159,10 +146,8 @@
   transform: translateY(-50%);
 }
 .field-btn.icon { padding: 8px; font-size: 1rem; color: var(--muted); }
-.field input[type="search"]::-webkit-search-cancel-button { display: none; } /* the field has a clear button of its own */
+.field input[type="search"]::-webkit-search-cancel-button { display: none; }
 
-
-/* ------------------------------ remote ------------------------------ */
 
 .now-playing { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
 .episode-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.85rem; }
@@ -171,7 +156,6 @@
 .state { display: flex; align-items: center; gap: 8px; min-height: 1.3em; color: var(--muted); font-size: 0.95rem; }
 .state.bad { color: var(--bad); }
 .state small { font-size: 0.8em; opacity: 0.8; }
-/* With a button at its end (turning down the next episode) the line keeps its height: the button is taller than the words, and hangs over. */
 .state-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .state-line .state { flex: 1; min-width: 0; }
 .state-action { flex: none; margin-block: -6px; padding: 6px 14px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; transition: background 0.15s ease, transform 0.08s ease; }
@@ -233,7 +217,6 @@
 .chip-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .chip-text small { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .chip-text b { overflow: hidden; font-size: 0.95rem; text-overflow: ellipsis; white-space: nowrap; }
-/* A narrow phone: two chips per row leave a word and a half each, so the chips are all words (they are plainly buttons without the icon and the arrow). */
 @media (max-width: 380px) {
   .chip { gap: 0; padding-inline: 12px; }
   .chip > svg { display: none; }
@@ -244,10 +227,6 @@
 .actions .btn { flex-direction: column; gap: 4px; min-height: 64px; padding: 0 6px; font-size: 0.8rem; }
 .actions .btn svg { font-size: 1.4em; }
 
-/* ------------------------------ sheets ------------------------------ */
-
-/* A pull down over a sheet closes it (Sheet.tsx). The browser's own answer to a pull down at the top of a page is to reload it, which
-   must not happen behind a sheet, nor when a list in it is pulled past its end. */
 html.sheet-open { overscroll-behavior-y: contain; }
 .sheet-backdrop {
   position: fixed;
@@ -272,7 +251,7 @@ html.sheet-open { overscroll-behavior-y: contain; }
   overscroll-behavior: contain;
   animation: sheet-up 0.24s ease;
 }
-.sheet:focus { outline: none; } /* (the keyboard is put on the sheet when it opens: the sheet itself needs no ring) */
+.sheet:focus { outline: none; }
 .sheet-grip { width: 40px; height: 4px; margin: 4px auto 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .sheet-head h2 { font-size: 1.15rem; }
@@ -284,7 +263,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .choice.active { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 600; }
 .choice-dot { flex: none; width: 12px; height: 12px; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; }
 .choice.active .choice-dot { border-color: var(--accent); background: var(--accent); }
-/* The lists: a choice with an icon before its name, one that makes a new list, and one that has a note (how many titles) at its end. */
 .choice { transition: background 0.15s ease, transform 0.08s ease; }
 .choice:focus-visible:not(.active) { background: rgba(255, 255, 255, 0.12); }
 @media (hover: hover) { .choice:hover:not(.active) { background: rgba(255, 255, 255, 0.12); } }
@@ -297,7 +275,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 @media (hover: hover) { .choice-new:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); } }
 .choice-note { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 0.85rem; }
 
-/* Subtitle style: a small TV with a sample line (sizes are shares of its height, like on the real screen), then the choices. */
 .cap-frame {
   position: sticky;
   top: 0;
@@ -327,13 +304,11 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .cap-choice.active { background: #fff; color: #000; }
 .cap-count { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 0.72rem; font-weight: 700; }
 .cap-choice.active .cap-count { background: rgba(0, 0, 0, 0.14); }
-/* The chips past the profile's own languages: a label before them, and chips that open or widen the list rather than choose. */
 .cap-label { flex-basis: 100%; margin-top: 6px; color: var(--muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .cap-choice.more { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--muted); }
 .delay-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; font-weight: 500; }
 .delay-row > span { white-space: nowrap; }
 .delay-row b { margin-left: 4px; font-variant-numeric: tabular-nums; }
-/* The three buttons share a line with the label when it fits, and a line of their own, full width, when it does not (a narrow phone, a long word). */
 .delay-buttons { display: flex; flex: 1 1 13rem; gap: 6px; }
 .delay-buttons .btn { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; background: rgba(255, 255, 255, 0.08); font-size: 0.9rem; white-space: nowrap; }
 .delay-buttons .btn:focus-visible { background: rgba(255, 255, 255, 0.16); }
@@ -343,7 +318,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
 .season.active { background: #fff; color: #000; }
 .episodes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-/* (Show earlier over a long season's episodes, Show more under them: 24 at a time, TitleSheet.tsx.) */
 .episodes-more { min-height: 46px; font-size: 0.95rem; }
 .episode { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; overflow: hidden; padding: 13px 14px; border-radius: 12px; background: var(--surface-2); text-align: left; }
 .episode-no { flex: none; min-width: 1.8em; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; }
@@ -351,13 +325,11 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .episode.now { background: rgb(var(--accent-rgb) / 0.18); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .episode-note { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
 .episode-note.watched { color: #46d369; }
-/* No source had it the last times it was played: said in words, and its picture is dimmed (a tap still looks again). */
 .episode-gone { align-self: flex-start; flex: none; padding: 1px 8px; border-radius: 999px; background: rgba(255, 186, 73, 0.16); color: #ffc46b; font-size: 0.72rem; font-weight: 700; }
 .episode[data-unavailable] .episode-still { opacity: 0.5; }
 .episode-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.12); }
 .episode-progress i { display: block; height: 100%; background: var(--accent); }
 .episode-now { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--accent-hover); font-size: 0.75rem; font-weight: 700; }
-/* With what the library knows of the season: a picture, how long each runs, a line about it. */
 .episode.rich { align-items: flex-start; gap: 10px; padding: 10px 12px 10px 10px; }
 .episode.rich .episode-no { min-width: 1.2em; padding-top: 2px; font-size: 0.9rem; }
 .episode-still { position: relative; flex: none; width: 112px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; }
@@ -371,8 +343,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* ------------------------------ QR scanner ------------------------------ */
-
 .or { display: flex; align-items: center; gap: 12px; margin: 2px 0 -2px; color: var(--muted); font-size: 0.85rem; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .scanner { position: fixed; inset: 0; z-index: 60; background: #000; }
@@ -382,7 +352,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
   width: min(70vw, 300px);
   aspect-ratio: 1;
   border-radius: 24px;
-  /* The dim area around the frame is this huge shadow, so the code sits in a bright window. */
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5), inset 0 0 0 3px rgba(255, 255, 255, 0.9);
 }
 .scanner-close {
@@ -412,15 +381,11 @@ html.sheet-open { overscroll-behavior-y: contain; }
   font-size: 0.95rem;
 }
 
-/* ------------------------------ toast ------------------------------ */
-
-/* The TV's answer to a button, above everything (sheets included) so it's seen whichever screen the thumb is on. */
 .toast {
   position: fixed;
   left: 50%;
   bottom: max(24px, env(safe-area-inset-bottom));
   z-index: 70;
-  /* As wide as its words, up to the screen's width (a box placed from the middle would otherwise wrap at half of it). */
   width: max-content;
   max-width: min(92vw, 420px);
   margin: 0;
@@ -444,64 +409,51 @@ html.sheet-open { overscroll-behavior-y: contain; }
   100% { opacity: 0; }
 }
 
-/* Watching together */
 .party-count { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 0.75rem; font-weight: 700; }
 .party-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .party-state { display: block; font-size: 0.75rem; font-weight: 600; }
 .party-state.ok { color: var(--ok); }
 .party-state.bad { color: var(--bad); }
-/* A screen of the party: its name and state, and what the host can do about it (admin, remove). They go under the name where they do not fit beside it. */
 .party-row { flex-wrap: wrap; }
 .party-who { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
-.party-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; } /* (where the three do not fit side by side, the last goes under) */
+.party-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .party-actions .btn { min-height: 44px; padding: 0 14px; font-size: 0.92rem; }
-.party-actions .btn:not(.btn-danger) { background: rgba(255, 255, 255, 0.1); } /* (a row is the colour a plain button is) */
-/* The TVs of a phone: the row to choose one, and the button that lets one go. */
+.party-actions .btn:not(.btn-danger) { background: rgba(255, 255, 255, 0.1); }
 .tv-row { display: flex; align-items: stretch; gap: 6px; }
 .tv-row .choice, .tv-row .editor-confirm { flex: 1; min-width: 0; }
 .tv-row .btn { flex: none; }
-/* A code that brings another screen in (to the party, or to the TV as a second remote): the digits to read out, the QR code to scan. */
 .code-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: var(--surface-2); }
-.code-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 14px; } /* (the QR code goes under the code where they do not fit side by side: a narrow phone, a wide code) */
+.code-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 14px; }
 .code-card-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .code-card-top > svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }
 .code-card-wait { align-items: center; padding: 28px; }
-/* The link that the QR code holds, to paste into a chat: the whole of it, with its own button beside it. */
 .code-card .copy-link { display: flex; flex-direction: column; gap: 6px; }
 .code-card .copy-link-row { gap: 8px; }
 .code-card .copy-link-url { padding: 13px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.07); font-size: 0.82rem; line-height: 1.2; }
 .code-card .copy-link-button { min-height: 46px; padding: 0 14px; font-size: 0.92rem; white-space: nowrap; }
-/* The code a friend is given: its own small button under it (filled, to be seen on the card), beside the QR code or above it. */
 .friend-code-side { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
-.code-card .copy-code { align-items: flex-start; } /* (the button keeps its size when the note about a copy that failed is under it) */
+.code-card .copy-code { align-items: flex-start; }
 .code-card .copy-code .copy-link-button { min-height: 38px; padding: 0 12px; background: rgba(255, 255, 255, 0.1); font-size: 0.85rem; }
 .code-card .copy-link-button[data-state="copied"] { background: var(--ok); color: #0b0b0c; }
 .code-card .copy-link-note { color: var(--bad); font-size: 0.8rem; }
 .sheet-body form { display: flex; flex-direction: column; gap: 8px; }
 
-/* ------------------------------ library and rows of cards ------------------------------ */
-
-.library { display: flex; flex-direction: column; gap: 26px; margin-top: 6px; } /* (18 px until 16 Nov: the owner's yes to more room between rows) */
+.library { display: flex; flex-direction: column; gap: 26px; margin-top: 6px; }
 .lib-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .lib-row { display: flex; flex-direction: column; gap: 8px; }
 .lib-row h3 { font-size: 1.05rem; }
 .lib-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-/* A quiet button at the end of a row's heading. */
 .row-link { flex: none; padding: 4px 0 4px 10px; border-radius: 6px; color: var(--muted); font-size: 0.85rem; font-weight: 600; transition: color 0.15s ease, opacity 0.1s ease; }
 .row-link:focus-visible { color: var(--text); }
 @media (hover: hover) { .row-link:hover { color: var(--text); } }
 .row-link:active { opacity: 0.6; }
-/* The rows scroll sideways right to the screen's edge, but start in line with everything else. */
 .lib-scroller { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; scrollbar-width: none; }
 .lib-scroller::-webkit-scrollbar { display: none; }
-/* What is half watched: big cards that snap one at a time, the next one showing at the edge so that it is plain the row goes on. */
 .lib-row.is-wide .lib-scroller { gap: 12px; scroll-snap-type: x mandatory; }
 .lib-row.is-wide .lib-tile { width: min(72vw, 260px); }
 .lib-row.is-wide .lib-art { aspect-ratio: 16 / 9; }
-/* A row of the library drawn as wide cards (shared/shapes.ts): a little smaller than those, and free to slide, as the rows of posters are. */
 .lib-row.is-landscape .lib-scroller { gap: 10px; scroll-snap-type: x proximity; }
 .lib-row.is-landscape .lib-tile { width: min(60vw, 232px); }
-/* The row of categories: a card of words for each row of the page, on a colour of its own, the posters of its first titles fanned at its end. */
 .lib-cat {
   position: relative;
   flex: none;
@@ -537,7 +489,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-cat:focus-visible { box-shadow: 0 0 0 2px #fff; outline: none; }
 .lib-cat:active { transform: scale(0.97); }
 .lib-tile { position: relative; flex: none; width: 138px; scroll-snap-align: start; }
-/* (A hold on a title puts it in a list: no menu from the browser, no selecting its name.) */
 .lib-card { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; -webkit-touch-callout: none; user-select: none; }
 .lib-art { position: relative; display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--surface-2); transition: transform 0.18s ease, box-shadow 0.18s ease; }
 .lib-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
@@ -547,14 +498,11 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-card:active .lib-art { transform: scale(0.97); box-shadow: 0 0 0 2px var(--accent); }
 .lib-title { font-size: 0.85rem; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lib-year { margin-top: -4px; color: var(--muted); font-size: 0.75rem; }
-/* How far a started title got: a thin bar across the foot of its picture. */
 .lib-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.55); }
 .lib-progress i { display: block; height: 100%; background: var(--accent); }
-/* The score this profile gave a title: a star and a number in the picture's top-left corner, opposite the round buttons. */
 .lib-art .score-badge, .lib-result-art .score-badge { position: absolute; top: 6px; left: 6px; z-index: 1; display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.68); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28); color: #fff; font-size: 0.78rem; font-weight: 800; line-height: 1.5; }
 .lib-result-art .score-badge { top: 4px; left: 4px; }
 .lib-art .score-badge svg, .lib-result-art .score-badge svg { width: 0.95em; height: 0.95em; color: var(--accent); }
-/* The round button in the corner of a picture: take the title off the row. Big enough for a thumb. (What a search finds is a grid of posters: see polish/shell.css.) */
 .lib-corner { position: absolute; top: 6px; right: 6px; z-index: 1; display: flex; gap: 6px; }
 .lib-round { position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 1.1rem; backdrop-filter: blur(4px); transition: background 0.15s ease, transform 0.1s ease; }
 .lib-round::after { content: ""; position: absolute; inset: -3px; }
@@ -563,15 +511,12 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-round:active { transform: scale(0.9); }
 .lib-result-art { position: relative; display: block; flex: none; width: 112px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--surface-2); }
 .lib-result-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
-/* The heading over the closest others, under the titles that have every word that was typed. */
 .lib-closest { margin: 12px 0 2px; font-size: 1rem; font-weight: 700; }
 
-/* Empty tiles at the end of a row, and a row of them under the last one, while the titles that come next are on their way. */
 .lib-waiting { pointer-events: none; }
 .lib-waiting .lib-art { background: var(--surface-2); }
 .lib-waiting-title { display: block; width: 9em; height: 1.1em; border-radius: 6px; background: var(--surface-2); }
 
-/* A title's own page (a sheet): its picture, Play and the lists, what it is about, and a show's episodes. */
 .title-art { position: relative; display: block; flex: none; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: var(--surface-2); }
 .title-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 .title-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
@@ -580,18 +525,13 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .title-episodes { display: flex; flex-direction: column; gap: 10px; }
 .episode[data-target="true"] { box-shadow: inset 0 0 0 1.5px rgb(var(--accent-rgb) / 0.55); }
 
-/* (Five of them, and a narrow phone has room for four: the last goes on a second line, and no name is ever broken in two.) */
 .lib-pills { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 0; }
-/* (in a sheet, whose body is a scrolling column, a row of pills keeps its height: squeezed by a long list under it, the rows of the ratings' sort and filters lay over one another and over the list) */
 .sheet-body > .lib-pills { flex: none; }
 .lib-pill { padding: 7px 15px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; white-space: nowrap; transition: background 0.15s ease, color 0.15s ease; }
 .lib-pill[aria-pressed="true"] { background: #fff; color: #000; }
-/* (how many a filter of the ratings keeps, beside its name) */
 .lib-pill-count { margin-left: 3px; opacity: 0.6; font-variant-numeric: tabular-nums; }
 .lib-pill svg { width: 0.95em; height: 0.95em; margin-right: 2px; vertical-align: -0.12em; }
 
-/* Ratings: a box on a title's page (folded to one line), and the page of everything rated. */
-/* (`flex: none`: a sheet is a column that scrolls, and a box that hides its overflow may shrink, so a long page would squeeze it flat.) */
 .rating-box { display: flex; flex: none; flex-direction: column; border-radius: 12px; background: var(--surface); overflow: hidden; }
 .rating-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; text-align: left; font-weight: 600; transition: background 0.15s ease; }
 .rating-head:focus-visible { background: rgba(255, 255, 255, 0.06); }
@@ -603,7 +543,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .rating-head-value { flex: none; color: var(--muted); font-size: 0.9rem; }
 .rating-box[data-rated="true"] .rating-head-value { color: var(--text); font-weight: 700; }
 .rating-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; }
-/* A title's own rating: its head is only a line saying what it is (the scores under it are there at once), and More and Remove share a row. */
 .rating-head-static { cursor: default; }
 @media (hover: hover) { .rating-head-static:hover { background: none; } }
 .rating-head-static:active { background: none; }
@@ -618,7 +557,7 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .rating-score[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
 .rating-word { min-height: 1.3em; margin: 0; text-align: center; font-weight: 600; }
 .rating-note-field { position: relative; display: flex; flex-direction: column; gap: 4px; }
-.rating-note { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; /* 16px: anything smaller makes iPhones zoom in on focus */ line-height: 1.4; resize: none; transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
+.rating-note { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; line-height: 1.4; resize: none; transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
 .rating-note:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25); }
 .rating-note:disabled { opacity: 0.55; }
 .rating-count { align-self: flex-end; color: var(--muted); font-size: 0.75rem; }

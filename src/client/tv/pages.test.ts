@@ -15,22 +15,19 @@ describe("a long season's episodes, 24 at a time", () => {
   });
 
   it("lists a longer one from the episode Play leads to (the one this profile is at, or a friend sent), full 24 when it is among the last; else the first 24", () => {
-    expect(episodeWindow(366, -1)).toEqual({ from: 0, to: 24 }); // (nothing begun: the first)
+    expect(episodeWindow(366, -1)).toEqual({ from: 0, to: 24 });
     expect(episodeWindow(366, 0)).toEqual({ from: 0, to: 24 });
-    expect(episodeWindow(366, 149)).toEqual({ from: 149, to: 173 }); // (at episode 150 of Bleach's 366: from it)
-    expect(episodeWindow(366, 360)).toEqual({ from: 342, to: 366 }); // (near the end: the last 24, it among them)
+    expect(episodeWindow(366, 149)).toEqual({ from: 149, to: 173 });
+    expect(episodeWindow(366, 360)).toEqual({ from: 342, to: 366 });
     expect(episodeWindow(30, 20)).toEqual({ from: 6, to: 30 });
   });
 
   it("keeps what Show more and Show earlier widened it to while the episode Play leads to is in it, and starts again from it when it is not", () => {
     expect(listedWindow(366, 149, { from: 125, to: 197 })).toEqual({ from: 125, to: 197 });
     expect(listedWindow(366, 149, undefined)).toEqual({ from: 149, to: 173 });
-    // (episode 197 was played to its end: Play leads to 198, out of what was listed)
     expect(listedWindow(366, 197, { from: 125, to: 197 })).toEqual({ from: 197, to: 221 });
-    // (a season that came back shorter: what is past its end is not listed)
     expect(listedWindow(40, -1, { from: 0, to: 48 })).toEqual({ from: 0, to: 40 });
     expect(listedWindow(10, -1, { from: 24, to: 48 })).toEqual({ from: 0, to: 10 });
-    // (the 24 that were listed from episode 40 - the page keeps them as its window - stay when Play moves on to 41: they do not slide by one, the judge, 17 Nov)
     expect(listedWindow(100, 40, { from: 39, to: 63 })).toEqual({ from: 39, to: 63 });
     expect(episodeWindow(100, 40)).toEqual({ from: 40, to: 64 });
   });
@@ -60,7 +57,6 @@ const rated = (key: string, score: number, ratedAt: number, extra: Partial<LiveR
 
 const FIRST: ListInfo = { id: DEFAULT_LIST };
 const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], all: overrides.rows ?? [], progress: [], lists: [FIRST], list: [], ratings: [], ...overrides });
-/** One of the profile's own rows, as the page is given them (shared/taste.ts makes them). */
 const own = (key: string, why: PersonalRow["why"] = "watched", items: LibraryItem[] = [item(`like-${key}`)]): PersonalRow => ({ id: why === "picks" ? "picks" : `because:${key}`, key, title: `T ${key}`, why, items });
 const library = [row("m1", "movie"), row("s1", "series"), row("m2", "movie"), row("s2", "series"), row("m3", "movie"), row("s3", "series")];
 
@@ -125,12 +121,10 @@ describe("rowsOfPage: home", () => {
     const personal = [own("a"), own("z", "loved"), own("s", "saved"), own("q", "like"), own("left", "like")];
     const rows = rowsOfPage("home", data({ rows: library, progress: [card("a"), card("b", { done: true })], list: [saved("l1")], personal }));
     expect(rows.map((r) => r.id)).toEqual(["continue", `list:${DEFAULT_LIST}`, "m1", "because:a", "s1", "m2", "because:z", "categories", "s2", "m3", "because:s", "s3"]);
-    expect(rows[0]!.entries.map((e) => e.title)).toEqual(["Card a"]); // the finished one is not part way through
-    // Each says why it is there; a row there is no place for yet (the library has six rows so far) waits for the page to grow.
+    expect(rows[0]!.entries.map((e) => e.title)).toEqual(["Card a"]);
     expect(rows.filter((r) => r.id.startsWith("because:")).map((r) => r.title)).toEqual([t("rows.because", { title: "T a" }), t("rows.loved", { title: "T z" }), t("rows.saved", { title: "T s" })]);
     expect(rows.find((r) => r.id === "because:z")).toMatchObject({ layout: "wide" });
     expect(rows.find((r) => r.id === "because:z")!.entries.map((e) => e.id)).toEqual(["like-z"]);
-    // A page that has grown has a place for the next one, and what was laid out is where it was.
     const grown = rowsOfPage("home", data({ rows: [...library, row("m4", "movie"), row("s4", "series")], progress: [card("a")], list: [saved("l1")], personal }));
     expect(grown.map((r) => r.id).slice(0, rows.length)).toEqual(rows.map((r) => r.id));
     expect(grown.map((r) => r.id).slice(rows.length)).toEqual(["m4", "because:q", "s4"]);
@@ -165,9 +159,7 @@ describe("rowsOfPage: home", () => {
     const many = Array.from({ length: 8 }, (_, i) => row(`r${i}`, "movie", 20));
     const rows = rowsOfPage("home", data({ rows: many, progress: [], personal: [own("k")] }));
     expect(rows.map((each) => `${each.id}${each.shape ? "=" + each.shape : ""}`)).toEqual(["r0", "because:k", "r1=landscape", "r2", "categories", "r3", "r4=landscape", "r5", "r6", "r7=landscape"]);
-    // (Its layout stays "wide": that is what a row that grows sideways is.)
     expect(rows.find((each) => each.id === "r1")!.layout).toBe("wide");
-    // A section's page counts its own rows.
     expect(rowsOfPage("movies", data({ rows: many })).filter((each) => each.shape).map((each) => each.id)).toEqual(["r1", "r4", "r7"]);
   });
 
@@ -178,8 +170,7 @@ describe("rowsOfPage: home", () => {
     expect(rows[3]!.entries).toHaveLength(13);
     expect(rows[3]!.entries.at(-1)).toMatchObject({ title: t("tv.allCategories"), opens: { kind: "categories" } });
     expect(rows[3]!.entries[0]).toMatchObject({ title: "Row r0", opens: { kind: "category", rowId: "r0" }, image: "wide-r0-0" });
-    expect(rows[3]!.entries[0]!.note).toBeUndefined(); // (no count of titles: a category goes on as it is scrolled, so the number was only what had come so far)
-    // What is in a category is shown, not counted: the posters of its first three titles (a category of five still shows three), and the "All categories" tile says no number either.
+    expect(rows[3]!.entries[0]!.note).toBeUndefined();
     expect(rows[3]!.entries[0]!.posters).toEqual(["poster-r0-0", "poster-r0-1", "poster-r0-2"]);
     const five = rowsOfPage("home", data({ rows: Array.from({ length: 20 }, (_, i) => row(`r${i}`, "movie", 5)) }))[3]!;
     expect(five.entries[0]!.posters).toHaveLength(3);
@@ -247,7 +238,6 @@ describe("rowsOfPage: movies and series", () => {
     expect(rowsOfPage("movies", data({ rows: many, watching })).some((r) => r.id === "watching")).toBe(false);
     const child = rowsOfPage("home", data({ rows: many, watching, child: { allows: () => true } as unknown as NonNullable<PageData["child"]> }));
     expect(child.some((r) => r.id === "watching")).toBe(false);
-    // A profile that watches films only: four films are a row, three are not.
     const films = rowsOfPage("home", data({ rows: many, watching: [...watching, item("w5", "movie")], wanted: new Set(["movie"]) }));
     expect(films.find((r) => r.id === "watching")!.entries.map((entry) => entry.id)).toEqual(["w0", "w2", "w3", "w5"]);
     expect(rowsOfPage("home", data({ rows: many, watching, wanted: new Set(["movie"]) })).some((r) => r.id === "watching")).toBe(false);
@@ -258,9 +248,9 @@ describe("rowsOfPage: movies and series", () => {
     const progress = [card("top-1", { done: true }), card("long-1", { done: true }), card("long-5"), card("short-0", { done: true })];
     const rows = rowsOfPage("home", data({ rows: long, progress, ratings: [rated("long-3", 2, 1)] }));
     const of = (id: string) => rows.find((r) => r.id === id)!.entries.map((entry) => entry.id);
-    expect(of("top")).toContain("top-1"); // (the first row is a ranking: it is whole)
-    expect(of("long")).toEqual(["long-0", "long-2", "long-4", "long-5", "long-6", "long-7"]); // (finished and scored are out; part way through is in)
-    expect(of("short")).toHaveLength(6); // (five would be left: it is as it was)
+    expect(of("top")).toContain("top-1");
+    expect(of("long")).toEqual(["long-0", "long-2", "long-4", "long-5", "long-6", "long-7"]);
+    expect(of("short")).toHaveLength(6);
   });
 
   it("is empty when the library has nothing of that kind (a source that does not say what its titles are)", () => {
@@ -270,7 +260,6 @@ describe("rowsOfPage: movies and series", () => {
 
 describe("rowsOfPage: the four sections", () => {
   const plain = Array.from({ length: 6 }, (_, i) => row(`r${i}`, i % 2 ? "series" : "movie"));
-  // (a cartoon or an anime can be a film or a show: its section is said apart from its kind)
   const cartoons = Array.from({ length: 6 }, (_, i) => row(`c${i}`, i % 2 ? "series" : "movie", 3, "cartoon"));
   const anime = Array.from({ length: 6 }, (_, i) => row(`a${i}`, i % 2 ? "series" : "movie", 3, "anime"));
   const everything = [...plain, ...cartoons, ...anime];
@@ -290,7 +279,6 @@ describe("rowsOfPage: the four sections", () => {
     expect(ids(titles("series"))).toEqual(["r1", "r3", "r5"]);
     expect(ids(titles("cartoons"))).toEqual(["c0", "c1", "c2", "c3", "c4", "c5"]);
     expect(ids(titles("anime"))).toEqual(["a0", "a1", "a2", "a3", "a4", "a5"]);
-    // Home has them all
     expect(ids(titles("home"))).toEqual(everything.map((r) => r.id));
   });
 
@@ -308,14 +296,14 @@ describe("rowsOfPage: the four sections", () => {
 
   it("puts what is part way through in the section the library lists its title in, whether it is a film or a show", () => {
     const progress = [
-      card("c1-0", { season: 2, episode: 4, url: "https://x.example/c1-0?s=2&e=4&key=abc" }), // a cartoon show, its link carrying the marks of the episode
-      card("c0-2"), // a cartoon film
-      card("a1-2", { season: 1, episode: 1 }), // an anime show
-      card("a0-0"), // an anime film
-      card("r0-0"), // a film
-      card("r1-1", { season: 3, episode: 1 }), // a show
-      card("lost-film"), // not listed any more: a film is in Movies
-      card("lost-show", { season: 1, episode: 1 }), // not listed any more: a show is in Series
+      card("c1-0", { season: 2, episode: 4, url: "https://x.example/c1-0?s=2&e=4&key=abc" }),
+      card("c0-2"),
+      card("a1-2", { season: 1, episode: 1 }),
+      card("a0-0"),
+      card("r0-0"),
+      card("r1-1", { season: 3, episode: 1 }),
+      card("lost-film"),
+      card("lost-show", { season: 1, episode: 1 }),
     ];
     const going = (page: Parameters<typeof rowsOfPage>[0]) => {
       const first = titles(page, { progress })[0]!;
@@ -342,17 +330,14 @@ describe("rowsOfPage: the four sections", () => {
       const first = rowsOfPage(page, data({ rows, progress, ...over }))[0]!;
       return first.id === "continue" ? first.entries.map((e) => e.title).sort() : [];
     };
-    // Before the server is asked: a show nobody lists is in Series (as it was), but one from a place of anime only is in Anime.
     expect(going("series")).toEqual(["Card mystery", "Card naruto"]);
     expect(going("anime")).toEqual(["Card heaven"]);
     expect(going("movies")).toEqual(["Card listed"]);
-    // What the server said of it puts it where it belongs.
     expect(going("series", { looked })).toEqual(["Card mystery"]);
     expect(going("anime", { looked })).toEqual(["Card heaven", "Card naruto"]);
-    // Only the titles nothing places yet are asked about, by their address, once.
     expect(cardsToLookUp(progress, rows, new Map())).toEqual(["tv-46260", "tv-999"]);
     expect(cardsToLookUp(progress, rows, looked)).toEqual(["tv-999"]);
-    expect(cardsToLookUp([{ ...naruto, done: true }], rows, new Map())).toEqual([]); // (a finished one is in no row of the page)
+    expect(cardsToLookUp([{ ...naruto, done: true }], rows, new Map())).toEqual([]);
   });
 
   it("has no rows of the lists, as Movies and Series have none (those are on Home), and the first of the profile's own rows under its ranking", () => {
@@ -382,7 +367,6 @@ describe("rowsOfPage: the four sections", () => {
     const home = titles("home", { wanted, progress: [card("https://x.example/a0-0", { season: 1, episode: 2 })], list: [saved("https://x.example/c0-0")] });
     expect(home[0]!.id).toBe("continue");
     expect(home.some((r) => r.id.startsWith("list:"))).toBe(true);
-    // (all of them, as before, for a profile that chose nothing)
     expect(ids(titles("home", { wanted: null }))).toEqual(everything.map((r) => r.id));
   });
 
@@ -433,7 +417,7 @@ describe("gridOf", () => {
   it("says which source a row is from only when the library has more than one", () => {
     const one = data({ rows: library });
     expect(rowsOfPage("home", one).every((each) => each.source === undefined)).toBe(true);
-    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe(t("tv.movies")); // (a category's page says its section, never the catalog's name)
+    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe(t("tv.movies"));
     expect(gridOf({ kind: "categories" }, one)!.entries.every((each) => each.source === undefined)).toBe(true);
 
     const two = data({ rows: [...library.slice(0, 5), { ...library[5]!, source: "Archive" }] });
@@ -446,20 +430,17 @@ describe("gridOf", () => {
     const all = gridOf({ kind: "categories" }, data({ rows: library }))!;
     expect(all.title).toBe(t("tv.allCategories"));
     expect(all.entries.map((e) => e.id)).toEqual(["m1", "m2", "m3", "s1", "s2", "s3"]);
-    // (the owner, 18 Nov: only a few tiles had their section under their name, which read as a leftover; none has now)
     expect(all.entries.map((e) => e.note)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
-    // (one with no kind follows the others)
     const mixed = data({ rows: [row("x1", undefined), row("s1", "series"), row("m1", "movie")] });
     expect(gridOf({ kind: "categories" }, mixed)!.entries.map((e) => [e.id, e.note])).toEqual([
       ["m1", undefined],
       ["s1", undefined],
       ["x1", undefined],
     ]);
-    expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBeUndefined(); // (no count: a category goes on as it is scrolled)
+    expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBeUndefined();
   });
 
   it("does not say a category's section when its name says it, and gives each category a picture the ones before it do not have", () => {
-    // (The judge, 16 Nov: "Trending Movies / Movies", and most film categories with the same week's hit for their picture.)
     const hit = item("hit", "movie", { image: "poster-hit", backdrop: "wide-hit" });
     const withHit = (id: string, title: string): LibraryRow => ({ ...row(id, "movie"), title, items: [hit, ...row(id, "movie").items] });
     const rows = [withHit("m1", `Trending ${t("tv.movies")}`), withHit("m2", "Action"), withHit("m3", "Drama"), row("s1", "series")];
@@ -470,7 +451,7 @@ describe("gridOf", () => {
       ["m3", undefined],
       ["s1", undefined],
     ]);
-    expect(gridOf({ kind: "category", rowId: "m2" }, data({ rows }))!.meta).toBe(t("tv.movies")); // (its own page still says)
+    expect(gridOf({ kind: "category", rowId: "m2" }, data({ rows }))!.meta).toBe(t("tv.movies"));
     expect(all.entries.map((e) => e.image)).toEqual(["wide-hit", "wide-m2-0", "wide-m3-0", "wide-s1-0"]);
     expect(gridOf({ kind: "category", rowId: "m1" }, data({ rows }))!.meta).toBe("");
     const home = rowsOfPage("home", data({ rows: [...rows, ...library] })).find((each) => each.id === "categories")!;
@@ -519,7 +500,7 @@ describe("gridOf", () => {
       ["Rated old", "6/10"],
     ]);
     expect(page.entries[1]).toMatchObject({ kind: "series", url: "https://x.example/show" });
-    expect(page.meta).toContain("7.7"); // three ratings, their mean
+    expect(page.meta).toContain("7.7");
   });
 
   it("is the ratings of one section or of one score when the page says so, a cartoon or an anime told by the rating or by where the library lists it", () => {
@@ -528,11 +509,11 @@ describe("gridOf", () => {
     const ratings = [rated("film", 9, 100, { kind: "movie" }), rated("toon", 7, 200, { kind: "movie" }), rated("akira", 9, 300, { kind: "movie", section: "anime" }), rated("dark", 8, 400, { kind: "series" })];
     const of = (view: { kind: "ratings"; section?: "movie" | "series" | "cartoon" | "anime"; score?: number }) => gridOf(view, data({ rows, ratings }))!.entries.map((e) => e.title);
     expect(of({ kind: "ratings" })).toEqual(["Rated dark", "Rated akira", "Rated toon", "Rated film"]);
-    expect(of({ kind: "ratings", section: "cartoon" })).toEqual(["Rated toon"]); // (the library lists its link as a cartoon's)
+    expect(of({ kind: "ratings", section: "cartoon" })).toEqual(["Rated toon"]);
     expect(of({ kind: "ratings", section: "movie" })).toEqual(["Rated film"]);
     expect(of({ kind: "ratings", score: 9 })).toEqual(["Rated akira", "Rated film"]);
-    expect(of({ kind: "ratings", section: "series", score: 9 })).toEqual(["Rated dark"]); // (no series was given a 9: the score is let go)
-    expect(gridOf({ kind: "ratings", score: 9 }, data({ rows, ratings }))!.meta).toContain("9"); // (the count and the average are of what is shown)
+    expect(of({ kind: "ratings", section: "series", score: 9 })).toEqual(["Rated dark"]);
+    expect(gridOf({ kind: "ratings", score: 9 }, data({ rows, ratings }))!.meta).toContain("9");
   });
 
   it("says what the empty ratings page is for", () => {
@@ -595,7 +576,7 @@ describe("resumable", () => {
   it("leaves alone what was not started, what was finished, another title, a category, and a card that already resumes", () => {
     const plain = { id: "m", title: "Film", url: "https://x.example/watch/7" };
     expect(resumable(plain, [])).toBe(plain);
-    expect(resumable(plain, [card("a", { url: plain.url, position: 2 })])).toBe(plain); // barely begun
+    expect(resumable(plain, [card("a", { url: plain.url, position: 2 })])).toBe(plain);
     expect(resumable(plain, [card("a", { url: plain.url, done: true })])).toBe(plain);
     expect(resumable(plain, [episode])).toBe(plain);
     const category = { id: "c", title: "C", url: "", opens: { kind: "home" } as const };
@@ -654,15 +635,15 @@ describe("a title opened at what a link or a friend's message asks for", () => {
     expect(resumable(opened, [started])).toBe(opened);
     expect(askedTime(opened)).toBe(754);
     expect(playLabel(opened, undefined)).toBe(t("rows.playFrom", { time: "12:34" }));
-    expect(playLabel(resumable(film, [started]), undefined)).toBe(t("rows.resume")); // (not asked: where it was left)
+    expect(playLabel(resumable(film, [started]), undefined)).toBe(t("rows.resume"));
     expect(playLabel(film, undefined)).toBe(t("rows.play"));
   });
 
   it("is a show at the episode asked for, and the time in it; asks for nothing that is not there", () => {
     expect(openedAt(show, { season: 2, episode: 5, at: 61 })).toEqual({ ...show, asked: { season: 2, episode: 5, at: 61 } });
     expect(openedAt(show, { season: 2, episode: 5 })).toEqual({ ...show, asked: { season: 2, episode: 5 } });
-    expect(openedAt(show, { at: 61 })).toBe(show); // (a time in a whole show is in nothing)
-    expect(openedAt(film, { season: 2, episode: 5 })).toBe(film); // (a film has no episodes)
+    expect(openedAt(show, { at: 61 })).toBe(show);
+    expect(openedAt(film, { season: 2, episode: 5 })).toBe(film);
     expect(openedAt(film, {})).toBe(film);
     expect(openedAt(film, undefined)).toBe(film);
   });
@@ -672,7 +653,7 @@ describe("a title opened at what a link or a friend's message asks for", () => {
     expect(heldStart(opened)).toEqual({ season: 2, episode: 5, url: "", startAt: 61, asked: true });
     expect(playLabel(opened, heldStart(opened))).toBe(t("series.playFrom", { season: 2, episode: 5, time: "1:01" }));
     expect(playLabel(opened, { season: 2, episode: 5, url: "x" })).toBe(t("series.play", { season: 2, episode: 5 }));
-    expect(playLabel(opened, { season: 2, episode: 5, url: "x", startAt: 61 })).toBe(t("series.resume", { season: 2, episode: 5 })); // (where this profile left it)
+    expect(playLabel(opened, { season: 2, episode: 5, url: "x", startAt: 61 })).toBe(t("series.resume", { season: 2, episode: 5 }));
     expect(heldStart(show)).toBeUndefined();
     expect(asOpened(opened)).toEqual(show);
     expect(asOpened(openedAt(film, { at: 754 }))).toEqual(film);
@@ -713,7 +694,6 @@ describe("heroActions", () => {
   it("offers Ask to watch together for an invitation to a party that is over, and Start a party for a friend's request", () => {
     expect(heroActions({ id: "p", title: "Ann's party", url: "", ask: "pro_ann", inboxId: "i1" })).toEqual(["ask", "dismiss"]);
     expect(heroActions({ id: "t", title: "Ann wants to watch together", url: "", wants: "pro_ann", inboxId: "i3" })).toEqual(["start", "dismiss"]);
-    // A plan to watch together is no film and has no buttons under the banner (pressing the tile asks yes or no); once its time has come it starts the party like a request.
     expect(heroActions({ id: "plan:i4", title: "Ann proposes to watch together", url: "", plan: "i4", inboxId: "i4" })).toEqual([]);
     expect(heroActions({ id: "plan:i5", title: "Time to watch with Ann", url: "", wants: "pro_ann", inboxId: "i5" })).toEqual(["start", "dismiss"]);
   });
@@ -746,7 +726,6 @@ describe("overviewActions", () => {
     expect(overviewActions({ id: "a", title: "A", url: "u" }, false, true)).toEqual(["play", "list", "recommend"]);
     expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false)).toEqual(["play", "list", "rate"]);
     expect(overviewActions({ id: "a", title: "A", url: "" }, true, true)).toEqual(["play", "list", "rate"]);
-    // (a phone or a tablet that is the screen can send the title to the TV instead, beside Play; not a title with nothing to send)
     expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false, true)).toEqual(["play", "tv", "list", "rate"]);
     expect(overviewActions({ id: "a", title: "A", url: "" }, true, false, true)).toEqual(["play", "list", "rate"]);
   });
@@ -783,7 +762,6 @@ describe("a child's profile (`PageData.child`)", () => {
       const rows = rowsOfPage(page, data({ rows: shelves, child: gate([]) }));
       expect(ids(rows), page).toEqual(["kid"]);
     }
-    // (Any other profile is as it was.)
     expect(ids(rowsOfPage("home", data({ rows: shelves })))).toContain("grown");
   });
 
@@ -804,7 +782,7 @@ describe("a child's profile (`PageData.child`)", () => {
     expect(categories?.title).toBe(t("tv.cartoonCategories"));
     expect(categories?.entries.map((entry) => entry.opens)).toEqual([{ kind: "category", rowId: "c1" }]);
     expect(gridOf({ kind: "category", rowId: "m1" }, all)).toBeNull();
-    expect(gridOf({ kind: "category", rowId: "c2" }, all)).toBeNull(); // (a row of cartoons with none for children)
+    expect(gridOf({ kind: "category", rowId: "c2" }, all)).toBeNull();
     expect(gridOf({ kind: "category", rowId: "c1" }, all)?.entries.map((entry) => entry.id)).toEqual(["kid"]);
   });
 });

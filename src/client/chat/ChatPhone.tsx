@@ -22,54 +22,37 @@ import { problemText } from "./words";
 import "./chat.css";
 
 export interface ChatPhoneProps {
-  /** The friend, as friends see them. */
   name: string;
-  /** Whether they are online, else when they last were ("Last online 5 minutes ago", see `presenceLine`): a line at the top of the chat. Empty: none. */
   presence?: string | undefined;
   online?: boolean;
   session: ChatSession;
   report: ChatReport;
-  /** Whether this profile takes messages from friends (the setting "Friends can message me"). When it does not, the friend can't answer, and the page says so. */
   receiving?: boolean;
   onClose: () => void;
-  /** A title a message names was pressed (see titles.ts). */
   onOpenTitle?: OpenTitle | undefined;
-  /** The time that "today" is measured against (tests give theirs). */
   now?: number;
 }
 
-/**
- * The chat with one friend, on the phone: a sheet over the friend's page. The messages, with a line for who they are from and when; a box to write
- * in; on top, when the friend was last online and the ⋮ (Search, the chat's GIFs and stickers, Mute, Report). A message can be pressed: under it come the
- * reactions (Reactions.tsx), and, for one's own, Take back. The sheet closes with the phone's Back, like the others.
- */
 export function ChatPhone({ name, presence, online = false, session, report, receiving = true, onClose, onOpenTitle, now = Date.now() }: ChatPhoneProps) {
   const t = useT();
   const { state } = session;
   const [picked, setPicked] = useState<number | null>(null);
-  /** The panel of titles, GIFs and stickers is open under the box (ChatPanel.tsx); its GIFs only when the site has a KLIPY key. */
   const [panel, setPanel] = useState(false);
   const panelId = useId();
   const gifKey = useGifKey();
   const blocked = whyNotWrite(session);
   const personal = usePersonalLines(session, true);
   const [kept, sayKept] = useKeptNote();
-  // (A sheet over the chat - the gallery, a report - lets the selection go: else Escape would let it go behind the sheet before shutting the sheet, the
-  // judge, 17 Nov.)
-  /** The sheet of the chat's GIFs and stickers is open (ChatMedia.tsx). */
   const [media, setMedia] = useState(false);
   const over = media || report.stage !== "closed";
   useEffect(() => {
     if (!over) return;
     setPicked(null);
-    // (The panel too: a sheet's Escape is heard after the panel's Back, which would shut the panel behind the sheet and leave the sheet: the judge, 17 Nov.)
     setPanel(false);
   }, [over]);
-  // (A chat one can no longer write in has no panel to send from, and it does not come back by itself when one can again.)
   useEffect(() => {
     if (blocked) setPanel(false);
   }, [blocked]);
-  /** The panel opens with nothing selected and the ⋮ shut (Back then shuts the panel, not those), and the keyboard goes down: the panel is in its place. */
   const openPanel = (open: boolean) => {
     if (open) {
       setPicked(null);
@@ -77,17 +60,13 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
     }
     setPanel(open);
   };
-  // (Answering a message: Reply at the top, or the message drawn to the right. The selection goes, and the box is where the answer is written.)
   const reply = (id: number) => {
     setPicked(null);
     session.setReplyTo(id);
-    // (The keyboard comes up each time, the same message answered again too, after it went down: the judge, 17 Nov.)
     document.querySelector<HTMLElement>("[data-testid='chat-sheet'] [data-testid='chat-input']")?.focus();
   };
   const answering = session.replyTo === null ? undefined : state.lines.find((line) => line.id === session.replyTo);
 
-  // The ⋮ at the top (the owner, 17 Nov: "the three dots vertical"): Search, the chat's GIFs and stickers, Mute, Report. It shuts with Back, a press beside
-  // it, or a choice; a message selected shuts it (one Back would otherwise shut both).
   const [menu, setMenu] = useState(false);
   const moreWrap = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -99,12 +78,8 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
     setMenu(false);
     action();
   };
-  // The search, in place of the buttons at the top while it is open; the gallery, a sheet over the chat.
   const search = useChatSearch(state.lines);
   const [showing, setShowing] = useState<{ id: number; seq: number } | null>(null);
-  // (Back shuts the search when nothing is open over it: a selection, the ⋮, a sheet, or a picture shown larger - each of which Back shuts first.)
-  // (Not stood down while a message is selected or the ⋮ is open: Back's stack - `useBackFirst` - shuts whichever came after it first. Stood down, it would
-  // come back on top of a panel opened meanwhile, and shut before it: the judge, 17 Nov. A sheet over the chat hears Escape after it, so it is stood down then.)
   useBackFirst(search.open && !over ? () => searchBack(session, search, "chat-input") : undefined);
   const status = [presence, state.muted ? t("chat.mutedShort") : null].filter(Boolean).join("  ·  ");
 
@@ -112,7 +87,6 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
     <>
       <Sheet title={t("chat.title", { name })} onClose={onClose} testId="chat-sheet">
         <div className="chat" data-panel={panel && !blocked ? "true" : undefined} data-testid="chat">
-          {/* (One row at the top: when they were last online, or the search while it is open; what can be done with the message selected; the ⋮.) */}
           <div className="chat-tools" data-searching={search.open ? "true" : undefined}>
             {search.open ? (
               <ChatSearchBar query={search.query} onQuery={search.setQuery} count={search.ids.length} at={search.at} onStep={search.step} onClose={search.close} />
@@ -123,7 +97,6 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
             ) : (
               <span className="chat-presence" aria-hidden="true" />
             )}
-            {/* (What can be done with the message that is selected, at the top and not under it, as in any messenger: the owner, 17 Nov.) */}
             <span className="chat-tools-picked">
               <PickedActions
                 line={picked === null ? undefined : state.lines.find((line) => line.id === picked)}
@@ -162,7 +135,6 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
               >
                 <MoreIcon />
               </button>
-              {/* (There all along, and hidden: nothing in it is pressed, or reached with Tab, until the ⋮ opens it.) */}
               <div className="chat-menu" role="menu" hidden={!menu} data-testid="chat-menu">
                 <button type="button" role="menuitem" onClick={choose(search.start)} data-testid="chat-search-open">
                   <SearchIcon /> {t("chat.search")}
@@ -250,17 +222,11 @@ export function ChatPhone({ name, presence, online = false, session, report, rec
   );
 }
 
-/**
- * The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. Before the box in its
- * bar, the one button of what is sent besides words (ChatPanel.tsx): pressed, the keyboard goes down and the panel comes in its place, and the button is a
- * keyboard; pressed again (or the box pressed), the keyboard is back and the panel goes.
- */
 function Composer({ session, panel, panelId, onPanel }: { session: ChatSession; panel: boolean; panelId: string; onPanel: (open: boolean) => void }) {
   const t = useT();
   const [text, setText] = useState("");
   const input = useRef<HTMLDivElement>(null);
   const checked = checkChatText(text);
-  // (A message to answer was picked: the answer is written in the box, which has the keyboard at once, as in any messenger.)
   useEffect(() => {
     if (session.replyTo !== null) input.current?.focus();
   }, [session.replyTo]);
@@ -269,27 +235,21 @@ function Composer({ session, panel, panelId, onPanel }: { session: ChatSession; 
     event?.preventDefault();
     if (!checked.ok || session.sending) return;
     const written = text;
-    // (Only what was sent leaves the box: what was typed while the message was on its way is the next one. A slow connection is seconds of typing.)
     if (await session.send(checked.text)) setText((now) => afterSent(now, written));
-    // (The keyboard stays up: the next message is what comes next. But a panel opened while it was on its way stays: the box given the keyboard would
-    // shut it.)
     if (!panelNow.current) input.current?.focus();
   };
-  /** Whether the panel is open now: what a send that was on its way finds when it is done. */
   const panelNow = useRef(panel);
   useEffect(() => {
     panelNow.current = panel;
   }, [panel]);
 
-  // (One bar, the one button in it before the box: the words have the rest of the bar. The owner, 17 Nov: three round buttons left the box a few words wide,
-  // and then "instead of three distinct buttons in the chat, it should only be 1 icon".)
   const toggle = () => {
     if (panel) {
       onPanel(false);
-      input.current?.focus(); // (the keyboard comes back in the panel's place)
+      input.current?.focus();
       return;
     }
-    if (document.activeElement === input.current) input.current?.blur(); // (the keyboard goes down: the panel is in its place)
+    if (document.activeElement === input.current) input.current?.blur();
     onPanel(true);
   };
   return (
@@ -313,7 +273,6 @@ function Composer({ session, panel, panelId, onPanel }: { session: ChatSession; 
         >
           {panel ? <KeyboardIcon /> : <StickerIcon />}
         </button>
-        {/* (An editable area, not a form field: Chrome on a phone puts the strip of its form filler over a form field, see MessageBox.tsx.) */}
         <MessageBox
           ref={input}
           className="chat-input"
@@ -337,7 +296,6 @@ function Composer({ session, panel, panelId, onPanel }: { session: ChatSession; 
   );
 }
 
-/** What a report would hold, shown in full, and the one button that sends it. Nothing is sent before the button. */
 export function ChatReportSheet({ name, report, now, personal }: { name: string; report: ChatReport; now: number; personal?: PersonalLines | undefined }) {
   const t = useT();
   const lines = report.preview?.lines ?? [];

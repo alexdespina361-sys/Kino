@@ -1,12 +1,6 @@
 import { useT } from "../../i18n";
 import { ChevronIcon, TvIcon } from "../../shared/icons";
 
-/**
- * The TV this phone controls, as the top of every page of the phone has it: its name, how it is doing (in words, with the dot: never a colour alone), and how many
- * more TVs watch along. It is one button, and what it opens is the TV's menu (it stands where the "..." button stood: nothing that opens a menu is left without a name).
- * The button's name starts with the words that are on it (to say them is to press it) and ends with what it opens; the spaces between the pieces are for the
- * name that is read off the words (the pieces are laid out in columns, which ignore them).
- */
 export function TvChip({ name, party, ok, status, onClick }: { name: string; party: number; ok: boolean; status: string; onClick: () => void }) {
   const t = useT();
   return (

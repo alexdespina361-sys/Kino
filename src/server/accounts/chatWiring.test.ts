@@ -7,12 +7,6 @@ import { FeedbackStore, MemoryFeedbackBackend } from "../feedback/store";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
 
-/**
- * The chat as the server puts it together: the switch "Friends can message me", what waits in the friends' answer, the end of a chat with its
- * friendship or its profile, the report that goes to the team, and what survives a restart. (The rules of the chat itself are in chat.test.ts
- * and chatRoutes.test.ts, on their own.)
- */
-
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
@@ -29,7 +23,6 @@ async function start(persistence = new MemoryPersistence(), feedbackOptions: { m
   return { app, store, feedback, persistence };
 }
 
-/** One browser: it keeps its cookie, and sends it back. */
 class Client {
   cookie = "";
   constructor(private readonly app: FastifyInstance) {}
@@ -57,7 +50,6 @@ interface Person {
   id: string;
   choose(choices: Record<string, boolean>): Promise<void>;
   state(): Promise<FriendsState>;
-  /** The routes of the chat with this friend. */
   chat(friend: Person, path?: string): string;
   say(friend: Person, text: string): Promise<LightMyRequestResponse & { data: any }>;
   open(friend: Person): Promise<ChatThread>;
@@ -68,7 +60,6 @@ async function person(app: FastifyInstance, login: string): Promise<Person> {
   const registered = await client.call("POST", "/api/auth/register", { email: login, password: "x" });
   expect(registered.statusCode).toBe(201);
   const id = registered.data.profiles[0].id as string;
-  // (Its owner names it at setup, here as the login goes: "alex" -> "Alex". A new profile is named after its picture.)
   expect((await client.call("PATCH", `/api/profiles/${id}`, { name: login.charAt(0).toUpperCase() + login.slice(1) })).statusCode).toBe(200);
   const me: Person = {
     client,
@@ -94,7 +85,6 @@ async function person(app: FastifyInstance, login: string): Promise<Person> {
   return me;
 }
 
-/** Alex and Sam, friends with friends on. */
 async function friends(persistence?: MemoryPersistence, feedbackOptions?: { maxReports?: number }) {
   const world = await start(persistence, feedbackOptions);
   const alex = await person(world.app, "alex");
@@ -117,11 +107,9 @@ describe("Friends can message me", () => {
     const refused = await alex.say(sam, "hello again");
     expect(refused.statusCode).toBe(403);
     expect(refused.data).toEqual({ error: "chat_off" });
-    // (the friend can still be read, and the page is told that they are not taking messages)
     const thread = await alex.open(sam);
     expect(thread.open).toBe(false);
     expect(thread.lines?.map((line) => line.text)).toEqual(["hello"]);
-    // (and sam, who turned it off, can still write to alex: it is a switch for what comes in)
     expect((await sam.say(alex, "I can write")).statusCode).toBe(201);
 
     await sam.choose({ friendsMessages: true });
@@ -151,7 +139,7 @@ describe("what waits in a chat", () => {
     await alex.say(sam, "two");
 
     expect((await sam.state()).chat).toEqual([{ friend: alex.id, count: 2, at: clock.now }]);
-    expect((await alex.state()).chat).toBeUndefined(); // (one's own words do not wait for oneself)
+    expect((await alex.state()).chat).toBeUndefined();
     expect((await sam.open(alex)).lines).toHaveLength(2);
     expect((await sam.state()).chat).toBeUndefined();
 
@@ -164,7 +152,7 @@ describe("what waits in a chat", () => {
     expect((await sam.client.call("PUT", sam.chat(alex, "/mute"), { muted: true })).statusCode).toBe(200);
     await alex.say(sam, "psst");
     expect((await sam.state()).chat).toBeUndefined();
-    expect((await alex.open(sam)).muted).toBe(false); // (alex is not told)
+    expect((await alex.open(sam)).muted).toBe(false);
     await sam.client.call("PUT", sam.chat(alex, "/mute"), { muted: false });
     expect((await sam.state()).chat).toMatchObject([{ friend: alex.id, count: 1 }]);
   });
@@ -216,7 +204,7 @@ describe("reporting a chat", () => {
       [false, "something unkind"],
       [true, "stop"],
     ]);
-    expect(feedback.size).toBe(0); // (looking is not sending)
+    expect(feedback.size).toBe(0);
 
     expect((await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev })).statusCode).toBe(204);
     expect(feedback.size).toBe(1);
@@ -250,7 +238,6 @@ describe("reporting a chat", () => {
     expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
     expect(feedback.list().map((record) => record.title)).toEqual(["Open"]);
 
-    // (Once the team has closed that one there is room, and the same report goes.)
     await feedback.update("1", (draft) => void (draft.status = "done"));
     expect((await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev })).statusCode).toBe(204);
     expect(feedback.list().map((record) => record.area)).toEqual(["friends"]);
@@ -263,7 +250,6 @@ describe("how much an account sends", () => {
     try {
       const { alex, sam } = await friends();
       const first = clock.now;
-      // (Three seconds and a bit apart: under the book's twenty a minute, so it is the hour that counts.)
       for (let n = 0; n < CHAT_SENDS_AN_HOUR; n++) {
         clock.now += 3100;
         const sent = await alex.say(sam, `line ${n}`);
@@ -275,7 +261,6 @@ describe("how much an account sends", () => {
       const wait = Number(refused.headers["retry-after"]);
       expect(wait).toBeGreaterThan(0);
       expect(wait).toBeLessThanOrEqual(60 * 60);
-      // The friend may still answer (an hour of one's own), and a refused one was not counted: the hour after the first message, one more goes.
       expect((await sam.say(alex, "hi")).statusCode).toBe(201);
       clock.now = first + 3100 + 60 * 60_000;
       expect((await alex.say(sam, "one more")).statusCode).toBe(201);
@@ -298,7 +283,7 @@ describe("a restart", () => {
     const read = second.store.chats.read(first.sam.id, first.alex.id);
     expect(read.ok && read.value.lines.map((line) => line.text)).toEqual(["kept", "kept too"]);
     expect(read.ok && read.value.muted).toBe(true);
-    expect(second.store.chats.unread(first.sam.id)).toEqual([]); // (muted)
+    expect(second.store.chats.unread(first.sam.id)).toEqual([]);
     second.store.chats.mute(first.sam.id, first.alex.id, false);
     expect(second.store.chats.unread(first.sam.id)).toMatchObject([{ friend: first.alex.id, count: 2 }]);
   });

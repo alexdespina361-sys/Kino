@@ -34,25 +34,19 @@ import { CheckIcon, CloseIcon } from "../shared/icons";
 import { captionLabel, captionPresetName, captionTitle, enhanceName, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 
-/** `captions` is the subtitle look (three looks to pick), `captionsMore` its page of eight settings. */
 export type MenuKind = "tracks" | "captions" | "captionsMore" | "speed" | "quality" | "sources" | "episodes";
 
-/** Where Back goes from a page of a menu: the looks are a page of the audio and subtitles menu, the eight settings a page of the looks. */
 export const pageBefore = (kind: MenuKind): MenuKind | null => (kind === "captionsMore" ? "captions" : kind === "captions" ? "tracks" : null);
 
 interface Option {
   key: string | number;
   label: string;
   active: boolean;
-  /** Shown at the end of the row instead of a check mark (the current value of a setting). */
   detail?: string;
-  /** An episode with a picture and a line about it, instead of a line of text. */
   card?: EpisodeCard;
   pick: () => void;
-  /** Moving onto the option already acts on it (a list of settings shows each one's choices as you pass). */
   onFocus?: () => void;
 }
-/** A line of text between options (the remote walks past it). */
 interface Heading {
   key: string;
   heading: string;
@@ -60,9 +54,7 @@ interface Heading {
 interface Column {
   title: string;
   options: Array<Option | Heading>;
-  /** How much room the column asks for: a short list of choices, or names that can be long. */
   size?: "narrow" | "wide";
-  /** Long names may take two lines instead of being cut off. */
   wrap?: boolean;
 }
 
@@ -73,11 +65,8 @@ interface MenuProps {
   captionStyle: CaptionStyle;
   subtitleDelay?: number;
   onSubtitleDelay?: (delay: number) => void;
-  /** Turn the timing of the subtitles to the sound, by itself, on or off (a TV without it has no such row). */
   onSubtitleSync?: (on: boolean) => void;
-  /** The way it times them (a row only while it is on). */
   onSubtitleSyncMode?: (mode: SubtitleSyncMode) => void;
-  /** The show's key and what has been watched, to mark the episode list. */
   show: string | undefined;
   watched: readonly WatchedEntry[];
   rootRef: Ref<HTMLDivElement>;
@@ -86,7 +75,6 @@ interface MenuProps {
   onAudio: (track: number) => void;
   onSpeed: (rate: number) => void;
   onQuality: (level: number) => void;
-  /** A ✦ choice of the Quality list (see `PlayerState.enhance`), or "off". */
   onEnhance: (mode: EnhanceMode) => void;
   onSource: (index: number) => void;
   onCaption: (changes: Partial<CaptionStyle>) => void;
@@ -113,18 +101,14 @@ const titleOf = (kind: MenuKind, player: PlayerState): string => {
 };
 
 interface Selection {
-  /** The seasons of the show, and the one listed. */
   groups: SeasonGroup[];
   shown: SeasonGroup | undefined;
-  /** What is known of the listed season's episodes: undefined while it is being asked, null when nothing is (a plain list then). */
   details: SeasonDetails | null | undefined;
   setSeason: (season: number) => void;
   setting: CaptionSetting;
   setSetting: (setting: CaptionSetting) => void;
-  /** The subtitle language whose releases are listed (moves with the remote through the languages). */
   language: string | undefined;
   setLanguage: (language: string) => void;
-  /** List the languages a profile's own list leaves out, for as long as this menu is open. */
   showAll: () => void;
 }
 
@@ -145,7 +129,6 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
             active: preset === name,
             pick: () => p.onCaption(CAPTION_PRESETS[name]),
           })),
-          // (Marked, and where the remote starts, when the look is the viewer's own.)
           { key: "more", label: t("player.captionMore"), detail: preset === null ? t("player.capCustom") : undefined, active: preset === null, pick: () => p.onKind("captionsMore") },
         ],
       },
@@ -184,7 +167,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
         title: t("player.speedShort"),
         options: PLAYBACK_SPEEDS.map((value) => ({
           key: value,
-          label: value === 1 ? `1× · ${t("player.normal")}` : `${value}×`, // the controls' button says "1×": the same words here
+          label: value === 1 ? `1× · ${t("player.normal")}` : `${value}×`,
           active: Math.abs(rate - value) < 0.01,
           pick: () => p.onSpeed(value),
         })),
@@ -210,7 +193,6 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
                 pick: () => p.onQuality(level.id),
               }))
             : []),
-          // What this screen adds to the picture, apart under its own line: what is downloaded stays as it is picked above.
           ...(enhance && enhance.offers.length > 0
             ? [
                 { key: "enhance", heading: t("player.enhanceHeading") },
@@ -268,12 +250,9 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
         const base = {
           key: `${episode.season}-${episode.episode}`,
           active: current,
-          // Picking what is already playing just closes the list.
           pick: () => (current ? p.onClose() : p.onEpisode(episode.url)),
         };
-        // Nothing known about the season's episodes beyond their names: the plain list. Otherwise (and while it is being asked, so the list does not change shape) each one is a card.
         if (details === null) {
-          // Where the check mark would be for the episode playing now: what's left of the others.
           return { ...base, label: `${episode.episode}. ${name}`, ...(current ? {} : { detail: note }) };
         }
         return {
@@ -296,7 +275,6 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
 
   const columns: Column[] = [];
 
-  // Audio: only when there is a choice (a plain file has one track, and a column with a single "Default" is just noise); the menu says so when there is none (see `TvMenu`).
   const audio = player.audio?.tracks ?? [];
   if (audio.length > 1) {
     columns.push({
@@ -311,15 +289,11 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
     });
   }
 
-  // Subtitles: the languages the profile asked for come first, then the rest under a heading. One list while every language
-  // has a single track; otherwise the languages, and beside them the releases of the language the remote is on (a source can
-  // offer a dozen of the same one, too many to walk through in one list).
   const subtitles = player.subtitles;
   const { pinned, more } = lists;
   const visible = [...pinned, ...more];
   const off: Option = { key: -1, label: t("common.off"), active: (subtitles?.current ?? -1) === -1, pick: () => p.onSubtitle(-1) };
   const heading: Heading[] = pinned.length > 0 && more.length > 0 ? [{ key: "more-languages", heading: t("player.moreLanguages") }] : [];
-  // The way out of a profile's "only these languages": the others, for as long as this menu is open.
   const reveal: Option[] = lists.hidden > 0 ? [{ key: "show-all", label: t("player.showAll"), active: false, pick: showAll }] : [];
   if (visible.every((group) => group.tracks.length === 1)) {
     const option = (track: PlayerTrack): Option => ({ key: track.id, label: trackName(track), active: subtitles?.current === track.id, pick: () => p.onSubtitle(track.id) });
@@ -336,7 +310,6 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       label: group.name,
       ...(group.tracks.length > 1 ? { detail: String(group.tracks.length) } : {}),
       active: playing?.key === group.key,
-      // Passing a language lists its releases; OK turns it on (the release already chosen in it, else the best-fitting one).
       onFocus: () => setLanguage(group.key),
       pick: () => p.onSubtitle(playing?.key === group.key ? subtitles!.current : (defaultTrack(group.tracks) ?? group.tracks[0]!).id),
     });
@@ -360,13 +333,11 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
 
   const delay = p.subtitleDelay ?? 0;
   const nudge = (by: number) => p.onSubtitleDelay?.(Math.round((delay + by) * 10) / 10);
-  // On by default, and the only place to turn it off: a TV that cannot do it says nothing about it.
   const sync = player.subtitleSync;
   const autoSync: Option[] =
     sync !== undefined && p.onSubtitleSync
       ? [{ key: "sub-sync", label: t("player.autoSync"), detail: syncWords(sync, player.subtitleShift), active: false, pick: () => p.onSubtitleSync?.(sync === "off") }]
       : [];
-  // (While it is on and can work on this film, the way it times them: OK goes from one to the other. A TV of an older build says nothing of it.)
   const mode = player.subtitleSyncMode;
   if (mode && sync !== undefined && sync !== "off" && sync !== "unavailable" && p.onSubtitleSyncMode) {
     autoSync.push({
@@ -380,13 +351,11 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
   columns.push({
     title: t("player.adjust"),
     size: "narrow",
-    // "Aspectul subtitrărilor…" is longer than "Subtitle style…": a name may take two lines instead of being cut off.
     wrap: true,
     options: [
       { key: "sub-earlier", label: t("player.earlier"), detail: "−0.5s", active: false, pick: () => nudge(-0.5) },
       { key: "sub-later", label: t("player.later"), detail: "+0.5s", active: false, pick: () => nudge(0.5) },
       { key: "sub-reset", label: t("player.resetDelay"), detail: formatDelay(delay), active: false, pick: () => p.onSubtitleDelay?.(0) },
-      // (After the delay, which the remote reaches first, as it always did.)
       ...autoSync,
       { key: "style", label: t("player.captionStyleMore"), active: false, pick: () => p.onKind("captions") },
     ],
@@ -394,7 +363,6 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
   return columns;
 }
 
-/** Audio / subtitles / speed / quality / episodes picker. Every option is a real button so the remote's arrows and OK just work. */
 export function TvMenu(props: MenuProps) {
   useT();
   const [season, setSeason] = useState<number | undefined>(props.series?.season);
@@ -404,13 +372,10 @@ export function TvMenu(props: MenuProps) {
   const lists = useSubtitleLists(props.player.subtitles?.tracks ?? NO_TRACKS, props.player.subtitles?.current, all);
   const groups = useMemo(() => (props.kind === "episodes" ? groupBySeason(props.series?.episodes ?? []) : []), [props.kind, props.series?.episodes]);
   const shown = groups.find((group) => group.season === season) ?? groups[0];
-  // Any episode's link will do to ask about its season: the first one is always the same.
   const details = useEpisodeDetails(shown?.episodes[0]?.url, shown?.season);
   const columns = columnsFor(props, { groups, shown, details, setSeason, setting, setSetting, language, setLanguage, showAll: () => setAll(true) }, lists);
   const title = titleOf(props.kind, props.player);
 
-  // Start on whatever is selected now (the episode you're watching, the current language), so OK changes nothing by accident.
-  // Back from the caption style returns to the menu it came from, on the entry that opened it.
   const cameFrom = useRef<MenuKind | null>(null);
   useEffect(() => {
     const root = document.querySelector<HTMLElement>("[data-tv-menu]");
@@ -422,7 +387,6 @@ export function TvMenu(props: MenuProps) {
     (style ?? start ?? root?.querySelector<HTMLElement>("[data-opt]"))?.focus();
   }, [props.kind]);
 
-  // (The eight settings are drawn as the looks are: one panel at the top, the sample over the picture.)
   const look = props.kind === "captions" || props.kind === "captionsMore";
   const drawnAs = look ? "captions" : props.kind;
   return (
@@ -451,7 +415,6 @@ export function TvMenu(props: MenuProps) {
           </button>
         </div>
         {props.kind === "tracks" && !hasAudioChoice(props.player) && (
-          // (What the title does not promise, and what a viewer who looks for the film's language is told: the stream has no other.)
           <p className="tv-menu-note" data-testid="no-audio-choice">
             {t("player.noAudioChoice")}
           </p>
@@ -495,7 +458,6 @@ export function TvMenu(props: MenuProps) {
           ))}
         </div>
         {props.kind === "tracks" && (
-          // Drawn exactly like the real subtitles, so a look can be judged before it is chosen.
           <div className="tv-sub-preview" data-testid="subtitle-preview" aria-hidden="true">
             <span className="tv-caption" style={captionTextStyle(props.captionStyle)}>
               {t("player.sample")}
@@ -504,7 +466,6 @@ export function TvMenu(props: MenuProps) {
         )}
       </div>
       {look && (
-        // Over the picture at the real size and height (the panel sits at the top), so Height can be seen moving the text.
         <div className="tv-caption-stage" data-testid="subtitle-preview" aria-hidden="true" style={{ bottom: captionBottom(props.captionStyle) }}>
           <span className="tv-caption" style={captionTextStyle(props.captionStyle)}>
             {t("player.sample")}
@@ -515,20 +476,13 @@ export function TvMenu(props: MenuProps) {
   );
 }
 
-/** The option the remote left for the close button, so that Down from the button goes back to it. */
 let leftForClose: HTMLElement | null = null;
 
-/**
- * Arrow-key navigation inside the menu: up/down within a column, left/right across columns. The close button (`data-menu-close`)
- * is over the top of the columns and at the right of them: Up from a column's first row reaches it, and so does Right from the
- * last column; Down or Left go back in, to where the remote was.
- */
 export function moveInMenu(root: HTMLElement | null, direction: "up" | "down" | "left" | "right"): void {
   if (!root) return;
   const options = [...root.querySelectorAll<HTMLElement>("[data-opt]")];
   const close = root.querySelector<HTMLElement>("[data-menu-close]");
   const focused = document.activeElement;
-  /** What is selected now (the episode playing, the current subtitle), else the first. */
   const selected = () => options.find((option) => option.dataset.active === "true") ?? options[0];
 
   if (close && focused === close) {
@@ -561,6 +515,5 @@ export function moveInMenu(root: HTMLElement | null, direction: "up" | "down" | 
     if (direction === "right") toClose();
     return;
   }
-  // Land on what is selected over there (the current episode, the current subtitle), else on the same row.
   (other.find((option) => option.dataset.active === "true") ?? other[Math.min(row, other.length - 1)])?.focus();
 }

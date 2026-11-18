@@ -1,7 +1,6 @@
-// the TV signed in, with friends: three accounts (Ana is the one looked at; Ben is her friend; Cy has asked to be).
 import { chromium, base, wait, HD, FULL_HD, openContext, step, snap, pointerAway, movies, series, log } from "./lib.mjs";
 
-const PASSWORD = "kino-test-pass-1"; // (a made-up password for accounts that live in the memory of a test server)
+const PASSWORD = "kino-test-pass-1";
 const watch = (i) => `https://films.example/watch/${i}`;
 const day = (n) => Date.now() - n * 86_400_000;
 const card = (i) => ({ title: movies[i].title, url: watch(i), image: movies[i].image, backdrop: movies[i].backdrop, year: movies[i].year });
@@ -13,7 +12,6 @@ const press = async (page, key, times = 1) => {
     await wait(120);
   }
 };
-/** The page looks at its friends now, as it does when it comes back to the front. */
 const look = (page) => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 const profileOf = (page) => page.evaluate(() => localStorage.getItem("kino.profile"));
 
@@ -23,12 +21,10 @@ async function profilePage(page) {
 }
 async function place(page, where) {
   if ((await page.getByTestId("tv-browse").getAttribute("data-view")) !== "profile") await profilePage(page);
-  // (Settings is a button of the profile page's top, the other places are its tiles)
   if (where === "settings") await page.getByTestId("tv-profile-settings").click();
   else await page.locator(`[data-entry="profile:${where}"]`).click();
 }
 
-/** A new screen with its own account, signed up with the form a keyboard fills in, friends switched on. */
 async function screen(browser, name, { viewport = HD, shotAt } = {}) {
   const context = await openContext(browser, viewport);
   const page = await context.newPage();
@@ -53,7 +49,6 @@ async function screen(browser, name, { viewport = HD, shotAt } = {}) {
   return { context, page, name, profile: await profileOf(page) };
 }
 
-/** `from` asks the one with this tag to be friends, as the Add button does. */
 async function ask(from, tag) {
   const response = await from.page.request.post(`/api/profiles/${from.profile}/friends/requests`, { data: { tag } });
   if (!response.ok()) throw new Error(`ask ${tag}: ${response.status()}`);
@@ -100,7 +95,6 @@ await step(device, "s09-bell-two-requests", async () => {
 });
 
 await step(device, "setup-accept", async () => {
-  // a press on the line of Ben opens his request; Cy's stays waiting
   await ana.page.getByTestId("tv-bell-item").filter({ hasText: "Ben" }).click();
   await ana.page.getByTestId("tv-friend-request").waitFor();
   await away();
@@ -111,7 +105,6 @@ await step(device, "setup-accept", async () => {
 });
 
 await step(device, "setup-share", async () => {
-  // Ben tells what he watches; Ana listens
   await look(ben.page);
   await place(ben.page, "friends");
   await tile(ben.page, "Friends settings").click();

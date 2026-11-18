@@ -9,7 +9,6 @@ const row = (title: string, count = 2): LibraryRow => ({
   items: Array.from({ length: count }, (_, index) => ({ id: `${title}-${index}`, title: `${title} ${index}`, url: `https://x.example/${title}/${index}` })),
 });
 
-/** A source whose answers the test decides, one call at a time. */
 function fakeSource(id: string, answers: (() => Promise<LibraryRow[]>)[]): LibrarySource & { calls: number } {
   const source = {
     id,
@@ -57,7 +56,7 @@ describe("createLibrary", () => {
     const { library, advance } = setup([source]);
     await library.get();
     advance(1000);
-    expect((await library.get()).rows[0]?.title).toBe("Old"); // did not wait for the slow one
+    expect((await library.get()).rows[0]?.title).toBe("Old");
     expect(source.calls).toBe(2);
     finish([row("New")]);
     await vi.waitFor(async () => expect((await library.get()).rows[0]?.title).toBe("New"));
@@ -75,10 +74,10 @@ describe("createLibrary", () => {
     const { library, log, advance } = setup([source]);
     await library.get();
     advance(1000);
-    await library.get(); // starts the failing refresh
+    await library.get();
     await vi.waitFor(() => expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ source: "a" }), "library source failed"));
     expect((await library.get()).rows[0]?.title).toBe("Kept");
-    expect(source.calls).toBe(2); // not asked again straight away
+    expect(source.calls).toBe(2);
 
     advance(100);
     await library.get();
@@ -113,7 +112,6 @@ describe("createLibrary", () => {
 
 describe("createLibrary similar", () => {
   const item = (id: string) => ({ id, title: id, url: `https://x.example/${id}` });
-  /** A source that knows titles like any link, and counts how often it was asked. */
   const knowing = (id: string, answer: () => Promise<ReturnType<typeof item>[]>): LibrarySource & { asked: string[] } => {
     const asked: string[] = [];
     return {
@@ -162,7 +160,6 @@ describe("createLibrary similar", () => {
     const other = library.similar("https://x.example/watch/2");
     await Promise.resolve();
     expect(waiting.map((each) => each.link)).toEqual(["https://x.example/watch/1", "https://x.example/watch/2"]);
-    // A place that could not be reached is no answer: the next one who asks, asks the place again.
     waiting[1]!.fail(new Error("down"));
     expect(await other).toEqual([]);
     const again = library.similar("https://x.example/watch/2");
@@ -170,7 +167,6 @@ describe("createLibrary similar", () => {
     expect(waiting).toHaveLength(3);
     waiting[2]!.open([item("late")]);
     expect((await again).map((found) => found.id)).toEqual(["late"]);
-    // The three who asked about the first link all get the one answer.
     waiting[0]!.open([item("one")]);
     expect((await Promise.all(three)).map((found) => found.map((each) => each.id))).toEqual([["one"], ["one"], ["one"]]);
     expect(waiting).toHaveLength(3);
@@ -193,7 +189,6 @@ describe("createLibrary similar", () => {
 
 describe("createLibrary title", () => {
   const item = (id: string) => ({ id, title: id, url: `https://x.example/${id}` });
-  /** A source that lists one row and knows any title it is asked for by id, and counts how often it was asked. */
   const knowing = (id: string, answer: (asked: string) => Promise<LibraryItem | null>): LibrarySource & { asked: string[] } => {
     const asked: string[] = [];
     return {
@@ -223,10 +218,10 @@ describe("createLibrary title", () => {
     const { library } = setup([silent, wise]);
     expect(await library.title("known")).toMatchObject({ id: "known" });
     expect(await library.title("known")).toMatchObject({ id: "known" });
-    expect(wise.asked).toEqual(["known"]); // (the second time it was a title the library had met)
+    expect(wise.asked).toEqual(["known"]);
     expect(await library.title("nobody")).toBeNull();
     expect(await library.title("nobody")).toBeNull();
-    expect(silent.asked.filter((each) => each === "nobody")).toHaveLength(2); // asked again: a place that was down is not an answer
+    expect(silent.asked.filter((each) => each === "nobody")).toHaveLength(2);
     up = true;
     expect(await library.title("nobody")).toBeNull();
     expect(await library.title("nobody")).toBeNull();
@@ -239,7 +234,7 @@ describe("createLibrary title", () => {
     await library.get();
     expect(await library.title("soap")).toMatchObject({ id: "soap" });
     expect((await library.search("hidden soap")).items.map((found) => found.id)).toEqual([]);
-    expect(library.known("soap")).toMatchObject({ title: "Hidden Soap" }); // (what is said of it keeps its name)
+    expect(library.known("soap")).toMatchObject({ title: "Hidden Soap" });
   });
 
   it("is none for a title that would not play, as the lists leave it out", async () => {
@@ -252,7 +247,6 @@ describe("createLibrary title", () => {
 describe("createLibrary about", () => {
   const item = (id: string) => ({ id, title: id, url: `https://x.example/${id}` });
   const about = (over: Partial<TitleAbout> = {}): TitleAbout => ({ genres: ["Drama"], directors: [], creators: [], cast: [], ages: {}, parts: [], similar: [], ...over });
-  /** A source that knows one thing about any link, and counts how often it was asked. */
   const knowing = (id: string, answer: () => Promise<TitleAbout | null>): LibrarySource & { asked: string[] } => {
     const asked: string[] = [];
     return {
@@ -275,7 +269,7 @@ describe("createLibrary about", () => {
     expect((await library.about("https://x.example/watch/1"))?.cast).toEqual(["Ann"]);
     expect((await library.about("https://x.example/watch/1"))?.cast).toEqual(["Ann"]);
     expect([silent.asked.length, wise.asked.length, later.asked.length]).toEqual([1, 1, 0]);
-    advance(1000); // (as long as the library is good)
+    advance(1000);
     await library.about("https://x.example/watch/1");
     expect(wise.asked).toHaveLength(2);
   });
@@ -296,11 +290,11 @@ describe("createLibrary about", () => {
     const { library } = setup([source]);
     expect(await library.about("https://x.example/watch/1")).toBeNull();
     expect(await library.about("https://x.example/watch/1")).toBeNull();
-    expect(source.asked).toHaveLength(2); // asked again: the first was not an answer
+    expect(source.asked).toHaveLength(2);
     up = true;
     expect(await library.about("https://x.example/watch/1")).toBeNull();
     expect(await library.about("https://x.example/watch/1")).toBeNull();
-    expect(source.asked).toHaveLength(3); // ...and this one was
+    expect(source.asked).toHaveLength(3);
   });
 
   it("is none when no source knows how", async () => {
@@ -426,7 +420,6 @@ describe("createLibrary seasons", () => {
 describe("createLibrary search", () => {
   const item = (id: string, title: string) => ({ id, title, url: `https://x.example/${id}` });
   const listed = (...titles: string[]): LibraryRow => ({ id: "r", title: "R", source: "Test", items: titles.map((title, at) => item(`listed-${at}`, title)) });
-  /** A source that lists some titles and answers a search from a table of what each question gets, remembering the questions. */
   const searching = (rows: LibraryRow[], answers: Record<string, ReturnType<typeof item>[]> = {}): LibrarySource & { asked: string[] } => {
     const asked: string[] = [];
     return {
@@ -462,7 +455,7 @@ describe("createLibrary search", () => {
     const source = searching([], { "lord of the rings": [item("1", "The Lord of the Rings"), item("2", "The Two Towers"), item("3", "The Return of the King")] });
     const { library } = setup([source]);
     expect(titlesOf(await library.search("  lotr "))).toEqual(["The Lord of the Rings", "The Two Towers", "The Return of the King"]);
-    expect(source.asked).toEqual(["lord of the rings"]); // enough was found: not asked again in other words
+    expect(source.asked).toEqual(["lord of the rings"]);
   });
 
   it("asks a place that found little the words without each of them, and with a long one cut short, and puts the titles with every word typed before the others that have only some of them", async () => {
@@ -472,8 +465,8 @@ describe("createLibrary search", () => {
     });
     const { library } = setup([source]);
     const found = await library.search("strager things");
-    expect(titlesOf(found)).toEqual(["Stranger Things", "Stranger Things: Tales from 85", "Strawberry Things", "Things We Lost in the Fire"]); // (Dune has none of the words)
-    expect(found.exact).toBe(2); // (the rest are the closest others)
+    expect(titlesOf(found)).toEqual(["Stranger Things", "Stranger Things: Tales from 85", "Strawberry Things", "Things We Lost in the Fire"]);
+    expect(found.exact).toBe(2);
     expect(source.asked).toEqual(["strager things", "things", "strager", "things stra", "strager thin", "things strag"]);
   });
 
@@ -594,7 +587,7 @@ describe("createLibrary search, further", () => {
     const { library } = setup([source]);
     await library.get();
     const none = await library.search("dark knight returns");
-    expect(titlesOf(none)).toEqual(["The Dark Knight"]); // (two of the three words; a title with one of them is not close enough)
+    expect(titlesOf(none)).toEqual(["The Dark Knight"]);
     expect(none.exact).toBe(0);
 
     const some = await library.search("dark knight");
@@ -728,7 +721,6 @@ describe("createLibrary titles with no video", () => {
   const urls = (rows: LibraryRow[]) => rows.flatMap((one) => one.items.map((found) => found.url));
   const first = "https://x.example/One/0";
   const second = "https://x.example/One/1";
-  /** Long enough to jump the gap between two tries without the list or the strikes going stale. */
   const patient = { ttlMs: 100 * STRIKE_GAP_MS, noVideoMs: 10 * STRIKE_GAP_MS };
 
   it("leaves a title out of the rows once a place has no video of it, and a row with nothing left in it", async () => {
@@ -749,7 +741,7 @@ describe("createLibrary titles with no video", () => {
     library.played(first, "found");
     expect(urls((await library.get()).rows)).toContain(first);
 
-    library.played(second, "failed"); // wherever it stands in its row
+    library.played(second, "failed");
     advance(STRIKE_GAP_MS);
     library.played(second, "failed");
     expect(urls((await library.get()).rows)).toEqual([first]);
@@ -759,10 +751,10 @@ describe("createLibrary titles with no video", () => {
     const { library, advance } = setup([fakeSource("a", [gives(row("One"))])], patient);
     library.played(first, "failed");
     advance(STRIKE_GAP_MS - 1);
-    library.played(first, "failed"); // another phone of the party, or the same one trying again at once
+    library.played(first, "failed");
     expect(urls((await library.get()).rows)).toContain(first);
     advance(1);
-    library.played(first, "failed"); // a separate try, measured from the first
+    library.played(first, "failed");
     expect(urls((await library.get()).rows)).not.toContain(first);
   });
 
@@ -794,7 +786,7 @@ describe("createLibrary titles with no video", () => {
     advance(1);
     expect(urls((await library.get()).rows)).toContain(first);
     library.played(first, "failed");
-    expect(urls((await library.get()).rows)).toContain(first); // one strike again, not the two it would be if the old ones counted
+    expect(urls((await library.get()).rows)).toContain(first);
   });
 
   it("leaves it out of what is found and out of titles like another one", async () => {

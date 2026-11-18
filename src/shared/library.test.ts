@@ -15,7 +15,6 @@ describe("the sections of the library", () => {
     expect(sectionOf({ kind: "series", section: "cartoon" })).toBe("cartoon");
     expect(sectionOf({ kind: "movie", section: "anime" })).toBe("anime");
     expect(sectionOf({ section: "anime" })).toBe("anime");
-    // (a source that does not say what its titles are: they are on Home only)
     expect(sectionOf({})).toBeUndefined();
   });
 

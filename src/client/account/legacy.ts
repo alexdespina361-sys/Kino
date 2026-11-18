@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { emptyData, progressKey, watchedKey, type ProfileData } from "../../shared";
 
-/**
- * Before accounts, each screen kept its own history in localStorage ("Recently played" on the phone, the watched marks on both).
- * The first time the new store opens it takes those in, so nobody loses where they were; the old keys are removed after.
- */
 export const LEGACY_KEYS = ["controller.history", "controller.watched", "tv.watched"] as const;
 
 const HistorySchema = z.array(
@@ -39,7 +35,6 @@ function parse<T>(schema: z.ZodType<T>, raw: string | null): T | undefined {
   }
 }
 
-/** What the old keys held, as profile data; undefined when there was none. */
 export function readLegacy(read: (key: string) => string | null): ProfileData | undefined {
   const data = emptyData();
   for (const entry of parse(HistorySchema, read("controller.history")) ?? []) {

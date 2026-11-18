@@ -10,16 +10,11 @@ import { Poster } from "../shared/Poster";
 import { entryOfRating, ratingSectionIn, type Entry } from "../tv/pages";
 import { Sheet } from "./Sheet";
 
-/**
- * Everything this profile rated, on one page: the title (and which season), the score with its word, the note, and the few lines about
- * the watching (rated when, how much, finished when). Newest first, or the best first. A tap opens the title, where all of it can be changed.
- */
 export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly LiveRating[]; onOpen: (entry: Entry) => void; onClose: () => void }) {
   const t = useT();
   const language = useLanguage();
   const { progress, watched } = useProfileData();
   const [order, setOrder] = useState<RatingOrder>("new");
-  // The filter (the owner: "a simple filter around rating"): one section, one score, or both; a section is told by the rating, else by where the library lists the title.
   const feeding = useFeed();
   const sectionOf = useMemo(() => ratingSectionIn(allRows(feeding.data)), [feeding.data]);
   const [wanted, setWanted] = useState<RatingFilter>({});
@@ -30,7 +25,6 @@ export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly L
   const sectionLabel = (section: LibrarySection | undefined) =>
     t(section === undefined ? "tv.filterAll" : section === "movie" ? "tv.filterMovies" : section === "series" ? "tv.filterSeries" : section === "cartoon" ? "tv.filterCartoons" : "tv.filterAnime");
 
-  // (The first time here, or after the last one was taken back: what to do, not sorting buttons for nothing.)
   if (ratings.length === 0) {
     return (
       <Sheet title={t("rating.mine")} onClose={onClose} testId="ratings-sheet">
@@ -88,7 +82,6 @@ export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly L
       <ul className="rating-list" data-testid="ratings-list">
         {sorted.map((rating) => {
           const entry = entryOfRating(rating);
-          // (What was watched since it was rated counts too, the way the title's own page says it.)
           const facts = mergeFacts(storedFacts(rating), watchFacts(entry, rating.kind === "series" || rating.season !== undefined, rating.season, rating.of, progress, watched));
           return (
             <li key={rating.key}>

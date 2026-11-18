@@ -28,7 +28,7 @@ describe("the shelves", () => {
       expect(route, shelf.id).toBe(`/discover/${shelf.type}`);
       const params = new URLSearchParams(query);
       for (const key of params.keys()) expect(allowed.has(key), `${shelf.id}: ${key}`).toBe(true);
-      expect(params.has("page") || params.has("api_key"), shelf.id).toBe(false); // (the source adds the page and the key)
+      expect(params.has("page") || params.has("api_key"), shelf.id).toBe(false);
       expect(params.has("sort_by"), shelf.id).toBe(true);
       const own = shelf.type === "movie" ? "first_air_date" : "primary_release_date";
       expect([...params.keys()].filter((key) => key.startsWith(own)), `${shelf.id} uses the other kind's dates`).toEqual([]);
@@ -79,7 +79,6 @@ describe("the sections of the shelves", () => {
   it("ask for Japanese animation for the anime, and for none of it for the cartoons", () => {
     for (const shelf of inSection("anime")) expect(params(shelf).get("with_original_language"), shelf.id).toBe("ja");
     for (const shelf of inSection("cartoon")) expect(params(shelf).get("with_original_language"), shelf.id).not.toBe("ja");
-    // (a French or a Chinese cartoon is a cartoon)
     expect(inSection("cartoon").map((one) => one.id)).toEqual(expect.arrayContaining(["world-fr-cartoon-movies", "world-zh-cartoon-tv"]));
   });
 
@@ -106,7 +105,6 @@ describe("shelfPlan", () => {
     const plan = shelfPlan(undefined, groups);
     expect(plan).toHaveLength(6);
     expect(plan.map(groupOf)).toEqual([0, 1, 2, 0, 1, 0]);
-    // (each shelf once)
     expect(new Set(plan).size).toBe(6);
   });
 
@@ -115,7 +113,6 @@ describe("shelfPlan", () => {
     expect(shelfPlan("series").every((one) => one.type === "tv" && sectionOfCategory(one) === "series")).toBe(true);
     expect(shelfPlan("cartoon").every((one) => sectionOfCategory(one) === "cartoon")).toBe(true);
     expect(shelfPlan("anime").every((one) => sectionOfCategory(one) === "anime")).toBe(true);
-    // (the four plans together are the shelves there are, each in one of them)
     const together = LIBRARY_SECTIONS.flatMap((section) => shelfPlan(section).map((one) => one.id));
     expect(together.sort()).toEqual(FILMPIRE_SHELVES.map((one) => one.id).sort());
   });

@@ -2,7 +2,6 @@ import { FEEDBACK_AREA_GROUPS, type FeedbackArea } from "../../shared";
 import { useT, type Key } from "../i18n";
 import { Chip } from "./ui";
 
-/** "Where is it?": the places of the app in groups, one of them chosen. A person who cannot say where it is picks "Not sure" and says what it is. */
 export function WhereScreen({ value, guessed, onPick }: { value: FeedbackArea; guessed: boolean; onPick: (area: FeedbackArea) => void }) {
   const t = useT();
   return (

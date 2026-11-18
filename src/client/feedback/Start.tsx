@@ -7,16 +7,13 @@ import { KindIcon } from "./ui";
 
 export interface StartProps {
   onKind: (kind: FeedbackKind) => void;
-  /** Words from before (this page's own, or the last session's) that were not sent. */
   draft: Draft | undefined;
   onContinue: () => void;
   onDiscard: () => void;
-  /** Whether there is anything to look at under "Your messages" (a receipt, or an account). */
   hasMessages: boolean;
   onMine: () => void;
 }
 
-/** The first screen: what kind of feedback it is, and the way back to a draft or an answer. */
 export function StartScreen({ onKind, draft, onContinue, onDiscard, hasMessages, onMine }: StartProps) {
   const t = useT();
   const unread = useUnreadFeedback();

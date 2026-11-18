@@ -4,12 +4,11 @@ import { ChatBook, EMPTY_CHAT_KEEP_MS, type ChatError, type ChatOutcome, type Ch
 
 const pair = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
-/** A book with a clock to move, a say in who is friends with whom and who takes messages, and a record of what it asked the store to write down. */
 function world() {
   const clock = { now: 1_700_000_000_000 };
   const friends = new Set<string>();
-  const off = new Set<string>(); // (friends turned off)
-  const quiet = new Set<string>(); // ("Friends can message me" turned off)
+  const off = new Set<string>();
+  const quiet = new Set<string>();
   const written = new Set<string>();
   const dropped = new Set<string>();
   const host = {
@@ -31,7 +30,6 @@ function world() {
   return { chat, clock, friends, off, quiet, written, dropped, host, befriend };
 }
 
-/** Alex, Sam and Robin; Alex is friends with both. */
 function trio() {
   const w = world();
   w.befriend("alex", "sam");
@@ -50,7 +48,7 @@ describe("who may write to whom", () => {
   it("is friends, and nobody else", () => {
     const { chat } = trio();
     expect(refusal(chat.send("alex", "sam", "hi"))).toBeUndefined();
-    expect(refusal(chat.send("sam", "robin", "hi"))).toBe("not_friends"); // (both are Alex's friends, not each other's)
+    expect(refusal(chat.send("sam", "robin", "hi"))).toBe("not_friends");
     expect(refusal(chat.send("alex", "stranger", "hi"))).toBe("not_friends");
     expect(refusal(chat.send("alex", "alex", "hi"))).toBe("not_friends");
     expect(refusal(chat.read("sam", "robin"))).toBe("not_friends");
@@ -62,7 +60,7 @@ describe("who may write to whom", () => {
   it("is a profile with friends turned on, to a friend with friends turned on", () => {
     const { chat, off } = trio();
     off.add("sam");
-    expect(refusal(chat.send("alex", "sam", "hi"))).toBe("chat_off"); // (a friend who has turned friends off takes nothing)
+    expect(refusal(chat.send("alex", "sam", "hi"))).toBe("chat_off");
     off.delete("sam");
     off.add("alex");
     expect(refusal(chat.send("alex", "sam", "hi"))).toBe("friends_off");
@@ -78,7 +76,6 @@ describe("who may write to whom", () => {
     const view = value(chat.read("alex", "sam"));
     expect(view.open).toBe(false);
     expect(texts(view)).toEqual(["hi"]);
-    // (and the switch is about messages to them: they can still write, as a profile that takes no titles can still send some)
     expect(refusal(chat.send("sam", "alex", "hello"))).toBeUndefined();
     quiet.delete("sam");
     expect(value(chat.read("alex", "sam")).open).toBe(true);
@@ -133,7 +130,6 @@ describe("a chat", () => {
     clock.now += 5;
     const second = value(chat.send("sam", "alex", "two"));
     expect(second.rev).toBeGreaterThan(first.rev);
-    // (two in one instant are still two numbers)
     const third = value(chat.send("sam", "alex", "three"));
     expect(third.rev).toBeGreaterThan(second.rev);
     expect(new Set(third.lines.map((line) => line.id)).size).toBe(3);
@@ -178,13 +174,13 @@ describe("how much is kept", () => {
     clock.now += 1;
     const after = value(chat.read("alex", "sam"));
     expect(texts(after)).toEqual(["newer"]);
-    expect(after.rev).toBeGreaterThan(before.rev); // (a screen that has the old one is told)
+    expect(after.rev).toBeGreaterThan(before.rev);
     clock.now += 10 * 24 * 3600 * 1000;
     expect(value(chat.read("alex", "sam")).lines).toEqual([]);
-    expect(dropped.has("chat:alex:sam")).toBe(false); // (a chat with nothing in it is kept for a day, as a revision: see the take-back below)
+    expect(dropped.has("chat:alex:sam")).toBe(false);
     clock.now += EMPTY_CHAT_KEEP_MS;
     expect(value(chat.read("alex", "sam")).lines).toEqual([]);
-    expect(dropped.has("chat:alex:sam")).toBe(true); // (and then it is not kept)
+    expect(dropped.has("chat:alex:sam")).toBe(true);
   });
 
   it("lets go of what ran out while the server was off, when it starts, and keeps the rest", () => {
@@ -226,7 +222,7 @@ describe("how often", () => {
   it("is counted for each sender: one who is quick does not slow the friend who answers", () => {
     const { chat } = trio();
     for (let i = 0; i < CHAT_SENDS_PER_MINUTE; i++) value(chat.send("alex", "sam", `message ${i}`));
-    expect(refusal(chat.send("alex", "robin", "to somebody else"))).toBe("rate_limited"); // (the sender's, not the chat's)
+    expect(refusal(chat.send("alex", "robin", "to somebody else"))).toBe("rate_limited");
     expect(refusal(chat.send("sam", "alex", "hi"))).toBeUndefined();
   });
 
@@ -246,11 +242,11 @@ describe("taking a message back", () => {
     const sent = value(chat.send("alex", "sam", "oops"));
     value(chat.send("sam", "alex", "fine"));
     const id = sent.lines[0]!.id;
-    expect(refusal(chat.takeBack("sam", "alex", id))).toBe("gone"); // (not Sam's to take back)
+    expect(refusal(chat.takeBack("sam", "alex", id))).toBe("gone");
     const after = value(chat.takeBack("alex", "sam", id));
     expect(texts(after)).toEqual(["fine"]);
     expect(texts(value(chat.read("sam", "alex")))).toEqual(["fine"]);
-    expect(after.rev).toBeGreaterThan(sent.rev); // (a screen that has it is told)
+    expect(after.rev).toBeGreaterThan(sent.rev);
     expect(refusal(chat.takeBack("alex", "sam", id))).toBe("gone");
     expect(refusal(chat.takeBack("alex", "sam", 12345))).toBe("gone");
   });
@@ -258,19 +254,18 @@ describe("taking a message back", () => {
   it("leaves the chat empty when it was the only message, with the revision it came to, so that a screen that shows the message is told it is gone", () => {
     const { chat, clock, dropped } = trio();
     const sent = value(chat.send("alex", "sam", "oops"));
-    const shown = value(chat.read("sam", "alex")); // (Sam has the chat open, and the message in it)
+    const shown = value(chat.read("sam", "alex"));
     expect(shown.lines).toHaveLength(1);
     const taken = value(chat.takeBack("alex", "sam", sent.lines[0]!.id));
     expect(taken.rev).toBeGreaterThan(shown.rev);
     clock.now += 3000;
     const after = value(chat.read("sam", "alex"));
     expect(after.lines).toEqual([]);
-    expect(after.rev).toBe(taken.rev); // (not 0, which a screen would take for an answer that is older than what it has)
+    expect(after.rev).toBe(taken.rev);
     expect(after.rev).toBeGreaterThan(shown.rev);
     expect(dropped.has("chat:alex:sam")).toBe(false);
     expect(chat.unread("sam")).toEqual([]);
 
-    // a day later nothing is kept of it, and a new message goes on from the clock, above the numbers there were
     clock.now += EMPTY_CHAT_KEEP_MS;
     expect(value(chat.read("sam", "alex")).rev).toBe(0);
     expect(dropped.has("chat:alex:sam")).toBe(true);
@@ -298,7 +293,7 @@ describe("what waits to be read", () => {
       { friend: "sam", count: 2, at: clock.now },
       { friend: "robin", count: 1, at: clock.now - 1000 },
     ]);
-    expect(chat.unread("sam")).toEqual([]); // (what you wrote yourself does not wait)
+    expect(chat.unread("sam")).toEqual([]);
   });
 
   it("is nothing once the chat was looked at, and what comes after counts again", () => {
@@ -310,7 +305,7 @@ describe("what waits to be read", () => {
     clock.now += 1000;
     value(chat.send("sam", "alex", "two"));
     expect(chat.unread("alex")).toEqual([{ friend: "sam", count: 1, at: clock.now }]);
-    expect(chat.unread("alex")).toEqual([{ friend: "sam", count: 1, at: clock.now }]); // (asking does not look)
+    expect(chat.unread("alex")).toEqual([{ friend: "sam", count: 1, at: clock.now }]);
   });
 
   it("is nothing for the one who answers: the chat was open to write", () => {
@@ -326,7 +321,7 @@ describe("what waits to be read", () => {
     chat.markSeen("alex", "sam");
     written.clear();
     chat.markSeen("alex", "sam");
-    chat.markSeen("alex", "robin"); // (no chat with Robin)
+    chat.markSeen("alex", "robin");
     expect(written.size).toBe(0);
   });
 
@@ -349,7 +344,7 @@ describe("muting a friend", () => {
     expect(mine.muted).toBe(true);
     expect(texts(mine)).toEqual(["one", "two"]);
     const theirs = value(chat.read("sam", "alex"));
-    expect(theirs.muted).toBe(false); // (it is Alex's choice only)
+    expect(theirs.muted).toBe(false);
     expect(theirs.open).toBe(true);
     expect(refusal(chat.send("sam", "alex", "three"))).toBeUndefined();
   });
@@ -371,7 +366,7 @@ describe("muting a friend", () => {
     expect(value(chat.read("alex", "sam")).muted).toBe(true);
     expect(value(chat.mute("alex", "sam", false))).toBe(false);
     expect(dropped.has("chat:alex:sam")).toBe(true);
-    expect(value(chat.mute("alex", "sam", false))).toBe(false); // (undoing what was never done)
+    expect(value(chat.mute("alex", "sam", false))).toBe(false);
   });
 
   it("is each side's own: both can mute, and the one is not the other", () => {
@@ -448,34 +443,27 @@ describe("the ticks: how far the friend has one's messages, and has seen them (t
       return { theirSeen, theirGot };
     };
     expect(ticks()).toEqual({ theirSeen: undefined, theirGot: undefined });
-    // a screen of Sam's asks while Sam chose not to be seen online: told of it, but no tick (the tick would say Sam is there. The judge, 17 Nov)
     expect(chat.unread("sam", false)).toHaveLength(1);
     expect(ticks()).toEqual({ theirSeen: undefined, theirGot: undefined });
-    // a screen of Sam's asks what waits (the bell, the app): received, up to the newest
     written.clear();
     expect(chat.unread("sam")).toHaveLength(1);
     expect(ticks()).toEqual({ theirSeen: undefined, theirGot: two });
-    expect([...written]).toEqual(["chat:alex:sam"]); // (kept: it survives a start)
+    expect([...written]).toEqual(["chat:alex:sam"]);
     written.clear();
     chat.unread("sam");
     expect(written.size, "asked again: nothing to write").toBe(0);
-    // Sam opens the chat: seen
     chat.markSeen("sam", "alex");
     expect(ticks()).toEqual({ theirSeen: two, theirGot: two });
-    // Sam has muted Alex: a new message is not waiting for Sam, but is still received (Alex is not told of the mute by a tick that never comes)
     value(chat.mute("sam", "alex", true));
     clock.now += 1000;
     const three = value(chat.send("alex", "sam", "three")).rev;
     expect(chat.unread("sam")).toEqual([]);
     expect(ticks()).toEqual({ theirSeen: two, theirGot: three });
-    // Sam's own message: the writer had the chat open, and has seen all before it
     clock.now += 1000;
     const four = value(chat.send("sam", "alex", "four")).rev;
     expect(ticks()).toEqual({ theirSeen: four, theirGot: four });
-    // Sam's view has Alex's marks: Alex saw up to Alex's own last message, and has not been told of Sam's yet
     expect(value(chat.read("sam", "alex"))).toMatchObject({ theirSeen: three, theirGot: three });
     expect(one).toBeLessThan(two);
-    // kept between starts, and a `got` that is not right is let go
     const back = new ChatBook(host);
     back.load("chat:alex:sam", JSON.parse(JSON.stringify(chat.docFor("chat:alex:sam"))));
     expect(value(back.read("alex", "sam"))).toMatchObject({ theirSeen: four, theirGot: four });
@@ -507,8 +495,7 @@ describe("keeping it between starts", () => {
       expect(value(back.read(friend, "alex"))).toEqual(value(chat.read(friend, "alex")));
     }
     expect(back.unread("alex")).toEqual(chat.unread("alex"));
-    expect(back.unread("alex")).toHaveLength(1); // (Robin's: Sam is muted)
-    // ...and goes on from there
+    expect(back.unread("alex")).toHaveLength(1);
     const more = value(back.send("alex", "sam", "four"));
     expect(more.lines).toHaveLength(3);
     expect(more.rev).toBeGreaterThan(value(chat.read("alex", "sam")).rev);
@@ -531,8 +518,7 @@ describe("keeping it between starts", () => {
     const kept = (r?: unknown) => ({ v: 1, a: "alex", b: "sam", rev: 5, lines: [line(r)], seen: {}, muted: [] });
     chat.load("chat:alex:sam", kept());
     expect(value(chat.read("alex", "sam")).lines).toEqual([{ id: 5, at, mine: false, text: "hi" }]);
-    expect(value(chat.lastLines("alex", "sam")).rev).toBe(5); // (what was said is at the revision the chat was kept at)
-    // (a reaction not of the set, one of somebody who is not in the chat, and one that is right)
+    expect(value(chat.lastLines("alex", "sam")).rev).toBe(5);
     chat.load("chat:alex:sam", kept({ alex: "\u{1F680}", robin: "\u{1F525}", sam: "\u{1F525}" }));
     expect(value(chat.read("alex", "sam")).lines).toEqual([{ id: 5, at, mine: false, text: "hi", theirReaction: "\u{1F525}" }]);
     for (const nonsense of ["\u{1F525}", null, 7, ["\u{1F525}"]]) {
@@ -557,7 +543,6 @@ describe("reactions", () => {
     expect(refusal(chat.react("alex", "sam", id, "\u{1F44D}"))).toBe("rate_limited");
     clock.now += 60_000;
     expect(refusal(chat.react("alex", "sam", id, "\u{1F44D}"))).toBeUndefined();
-    // (no message waits for Sam because of a reaction)
     expect(chat.unread("sam")).toEqual([]);
   });
 
@@ -577,9 +562,7 @@ describe("reactions", () => {
       ids.push(value(chat.send("sam", "alex", text)).lines.at(-1)!.id);
     }
     const seen = value(chat.read("alex", "sam")).rev;
-    // nothing changed: the state alone
     expect(value(chat.readSince("alex", "sam", seen, true))).toEqual({ rev: seen, open: true, muted: false, theirSeen: expect.any(Number), theirGot: expect.any(Number) });
-    // Sam puts one on, takes it off, puts another on another message: only those two, as they are now
     clock.now += 1000;
     value(chat.react("sam", "alex", ids[0]!, "\u{1F525}"));
     value(chat.react("sam", "alex", ids[0]!, null));
@@ -587,18 +570,14 @@ describe("reactions", () => {
     const now = value(chat.read("alex", "sam")).rev;
     const answer = value(chat.readSince("alex", "sam", seen, true));
     expect(answer).toEqual({ rev: now, open: true, muted: false, theirSeen: ids[2], theirGot: ids[2], reactions: [{ id: ids[0] }, { id: ids[2], theirReaction: "\u{1F602}" }] });
-    // from a revision between them: only the last
     const middle = value(chat.readSince("alex", "sam", now, true));
     expect(middle.reactions).toBeUndefined();
-    // a page that does not take it is sent every message, as it always was
     expect(value(chat.readSince("alex", "sam", seen, false)).lines).toHaveLength(3);
-    // something said since: every message
     clock.now += 1000;
     value(chat.send("sam", "alex", "four"));
     const after = value(chat.readSince("alex", "sam", now, true));
     expect(after.lines).toHaveLength(4);
     expect(after.reactions).toBeUndefined();
-    // a revision the chat never had, or none: every message
     expect(value(chat.readSince("alex", "sam", after.rev + 5, true)).lines).toHaveLength(4);
     expect(value(chat.readSince("alex", "sam", undefined, true)).lines).toHaveLength(4);
   });
@@ -621,14 +600,13 @@ describe("reactions", () => {
     });
     expect(value(chat.readSince("alex", "sam", 7, true)).reactions).toEqual([{ id: 5, myReaction: "\u{1F525}" }, { id: 4 }]);
     expect(value(chat.readSince("alex", "sam", 9, true)).reactions).toBeUndefined();
-    expect(value(chat.readSince("alex", "sam", 4, true)).lines).toHaveLength(2); // (older than what was said)
+    expect(value(chat.readSince("alex", "sam", 4, true)).lines).toHaveLength(2);
   });
 
   it("are the six of every day and sixteen more behind the +, and nothing else", () => {
     const { chat, host } = trio();
     const id = value(chat.send("sam", "alex", "hi")).lines[0]!.id;
     expect(value(chat.react("alex", "sam", id, "\u{1F37F}")).lines[0]).toMatchObject({ myReaction: "\u{1F37F}" });
-    // (one of the sixteen, kept and read back)
     const back = new ChatBook(host);
     back.load("chat:alex:sam", JSON.parse(JSON.stringify(chat.docFor("chat:alex:sam"))));
     expect(value(back.read("sam", "alex")).lines[0]).toMatchObject({ theirReaction: "\u{1F37F}" });
@@ -642,7 +620,6 @@ describe("answering a message", () => {
     const answer = value(chat.send("alex", "sam", "yes!", asked)).lines.at(-1)!;
     expect(answer).toMatchObject({ text: "yes!", mine: true, replyTo: asked });
     expect(value(chat.read("sam", "alex")).lines.at(-1)).toMatchObject({ text: "yes!", mine: false, replyTo: asked });
-    // (a message that answers nothing names nothing)
     expect(value(chat.send("sam", "alex", "ok")).lines.at(-1)).not.toHaveProperty("replyTo");
   });
 
@@ -664,7 +641,7 @@ describe("answering a message", () => {
     value(chat.takeBack("sam", "alex", asked));
     const lines = value(chat.read("alex", "sam")).lines;
     expect(lines.map((line) => line.text)).toEqual(["got it"]);
-    expect(lines.some((line) => line.id === asked)).toBe(false); // (the screen finds no line to quote, so it quotes nothing)
+    expect(lines.some((line) => line.id === asked)).toBe(false);
   });
 
   it("is not part of a report: the team reads what was said, not what it answered", () => {

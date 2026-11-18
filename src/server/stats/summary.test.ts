@@ -7,9 +7,7 @@ const on = (day: string, hour = 12) => Date.parse(`${day}T${String(hour).padStar
 
 const usage: AccountUsage = {
   profiles: 9,
-  // three on the 25th, one on the 31st, two today
   madeAt: [on("2026-10-25", 8), on("2026-10-25", 9), on("2026-10-25", 23), on("2026-10-31"), on("2026-11-01", 1), on("2026-11-01", 9)],
-  // the last use of the accounts that have a device in
   lastUsedAt: [on("2026-10-20"), on("2026-10-31"), on("2026-11-01", 2), on("2026-11-01", 9)],
   devices: { browser: 5, tv: 2 },
 };
@@ -34,7 +32,7 @@ describe("the owner's stats", () => {
       profiles: 9,
       limit: 500,
       signUps: "open",
-      made: { today: 2, week: 3, month: 6 }, // (the 25th is 7 days back: the week is the 26th to today)
+      made: { today: 2, week: 3, month: 6 },
       used: { today: 2, week: 3, month: 4 },
       devices: { browser: 5, tv: 2 },
     });

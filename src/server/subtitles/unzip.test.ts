@@ -17,22 +17,21 @@ function makeZipBuffer(files: Array<{ name: string; content: string; compress?: 
     const method = compress ? 8 : 0;
 
     const header = Buffer.alloc(30);
-    header.writeUInt32LE(0x04034b50, 0); // sig
-    header.writeUInt16LE(20, 4); // version needed
-    header.writeUInt16LE(0, 6); // flags
-    header.writeUInt16LE(method, 8); // method
-    header.writeUInt16LE(0, 10); // time
-    header.writeUInt16LE(0, 12); // date
-    header.writeUInt32LE(0, 14); // crc32
-    header.writeUInt32LE(compData.length, 18); // compSize
-    header.writeUInt32LE(rawData.length, 22); // uncompSize
-    header.writeUInt16LE(nameBuf.length, 26); // nameLen
-    header.writeUInt16LE(0, 28); // extraLen
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(0, 6);
+    header.writeUInt16LE(method, 8);
+    header.writeUInt16LE(0, 10);
+    header.writeUInt16LE(0, 12);
+    header.writeUInt32LE(0, 14);
+    header.writeUInt32LE(compData.length, 18);
+    header.writeUInt32LE(rawData.length, 22);
+    header.writeUInt16LE(nameBuf.length, 26);
+    header.writeUInt16LE(0, 28);
 
     parts.push(header, nameBuf, compData);
   }
 
-  // Add end of central directory signature
   const eocd = Buffer.alloc(22);
   eocd.writeUInt32LE(0x06054b50, 0);
   parts.push(eocd);

@@ -24,6 +24,6 @@ describe("what a new password is worth", () => {
   });
 
   it("does not take a password for the name just because the name contains it", () => {
-    expect(weakness("robert-the-great", "robert")).toBeNull(); // six letters: long enough, and not the name
+    expect(weakness("robert-the-great", "robert")).toBeNull();
   });
 });

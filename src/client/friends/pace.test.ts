@@ -12,7 +12,7 @@ describe("how often a screen looks at its friends", () => {
     expect(lookPace(1000, 0, true)).toBe(FRIEND_ON_MS);
     expect(lookPace(1000, 5000, false)).toBe(LIVELY_MS);
     expect(lookPace(1000, 5000, true)).toBe(LIVELY_MS);
-    expect(lookPace(5000, 5000, false)).toBe(QUIET_MS); // (over once its time has come)
+    expect(lookPace(5000, 5000, false)).toBe(QUIET_MS);
     expect(QUIET_MS).toBe(30_000);
   });
 
@@ -39,6 +39,6 @@ describe("what makes a screen look often for a while", () => {
     expect(stirring([], one, one)).toBe(false);
     expect(stirring([], one, chatMark(state([friend("sam")], [{ friend: "sam", count: 2, at: 100 }])))).toBe(true);
     expect(stirring([], one, chatMark(state([friend("sam")], [{ friend: "sam", count: 1, at: 200 }])))).toBe(true);
-    expect(stirring([], one, none)).toBe(false); // (read on another screen: nothing new)
+    expect(stirring([], one, none)).toBe(false);
   });
 });

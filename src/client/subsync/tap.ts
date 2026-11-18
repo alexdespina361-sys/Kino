@@ -1,26 +1,18 @@
-/** A piece of the film's sound as hls.js hands it to the player: the start of the init segment in force, and the bytes of the piece. */
 export interface Piece {
-  /** Where the piece starts and ends, in the video's time. */
   start: number;
   end: number;
   init: Uint8Array;
   data: Uint8Array;
 }
 
-/** What a tap is to the aligner: pieces of the film's sound, for whoever takes them (`AudioTap` here, for a film that plays through hls.js; `ElementTap` in capture.ts, for one the browser plays by itself). */
 export interface SoundTap {
-  /** The pieces from now on go to `take`, after the ones that were kept for it. */
   connect(take: (piece: Piece) => void): void;
-  /** Nobody takes the pieces any more. */
   disconnect(): void;
-  /** While nobody takes the pieces: keep the first of them (`on`) for the one who will, or let them go. */
   keep(on: boolean): void;
-  /** Whether the sound is of use now (a subtitle track is on screen). A tap that costs something to run stops meanwhile; this one copies only what hls.js hands on, and goes on. */
   wanted?(on: boolean): void;
   stop(): void;
 }
 
-/** The parts of an hls.js `BUFFER_APPENDING` event this needs. */
 interface Appending {
   type: string;
   data: Uint8Array;
@@ -31,31 +23,18 @@ interface Appending {
   };
 }
 
-/** The parts of hls.js this needs, so that a stand-in can be used to test it. */
 export interface HlsEvents {
   on(event: string, listener: (event: string, data: never) => void): void;
   off(event: string, listener: (event: string, data: never) => void): void;
 }
 
-/** What is kept for an aligner whose code is still on its way: the first pieces of the film, up to this many bytes. */
 const MAX_KEPT_BYTES = 16 * 1024 * 1024;
 
-/** Whether `bytes` is the start of an init segment (an MP4 header), not of a piece of media. */
 const isInit = (bytes: Uint8Array): boolean => {
   const tag = String.fromCharCode(bytes[4] ?? 0, bytes[5] ?? 0, bytes[6] ?? 0, bytes[7] ?? 0);
   return tag === "ftyp" || tag === "moov";
 };
 
-/**
- * Takes a copy of the film's sound as hls.js puts it into the player's buffer (after it has unpacked TS streams into MP4 pieces), with
- * the init segment each piece needs. hls.js hands the same bytes on to the player afterwards, so only copies leave this.
- *
- * The player owns it, from the moment it makes hls.js to the moment it lets it go, and the aligner (whenever there is one) is connected to
- * it. It has to be listening from the start whatever the aligner is doing: the init segment comes once (again only when the stream
- * changes), and a piece is appended only once, however far ahead of the picture it is. So the init segments are always learned (a few
- * hundred bytes), and a viewer who turns the aligner on in the middle of a film has them; the pieces are copied only while someone takes
- * them, or is on the way to (`keep`).
- */
 export class AudioTap implements SoundTap {
   private readonly inits = new Map<string, Uint8Array>();
   private take: ((piece: Piece) => void) | undefined;
@@ -71,7 +50,6 @@ export class AudioTap implements SoundTap {
     hls.on(event, this.listener);
   }
 
-  /** The pieces from now on go to `take`, after the ones that were kept for it. */
   connect(take: (piece: Piece) => void): void {
     const waiting = this.kept;
     this.kept = [];
@@ -81,12 +59,10 @@ export class AudioTap implements SoundTap {
     for (const piece of waiting) take(piece);
   }
 
-  /** Nobody takes the pieces any more. */
   disconnect(): void {
     this.take = undefined;
   }
 
-  /** While nobody takes the pieces: keep the first of them (`on`) for the one who will, or let them go. */
   keep(on: boolean): void {
     this.keeping = on;
     if (!on) {
@@ -109,7 +85,6 @@ export class AudioTap implements SoundTap {
       return;
     }
     const init = this.inits.get(type);
-    // (When there is no more room for the pieces that are kept it is the later ones that go: the picture is at the start of the film, and the aligner works forwards from it.)
     const room = this.keeping && this.keptBytes + data.length <= MAX_KEPT_BYTES;
     if (!init || !(this.take || room)) return;
     const streams = frag.elementaryStreams?.[type];

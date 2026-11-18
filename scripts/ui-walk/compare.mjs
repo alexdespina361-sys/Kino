@@ -1,11 +1,3 @@
-// Compares two folders of walk pictures (the same names in both): how much of each one changed, and a picture of the change.
-//
-//   node scripts/ui-walk/compare.mjs <before> <after> [--out=.ui-polish/diff] [--min=0.0005] [--tolerance=0.1]
-//
-// For every picture in <before> that is in <after> too it counts the pixels that differ (pixelmatch, `tolerance` = how different a colour must
-// be to count, 0..1). A picture that changed by more than `min` (a fraction of its pixels) gets a side-by-side (before | after | changes) in
-// <out>/side/, and every picture a line in <out>/report.md and report.json. The exit code is 1 when anything changed by more than `min`
-// or went missing: for the classic look against its baseline that is "something that must not change did".
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import pixelmatch from "pixelmatch";
@@ -27,12 +19,10 @@ function pictures(dir, at = dir) {
   return readdirSync(at).flatMap((name) => {
     const path = join(at, name);
     if (statSync(path).isDirectory()) return pictures(dir, path);
-    // (a "-live" picture has a frame of a film in it, which is never the same twice: it is there to be looked at, not compared)
     return name.endsWith(".png") && !name.endsWith("-live.png") ? [relative(dir, path).replaceAll("\\", "/")] : [];
   });
 }
 
-/** Half the width and height (the average of each 2 x 2): a side-by-side of three full-size pictures is too wide to look at. */
 function halve(png) {
   const w = png.width >> 1;
   const h = png.height >> 1;

@@ -7,15 +7,12 @@ import { resolveFailure } from "../shared/words";
 
 interface PlayLinkProps {
   tvName: string;
-  /** Send a page or media link to the TV. */
   onPlay: (url: string) => void;
 }
 
-/** "Paste a link" box and its button. (What the lookup of the link is up to is the page's line, `ResolveLine`: a title picked from the library is answered the same way.) */
 export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
   const t = useT();
   const [url, setUrl] = useState("");
-  // Reading the clipboard needs a secure page and a permission; where it isn't there, the button just isn't offered.
   const canPaste = typeof navigator !== "undefined" && typeof navigator.clipboard?.readText === "function";
 
   const submit = (event: FormEvent) => {
@@ -24,7 +21,6 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
     if (link) onPlay(link);
   };
 
-  // A copied link is what the button is for, so it plays at once (one tap, not two); anything else is only put in the box to be looked at.
   const paste = async () => {
     try {
       const text = (await navigator.clipboard.readText()).trim();
@@ -34,7 +30,6 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
         onPlay(link);
       } else if (text) setUrl(text);
     } catch {
-      /* denied or empty: nothing to paste */
     }
   };
 
@@ -54,7 +49,6 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
             aria-label={t("play.pasteLabel")}
             value={url}
             onChange={(event) => setUrl(event.target.value)}
-            // (A box for a link drops the line breaks of what is pasted into it, which runs the words that follow a link into the link: the link is taken out first.)
             onPaste={(event) => {
               const pasted = event.clipboardData.getData("text");
               const link = linkOf(pasted);
@@ -74,7 +68,6 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
             </button>
           )}
         </div>
-        {/* The button is there once there is something to play (a button that cannot be pressed is a line of the page that says nothing). */}
         {url.trim() && (
           <button type="submit" className="btn btn-red btn-block" data-testid="play-url">
             <PlayIcon /> {t("play.on", { tv: tvName })}
@@ -85,7 +78,6 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
   );
 }
 
-/** What the lookup of a link is up to, in a line: looking, found (and on its way to the TV), or why it could not be played. Nothing when there is no lookup. */
 export function ResolveLine({ resolve, tvName }: { resolve: ResolveStatus | null; tvName: string }) {
   const t = useT();
   if (!resolve || resolve.phase === "cancelled") return null;

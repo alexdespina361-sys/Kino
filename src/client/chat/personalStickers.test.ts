@@ -18,7 +18,6 @@ describe("a message that is a personal sticker", () => {
   it("is its picture, from this chat's address, big and without a bubble, saying whose it is", () => {
     const html = lines({ personal });
     const picture = tagOf(html, "chat-personal-sticker")!;
-    // (with the five minutes it is asked for in, so that one taken down goes from a chat that stays open)
     const period = Number(new RegExp(`src="/pictures/${SID}\\?v=(\\d+)"`).exec(picture)?.[1]);
     expect(Math.abs(period - Math.floor(Date.now() / PERSONAL_RECHECK_MS))).toBeLessThanOrEqual(1);
     expect(picture).toContain('alt="A sticker from Sam"');
@@ -32,7 +31,6 @@ describe("a message that is a personal sticker", () => {
     expect(has(html, "chat-personal-gone")).toBe(true);
     expect(html).toContain("A sticker that is no longer available");
     expect(count(html, "chat-sticker")).toBe(0);
-    // (a line with a name that is also the address of a GIF or a title, or a built-in sticker's emoji, is still the personal sticker)
     const odd = lines({ personal, lines: [{ ...sticker(line(1, false)), text: "\u{1F525}" }] });
     expect(has(odd, "chat-personal-sticker")).toBe(true);
     expect(has(odd, "chat-sticker")).toBe(false);
@@ -47,11 +45,9 @@ describe("a message that is a personal sticker", () => {
     const already = save(true);
     expect(tagOf(already, "chat-sticker-save")).toContain("disabled");
     expect(already).toContain("In your stickers");
-    // (not one's own, not without a way to save, not a message of words)
     expect(has(acts({ line: sticker(line(1, true)), personal: { ...personal, onSave: () => {} } }), "chat-sticker-save")).toBe(false);
     expect(has(acts({ personal }), "chat-sticker-save")).toBe(false);
     expect(has(acts({ line: line(1, false), personal: { ...personal, onSave: () => {} } }), "chat-sticker-save")).toBe(false);
-    // (and nothing of it under the message)
     expect(has(lines({ personal: { ...personal, onSave: () => {} }, picked: 1, onPick: () => {}, onReact: () => {} }), "chat-sticker-save")).toBe(false);
   });
 
@@ -59,7 +55,6 @@ describe("a message that is a personal sticker", () => {
     const closed = lines({ personal: { ...personal, onSave: () => {} }, lines: [sticker(line(1, false)), line(2, false)], picked: 1, onPick: () => {} });
     expect(count(closed, "chat-bubble")).toBe(1);
     expect(has(closed, "chat-react-bar")).toBe(false);
-    // (and not in a report, which shows what would be sent: the friend's sticker there is neither selected nor shown larger)
     const report = lines({ personal: { ...personal, onSave: () => {} }, lines: [sticker(line(1, false))], showWriter: true, picked: 1, onPick: () => {} });
     expect(report).not.toContain("<button");
   });
@@ -95,10 +90,8 @@ describe("the page's side of personal stickers", () => {
       const notes = [0xff, 0xe1, ...u16be(2 + 5000), ...new Array(5000).fill(7)];
       const frame = (marker: number) => [0xff, marker, ...u16be(17), 8, ...u16be(4000), ...u16be(6000), 3];
       expect(await pictureSize(bytes([0xff, 0xd8], notes, [0xff], frame(0xc0), [0xff, 0xd9]))).toEqual({ width: 6000, height: 4000 });
-      expect(await pictureSize(bytes([0xff, 0xd8], frame(0xc2)))).toEqual({ width: 6000, height: 4000 }); // (progressive)
-      // (a table that is not a frame header is stepped over too)
+      expect(await pictureSize(bytes([0xff, 0xd8], frame(0xc2)))).toEqual({ width: 6000, height: 4000 });
       expect(await pictureSize(bytes([0xff, 0xd8, 0xff, 0xc4, ...u16be(4), 0, 0], frame(0xc1)))).toEqual({ width: 6000, height: 4000 });
-      // (none before the picture's data, or the file ends: it does not say)
       expect(await pictureSize(bytes([0xff, 0xd8, 0xff, 0xda, ...u16be(8), 0, 0, 0, 0, 0, 0], frame(0xc0)))).toBeNull();
       expect(await pictureSize(bytes([0xff, 0xd8], notes))).toBeNull();
     });
@@ -150,7 +143,6 @@ describe("the page's side of personal stickers", () => {
         { index: 2, delay: 200 },
       ]);
       expect(asItWas([400.7, 20])?.map((each) => each.delay)).toEqual([400, 20]);
-      // (2.5 seconds: itself three times; 1010 ms: never a piece shorter than a picture may be shown)
       expect(asItWas([2500, 100])).toEqual([
         { index: 0, delay: 1000 },
         { index: 0, delay: 1000 },
@@ -159,12 +151,10 @@ describe("the page's side of personal stickers", () => {
       ]);
       expect(asItWas([1010, 100])?.map((each) => each.delay)).toEqual([990, 20, 100]);
       expect(asItWas([1000, 1000])?.map((each) => each.delay)).toEqual([1000, 1000]);
-      // (more pictures, or a longer time, than a sticker has: its pictures are taken at steps instead)
       expect(asItWas(Array(49).fill(40))).toBeNull();
       expect(asItWas(Array(48).fill(40))).toHaveLength(48);
       expect(asItWas(Array(9).fill(900))).toBeNull();
       expect(asItWas([300])).toBeNull();
-      // (a picture a file says is shown for days, or for no time that is a number: known at once, nothing is cut into pieces first)
       const before = performance.now();
       expect(asItWas([100, 4e12])).toBeNull();
       expect(asItWas([100, Infinity])).toBeNull();
@@ -174,11 +164,8 @@ describe("the page's side of personal stickers", () => {
 
     it("allows so many megapixels for each gigabyte of the phone: real phones' photos open where they are taken, and more is turned away without opening it", async () => {
       const fits = (width: number, height: number, gb: number | undefined) => width * height <= pixelBudget(gb);
-      // (a usual photo, 12.2 and 16 megapixels, on any phone, the smallest Chrome says included)
       for (const gb of [0.25, 0.5, 1, undefined]) expect(fits(4032, 3024, gb) && fits(4608, 3456, gb), String(gb)).toBe(true);
-      // (48 and 50 megapixels: an iPhone's, whose Safari does not say its memory, and a phone of 4 GB)
       for (const gb of [undefined, 4]) expect(fits(8064, 6048, gb) && fits(8000, 6000, gb) && fits(8160, 6120, gb) && fits(8192, 6144, gb), String(gb)).toBe(true);
-      // (108 on a phone of 8, which is the most Chrome says; 200 nowhere: 800 MB at once)
       expect(fits(12_000, 9000, 8)).toBe(true);
       expect(fits(12_000, 9000, 2)).toBe(false);
       expect(fits(16_320, 12_240, 8)).toBe(false);
@@ -201,7 +188,6 @@ describe("the page's side of personal stickers", () => {
 
   describe("asking again when the stickers are opened", () => {
     const OTHER = "Zyxwvutsrqponmlkjihgfe";
-    /** The server's answers, given out when the test says. */
     const answers: Array<(stickers: Array<{ id: string; mine: boolean }> | null) => void> = [];
     const fake = () =>
       vi.stubGlobal(
@@ -243,7 +229,7 @@ describe("the page's side of personal stickers", () => {
       fake();
       tookCollection("p", { stickers: [] });
       const looked = lookAgain("p");
-      tookCollection("p", { stickers: [{ id: OTHER, mine: true }] }); // (one made here, meanwhile)
+      tookCollection("p", { stickers: [{ id: OTHER, mine: true }] });
       answers[0]!([]);
       await looked;
       expect(keptCollection("p")).toEqual([{ id: OTHER, mine: true }]);

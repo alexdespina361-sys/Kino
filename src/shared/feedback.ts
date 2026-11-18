@@ -2,7 +2,6 @@ import type { PlayerState } from "./protocol";
 
 const trackOf = (state: PlayerState["subtitles"], id: number | undefined) => state?.tracks.find((track) => track.id === id);
 
-/** What changed, before it is put into words (so each page can say it in its own language). */
 export type ChangeNotice =
   | { kind: "speed"; rate: number }
   | { kind: "subtitlesOff" }
@@ -11,7 +10,6 @@ export type ChangeNotice =
   | { kind: "qualityAuto" }
   | { kind: "quality"; label: string };
 
-/** The notice as a line of English: what `describeChange` says unless it is given other words. */
 export function englishNotice(notice: ChangeNotice): string {
   switch (notice.kind) {
     case "speed":
@@ -29,11 +27,6 @@ export function englishNotice(notice: ChangeNotice): string {
   }
 }
 
-/**
- * What the player just did that the viewer should be told about: a new speed, subtitle, audio track or quality. The TV shows
- * it over the picture and the phone shows it as a confirmation, whoever pressed the button. Nothing is said for a different
- * video, or for what the player sets up by itself while a video starts.
- */
 export function changeNotice(before: PlayerState, after: PlayerState): ChangeNotice | undefined {
   if (before.stream !== after.stream) return undefined;
   const settled = (state: PlayerState) => state.state === "playing" || state.state === "paused";
@@ -57,7 +50,6 @@ export function changeNotice(before: PlayerState, after: PlayerState): ChangeNot
   return undefined;
 }
 
-/** `changeNotice` as one short line (English unless `say` words it differently). */
 export function describeChange(before: PlayerState, after: PlayerState, say: (notice: ChangeNotice) => string = englishNotice): string | undefined {
   const notice = changeNotice(before, after);
   return notice && say(notice);

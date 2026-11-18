@@ -3,10 +3,6 @@ import { useT } from "../i18n";
 import { useHint } from "./backButton";
 import "./exitHint.css";
 
-/**
- * The line at the bottom of the screen that asks for a Back to be pressed again (see backButton.ts): it says what the second one does, and a
- * thin line runs down the time there is to press it. It sits over everything and takes no press.
- */
 export function ExitHint() {
   const t = useT();
   const hint = useHint();

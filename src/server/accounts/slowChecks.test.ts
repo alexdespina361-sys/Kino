@@ -4,11 +4,6 @@ import { buildApp } from "../app";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
 
-/**
- * Checking a password or a PIN, and hashing a new one, is slow on purpose and done on a few threads everybody shares. An address may cause only so many
- * of them in a quarter of an hour, and each is counted before it is done (accounts/routes.ts, `slowChecksByIp`).
- */
-
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -33,7 +28,6 @@ describe("slow checks, counted per address before they are done", () => {
     expect(codes.filter((code) => code === 401)).toHaveLength(5);
     expect(codes.filter((code) => code === 429)).toHaveLength(35);
     expect(Number(answers.find((each) => each.statusCode === 429)!.headers["retry-after"])).toBeGreaterThan(0);
-    // (another address is not held up by it)
     expect((await post("/api/auth/login", { email: "nobody", password: "not the password" }, undefined, "203.0.113.8")).statusCode).toBe(401);
   });
 
@@ -48,15 +42,12 @@ describe("slow checks, counted per address before they are done", () => {
   it("counts the hash of a new PIN on an account that has none, and of a new password", async () => {
     const { post, cookieOf } = await site(3);
     const cookie = cookieOf(await post("/api/auth/register", { email: "boris", password: "a good password" }));
-    // (no PIN yet: nothing is checked first, and each setting of one is a hash)
     const pins: number[] = [];
     for (let n = 0; n < 2; n++) pins.push((await post("/api/me/child-pin", { next: null }, cookie)).statusCode);
-    expect(pins).toEqual([200, 200]); // (taking a PIN off hashes nothing, and is not counted)
+    expect(pins).toEqual([200, 200]);
     const sets: number[] = [];
     for (let n = 0; n < 3; n++) sets.push((await post("/api/me/child-pin", { next: "1234", ...(n > 0 ? { pin: "1234" } : {}) }, cookie)).statusCode);
-    // the first: one hash (the new PIN). The second: the check of the old one, then the new one's hash. The third finds the allowance used up.
     expect(sets).toEqual([200, 200, 429]);
-    // (a password change is a check and a hash as well: from another address, to have room)
     const other = "203.0.113.9";
     expect((await post("/api/me/password", { current: "a good password", next: "another password" }, cookie, other)).statusCode).toBe(204);
     expect((await post("/api/me/password", { current: "another password", next: "a third password" }, cookie, other)).statusCode).toBe(429);

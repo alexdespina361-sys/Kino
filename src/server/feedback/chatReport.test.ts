@@ -39,7 +39,7 @@ describe("reporting a chat to the team", () => {
     expect(feedback.size).toBe(1);
     const record = feedback.get("1")!;
     expect(record).toMatchObject({ kind: "bug", area: "friends", status: "new", answer: false, title: "Chat reported: Alex#1 about Sam#2" });
-    expect(record.accountId).toBeUndefined(); // (it is not tied to an account, and so cannot lead to the one who was reported)
+    expect(record.accountId).toBeUndefined();
     expect(record.message).toBe("Alex#1 reported their chat with Sam#2. The last 2 messages are in chat.txt.");
     expect(record.files).toMatchObject([{ id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }]);
     const file = await feedback.file("1", "chat");
@@ -70,7 +70,6 @@ describe("reporting a chat to the team", () => {
 
   it("does not keep a report without its messages: when they do not fit it is turned away, though its words would fit", async () => {
     const messages = Buffer.byteLength(chatTranscript(report), "utf8");
-    // Room for the words of one report, and for its messages but a byte.
     const short = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: 6 * 1024 + messages - 1, log: quiet });
     expect(await chatReporter(short)(report)).toBe("full");
     expect(short.size).toBe(0);
@@ -88,11 +87,9 @@ describe("reporting a chat to the team", () => {
     expect(await send(report)).toBe("too_many_open");
     expect(await send(report)).toBe("too_many_open");
     expect(feedback.size).toBe(3);
-    // (Another account has its own three.)
     for (let i = 0; i < 3; i++) expect(await send({ ...report, account: "acc_sam" })).toBeUndefined();
     expect(await send({ ...report, account: "acc_sam" })).toBe("too_many_open");
     expect(feedback.size).toBe(6);
-    // (What the team has closed is not open any more, and what it only answered or read still is.)
     await feedback.update("1", (draft) => void (draft.status = "in_review"));
     expect(await send(report)).toBe("too_many_open");
     await feedback.update("1", (draft) => void (draft.status = "done"));

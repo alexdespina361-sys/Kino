@@ -4,17 +4,12 @@ import { dayOf, type DayVisits } from "./visits";
 
 const DAY_MS = 24 * 3600 * 1000;
 
-/** A number for today, for the last seven days and for the last thirty (whole UTC days, today among them). */
 export interface Windows {
   today: number;
   week: number;
   month: number;
 }
 
-/**
- * How the server read the request that asked, which is the owner's own: `address` is the one the visitor count and the rate limits use for a request like
- * it (see `trust.ts`), the rest is what it was read from. The way to see that a host's proxies give the visitor's address and not their own.
- */
 export interface RequestSeen {
   address: string;
   connection: string | null;
@@ -22,42 +17,29 @@ export interface RequestSeen {
   cloudflare: string | null;
 }
 
-/** What the owner sees (`GET /api/admin/stats`, `scripts/stats.mjs`): counts and days, never a person. */
 export interface StatsView {
-  /** When this was worked out (ms). */
   at: number;
-  /** The days are UTC days: a day ends at 02:00 (03:00 in summer) in Romania. */
   zone: "UTC";
   accounts?: {
     total: number;
     profiles: number;
-    /** No new accounts beyond this many. */
     limit: number;
     signUps: Registration;
-    /** Accounts made in those days. */
     made: Windows;
-    /** Accounts with a device that was used in those days (a device that signed out is not counted: it is not kept). */
     used: Windows;
-    /** Devices signed in, by what they are. */
     devices: Record<string, number>;
   };
   visits?: {
-    /** The first day there is a count for: nobody was counted before it. */
     since: string | null;
-    /** Visitors added up over those days, so a person who came on three days is three. */
     visitors: Windows;
-    /** Page loads in those days. */
     loads: Windows;
   };
-  /** The request that asked, as the server read its address. */
   you?: RequestSeen;
-  /** The last days, the newest last. */
   days: Array<{ day: string; newAccounts?: number; accounts?: number; visitors?: number; loads?: number }>;
 }
 
 export interface StatsInput {
   at: number;
-  /** How many days to list. */
   days: number;
   accounts?: { usage: AccountUsage; limit: number; signUps: Registration };
   visits?: { since: string | undefined; days: ReadonlyMap<string, DayVisits> };
@@ -71,7 +53,6 @@ export function statsView({ at, days, accounts, visits, you }: StatsInput): Stat
     const sum = (span: number) => Array.from({ length: span }, (_, n) => count(back(n))).reduce((total, each) => total + each, 0);
     return { today: sum(1), week: sum(7), month: sum(30) };
   };
-  // (Moments become days once: a day is a string that sorts the way days do.)
   const perDay = (moments: number[]) => {
     const counts = new Map<string, number>();
     for (const moment of moments) {

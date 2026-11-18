@@ -11,7 +11,6 @@ async function readAll(piece: { read(): AsyncIterable<Uint8Array> }): Promise<st
   return text(chunks);
 }
 
-/** A body that arrives in the pieces given, each after its own wait (milliseconds); `seen.released` says when whoever reads it has let go of it. */
 function body(parts: [string, number?][], seen = { released: false }): AsyncIterable<Uint8Array> {
   return {
     [Symbol.asyncIterator]() {
@@ -61,13 +60,13 @@ describe("SegmentCache", () => {
     let fetches = 0;
     const open = async () => (fetches++, opened([["one-"], ["two-", 40], ["three", 40]]));
     const first = cache.get("seg", open);
-    const second = cache.get("seg", open); // asked for while the first is being opened
+    const second = cache.get("seg", open);
     const reading = readAll((await first)!);
-    await new Promise((resolve) => setTimeout(resolve, 60)); // part way through
+    await new Promise((resolve) => setTimeout(resolve, 60));
     const late = await cache.get("seg", open);
     expect(await Promise.all([reading, readAll((await second)!), readAll(late!)])).toEqual(["one-two-three", "one-two-three", "one-two-three"]);
     expect(fetches).toBe(1);
-    expect([cache.hits, cache.misses]).toEqual([2, 1]); // (a piece that is still arriving is an answer from memory too)
+    expect([cache.hits, cache.misses]).toEqual([2, 1]);
   });
 
   it("counts the asks it answered from memory and the ones that went to the film's own place", async () => {
@@ -142,7 +141,7 @@ describe("SegmentCache", () => {
     const fetched: string[] = [];
     const open = (key: string, content: string) => async () => (fetched.push(key), opened([[content]]));
     for (const [key, content] of [["a", "1234"], ["b", "5678"], ["c", "9012"]] as const) await readAll((await cache.get(key, open(key, content)))!);
-    expect(cache.keptBytes).toBe(8); // (a was let go to make room for c)
+    expect(cache.keptBytes).toBe(8);
     await cache.get("b", open("b", "5678"));
     await cache.get("c", open("c", "9012"));
     expect(fetched).toEqual(["a", "b", "c"]);
@@ -162,31 +161,21 @@ describe("SegmentCache", () => {
   });
 });
 
-/*
- * Screens that watch one film together, through the real cache on a clock of its own. The film is in pieces of 4 seconds and 2 MB (4 Mbit/s),
- * and every screen downloads ahead of its picture as `bufferPolicy` says for it. What is counted is how often the film's own place is asked for
- * a piece it was asked for before. For the screens of a party that should come to (almost) nothing; it is what a party made afterwards, or a
- * screen with a slow connection, cost when every screen of it downloaded minutes ahead of its picture, far more than the cache can hold.
- */
 const PIECE_S = 4;
 const BITS_PER_SECOND = 4_000_000;
 const PIECE_BYTES = (BITS_PER_SECOND / 8) * PIECE_S;
 const STEP_S = 0.5;
 const ZEROS = new Uint8Array(PIECE_BYTES);
 
-/** How far ahead of its picture a screen downloads, in seconds: what hls.js aims at (`max(8 * maxBufferSize / bitrate, maxBufferLength)`, at most `maxMaxBufferLength`). */
 function aheadSeconds(inParty: boolean, bitsPerSecond = BITS_PER_SECOND): number {
   const policy = bufferPolicy(inParty);
   return Math.min(Math.max((8 * policy.maxBufferSize) / bitsPerSecond, policy.maxBufferLength), policy.maxMaxBufferLength);
 }
 
 interface Viewer {
-  /** When it starts (seconds on the clock of the simulation) and from where in the film (seconds). */
   from: number;
   at: number;
-  /** How many pieces it can download in a second. */
   speed: number;
-  /** Whether it is in a party at a time (under the party's numbers) or alone. */
   inParty: (clock: number) => boolean;
 }
 
@@ -212,7 +201,7 @@ async function watchTogether(viewers: Viewer[], seconds: number): Promise<{ fetc
     clock = tick * STEP_S;
     for (const screen of screens) {
       if (clock < screen.from) continue;
-      if (screen.next * PIECE_S > screen.position) screen.position += STEP_S; // (the picture runs while it has pieces, and waits when it has none)
+      if (screen.next * PIECE_S > screen.position) screen.position += STEP_S;
       const ahead = aheadSeconds(screen.inParty(clock));
       screen.carry += screen.speed * STEP_S;
       while (screen.carry >= 1 && screen.next * PIECE_S - screen.position < ahead) {
@@ -221,15 +210,15 @@ async function watchTogether(viewers: Viewer[], seconds: number): Promise<{ fetc
         const piece = await cache.get(key, open(key));
         if (piece) for await (const chunk of piece.read()) void chunk;
       }
-      if (screen.next * PIECE_S - screen.position >= ahead) screen.carry = 0; // (a full buffer does not save up for a burst)
+      if (screen.next * PIECE_S - screen.position >= ahead) screen.carry = 0;
     }
   }
   return { fetches: cache.misses, duplicates: cache.misses - fetched.size };
 }
 
 describe("screens watching one film together", () => {
-  const GOOD = 2; // pieces a second: 32 Mbit/s
-  const SLOW = 0.3; // 1.2 times as fast as the picture runs
+  const GOOD = 2;
+  const SLOW = 0.3;
   const together = (inParty: boolean) => () => inParty;
 
   it("download further ahead alone than the cache holds, and in a party no further than half of it, at any usual bitrate", () => {
@@ -251,21 +240,20 @@ describe("screens watching one film together", () => {
       { from: 0, at: 0, speed: SLOW, inParty: together(inParty) },
     ];
     expect((await watchTogether(screens(true), 600)).duplicates).toBe(0);
-    expect((await watchTogether(screens(false), 600)).duplicates).toBeGreaterThan(100); // (what the numbers of a lone screen would have cost the same party)
+    expect((await watchTogether(screens(false), 600)).duplicates).toBeGreaterThan(100);
   });
 
   it("go to the film's own place again only for what the host had downloaded alone before the party, when it is made afterwards", async () => {
-    // The host watches alone for two minutes (downloading far ahead, as a lone screen does), then a party is made and three guests join a minute apart.
     const screens = (inParty: boolean): Viewer[] => [
       { from: 0, at: 0, speed: GOOD, inParty: (clock) => inParty && clock >= 120 },
       ...[120, 180, 240].map((joins): Viewer => ({ from: joins, at: joins, speed: GOOD, inParty: together(inParty) })),
     ];
-    const lead = Math.ceil(aheadSeconds(false) / PIECE_S); // (the pieces a lone host is ahead by: the cache cannot hold them, so the first guest asks for them again)
+    const lead = Math.ceil(aheadSeconds(false) / PIECE_S);
     const party = await watchTogether(screens(true), 600);
     const alone = await watchTogether(screens(false), 600);
     expect(party.duplicates).toBeLessThanOrEqual(lead + 2);
-    expect(alone.duplicates).toBeGreaterThan(2 * party.duplicates); // (every guest asked again for everything it was ahead by)
+    expect(alone.duplicates).toBeGreaterThan(2 * party.duplicates);
     expect(party.fetches).toBeLessThan(alone.fetches);
-    expect((await watchTogether(screens(true), 1200)).duplicates).toBe(party.duplicates); // (and then nothing is asked for twice, however long it goes on)
+    expect((await watchTogether(screens(true), 1200)).duplicates).toBe(party.duplicates);
   });
 });

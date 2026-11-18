@@ -7,12 +7,10 @@ import { pieceFromFile, release, toAttachments, type Piece } from "./images";
 import { readReceipts } from "./receipts";
 import { KindIcon, StatusChip, when } from "./ui";
 
-/** A report in the list, and how to open it: by the receipt this browser holds, else by the account that sent it. */
 interface Item extends FeedbackSummary {
   who: Who;
 }
 
-/** The reports this browser can see: those it holds receipts for, and those of the account that is signed in (once each). */
 async function load(signedIn: boolean): Promise<Item[] | null> {
   const receipts = readReceipts();
   const [checked, mine] = await Promise.all([checkReceipts(receipts), signedIn ? mineOfAccount() : Promise.resolve([])]);
@@ -30,7 +28,6 @@ export interface MineProps {
   onNew: () => void;
 }
 
-/** "Your messages": what was sent from this browser (or this account), where it is, and whether the team has written. */
 export function MineScreen({ signedIn, onOpen, onNew }: MineProps) {
   const t = useT();
   const [items, setItems] = useState<Item[] | null | "loading">("loading");
@@ -92,7 +89,6 @@ export function MineScreen({ signedIn, onOpen, onNew }: MineProps) {
   );
 }
 
-/** How often an open conversation looks for a new line from the team. */
 const POLL_MS = 30_000;
 const MAX_REPLY_PICTURES = 2;
 
@@ -101,7 +97,6 @@ export interface ThreadProps {
   signedIn: boolean;
 }
 
-/** One report and what has been said about it, with a box to answer in (unless it is closed). */
 export function ThreadScreen({ who, signedIn }: ThreadProps) {
   const t = useT();
   const [thread, setThread] = useState<FeedbackThread | null | "loading">("loading");
@@ -116,7 +111,7 @@ export function ThreadScreen({ who, signedIn }: ThreadProps) {
   const reload = useCallback(async () => {
     const next = await openThread(who);
     setThread((now) => (next ?? (now === "loading" ? null : now)));
-    if (next) void refreshUnread(signedIn, true); // (it has been read: the count on the button goes down)
+    if (next) void refreshUnread(signedIn, true);
   }, [who, signedIn]);
 
   useEffect(() => {

@@ -47,9 +47,7 @@ interface TmdbSeasonCacheEntry {
 }
 
 const tmdbCache = new Map<string, TmdbSeasonCacheEntry>();
-/** Seasons are kept by the title the site gave, which is its own to choose: no more than this many are kept (the oldest go first). */
 const MAX_TMDB_SEASONS = 500;
-/** The same for the slugs of the anime that were looked into for episodes. */
 const MAX_PROBED_ANIME = 1000;
 
 function decodeHtmlEntities(str: string): string {
@@ -205,7 +203,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
       if (!slug || seen.has(slug)) continue;
 
       const imgPath = block.match(/<img[^>]+src=['"]([^'"]+)['"]/i)?.[1];
-      if (!imgPath) continue; // Must have an image
+      if (!imgPath) continue;
 
       const rawTitle = (
         block.match(/alt=['"]([^'"]+)['"]/i)?.[1] ||
@@ -353,7 +351,6 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
       try {
         const html = await fetchHtml(`anime.php?${parsed.slug}`);
 
-        // 1. Extract show metadata from page
         const titleMatch =
           /<div class=['"]infotitle[^'"]*['"]>([\s\S]*?)<\/div>/i.exec(html) ||
           /<meta\s+property=['"]og:title['"]\s+content=['"]([^'"]+)['"]/i.exec(html);
@@ -370,7 +367,6 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
         const descMatch = /<div class=['"]infodes[^'"]*['"]>([\s\S]*?)<\/div>/i.exec(html);
         const showOverview = descMatch ? decodeHtmlEntities(descMatch[1]!.replace(/<[^>]+>/g, "")) : undefined;
 
-        // 2. Parse episode links
         const epMatches = [...html.matchAll(/<a[^>]+id\s*=\s*['"]([a-f0-9]{32})['"][^>]*>([\s\S]*?)<\/a>/g)];
         const rawEpisodes: Array<{ epNum: number; key: string }> = [];
 
@@ -381,7 +377,6 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
         }
         rawEpisodes.sort((a, b) => a.epNum - b.epNum);
 
-        // 3. Attempt TMDB enrichment
         const tmdbData = rawTitle
           ? await fetchTmdbAnimeSeasonDetails(rawTitle, season, tmdbApiKey, get, timeoutMs)
           : null;
@@ -414,7 +409,6 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
       if (!parsed) return [];
       try {
         const html = await fetchHtml(`anime.php?${parsed.slug}`);
-        // Similar anime items appear under <div class='similarimg'>
         const simIdx = html.indexOf("class='similarimg'") || html.indexOf('class="similarimg"');
         if (simIdx !== -1) {
           return parseItemCards(html.slice(simIdx));

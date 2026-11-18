@@ -1,4 +1,3 @@
-// The TV as a guest (signed out): 1280x720 (every screen) and the other sizes (the main ones). Parts: welcome, hd, full, qhd, desktop, laptop.
 import { chromium, base, wait, HD, FULL_HD, QHD, DESKTOP, LAPTOP, openContext, guestData, step, snap, pointerAway, movies, series, log } from "./lib.mjs";
 import { seed } from "./seed.mjs";
 
@@ -16,12 +15,11 @@ async function openTv(browser, viewport, options = {}) {
   const page = await context.newPage();
   await page.goto("/tv");
   await page.getByTestId("tv-browse").waitFor();
-  await page.getByTestId("tv-welcome").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {}); // (the greeting, which goes by itself)
-  await wait(900); // (the pictures)
+  await page.getByTestId("tv-welcome").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
+  await wait(900);
   return { context, page };
 }
 
-/** The main screens, at one size. `deep` also takes the quieter ones (the lists, the ratings, each form). */
 async function guestTv(browser, viewport, device, deep) {
   const { context, page } = await openTv(browser, viewport);
   const away = () => pointerAway(page, viewport);
@@ -106,7 +104,7 @@ async function guestTv(browser, viewport, device, deep) {
       await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
     });
-    await page.keyboard.press("Escape"); // (off the title's page)
+    await page.keyboard.press("Escape");
   }
 
   await step(device, "12-detail-series", async () => {
@@ -117,7 +115,7 @@ async function guestTv(browser, viewport, device, deep) {
     await page.getByTestId("tv-episodes").waitFor();
     await away();
     await snap(page, device, "12-detail-series", { settle: 900 });
-    await press(page, "ArrowDown", 2); // (the page scrolls to the seasons, then the episodes)
+    await press(page, "ArrowDown", 2);
     await snap(page, device, "12b-detail-series-episodes", { settle: 700 });
     await page.keyboard.press("Escape");
   });
@@ -190,7 +188,6 @@ async function guestTv(browser, viewport, device, deep) {
     await page.mouse.move(viewport.width / 2, viewport.height / 2);
     await page.locator('[data-testid="tv"][data-hud="visible"]').waitFor();
     await snap(page, device, "26-player-hud", { settle: 700 });
-    // (the same, over the real frame of the film: one to look at for how the controls read over a picture; not one to compare)
     if (deep) await snap(page, device, "26b-player-hud-live", { settle: 100, live: true });
     if (deep) {
       await page.getByTestId("tv-speed-btn").click();

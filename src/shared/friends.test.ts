@@ -51,9 +51,8 @@ describe("the switches", () => {
     for (const key of FRIEND_SETTINGS) expect(SETTING_SCHEMAS[key]).toBeDefined();
     expect(SETTING_SCHEMAS.friendsOff).toBeDefined();
     expect(friendChoices({})).toEqual({ friends: true, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true, friendsMessages: true });
-    expect(friendChoices({ friends: false }).friends).toBe(true); // (the old master switch is not read for it)
+    expect(friendChoices({ friends: false }).friends).toBe(true);
     expect(friendChoices({ friendsOff: true }).friends).toBe(false);
-    // A child's profile has no friends; made an ordinary one again it has them back as they were (nothing about them was written).
     expect(friendChoices({ child: true, friendsGive: true }).friends).toBe(false);
     expect(friendChoices({ child: false, friendsGive: true })).toMatchObject({ friends: true, friendsGive: true });
     expect(FRIEND_DEFAULTS.friends).toBe(false);
@@ -67,14 +66,14 @@ describe("the switches", () => {
     ]);
     expect(friendChoices({ friends: true, friendsGive: true })).toMatchObject({ friendsGive: true, friendsGet: true });
     expect(friendChoices({ ratings: false })).toMatchObject({ friendsRatings: false });
-    expect(sunsetSwitches({ ratings: false })).toEqual(["friendsRatings"]); // (so it has the switch to say so)
+    expect(sunsetSwitches({ ratings: false })).toEqual(["friendsRatings"]);
     expect(friendSwitchWrites({ ratings: false }, "friendsRatings", true)).toEqual([
       ["friendsRatings", true],
       ["ratings", true],
     ]);
     expect(friendSwitchWrites({ ratings: false }, "friendsRatings", false)).toEqual([["friendsRatings", false]]);
     expect(friendSwitchWrites({}, "friendsGive", true)).toEqual([["friendsGive", true]]);
-    expect(ratingsShown({ ratings: false })).toBe(true); // (ratings show for everybody)
+    expect(ratingsShown({ ratings: false })).toBe(true);
   });
 
   it("are what was chosen, one at a time", () => {
@@ -83,12 +82,12 @@ describe("the switches", () => {
       friendsLists: false,
       friendsRatings: true,
       friendsGive: true,
-      friendsGet: true, // (told what friends watch while one tells what one watches)
+      friendsGet: true,
       friendsInbox: true,
       friendsPresence: true,
       friendsMessages: true,
     });
-    expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: true }); // (being seen as online is its own switch, on until it is turned off)
+    expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: true });
   });
 
   it("tell and hear what is watched together: what an earlier version stored for hearing is not read", () => {
@@ -115,7 +114,7 @@ describe("the switches", () => {
 
   it("let lists be looked at only when friends are on and they are shared", () => {
     expect(sharesLists({})).toBe(true);
-    expect(sharesLists({ friends: false })).toBe(true); // (the old master switch is not read)
+    expect(sharesLists({ friends: false })).toBe(true);
     expect(sharesLists({ friendsLists: false })).toBe(false);
     expect(sharesLists({ friendsOff: true, friendsLists: true })).toBe(false);
   });
@@ -131,7 +130,7 @@ describe("the switches", () => {
     expect(sharesRatings({})).toBe(true);
     expect(sharesRatings({ ratings: true })).toBe(true);
     expect(sharesRatings({ friendsRatings: false })).toBe(false);
-    expect(sharesRatings({ ratings: false })).toBe(false); // (turned off before: kept from friends until the profile shares them again)
+    expect(sharesRatings({ ratings: false })).toBe(false);
     expect(sharesRatings({ ratings: true, friendsRatings: true })).toBe(true);
     expect(sharesRatings({ friendsOff: true, friendsRatings: true })).toBe(false);
   });
@@ -140,7 +139,7 @@ describe("the switches", () => {
 describe("what other people typed", () => {
   it("is made fit to show: nothing that turns text around or hides in it, few marks on a letter, one space for several", () => {
     expect(plainText("  Sam  ‮evil‬  ")).toBe("Sam evil");
-    expect(plainText("a​b⁦c⁩d﻿e؜f")).toBe("abcdef"); // (the invisible ones are simply gone)
+    expect(plainText("a​b⁦c⁩d﻿e؜f")).toBe("abcdef");
     expect(plainText("two\nlines\tand\r\n  gaps")).toBe("two lines and gaps");
     expect(plainText("nul\u0000l")).toBe("null");
     expect(plainText("z" + "̀".repeat(40) + "y")).toBe("z" + "̀".repeat(4) + "y");
@@ -155,8 +154,8 @@ describe("what other people typed", () => {
     for (const text of ["‌".repeat(30), "‍‌", "­", "ㅤ", "ﾠ", "⠀⠀", "ᅟᅠ", "́".repeat(5), " ‌ "]) {
       expect(plainText(text), JSON.stringify(text)).toBe("");
     }
-    expect(plainText("می‌خواهم")).toBe("می‌خواهم"); // (a joiner between letters is how Persian is written)
-    expect(plainText("Du­ne")).toBe("Dune"); // (a soft hyphen is gone)
+    expect(plainText("می‌خواهم")).toBe("می‌خواهم");
+    expect(plainText("Du­ne")).toBe("Dune");
   });
 
   it("has no half of a pair in it, which would make a page throw when it puts the text in an address", () => {
@@ -164,7 +163,7 @@ describe("what other people typed", () => {
       expect(isWellFormedText(bad), JSON.stringify(bad)).toBe(false);
       expect(isWellFormedText(wellFormedText(bad)), JSON.stringify(bad)).toBe(true);
       expect(() => encodeURIComponent(wellFormedText(bad))).not.toThrow();
-      expect(wellFormedText(bad)).toHaveLength(bad.length); // (one for one: never longer)
+      expect(wellFormedText(bad)).toHaveLength(bad.length);
     }
     for (const good of ["", "plain", "😀", "a😀b", "😀", "👨‍👩‍👧", "é"]) {
       expect(isWellFormedText(good), good).toBe(true);
@@ -211,7 +210,6 @@ describe("a picture from a friend", () => {
     }
     expect(foreignPicture("https://kino.example.evil.example/x.png", "kino.example")).toBe("https://kino.example.evil.example/x.png");
     expect(foreignPicture("http://localhost:8791/api/health", "localhost:8791")).toBeUndefined();
-    // (Not knowing where the look came to is no reason to show less.)
     expect(foreignPicture("https://kino.example/x.png", undefined)).toBe("https://kino.example/x.png");
   });
 });
@@ -234,11 +232,11 @@ describe("what is sent", () => {
       { ...dune, url: "javascript:alert(1)" },
       { ...dune, url: "data:text/html,<script>1</script>" },
       { ...dune, url: "/watch/1" },
-      { ...dune, image: "/api/profiles/pro_1/friends/invites/AAAAAAAA" }, // (a picture is loaded by the browser of whoever it is sent to: never a path on this site)
+      { ...dune, image: "/api/profiles/pro_1/friends/invites/AAAAAAAA" },
       { ...dune, backdrop: "//evil.example/a.gif" },
       { ...dune, image: "javascript:alert(1)" },
       { ...dune, title: "   " },
-      { ...dune, title: "‮​⁦" }, // (nothing is left of it)
+      { ...dune, title: "‮​⁦" },
       { ...dune, note: "x".repeat(201) },
       { ...dune, to: [] },
       { ...dune, to: Array.from({ length: 51 }, (_, i) => `p${i}`) },
@@ -261,14 +259,13 @@ describe("what is sent", () => {
     const rest = { friends: [friend()], inbox: [], activity: [], invites: [], requests: [], sent: [] };
     expect(FriendsStateSchema.parse({ ...rest, chat: [{ friend: "pro_1", count: 2, at: 9 }] }).chat).toEqual([{ friend: "pro_1", count: 2, at: 9 }]);
     expect(FriendsStateSchema.parse(rest).chat).toBeUndefined();
-    // (nothing waiting is not a notice, and a notice is for a friend)
     expect(FriendsStateSchema.safeParse({ ...rest, chat: [{ friend: "pro_1", count: 0, at: 9 }] }).success).toBe(false);
     expect(FriendsStateSchema.safeParse({ ...rest, chat: [{ count: 1, at: 9 }] }).success).toBe(false);
   });
 
   it("takes a request to watch together, which is nothing but who it is for, and holds it in an inbox", () => {
     expect(SendSchema.parse({ to: ["pro_2"], kind: "together" })).toEqual({ to: ["pro_2"], kind: "together" });
-    expect(SendSchema.parse({ to: ["pro_2"], kind: "together", code: "482731", host: "tv_x" })).toEqual({ to: ["pro_2"], kind: "together" }); // (nothing else gets through)
+    expect(SendSchema.parse({ to: ["pro_2"], kind: "together", code: "482731", host: "tv_x" })).toEqual({ to: ["pro_2"], kind: "together" });
     expect(InboxItemSchema.safeParse({ kind: "together", id: "m_abc", at: 5, from: "pro_1", read: false }).success).toBe(true);
   });
 
@@ -284,7 +281,7 @@ describe("what is sent", () => {
       { to: ["pro_2"], kind: "plan", when: -when },
       { to: ["pro_2"], kind: "plan", when, note: "x".repeat(201) },
       { to: [], kind: "plan", when },
-      { to: ["pro_2", "pro_3"], kind: "plan", when }, // (a plan is a question for one friend: each answer is their own)
+      { to: ["pro_2", "pro_3"], kind: "plan", when },
     ]) {
       expect(SendSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     }
@@ -328,7 +325,7 @@ describe("what is sent", () => {
   it("asks for an answer until the plan's time, and is due from its time for a while, only once it was said yes to", () => {
     const at = 1_000;
     expect(planAsks({ when: at }, at - 1)).toBe(true);
-    expect(planAsks({ when: at }, at)).toBe(false); // (a time that has come cannot be said yes to)
+    expect(planAsks({ when: at }, at)).toBe(false);
     expect(planAsks({ when: at, answer: "yes" }, at - 1)).toBe(false);
     expect(planAsks({ when: at, answer: "no" }, at - 1)).toBe(false);
     expect(planDue({ when: at, answer: "yes" }, at - 1)).toBe(false);
@@ -340,7 +337,7 @@ describe("what is sent", () => {
   });
 
   it("offers asking to watch together to a friend who takes things, whether or not they tell what they watch, and to no other", () => {
-    expect(canAskTogether(friend())).toBe(true); // (what they watch is not told by default: the button must not wait for that)
+    expect(canAskTogether(friend())).toBe(true);
     expect(canAskTogether(friend({ activity: true }))).toBe(true);
     expect(canAskTogether(friend({ inbox: false }))).toBe(false);
     expect(canAskTogether(friend({ activity: true, inbox: false }))).toBe(false);
@@ -376,7 +373,7 @@ describe("tags", () => {
   it("read what somebody typed: a name, a #, and the number after the last #", () => {
     expect(parseTag("Sam#2")).toEqual({ name: "Sam", tag: 2 });
     expect(parseTag("  Sam # 2 ")).toEqual({ name: "Sam", tag: 2 });
-    expect(parseTag("Sam#7#12")).toEqual({ name: "Sam#7", tag: 12 }); // (a name may have a # in it)
+    expect(parseTag("Sam#7#12")).toEqual({ name: "Sam#7", tag: 12 });
     expect(parseTag("Alex Smith#999999")).toEqual({ name: "Alex Smith", tag: 999_999 });
   });
 
@@ -388,10 +385,10 @@ describe("tags", () => {
 
   it("name the same profile when the name is the same however it is typed and the number is", () => {
     expect(sameTag({ name: "Sam", tag: 2 }, { name: "sam", tag: 2 })).toBe(true);
-    expect(sameTag({ name: "Zoë", tag: 1 }, { name: "Zoë", tag: 1 })).toBe(true); // (one letter, written two ways)
+    expect(sameTag({ name: "Zoë", tag: 1 }, { name: "Zoë", tag: 1 })).toBe(true);
     expect(sameTag({ name: "Sam", tag: 2 }, { name: "Sam", tag: 3 })).toBe(false);
     expect(sameTag({ name: "Sam", tag: 2 }, { name: "Sami", tag: 2 })).toBe(false);
-    expect(sameTag({ name: "Sam" }, { name: "Sam" })).toBe(false); // (nothing to name by)
+    expect(sameTag({ name: "Sam" }, { name: "Sam" })).toBe(false);
     expect(sameTag({ name: "Sam", tag: 2 }, { name: "Sam" })).toBe(false);
   });
 
@@ -405,7 +402,7 @@ describe("tags", () => {
     expect(RequestSchema.safeParse({ from: person, at: 5 }).success).toBe(true);
     expect(RequestSchema.safeParse({ from: { ...person, tag: undefined }, at: 5 }).success).toBe(false);
     expect(SentRequestSchema.safeParse({ to: person, at: 5 }).success).toBe(true);
-    expect(TagViewSchema.parse(person)).toEqual({ name: "Robin", avatar: "fox", tag: 3 }); // (no id: whoever looks cannot ask for anything else of them)
+    expect(TagViewSchema.parse(person)).toEqual({ name: "Robin", avatar: "fox", tag: 3 });
     expect(AskedSchema.safeParse({ status: "sent" }).success).toBe(true);
     expect(AskedSchema.safeParse({ status: "accepted" }).success).toBe(false);
   });

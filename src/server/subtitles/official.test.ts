@@ -5,21 +5,18 @@ import { CLEAN_RULES } from "./clean";
 import { BETTER_BY, fromSubtitleSite, MemoryOfficialStore, officialId, Officials, timesFromOffer } from "./official";
 import { parseVtt, toVtt } from "./vtt";
 
-// (Made-up lines only: the repo is public.)
 const EPISODE = "https://filmpire.sc/watch/60572?s=2&e=3";
 const PLAY = "filmpire:tv:60572:2:3";
 const RO = "/api/subtitles/ro/abc-s2e3.vtt";
 const OS = `/api/proxy?url=${encodeURIComponent("https://subs5.strem.io/en/download/file/1")}&format=vtt`;
 const CAPTION = `/api/proxy?url=${encodeURIComponent("https://cdn.example-video.net/captions/en.vtt")}&format=vtt`;
 
-/** A file of `count` lines, one every ten seconds from the first minute, credits at its start. */
 function file(count = 60): string {
   const cues = [{ start: 5, end: 7, text: "Subtitles by A Made Up Team" }];
   for (let i = 1; i < count; i++) cues.push({ start: 60 + i * 10, end: 62 + i * 10, text: i % 7 === 0 ? `-Line number ${i}.` : `Line number ${i}.` });
   return toVtt(cues);
 }
 
-/** What a screen found: every line `late` seconds after the file has it, by words where `words` says so; the lines in `skip` not placed. */
 function offerOf(text: string, { track = OS, late = 2.5, words = () => true, skip = new Set<number>() }: { track?: string; late?: number; words?: (i: number) => boolean; skip?: Set<number> } = {}): OfficialOffer {
   const cues = parseVtt(text);
   return {
@@ -80,11 +77,9 @@ describe("an offer", () => {
     const id = officialId(PLAY, "en");
     const record = (await store.get(id))!;
     expect(record.meta).toMatchObject({ play: PLAY, lang: "en", title: "Some Show", season: 2, episode: 3, lines: 59, from: { track: OS }, duration: 2700, cleaned: { removed: 1 } });
-    // (The credits line gone, each line 2.5 s later, the dash written with its space.)
     expect(record.lines[0]).toEqual([7250, 7450, "Line number 1."]);
     expect(record.lines[6]).toEqual([13250, 13450, "- Line number 7."]);
     expect(record.source).toContainEqual([6, "-Line number 7."]);
-    // (What the tidying left out is kept, with where the file had it.)
     expect(record.dropped).toEqual([[500, "Subtitles by A Made Up Team"]]);
 
     const answer = officials.withOfficial(EPISODE, played(LISTED));
@@ -158,7 +153,6 @@ describe("an offer", () => {
     const fetchFile = async () => file();
     expect(await officials.offer(offerOf(file()), fetchFile)).toBe("unavailable");
     down = false;
-    // (Read again at most once a minute.)
     now += 30_000;
     expect(await officials.offer(offerOf(file()), fetchFile)).toBe("unavailable");
     now += 31_000;

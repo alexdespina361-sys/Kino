@@ -1,10 +1,3 @@
-// Taste calibration pictures: for each question in taste/questions.json, the refined look as it is (A) and with one thing changed (B, taste/<id>.css added
-// to the page), on the same screens, side by side. The owner chooses; the answers go to docs/ui-polish/DECISIONS.md.
-//
-//   node scripts/ui-walk/taste.mjs [--only=A1,B2] [--no-build] [--compose-only]       pictures: .ui-polish/taste/<id>-tv.png, <id>-phone.png
-// (--compose-only: the walks are done, only put the pictures together again, e.g. after changing a crop in taste/questions.json.
-// A shot may carry crop [x, y, width, height] in picture pixels and scale: the part that matters, bigger, instead of the whole screen. A is above B.
-// A name in names may be { name, crop } for a crop of its own.)
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,15 +30,12 @@ function walk(question, variant, shot) {
   if (run.status !== 0 || failed.length > 0) console.log(`${question.id}/${variant}/${shot.part}: ${failed.join(" | ") || "exit " + run.status}`);
 }
 
-/* ------------------------------ pictures ------------------------------ */
-
 const read = (path) => PNG.sync.read(readFileSync(path));
 function crop(png, [x, y, w, h]) {
   const out = new PNG({ width: w, height: h });
   PNG.bitblt(png, out, x, y, w, h, 0, 0);
   return out;
 }
-/** Smaller by an area average (a picture shrunk by dropping pixels would shimmer). */
 function scale(png, factor) {
   const w = Math.round(png.width * factor);
   const h = Math.round(png.height * factor);
@@ -96,7 +86,6 @@ function letter(into, ch, x, y, px = 5) {
     }
   }));
 }
-/** A picture of every name, A above B (a phone shows a tall picture at its own width; two side by side would be half that), each marked with its letter. */
 function compose(question, shot, factor) {
   const cell = (variant, { name, crop: box }) => {
     const whole = read(`${outRoot}/${question.id}/${variant}/${shot.device}/${name}.png`);

@@ -1,14 +1,11 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { guestStorage, openDevice, openLibrary, openTv, PHONE, place, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
-/** The library as it grows while a page is scrolled: the rows after the first ones, more titles of a row, and a search that forgives (see src/client/shared/feed.ts). */
-
 const film = (id: string, title: string) => ({ id, title, url: `/fixtures/sample.mp4?n=${encodeURIComponent(id)}` });
 const rowOf = (id: string, title: string, count: number) => ({ id, title, source: "Test Source", items: Array.from({ length: count }, (_, i) => film(`${id}-${i}`, `${title} ${i + 1}`)) });
 const base = { updatedAt: Date.now(), rows: Array.from({ length: 5 }, (_, i) => rowOf(`b${i}`, `Base ${i + 1}`, 20)) };
 
 const tiles = (tv: Page) => tv.getByTestId("tv-browse-tile");
-/** Left from the first title, then up or down the menu to an entry, and OK. */
 async function choose(tv: Page, entry: string) {
   await tv.keyboard.press("ArrowLeft");
   await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "true");
@@ -20,14 +17,9 @@ async function choose(tv: Page, entry: string) {
   await tv.keyboard.press("Enter");
 }
 
-/**
- * A profile that loved one film, saved another to watch and played a third to the end, and a library that knows titles like the first two: what both
- * led to is the row of what it might like, each has a row of the rest of its own, and the film it has seen is out of its row of the library. The
- * library knows titles like the first of the loved film's row too: a row of "More like ..." on a page long enough to have a place for it.
- */
 const LOVED = "https://films.example/loved-film";
 const KEPT = "https://films.example/kept-film";
-const SEEN = base.rows[1]!.items[2]!; // ("Base 2 3")
+const SEEN = base.rows[1]!.items[2]!;
 const some = (id: string, title: string, count: number) => Array.from({ length: count }, (_, i) => film(`${id}${i}`, `${title} ${i + 1}`));
 const likeOf = (asked: string | null, second = KEPT) =>
   asked === LOVED
@@ -41,7 +33,6 @@ const withTaste = async (context: BrowserContext) => {
   await withLibrary(base)(context);
   await context.route(/\/api\/library\/similar/, (route) => route.fulfill({ json: { items: likeOf(new URL(route.request().url()).searchParams.get("url")) } }));
 };
-/** A profile that loved two films, a library of nine rows, and answers about titles like another that wait until they are let go (`answer`). */
 const FOND = "https://films.example/fond-film";
 const tall = { updatedAt: Date.now(), rows: Array.from({ length: 9 }, (_, i) => rowOf(`b${i}`, `Base ${i + 1}`, 20)) };
 const twoLoved = () =>
@@ -68,9 +59,7 @@ function lateLikes(waitsFor: (asked: string) => boolean = () => true) {
   };
   return { setup, answer: () => answer(), seen };
 }
-/** How far the row the remote is on stands from the top of the TV's rows: nothing, when the page has come to rest on it. */
 const offTheTop = (tv: Page) => tv.evaluate(() => Math.round(document.activeElement!.closest(".tv-row")!.getBoundingClientRect().top - document.querySelector(".tv-rows")!.getBoundingClientRect().top));
-/** The rows of the TV's page that are the library's or the profile's own, by name, in their order. */
 const rowNames = (tv: Page) => tv.locator("section.tv-row").evaluateAll((rows) => rows.map((row) => row.getAttribute("aria-label") ?? "").filter((name) => /^(Base \d+|You might like|Because you .*|More like .*)$/.test(name)));
 const tasteStorage = () =>
   guestStorage({
@@ -91,18 +80,18 @@ test.describe("the TV's library goes on as it is scrolled", () => {
       }),
     );
     await expect(tiles(tv).first()).toBeFocused();
-    expect(asked).toEqual([]); // the first rows fill the page: nothing more is asked for yet
+    expect(asked).toEqual([]);
 
-    for (let i = 0; i < 3; i++) await tv.keyboard.press("ArrowDown"); // the ranking, two rows, and the row of categories: three from the last
+    for (let i = 0; i < 3; i++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByRole("region", { name: "Shelf one" })).toBeAttached();
-    for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowDown"); // on through the two rows left and the three that came
+    for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByRole("region", { name: "Shelf three" }).getByTestId("tv-browse-tile").first()).toBeFocused();
-    await expect(tv.getByRole("region", { name: "Shelf four" })).toBeAttached(); // and it asked again, past the three it had
+    await expect(tv.getByRole("region", { name: "Shelf four" })).toBeAttached();
     expect(asked).toEqual([0, 3]);
 
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByRole("region", { name: "Shelf four" }).getByTestId("tv-browse-tile").first()).toBeFocused();
-    await tv.keyboard.press("ArrowDown"); // that was the last: the page ends there, and nothing more is asked for
+    await tv.keyboard.press("ArrowDown");
     await expect(tv.getByRole("region", { name: "Shelf four" }).getByTestId("tv-browse-tile").first()).toBeFocused();
     expect(asked).toEqual([0, 3]);
   });
@@ -125,19 +114,18 @@ test.describe("the TV's library goes on as it is scrolled", () => {
 
     for (let i = 0; i < 15; i++) await tv.keyboard.press("ArrowRight");
     await expect(row.getByTitle("b1 page 2 title 1", { exact: true })).toBeAttached();
-    for (let i = 0; i < 10; i++) await tv.keyboard.press("ArrowRight"); // on into the titles that came
+    for (let i = 0; i < 10; i++) await tv.keyboard.press("ArrowRight");
     await expect(row.getByTitle("b1 page 2 title 6", { exact: true })).toBeFocused();
     expect(asked[0]).toBe(2);
-    expect(new Set(asked).size).toBe(asked.length); // each page once
+    expect(new Set(asked).size).toBe(asked.length);
   });
 
   test("only a row on the screen asks for more of its titles as the page opens: one further down asks when it is scrolled to", async ({ browser }) => {
-    // (The judge, 16 Nov: the live Home asked for the next titles of about 37 rows at once, before anybody scrolled. Rows this short are all near their end.)
     const asked = new Set<string>();
     const short = { updatedAt: Date.now(), rows: Array.from({ length: 8 }, (_, i) => rowOf(`c${i}`, `Short ${i + 1}`, 5)) };
     const tv = await openLibrary(browser, withLibrary(short, undefined, { more: (row) => (asked.add(row), { items: [], last: true }) }));
     await expect(tiles(tv).first()).toBeFocused();
-    await expect.poll(() => asked.size).toBeGreaterThan(0); // (the rows on the screen do ask)
+    await expect.poll(() => asked.size).toBeGreaterThan(0);
     await tv.waitForTimeout(1000);
     const onScreen = await tv.locator(".tv-row").evaluateAll((rows) => rows.filter((row) => row.getBoundingClientRect().top < innerHeight).map((row) => row.getAttribute("aria-label")));
     expect(onScreen.length).toBeLessThan(8);
@@ -160,16 +148,16 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     await expect(tiles(tv).first()).toBeFocused();
     await choose(tv, "rail-categories");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("All categories");
-    await tv.keyboard.press("Enter"); // the first category
+    await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Base 1");
     await expect(tiles(tv).first()).toBeFocused();
-    await expect.poll(() => tiles(tv).count()).toBeGreaterThanOrEqual(40); // the page was not full, so the next twenty came before the remote moved
+    await expect.poll(() => tiles(tv).count()).toBeGreaterThanOrEqual(40);
 
     for (let i = 0; i < 6; i++) await tv.keyboard.press("ArrowDown");
-    await expect(tiles(tv)).toHaveCount(60); // ...and the last page when it came near
+    await expect(tiles(tv)).toHaveCount(60);
     expect(asked).toEqual([2, 3]);
     for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
-    await expect.poll(() => asked.length).toBe(2); // the last page was the last: no more is asked for
+    await expect.poll(() => asked.length).toBe(2);
   });
 
   test("a search with a slip shows the title that has the words, and the closest others under a heading of their own", async ({ browser }) => {
@@ -187,7 +175,7 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     await expect(tiles(tv)).toHaveText([/Stranger Things/, /Strange World/, /Stranger Than Fiction/]);
 
     await tiles(tv).first().focus();
-    await tv.keyboard.press("ArrowDown"); // from the title that has the words into the closest others, which are a block of their own
+    await tv.keyboard.press("ArrowDown");
     await expect(tiles(tv).nth(1)).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tiles(tv).nth(2)).toBeFocused();
@@ -202,7 +190,7 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     await tv.keyboard.type("zq");
     await expect(tv.getByTestId("tv-search-status")).toContainText("Nothing matches “zq” exactly. These are the closest.");
     await expect(tiles(tv)).toHaveCount(1);
-    await expect(tv.getByTestId("tv-closest")).toHaveCount(0); // (the line above the titles says it)
+    await expect(tv.getByTestId("tv-closest")).toHaveCount(0);
   });
 
   test("titles a profile scored high get a row of titles like them", async ({ browser }) => {
@@ -225,30 +213,23 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     const tv = await openLibrary(browser, withTaste, undefined, tasteStorage());
     const picks = tv.getByRole("region", { name: "You might like" });
     await expect(picks).toBeVisible();
-    // (What the loved film and the saved one both led to; each of those titles is in this row only, and the rest are in the rows of the two films.)
     await expect(picks.getByTestId("tv-browse-tile")).toHaveText([/Like Both 1/, /Like Both 2/, /Like Both 3/, /Like Both 4/, /Like Both 5/]);
     await expect(tv.getByRole("region", { name: "Because you loved Loved Film" }).getByTestId("tv-browse-tile")).toHaveText([/Like Loved One/, /Like Loved Two/]);
     await expect(tv.getByRole("region", { name: "Because you saved Kept Film" }).getByTestId("tv-browse-tile")).toHaveText([/Like Kept 1/, /Like Kept 2/, /Like Kept 3/, /Like Kept 4/, /Like Kept 5/, /Like Kept 6/]);
-    // Not all on top: the first under the ranking, then one under every second row of the library.
     await expect.poll(() => rowNames(tv)).toEqual(["Base 1", "You might like", "Base 2", "Base 3", "Because you loved Loved Film", "Base 4", "Base 5", "Because you saved Kept Film"]);
-    // The film played to the end is not in its row any more (the one after it has its place); a title of the first row, the ranking, would be.
     const second = tv.getByRole("region", { name: "Base 2", exact: true }).getByTestId("tv-browse-tile");
     await expect(second.nth(1)).toHaveText(/Base 2 2/);
     await expect(second.nth(2)).toHaveText(/Base 2 4/);
   });
 
-  // A longer page has a place for more of them: a row of titles like the first of a row before. The library's answers come late here, when the remote is
-  // four rows down: the rows that come in over it leave it where it is on the screen (see `noteAnchor` in the TV's Browse; left to the browser, the row
-  // the remote was on went off the bottom of the screen).
   test("rows of the profile's own that come late leave the remote where it is, and go on to \"More like ...\"", async ({ browser }) => {
     const late = lateLikes();
     const answer = late.answer;
     const tv = await openLibrary(browser, late.setup, undefined, twoLoved());
     await expect(tiles(tv).first()).toBeFocused();
-    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown"); // the ranking, two rows, the categories: the fourth row of the library
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
     const on = tv.locator(":focus");
     await expect(on).toHaveAttribute("title", "Base 4 1");
-    // (the page has come to rest on it)
     const top = async () => Math.round((await on.boundingBox())!.y);
     let rest = await top();
     await expect.poll(async () => { const was = rest; rest = await top(); return rest === was; }, { intervals: [150] }).toBe(true);
@@ -271,12 +252,10 @@ test.describe("the TV's library goes on as it is scrolled", () => {
       "Base 9",
     ]);
     await expect(tv.getByRole("region", { name: "More like Like Loved One" }).getByTestId("tv-browse-tile")).toHaveText([/Next 1/, /Next 2/, /Next 3/, /Next 4/, /Next 5/]);
-    // Two rows came in over the one the remote is on: it is still on it, and where it was on the screen.
     await expect(tv.locator(":focus")).toHaveAttribute("title", "Base 4 1");
     await expect.poll(top).toBeGreaterThanOrEqual(rest - 2);
     expect(await top()).toBeLessThanOrEqual(rest + 2);
     expect(Math.abs(await offTheTop(tv))).toBeLessThanOrEqual(2);
-    // ...and the remote goes on from there: up is the row of categories, and over it the row that came in.
     await tv.keyboard.press("ArrowUp");
     await expect(tv.locator(":focus")).toHaveAttribute("data-testid", "tv-category-tile");
     await tv.keyboard.press("ArrowUp");
@@ -288,11 +267,10 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     const tv = await openLibrary(browser, late.setup, undefined, twoLoved());
     await expect(tiles(tv).first()).toBeFocused();
     for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
-    late.answer(); // (at once: the page has not come to rest)
+    late.answer();
     await expect.poll(() => rowNames(tv)).toContain("More like Like Loved One");
     await expect(tv.locator(":focus")).toHaveAttribute("title", "Base 4 1");
     await expect.poll(async () => Math.abs(await offTheTop(tv)), { timeout: 6000 }).toBeLessThanOrEqual(2);
-    // (and it stays there)
     await tv.waitForTimeout(600);
     expect(Math.abs(await offTheTop(tv))).toBeLessThanOrEqual(2);
   });
@@ -306,7 +284,7 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     const top = async () => Math.round((await fifth.boundingBox())!.y);
     let rest = await top();
     await expect.poll(async () => { const was = rest; rest = await top(); return rest === was; }, { intervals: [150] }).toBe(true);
-    expect(rest).toBeLessThan(600); // (it is on the screen)
+    expect(rest).toBeLessThan(600);
     late.answer();
     await expect.poll(() => rowNames(tv)).toContain("Because you loved Loved Film");
     await expect.poll(() => rowNames(tv)).toContain("Because you loved Fond Film");
@@ -315,13 +293,12 @@ test.describe("the TV's library goes on as it is scrolled", () => {
   });
 
   test("back from a film that was opened from one of the profile's own rows, the remote is on that row again: before the library has said what is like the film, and after", async ({ browser }) => {
-    // (Only the question about the film that was played waits: it is asked as the film begins, by the link the film was played from.)
     const late = lateLikes((asked) => asked.startsWith("http") && asked.includes("n=l2"));
     const tv = await openLibrary(browser, late.setup, undefined, twoLoved());
     const loved = tv.getByRole("region", { name: "Because you loved Loved Film" });
     await expect(loved).toBeAttached();
     await expect(tiles(tv).first()).toBeFocused();
-    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown"); // the ranking, what it might like, two rows: the row of the loved film
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
     await tv.keyboard.press("ArrowRight");
     await expect(tv.locator(":focus")).toHaveAttribute("title", "Like Loved Two");
     await tv.keyboard.press("Enter");
@@ -329,17 +306,15 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-browse")).toHaveCount(0);
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
-    await expect.poll(() => late.seen.waited).toBeGreaterThan(0); // (asked as it began, not when the library is opened again)
+    await expect.poll(() => late.seen.waited).toBeGreaterThan(0);
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
     await tv.keyboard.press("Escape");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
-    // The film is the last thing the profile watched now, and the library has not said what is like it: the page has the rows it had.
     await expect(tv.locator(":focus")).toHaveAttribute("title", "Like Loved Two");
     expect(await rowNames(tv)).toEqual(expect.arrayContaining(["You might like", "Because you loved Loved Film", "Because you loved Fond Film"]));
     late.answer();
-    // It answers (nothing is like it): the rows are laid out anew, and the remote is in the row it was in.
     await expect.poll(async () => (await rowNames(tv)).includes("Because you loved Loved Film")).toBe(true);
     await tv.waitForTimeout(500);
     await expect(loved.locator(":focus")).toHaveCount(1);
@@ -348,16 +323,14 @@ test.describe("the TV's library goes on as it is scrolled", () => {
 });
 
 test.describe("the phone's library goes on as it is scrolled", () => {
-  /** Twenty rows are far more than a phone's screen shows: nothing more is asked for until the page is scrolled near its end. */
   const long = { updatedAt: Date.now(), rows: Array.from({ length: 20 }, (_, i) => rowOf(`b${i}`, `Base ${i + 1}`, 20)) };
 
-  /** A phone that is paired with a TV, its library answered by `setup`, and what it kept (`seed`) like a device that has watched and scored things. */
   async function pairedPhone(browser: Browser, setup: (context: BrowserContext) => Promise<unknown>, seed: Record<string, string> = {}, device: Parameters<Browser["newContext"]>[0] = PHONE) {
     const tv = await openTv(browser);
     const phone = await openDevice(browser, device, seed, setup);
     await phone.goto("/");
-    await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
-    await expect(phone.getByTestId("tv-online")).toHaveClass(/\bok\b/); // (connected: the words for it are the language's)
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
+    await expect(phone.getByTestId("tv-online")).toHaveClass(/\bok\b/);
     return phone;
   }
   const toTheEnd = (phone: Page) => phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -379,7 +352,7 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     expect(asked).toEqual([]);
 
     await toTheEnd(phone);
-    await expect(rows).toHaveCount(30); // ten rows are a long way to the new end: the page waits for the finger
+    await expect(rows).toHaveCount(30);
     await expect(rows.nth(20).locator("h3")).toHaveText("Shelf 1");
     expect(asked).toEqual([0]);
 
@@ -388,7 +361,7 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     await expect(rows.nth(30).locator("h3")).toHaveText("Shelf 11");
     expect(asked).toEqual([0, 10]);
 
-    await toTheEnd(phone); // that was the last: the page ends there, and nothing more is asked for
+    await toTheEnd(phone);
     await phone.waitForTimeout(300);
     await expect(rows).toHaveCount(31);
     expect(asked).toEqual([0, 10]);
@@ -409,14 +382,14 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     const titles = row.getByTestId("library-tile");
     const toTheRight = () => row.locator(".lib-scroller").evaluate((box) => box.scrollTo(box.scrollWidth, 0));
     await expect(titles).toHaveCount(20);
-    expect(asked).toEqual([]); // the end of the row is far off
+    expect(asked).toEqual([]);
 
     await toTheRight();
     await expect(titles).toHaveCount(40);
     await expect(row.getByTitle("b1 page 2 title 1", { exact: true })).toBeAttached();
     await toTheRight();
     await expect(titles).toHaveCount(60);
-    await toTheRight(); // the third page was the last: no more is asked for
+    await toTheRight();
     await phone.waitForTimeout(300);
     await expect(titles).toHaveCount(60);
     expect(asked).toEqual([2, 3]);
@@ -441,7 +414,7 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     await phone.getByTestId("library-search-input").fill("zq");
     await expect(phone.getByTestId("library-search-results").locator("h3")).toHaveText("Nothing matches “zq” exactly. These are the closest.");
     await expect(phone.getByTestId("library-result")).toHaveCount(1);
-    await expect(phone.getByTestId("library-closest")).toHaveCount(0); // (the line above the title says it)
+    await expect(phone.getByTestId("library-closest")).toHaveCount(0);
   });
 
   test("titles a profile scored high get a row of titles like them, under the library's first row", async ({ browser }) => {
@@ -467,7 +440,6 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     await expect(picks.getByTestId("library-tile")).toHaveText([/Like Both 1/, /Like Both 2/, /Like Both 3/, /Like Both 4/, /Like Both 5/]);
     await expect(phone.getByTestId("library-because").locator("h3")).toHaveText(["Because you loved Loved Film", "Because you saved Kept Film"]);
     await expect(phone.getByTestId("library-because").nth(1).getByTestId("library-tile")).toHaveText([/Like Kept 1/, /Like Kept 2/, /Like Kept 3/, /Like Kept 4/, /Like Kept 5/, /Like Kept 6/]);
-    // Not all on top: the first under the library's first row, then one under every second row.
     const kinds = () => phone.locator('[data-testid="library-because"], [data-testid="library-picks"], [data-testid="library-row"]').evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.testid!.replace("library-", "")));
     await expect.poll(kinds).toEqual(["row", "picks", "row", "row", "because", "row", "row", "because"]);
     const second = phone.getByTestId("library-row").filter({ has: phone.getByRole("heading", { name: "Base 2", exact: true }) }).getByTestId("library-tile");
@@ -517,19 +489,19 @@ test.describe("the phone's library goes on as it is scrolled", () => {
 
     await phone.getByTestId("filter-cartoons").click();
     await expect(phone.getByTestId("filter-cartoons")).toHaveAttribute("aria-pressed", "true");
-    await expect(rows.locator("h3")).toHaveText(["Cartoons for all"]); // (the film row and the series row are not in it)
+    await expect(rows.locator("h3")).toHaveText(["Cartoons for all"]);
 
-    await phone.getByTestId("filter-anime").click(); // none in the library and none to come: it says so
+    await phone.getByTestId("filter-anime").click();
     await expect(rows).toHaveCount(0);
     await expect(phone.getByTestId("library-section-empty")).toHaveText("No anime here");
 
     await phone.getByTestId("filter-movies").click();
-    await expect(rows.locator("h3")).toHaveText(["Feature films"]); // (the cartoon row is not among the films)
+    await expect(rows.locator("h3")).toHaveText(["Feature films"]);
     await expect(phone.getByTestId("library-section-empty")).toHaveCount(0);
 
     await phone.getByTestId("filter-series").click();
     await expect(rows.locator("h3")).toHaveText(["Classic TV"]);
-    await expect.poll(() => asked).toEqual(expect.arrayContaining(["cartoon", "anime"])); // the rows that come next are the section's, not the page's
+    await expect.poll(() => asked).toEqual(expect.arrayContaining(["cartoon", "anime"]));
   });
 
   for (const language of [
@@ -558,13 +530,13 @@ test.describe("the phone's library goes on as it is scrolled", () => {
             return { names: pills.map((pill) => pill.textContent), oneLine: pills.every(oneLine), first: inside(first), last: inside(last), page: document.documentElement.scrollWidth, view: window.innerWidth };
           });
         const fit = await read();
-        expect(new Set(fit.names).size).toBe(5); // (All, Movies, Series, Cartoons, Anime: five names, none the same)
+        expect(new Set(fit.names).size).toBe(5);
         expect(fit.oneLine).toBe(true);
         expect(fit.first).toBe(true);
-        expect(fit.page).toBeLessThanOrEqual(fit.view); // (the row scrolls inside itself: the page does not)
+        expect(fit.page).toBeLessThanOrEqual(fit.view);
 
         await row.evaluate((box) => box.scrollTo(box.scrollWidth, 0));
-        await expect.poll(async () => (await read()).last).toBe(true); // (the last one is there to be tapped, with the room of the page's side)
+        await expect.poll(async () => (await read()).last).toBe(true);
         expect((await read()).page).toBeLessThanOrEqual(fit.view);
       });
     }

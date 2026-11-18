@@ -4,16 +4,10 @@ import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
 import { openDevice, openTv, PHONE, place, readPairingCode, test, withLibrary, nameFirstProfile } from "./helpers";
 
-/**
- * Friends, on the phone: switched on in the settings, made with a code that one profile gives and another types (or a link), and then
- * what a friend may see, send and be told is what each has turned on. Every test makes its own accounts (the server keeps them in memory).
- */
-
-test.use({ actionTimeout: 15_000 }); // (a wrong id fails in seconds, not when the test runs out of time)
+test.use({ actionTimeout: 15_000 });
 
 let counter = 0;
-/** A name short enough to be a profile's name as it is (a profile is named after the username, 16 letters at most). */
-const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" }); // (a password that is not asked about)
+const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" });
 type Account = ReturnType<typeof fresh>;
 const nameOf = (account: Account) => account.email.charAt(0).toUpperCase() + account.email.slice(1);
 
@@ -32,21 +26,17 @@ async function signUp(page: Page, account: Account) {
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
-/** The account page is open: it has Friends (they are on for everybody since 15 Nov 2026: there is no switch to turn on). */
 async function turnOnFriends(page: Page) {
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
 
-/** The account page is open: the Friends page, once it has heard from the server. */
 async function openFriends(page: Page) {
   await page.getByTestId("menu-friends").click();
   await expect(page.getByTestId("friends-page")).toBeVisible();
 }
 
-/** The page looks at its friends now, as it does when it comes back to the front (and every half minute). */
 const look = (page: Page) => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
 
-/** A line of the words of a language with its blanks filled in: `{name}` and the like. */
 const say = (text: string, params: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? "");
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -54,10 +44,6 @@ const where = async (target: { boundingBox(): Promise<Box | null> }) => (await t
 const apart = (a: Box, b: Box) => a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
 const inside = (a: Box, around: Box) => a.x >= around.x - 0.5 && a.y >= around.y - 0.5 && a.x + a.width <= around.x + around.width + 0.5 && a.y + a.height <= around.y + around.height + 0.5;
 
-/**
- * Whether the `parts` of a `card` keep clear of each other and inside it, the first of them (the words) is at least `room` wide, and the card is inside a screen `width`
- * wide: held until it is so (a page takes a moment to settle after a resize). When it is not, what was measured is in the failure.
- */
 const keepClear = (card: Locator, parts: Locator[], width: number, room: number) =>
   expect
     .poll(
@@ -75,7 +61,6 @@ const keepClear = (card: Locator, parts: Locator[], width: number, room: number)
     )
     .toBe("fits");
 
-/** A new phone, signed up, with friends on: left on the account page. */
 async function phoneWithFriends(browser: Browser, name: string, locale = "en-US") {
   const account = fresh(name);
   const page = await newPhone(browser, locale);
@@ -85,7 +70,6 @@ async function phoneWithFriends(browser: Browser, name: string, locale = "en-US"
   return { page, account, name: nameOf(account) };
 }
 
-/** `giver` makes a code and `taker` types it: two profiles that are friends. Both start on the account page, and are left there. */
 async function befriend(giver: Page, taker: Page) {
   await openFriends(giver);
   await giver.getByTestId("friend-make-code").click();
@@ -100,17 +84,12 @@ async function befriend(giver: Page, taker: Page) {
   return code;
 }
 
-/** What a profile keeps on the server, put there the way a screen does (a film in a list, a score, what it is part way through). */
 async function seed(page: Page, data: Record<string, unknown[]>) {
   const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
   const response = await page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0, ...data } });
   expect(response.ok()).toBe(true);
 }
 
-/**
- * A choice that a switch which is gone used to make, sent the way a screen sends it: the server goes by it from now on. (A page has a switch for it only if it was off when
- * the page opened: `chose` is for a test that looks at the switch, and has the page loaded anew to have it.)
- */
 async function chooses(page: Page, choices: Record<string, boolean>) {
   const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
   const settings = Object.entries(choices).map(([key, value]) => ({ key, at: Date.now(), value }));
@@ -121,26 +100,22 @@ async function chose(page: Page, choices: Record<string, boolean>) {
   await page.reload();
 }
 
-/** What the server keeps of a profile's settings. */
 async function kept(page: Page) {
   const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
   const answer = (await (await page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
   return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
 }
 
-/** What the server keeps in a profile's inbox, by kind (asked without the page looking: what the page shows stays as it was). */
 async function inboxKinds(page: Page) {
   const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
   const state = (await (await page.request.get(`/api/profiles/${profile}/friends`)).json()) as { inbox: { kind: string }[] };
   return state.inbox.map((item) => item.kind);
 }
 
-/** A moment as the value of a date input and of a time input, by the clock of this machine (which the pages under test go by too). */
 const two = (n: number) => String(n).padStart(2, "0");
 const dateValue = (at: Date) => `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}`;
 const timeValue = (at: Date) => `${two(at.getHours())}:${two(at.getMinutes())}`;
 
-/** The ids of the parts that leave the screen's sides, or the page that scrolls sideways. */
 const outsideTheSides = (page: Page, ids: string[]) =>
   page.evaluate((testIds) => {
     const problems: string[] = [];
@@ -169,26 +144,23 @@ test.describe("friends are optional", () => {
     const page = await newPhone(browser);
     await page.goto("/");
     await signUp(page, account);
-    await expect(page.getByTestId("menu-friends")).toBeVisible(); // (on for everybody since 15 Nov 2026: the account page has them at once)
+    await expect(page.getByTestId("menu-friends")).toBeVisible();
     await page.getByTestId("menu-settings").click();
-    await expect(page.getByTestId("friends-switch")).toHaveCount(0); // (no switch for friends themselves, nor for ratings)
+    await expect(page.getByTestId("friends-switch")).toHaveCount(0);
     await expect(page.getByTestId("ratings-switch")).toHaveCount(0);
     const give = page.getByTestId("friends-give");
-    await expect(give).toHaveAttribute("aria-checked", "false"); // (what is watched is told to nobody until that is turned on)
+    await expect(give).toHaveAttribute("aria-checked", "false");
     await expect(give).toContainText(en["friends.switchGive"]);
     await expect(give).toContainText(en["friends.switchGiveHint"]);
-    // (what a friend may do is on for everybody: no switch for it, and the line that says what a chat is kept as is there all the same)
     for (const gone of ["friends-lists", "friends-ratings", "friends-get", "friends-inbox-switch", "friends-presence", "friends-messages", "news-popups-switch"]) await expect(page.getByTestId(gone), gone).toHaveCount(0);
     await expect(page.getByTestId("friends-messages-hint")).toContainText("without encryption");
     await expect(page.getByTestId("friends-open")).toBeVisible();
-    await expect(page.getByTestId("kept-friends")).toHaveCount(0); // (friends are on: the page of friends is the place for them)
+    await expect(page.getByTestId("kept-friends")).toHaveCount(0);
     await give.click();
     await expect(give).toHaveAttribute("aria-checked", "true");
 
-    // the server keeps it (it decides what a friend is shown from it)
     await expect.poll(() => kept(page)).toMatchObject({ friendsGive: true });
 
-    // A profile that had turned friends off before the switch went (`friends: false`, sharing on): it shares nothing, and turning sharing on says friends are on as well.
     await chose(page, { friends: false });
     await page.getByTestId("account-button").click();
     await expect(page.getByTestId("menu-friends")).toBeVisible();
@@ -211,12 +183,12 @@ test.describe("friends are optional", () => {
     for (const gone of ["friends-ratings", "friends-inbox-switch", "friends-messages", "friends-get"]) await expect(page.getByTestId(gone), gone).toHaveCount(0);
 
     await lists.click();
-    await expect(lists).toHaveAttribute("aria-checked", "true"); // (turned on, and still there: it is not pulled from under the finger)
+    await expect(lists).toHaveAttribute("aria-checked", "true");
     await expect.poll(() => kept(page)).toMatchObject({ friendsLists: true, friendsPresence: false });
 
     await page.keyboard.press("Escape");
     await page.getByTestId("menu-settings").click();
-    await expect(page.getByTestId("friends-lists")).toHaveCount(0); // (and gone the next time)
+    await expect(page.getByTestId("friends-lists")).toHaveCount(0);
     await expect(page.getByTestId("friends-presence")).toHaveAttribute("aria-checked", "false");
   });
 
@@ -227,9 +199,8 @@ test.describe("friends are optional", () => {
     await befriend(ann.page, bob.page);
 
     await ann.page.getByTestId("menu-settings").click();
-    await expect(ann.page.getByTestId("kept-friends")).toHaveCount(0); // (while they are on, the page of friends is the place for them)
+    await expect(ann.page.getByTestId("kept-friends")).toHaveCount(0);
     await ann.page.keyboard.press("Escape");
-    // (No switch turns them off any more: `friendsOff` is kept for the child profile to come, and is set here the way a screen sends it.)
     await chose(ann.page, { friendsOff: true });
     await ann.page.getByTestId("account-button").click();
     await expect(ann.page.getByTestId("menu-friends")).toHaveCount(0);
@@ -239,7 +210,6 @@ test.describe("friends are optional", () => {
     await expect(kept).toHaveCount(1);
     await expect(kept).toContainText(bob.name);
 
-    // it takes a second press, and then Bob is no longer a friend
     const remove = ann.page.getByTestId("kept-friend-remove");
     await remove.click();
     await expect(remove).toHaveAttribute("data-asking", "true");
@@ -257,7 +227,7 @@ test.describe("friends are optional", () => {
     const ann = await phoneWithFriends(browser, "Ann");
     const bob = await phoneWithFriends(browser, "Bob");
     await befriend(ann.page, bob.page);
-    await chose(ann.page, { friendsOff: true }); // (friends turned off for the profile, the way the child profile to come will)
+    await chose(ann.page, { friendsOff: true });
 
     let asked = 0;
     await ann.page.route("**/friends/kept", (route) => (++asked === 1 ? route.abort("connectionfailed") : route.continue()));
@@ -280,13 +250,12 @@ test.describe("friends are optional", () => {
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(bob.page.getByTestId("friend-rating")).toContainText("Alpha Film");
 
-    await chose(ann.page, { ratings: false }); // (turned off before the switch went: it is kept as it was)
+    await chose(ann.page, { ratings: false });
     await expect(async () => {
       await look(bob.page);
       await expect(bob.page.getByTestId("friend-not-sharing")).toContainText(`${ann.name} is not sharing their ratings`, { timeout: 1500 });
     }).toPass();
 
-    // Ann still has her own ratings; the settings have the one switch for showing them to friends, off, and turned on it says ratings are on again too.
     await ann.page.getByTestId("account-button").click();
     await expect(ann.page.getByTestId("menu-ratings")).toBeVisible();
     await ann.page.getByTestId("menu-settings").click();
@@ -324,27 +293,25 @@ test.describe("making friends", () => {
     await expect(card).toBeVisible();
     const code = (await ann.page.getByTestId("friend-invite-code").textContent())!;
     expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
-    await expect(ann.page.getByTestId("friend-link-url")).toHaveText(new RegExp(`/\\?friend=${code.replace("-", "")}$`)); // (what a message holds, and the QR code too)
+    await expect(ann.page.getByTestId("friend-link-url")).toHaveText(new RegExp(`/\\?friend=${code.replace("-", "")}$`));
 
     await openFriends(bob.page);
-    await bob.page.getByTestId("friend-code-input").fill(code.toLowerCase().replace("-", "")); // typed as it was read
-    await expect(bob.page.getByTestId("friend-code-name")).toHaveText(ann.name); // who it is from, before it is used
+    await bob.page.getByTestId("friend-code-input").fill(code.toLowerCase().replace("-", ""));
+    await expect(bob.page.getByTestId("friend-code-name")).toHaveText(ann.name);
     await bob.page.getByTestId("friend-code-add").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(`You and ${ann.name} are now friends`);
     const head = await where(bob.page.locator(".page-head"));
-    await expect.poll(async () => apart(await where(bob.page.getByTestId("account-toast")), head)).toBe(true); // (not drawn over the page's own title)
+    await expect.poll(async () => apart(await where(bob.page.getByTestId("account-toast")), head)).toBe(true);
     await expect(bob.page.getByTestId("friend-row")).toHaveCount(1);
     await expect(bob.page.getByTestId("friend-row")).toContainText(ann.name);
 
-    await look(ann.page); // (Ann's page would hear within the half minute)
+    await look(ann.page);
     await expect(ann.page.getByTestId("friend-row")).toContainText(bob.name);
-    await expect(ann.page.getByTestId("friend-invite")).toHaveCount(0); // the code is spent
+    await expect(ann.page.getByTestId("friend-invite")).toHaveCount(0);
 
-    // a spent code is no use again
     await bob.page.getByTestId("friend-code-input").fill(code);
     await expect(bob.page.getByTestId("friend-code-error")).toBeVisible();
 
-    // Ann takes Bob off: Remove opens a sheet that asks, and only "Yes, remove" does it; then neither has the other
     await ann.page.getByTestId("friend-row").click();
     await expect(ann.page.getByTestId("friend-name")).toHaveText(bob.name);
     await ann.page.getByTestId("friend-remove").click();
@@ -370,18 +337,18 @@ test.describe("making friends", () => {
       await make.click();
       await expect(codes).toHaveCount(out);
     }
-    await expect(full).toHaveCount(0); // four out: room for one more, nothing to say
+    await expect(full).toHaveCount(0);
     await make.click();
     await expect(codes).toHaveCount(5);
     await expect(full).toHaveText("You have 5 codes out. Making another takes back the oldest one.");
 
     const oldest = (await codes.first().textContent())!;
-    await make.click(); // the sixth
+    await make.click();
     await expect(codes.filter({ hasText: oldest })).toHaveCount(0);
     await expect(codes).toHaveCount(5);
     await expect(full).toBeVisible();
 
-    await ann.page.getByTestId("friend-invite-revoke").first().click(); // one taken back: room again
+    await ann.page.getByTestId("friend-invite-revoke").first().click();
     await expect(codes).toHaveCount(4);
     await expect(full).toHaveCount(0);
   });
@@ -402,19 +369,16 @@ test.describe("making friends", () => {
     await copy.click();
     await expect(copy).toHaveText("Code copied");
     expect(await clipboard()).toBe(code);
-    await expect(copy).toHaveText("Copy code"); // (ready for the next time by itself)
+    await expect(copy).toHaveText("Copy code");
 
-    // a press on the code itself selects the whole of it, the dash too (a long press would take one half of it, the dash being a word's end)
     await ann.page.getByTestId("friend-invite-code").click();
     expect(await ann.page.evaluate(() => window.getSelection()?.toString())).toBe(code);
 
-    // the link under it still copies the link, and not the code
     const copyLink = ann.page.getByTestId("friend-link-copy");
     await copyLink.click();
     await expect(copyLink).toHaveText("Link copied");
     expect(await clipboard()).toBe(await ann.page.getByTestId("friend-link-url").innerText());
 
-    // what the code's button put on the clipboard is what a friend pastes into the field
     await copy.click();
     await expect(copy).toHaveText("Code copied");
     await openFriends(bob.page);
@@ -427,8 +391,8 @@ test.describe("making friends", () => {
     const account = fresh("Ann");
     const page = await newPhone(browser);
     await page.addInitScript(() => {
-      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined }); // no clipboard of its own...
-      document.execCommand = () => false; // ...and the old way refused
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+      document.execCommand = () => false;
     });
     await page.goto("/");
     await signUp(page, account);
@@ -438,7 +402,7 @@ test.describe("making friends", () => {
     const code = (await page.getByTestId("friend-invite-code").textContent())!;
     await page.getByTestId("friend-invite-code-copy").click();
     await expect(page.getByTestId("friend-invite").getByRole("status")).toHaveText("Could not copy: select the code and copy it");
-    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(code); // (the whole of it, the dash too: ready for a long press)
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(code);
   });
 
   test("the button sits under the code, and the code, the button and the QR code keep clear of each other and inside the card, on the narrowest phone as on any", async ({ browser }) => {
@@ -460,13 +424,13 @@ test.describe("making friends", () => {
               where(card.getByTestId("pairing-qr")),
             ]);
             return (
-              copy.y >= code.y + code.height - 0.5 && // under the code
-              copy.height <= 44 && // (a small button: its icon is not the size of the QR code's)
-              apart(code, qr) && // (the QR code is beside them, or under them where there is no room: never over them)
+              copy.y >= code.y + code.height - 0.5 &&
+              copy.height <= 44 &&
+              apart(code, qr) &&
               apart(copy, qr) &&
               [code, copy, qr].every((box) => inside(box, around)) &&
               around.x >= 0 &&
-              around.x + around.width <= width + 0.5 // (and the card is inside the screen)
+              around.x + around.width <= width + 0.5
             );
           },
           { message: `${width} wide` },
@@ -486,14 +450,13 @@ test.describe("making friends", () => {
     await bob.page.keyboard.press("Escape");
     await bob.page.goto(`/?friend=${code}`);
     await expect(bob.page.getByTestId("friend-link-sheet")).toBeVisible();
-    expect(bob.page.url()).not.toContain("friend="); // (it is for one use: a reload does not offer it again)
+    expect(bob.page.url()).not.toContain("friend=");
     await expect(bob.page.getByTestId("friend-code-name")).toHaveText(ann.name);
     await bob.page.getByTestId("friend-code-add").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(ann.name);
     await expect(bob.page.getByTestId("friend-link-sheet")).toHaveCount(0);
-    await expect.poll(() => bob.page.url()).not.toContain("friend="); // (nor does going back to where the page began bring it back)
+    await expect.poll(() => bob.page.url()).not.toContain("friend=");
 
-    // the same link on a third phone: the code has been used
     const cy = await phoneWithFriends(browser, "Cy");
     await cy.page.goto(`/?friend=${code}`);
     await expect(cy.page.getByTestId("friend-code-error")).toBeVisible();
@@ -509,7 +472,7 @@ test.describe("making friends", () => {
     const dee = await newPhone(browser);
     await dee.goto(`/?friend=${code}`);
     await expect(dee.getByTestId("friend-link-sheet")).toBeVisible();
-    await expect(dee.getByTestId("friend-code-card")).toHaveCount(0); // (nobody is told who it is from before they are signed in)
+    await expect(dee.getByTestId("friend-code-card")).toHaveCount(0);
     await dee.getByTestId("friend-link-signin").click();
     await dee.getByTestId("auth-switch").click();
     const account = fresh("Dee");
@@ -517,8 +480,7 @@ test.describe("making friends", () => {
     await dee.getByTestId("auth-password").fill(account.password);
     await dee.getByTestId("auth-submit").click();
     await expect(dee.getByTestId("account-card")).toBeVisible();
-    await dee.getByTestId("page-back").click(); // the account page closes, and the question is back
-    // (friends are on for everybody: who it is from shows at once)
+    await dee.getByTestId("page-back").click();
     await expect(dee.getByTestId("friend-code-name")).toHaveText(ann.name);
     await dee.getByTestId("friend-code-add").click();
     await expect(dee.getByTestId("friend-link-sheet")).toHaveCount(0);
@@ -535,7 +497,6 @@ test.describe("making friends", () => {
     await openFriends(ann.page);
     await expect(ann.page.getByTestId("friend-row")).toHaveCount(1);
 
-    // Ann's page looks, and the answer (Bob is a friend) is held up on the way
     let letGo!: () => void;
     const held = new Promise<void>((resolve) => (letGo = resolve));
     let holding!: () => void;
@@ -554,7 +515,6 @@ test.describe("making friends", () => {
     await look(ann.page);
     await isHeld;
 
-    // Bob takes Ann off, and Ann's next look hears it
     await openFriends(bob.page);
     await bob.page.getByTestId("friend-row").click();
     await bob.page.getByTestId("friend-remove").click();
@@ -563,7 +523,6 @@ test.describe("making friends", () => {
     await look(ann.page);
     await expect(ann.page.getByTestId("friends-none")).toBeVisible();
 
-    // the old answer arrives at last, and the page does not go back to it
     letGo();
     await isDelivered;
     await ann.page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
@@ -583,7 +542,7 @@ test.describe("what a friend can see", () => {
     await bob.page.getByTestId("menu-friends").click();
     await bob.page.getByTestId("friend-row").click();
     await expect(bob.page.getByTestId("friend-name")).toHaveText(ann.name);
-    await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film"); // lists first
+    await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film");
     await bob.page.getByTestId("friend-tab-ratings").click();
     const rating = bob.page.getByTestId("friend-rating");
     await expect(rating).toContainText("Alpha Film");
@@ -591,7 +550,6 @@ test.describe("what a friend can see", () => {
     await expect(rating).toContainText("Very good");
     await expect(rating).toContainText("Tight and clever");
 
-    // Ann stops sharing her ratings (a choice that has no switch any more, so it is sent the way a screen would), and then her lists: Bob is told so, not shown an empty page
     await chooses(ann.page, { friendsRatings: false });
     await ann.page.getByTestId("menu-settings").click();
     await bob.page.reload();
@@ -601,10 +559,9 @@ test.describe("what a friend can see", () => {
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(bob.page.getByTestId("friend-not-sharing")).toContainText(`${ann.name} is not sharing their ratings`);
     await bob.page.getByTestId("friend-tab-lists").click();
-    await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film"); // (the lists are still shared)
+    await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film");
 
-    // and with friends turned off altogether she shows nothing, and says so in the list
-    await chooses(ann.page, { friendsOff: true }); // (friends turned off for her, the way the child profile to come will: no switch does it any more)
+    await chooses(ann.page, { friendsOff: true });
     await bob.page.keyboard.press("Escape");
     await look(bob.page);
     await expect(bob.page.getByTestId("friend-row")).toContainText("Friends turned off");
@@ -621,13 +578,11 @@ test.describe("what a friend can see", () => {
     await befriend(ann.page, bob.page);
     await seed(ann.page, filmCards());
 
-    // Bob has nothing of Ann's in his lists yet: no such row
     await bob.page.getByTestId("menu-friends").click();
     await bob.page.getByTestId("friend-row").click();
     await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film");
     await expect(bob.page.getByTestId("friend-both")).toHaveCount(0);
 
-    // Bob keeps the same film and rates it too (as another screen of his would): Ann's page now starts with it, and says his score after hers
     const at = Date.now();
     await seed(bob.page, { list: [{ key: listKey(FILM), at, id: "f17", title: "Alpha Film", url: FILM, year: 1931 }], ratings: [{ key: ratingKey(FILM), at, title: "Alpha Film", url: FILM, year: 1931, kind: "movie", score: 6, ratedAt: at }] });
     await bob.page.reload();
@@ -638,7 +593,7 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friend-both-card-item")).toContainText("Alpha Film");
     const both = await bob.page.getByTestId("friend-both").boundingBox();
     const theirs = await bob.page.getByTestId("friend-list").first().boundingBox();
-    expect(both!.y).toBeLessThan(theirs!.y); // (above her own lists)
+    expect(both!.y).toBeLessThan(theirs!.y);
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(bob.page.getByTestId("friend-rating")).toContainText("8/10");
     await expect(bob.page.getByTestId("friend-rating-mine")).toHaveText("You: 6/10");
@@ -664,29 +619,28 @@ test.describe("what a friend can see", () => {
     };
 
     await seen();
-    await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0); // nobody shares, nobody hears
+    await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0);
     await bob.page.keyboard.press("Escape");
 
-    await setSwitch(ann.page, "friends-give", true); // she shares...
+    await setSwitch(ann.page, "friends-give", true);
     await seen();
-    await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0); // ...but he does not, so he hears nothing
+    await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0);
     await bob.page.keyboard.press("Escape");
 
-    await setSwitch(bob.page, "friends-give", true); // now he shares too, and hears
+    await setSwitch(bob.page, "friends-give", true);
     await seen();
     await expect(bob.page.getByTestId("friends-activity")).toContainText("Alpha Film");
     await expect(bob.page.getByTestId("friends-activity")).toContainText(ann.name);
-    await expect(bob.page.getByTestId("friend-row")).toContainText("Watching Alpha Film"); // (just now, and not to the end: "watched" is for what was a while ago)
-    await expect(bob.page.getByTestId("activity-item").locator(".lib-progress i")).toHaveAttribute("style", /width: 11%/); // (600 of 5400 seconds)
-    // ...and on her page, how far she got in the titles she keeps and rates
+    await expect(bob.page.getByTestId("friend-row")).toContainText("Watching Alpha Film");
+    await expect(bob.page.getByTestId("activity-item").locator(".lib-progress i")).toHaveAttribute("style", /width: 11%/);
     await bob.page.getByTestId("friend-row").click();
     await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("11%");
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(bob.page.getByTestId("friend-rating-progress")).toContainText("11%");
-    await bob.page.keyboard.press("Escape"); // (back to the page of friends)
+    await bob.page.keyboard.press("Escape");
     await bob.page.keyboard.press("Escape");
 
-    await setSwitch(ann.page, "friends-give", false); // she stops
+    await setSwitch(ann.page, "friends-give", false);
     await seen();
     await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0);
   });
@@ -697,7 +651,7 @@ test.describe("what a friend can see", () => {
     const bob = await phoneWithFriends(browser, "Bob");
     const cy = await phoneWithFriends(browser, "Cy");
     await befriend(ann.page, bob.page);
-    await openFriends(cy.page); // Cy gives Bob a code too: he has two friends
+    await openFriends(cy.page);
     await cy.page.getByTestId("friend-make-code").click();
     const code = (await cy.page.getByTestId("friend-invite-code").textContent())!;
     await openFriends(bob.page);
@@ -712,13 +666,12 @@ test.describe("what a friend can see", () => {
       await expect(page.getByTestId("friends-give")).toHaveAttribute("aria-checked", "true");
       await page.keyboard.press("Escape");
     };
-    await seed(ann.page, filmCards()); // (Alpha Film, from Ann)
+    await seed(ann.page, filmCards());
     await share(ann.page);
     await share(bob.page);
     await share(cy.page);
-    await seed(cy.page, { progress: [{ key: "beta", at: Date.now(), title: "Beta Film", url: "https://films.example/watch/18", year: 1940, position: 300, duration: 5400 }] }); // (Beta Film, from Cy, later)
+    await seed(cy.page, { progress: [{ key: "beta", at: Date.now(), title: "Beta Film", url: "https://films.example/watch/18", year: 1940, position: 300, duration: 5400 }] });
 
-    // Ann asks Bob to watch together: that waits on his page
     await openFriends(ann.page);
     await ann.page.getByTestId("friend-row").click();
     await ann.page.getByTestId("friend-together").click();
@@ -727,13 +680,13 @@ test.describe("what a friend can see", () => {
     await look(bob.page);
     await openFriends(bob.page);
     const rows = bob.page.getByTestId("friends-activity");
-    await expect(rows).toHaveCount(2); // one to a friend, not one for all of them
-    await expect(rows.nth(0)).toHaveAttribute("aria-label", `What ${cy.name} watched`); // (the one who watched last is first)
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toHaveAttribute("aria-label", `What ${cy.name} watched`);
     await expect(rows.nth(0)).toContainText("Beta Film");
     await expect(rows.nth(1)).toHaveAttribute("aria-label", `What ${ann.name} watched`);
     await expect(rows.nth(1)).toContainText("Alpha Film");
     await expect(rows.nth(1)).not.toContainText("Beta Film");
-    await expect(bob.page.getByTestId("friend-row").nth(0)).toContainText(cy.name); // (and in the same order in the list of friends)
+    await expect(bob.page.getByTestId("friend-row").nth(0)).toContainText(cy.name);
     await expect(bob.page.getByTestId("friend-row").nth(1)).toContainText(ann.name);
     await expect(bob.page.getByTestId("inbox-together")).toContainText(`${ann.name} wants to watch together`);
 
@@ -750,7 +703,6 @@ test.describe("what a friend can see", () => {
     await befriend(ann.page, bob.page);
     const page = ann.page;
 
-    // the page of friends: it is her switch that is off. The button goes to the settings, and Back comes to the page of friends again.
     await openFriends(page);
     await expect(page.getByTestId("friends-activity-off")).toContainText("You don't see what friends watch yet");
     await page.getByTestId("friends-activity-settings").click();
@@ -758,7 +710,6 @@ test.describe("what a friend can see", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("friends-page")).toBeVisible();
 
-    // a friend's page: nothing of what Bob watches is shown, and it says why; the button to ask is there, and the request reaches him
     await page.getByTestId("friend-row").click();
     await expect(page.getByTestId("friend-hint")).toContainText(`To see what ${bob.name} is watching, turn on “${en["friends.switchGive"]}” in the Friends settings.`);
     await page.getByTestId("friend-together").click();
@@ -767,8 +718,7 @@ test.describe("what a friend can see", () => {
     await look(bob.page);
     await expect(bob.page.getByTestId("inbox-together")).toContainText(`${ann.name} wants to watch together`);
 
-    // with "Share what I watch with friends" on, the notice on the page of friends is gone and the reason is Bob's
-    await page.keyboard.press("Escape"); // (the page of friends)
+    await page.keyboard.press("Escape");
     await page.getByTestId("friends-activity-settings").click();
     await page.getByTestId("friends-give").click();
     await expect(page.getByTestId("friends-give")).toHaveAttribute("aria-checked", "true");
@@ -778,8 +728,7 @@ test.describe("what a friend can see", () => {
     await page.getByTestId("friend-row").click();
     await expect(page.getByTestId("friend-hint")).toHaveText(`${bob.name} isn't sharing what they watch.`);
 
-    // Bob starts telling what he watches: the page says nothing of it any more
-    await bob.page.keyboard.press("Escape"); // (his page of friends, to his account page)
+    await bob.page.keyboard.press("Escape");
     await bob.page.getByTestId("menu-settings").click();
     await bob.page.getByTestId("friends-give").click();
     await expect(bob.page.getByTestId("friends-give")).toHaveAttribute("aria-checked", "true");
@@ -794,7 +743,7 @@ test.describe("what a friend can see", () => {
     const ann = await phoneWithFriends(browser, "Ann");
     const bob = await phoneWithFriends(browser, "Bob");
     await befriend(ann.page, bob.page);
-    await look(ann.page); // (a page that is open tells the server so each time it looks)
+    await look(ann.page);
     await bob.page.getByTestId("menu-friends").click();
     const row = bob.page.getByTestId("friend-row");
     await expect(async () => {
@@ -807,7 +756,6 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friend-now")).toHaveText("Online");
     await bob.page.keyboard.press("Escape");
 
-    // Ann's screen has been shut for five minutes, as the server tells it (its clock is not one a test can move): no dot, and the row and her page say when she was last online
     let away = true;
     await bob.page.route(/\/api\/profiles\/[^/]+\/friends$/, async (route) => {
       if (!away || route.request().method() !== "GET") return route.continue();
@@ -820,7 +768,6 @@ test.describe("what a friend can see", () => {
         }
         await route.fulfill({ response: answer, json: state });
       } catch {
-        // (the page gave up on this look for a newer one)
       }
     });
     await expect(async () => {
@@ -831,22 +778,20 @@ test.describe("what a friend can see", () => {
     await row.click();
     await expect(bob.page.getByTestId("friend-now")).toHaveText("Last online 5 minutes ago");
     await expect(bob.page.getByTestId("friend-status")).toContainText("Friends since");
-    // (and the chat with her says it under its title, by the clock: the owner, 17 Nov)
     await bob.page.getByTestId("friend-chat").click();
     await expect(bob.page.getByTestId("chat-presence")).toHaveText(/^Last online (today|yesterday) at \d\d:\d\d$/);
     await expect(bob.page.getByTestId("chat-presence")).toHaveAttribute("data-online", "false");
-    await bob.page.keyboard.press("Escape"); // (the chat)
+    await bob.page.keyboard.press("Escape");
     await expect(bob.page.getByTestId("chat-sheet")).toHaveCount(0);
     await bob.page.keyboard.press("Escape");
     away = false;
 
-    // Ann turns it off (a choice that has no switch any more, so it is sent the way a screen would): Bob does not see her online any more
     await chooses(ann.page, { friendsPresence: false });
     await expect(async () => {
       await look(bob.page);
       await expect(row.locator(".friend-pic")).toHaveAttribute("data-online", "false", { timeout: 1500 });
       await expect(row).not.toContainText("Online", { timeout: 1500 });
-      await expect(row).not.toContainText("Last online", { timeout: 1500 }); // (nor when she last was: the one switch hides both)
+      await expect(row).not.toContainText("Last online", { timeout: 1500 });
     }).toPass();
   });
 });
@@ -857,12 +802,11 @@ test.describe("sending things to friends", () => {
     rows: [{ id: "r", title: "Classics", source: "Test Source", kind: "movie", items: [{ id: "a", title: "Alpha Film", year: 1931, kind: "movie", url: `${baseURL}/fixtures/sample.mp4?n=1` }] }],
   });
 
-  /** A phone paired to a TV, showing a one-film library, signed up with friends on (in English, unless its language is given; with a clock of the test's, if that is asked). */
   async function pairedPhone(browser: Browser, baseURL: string, name: string, locale = "en-US", fakeClock = false) {
     const account = fresh(name);
     const tv = await openTv(browser);
     const page = await openDevice(browser, { ...PHONE, locale }, {}, async (context) => {
-      if (fakeClock) await context.clock.install(); // (the minutes until the time of a plan are skipped with `fastForward`)
+      if (fakeClock) await context.clock.install();
       await withLibrary(films(baseURL))(context);
     });
     await page.goto("/");
@@ -874,14 +818,12 @@ test.describe("sending things to friends", () => {
     return { page, tv, account, name: nameOf(account) };
   }
 
-  /** The phone leaves the account page for its home screen (a paired phone has the account as one of the places of its bar: Home is one press away). */
   async function backHome(page: Page) {
     await page.keyboard.press("Escape");
     if ((await page.getByTestId("tab-home").count()) > 0) await place(page, "home");
     await expect(page.getByTestId("account-screen")).toHaveCount(0);
   }
 
-  /** Both phones are at their home screens: `giver` makes a code and `taker` types it, and they are back at home. */
   async function meet(giver: Page, taker: Page) {
     for (const page of [giver, taker]) await page.getByTestId("account-button").click();
     await befriend(giver, taker);
@@ -892,37 +834,33 @@ test.describe("sending things to friends", () => {
     test.setTimeout(120_000);
     const ann = await pairedPhone(browser, baseURL!, "Ann");
     const bob = await pairedPhone(browser, baseURL!, "Bob");
-    await meet(bob.page, ann.page); // Bob gives a code on his page, Ann types it
+    await meet(bob.page, ann.page);
 
-    // before they are friends there would be nobody to pick; now Bob is on the list
     await ann.page.locator('[data-testid="library-tile"][title="Alpha Film"]').click();
     await ann.page.getByTestId("title-recommend").click();
     await expect(ann.page.getByTestId("friend-pick")).toHaveCount(1);
-    await expect(ann.page.getByTestId("friend-send")).toBeEnabled(); // (the only friend is picked already)
+    await expect(ann.page.getByTestId("friend-send")).toBeEnabled();
     await ann.page.getByTestId("friend-note").fill("You will like the ending");
     await ann.page.getByTestId("friend-send").click();
     await expect(ann.page.getByTestId("account-toast")).toContainText(`Sent to ${bob.name}`);
     await expect(ann.page.getByTestId("friend-picker")).toHaveCount(0);
 
-    // Bob: told in a line, a number on his bell, a row on his home screen with the title
     await look(bob.page);
     await expect(bob.page.getByTestId("account-toast")).toContainText(`${ann.name} sent you Alpha Film`);
     await expect(bob.page.getByTestId("bell-badge")).toHaveText("1");
     const row = bob.page.getByTestId("friends-row");
     await expect(row).toContainText("Alpha Film");
     await expect(row).toContainText(`From ${ann.name}`);
-    await bob.page.getByTestId("friends-play").click(); // a tap opens the title's page, with the note
+    await bob.page.getByTestId("friends-play").click();
     await expect(bob.page.getByTestId("title-sheet")).toContainText("You will like the ending");
-    await bob.page.getByTestId("rate-title-score-7").click(); // (Bob rates it: the score is on its card in the row, as it is on every card)
-    await bob.page.getByTestId("title-back").click(); // (a title's page has its own way back, since it is a page of the app now and not a sheet)
+    await bob.page.getByTestId("rate-title-score-7").click();
+    await bob.page.getByTestId("title-back").click();
     await expect(row.getByTestId("score-badge")).toHaveText("7");
 
-    // opening the Friends page is seeing it: the number goes, the title is in the inbox
     await bob.page.getByTestId("account-button").click();
     await openFriends(bob.page);
     await expect(bob.page.getByTestId("inbox-recommendation")).toContainText("Alpha Film");
     await expect(bob.page.getByTestId("bell-badge")).toHaveCount(0);
-    // (a title opened from the inbox is a sheet over the page: Escape closes the sheet, and the page stays)
     await bob.page.getByTestId("inbox-open").click();
     await expect(bob.page.getByTestId("title-sheet")).toBeVisible();
     await bob.page.keyboard.press("Escape");
@@ -958,26 +896,24 @@ test.describe("sending things to friends", () => {
     await expect(banner).toHaveCount(0);
   });
 
-  /** A switch of the settings, from the home screen: the account page is opened, the switch put right, and the phone is back at the home screen. */
   async function setting(page: Page, id: string, on: boolean) {
     await page.getByTestId("account-button").click();
     await page.getByTestId("menu-settings").click();
     const toggle = page.getByTestId(id);
     if ((await toggle.getAttribute("aria-checked")) !== String(on)) await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", String(on));
-    await page.keyboard.press("Escape"); // (the settings, to the account page)
+    await page.keyboard.press("Escape");
     await backHome(page);
   }
 
   test("a friend who tells what they watch can be asked to watch together; the one asked has a button that starts a party and invites the one who asked, and it fits the narrowest phone in Romanian", async ({ browser, baseURL }) => {
     test.setTimeout(180_000);
-    const ann = await pairedPhone(browser, baseURL!, "Ann", "ro-RO"); // (the longest words)
+    const ann = await pairedPhone(browser, baseURL!, "Ann", "ro-RO");
     const bob = await pairedPhone(browser, baseURL!, "Bob");
     await meet(bob.page, ann.page);
-    await setting(ann.page, "friends-give", true); // she shares what she watches and so does he, which is how he hears it: that is what lets him ask
+    await setting(ann.page, "friends-give", true);
     await setting(bob.page, "friends-give", true);
 
-    // Bob asks, from her page (which is looked at again until the server's word on the two switches has reached him)
     await bob.page.getByTestId("account-button").click();
     await openFriends(bob.page);
     await bob.page.getByTestId("friend-row").click();
@@ -987,10 +923,9 @@ test.describe("sending things to friends", () => {
     }).toPass();
     await bob.page.getByTestId("friend-together").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(`Asked ${ann.name} to watch together`);
-    for (let back = 0; back < 2; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends)
-    await backHome(bob.page); // (the account page)
+    for (let back = 0; back < 2; back++) await bob.page.keyboard.press("Escape");
+    await backHome(bob.page);
 
-    // Ann has it as a banner on her home screen and a row on her page of friends; each keeps its words and its buttons inside it, on any phone
     await look(ann.page);
     const asks = say(ro["friends.togetherOf"], { name: bob.name });
     const banner = ann.page.getByTestId("friend-together-banner");
@@ -1008,10 +943,9 @@ test.describe("sending things to friends", () => {
       await ann.page.setViewportSize({ width, height: 800 });
       await keepClear(row, [row.locator(".inbox-text"), row.getByTestId("inbox-start"), row.getByTestId("inbox-dismiss")], width, 150);
     }
-    await ann.page.keyboard.press("Escape"); // (the friends)
-    await backHome(ann.page); // (the account page)
+    await ann.page.keyboard.press("Escape");
+    await backHome(ann.page);
 
-    // Her button opens the party of her TV and invites Bob to it; the request is gone from her page, and Bob has the invitation
     await start.click();
     await expect(ann.page.getByTestId("party-sheet")).toBeVisible();
     await expect(ann.page.getByTestId("party-join-code")).toBeVisible();
@@ -1026,17 +960,15 @@ test.describe("sending things to friends", () => {
     const ann = await pairedPhone(browser, baseURL!, "Ann");
     const bob = await pairedPhone(browser, baseURL!, "Bob");
     await meet(bob.page, ann.page);
-    // Bob stops taking titles and invitations (a choice that has no switch any more, so it is sent the way a screen would)
     await chooses(bob.page, { friendsInbox: false });
 
     await ann.page.locator('[data-testid="library-tile"][title="Alpha Film"]').click();
-    await expect.poll(() => takesThings(ann.page, bob.name)).toBe(false); // (the server has it; Ann's page has not looked since, and the sheet does when it opens)
+    await expect.poll(() => takesThings(ann.page, bob.name)).toBe(false);
     await ann.page.getByTestId("title-recommend").click();
     await expect(ann.page.getByTestId("friend-pick")).toHaveCount(0);
     await expect(ann.page.getByTestId("friend-picker-none")).toContainText("None of your friends is taking titles");
   });
 
-  /** Whether the server says `friend` takes things, to the profile on `page` (asked without the page looking: what the page shows stays as it was). */
   async function takesThings(page: Page, friend: string) {
     const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
     const state = (await (await page.request.get(`/api/profiles/${profile}/friends`)).json()) as { friends: { name: string; inbox: boolean }[] };
@@ -1051,7 +983,6 @@ test.describe("sending things to friends", () => {
     await meet(bob.page, ann.page);
     await meet(cy.page, ann.page);
 
-    // Ann chooses Bob and writes why; then Bob stops taking things, which her sheet has not heard yet
     await ann.page.locator('[data-testid="library-tile"][title="Alpha Film"]').click();
     await ann.page.getByTestId("title-recommend").click();
     const sheet = ann.page.getByTestId("friend-picker");
@@ -1061,7 +992,6 @@ test.describe("sending things to friends", () => {
     await chooses(bob.page, { friendsInbox: false });
     await expect.poll(() => takesThings(ann.page, bob.name)).toBe(false);
 
-    // Sent to Bob: refused. The sheet says so, and stays, with the words; only Cy is offered now, and nobody is chosen
     await sheet.getByTestId("friend-send").click();
     await expect(sheet.getByRole("alert")).toContainText(`${bob.name}: not taking things right now`);
     await expect(sheet.getByTestId("friend-note")).toHaveValue("You will like the ending");
@@ -1070,7 +1000,6 @@ test.describe("sending things to friends", () => {
     await expect(sheet.getByTestId("friend-pick")).toHaveAttribute("aria-checked", "false");
     await expect(sheet.getByTestId("friend-send")).toBeDisabled();
 
-    // The same words go to Cy, and the sheet goes
     await sheet.getByTestId("friend-pick").click();
     await sheet.getByTestId("friend-send").click();
     await expect(ann.page.getByTestId("account-toast")).toContainText(`Sent to ${cy.name}`);
@@ -1082,11 +1011,10 @@ test.describe("sending things to friends", () => {
 
   test("a plan that is on says when its time has come, with a button that starts a party and invites the friend; the sheet that plans and the lines that tell it fit the narrowest phone in Romanian", async ({ browser, baseURL }) => {
     test.setTimeout(240_000);
-    const ann = await pairedPhone(browser, baseURL!, "Ann", "ro-RO", true); // (her clock is the test's: the minutes until the time are skipped)
+    const ann = await pairedPhone(browser, baseURL!, "Ann", "ro-RO", true);
     const bob = await pairedPhone(browser, baseURL!, "Bob", "ro-RO");
     await meet(bob.page, ann.page);
 
-    // Bob plans from her page, for ten minutes from now: the sheet keeps clear of the sides on any phone
     await bob.page.getByTestId("account-button").click();
     await openFriends(bob.page);
     await bob.page.getByTestId("friend-row").click();
@@ -1105,10 +1033,9 @@ test.describe("sending things to friends", () => {
     await sheet.getByTestId("plan-send").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(say(ro["friends.planSent"], { name: ann.name }));
     await expect(sheet).toHaveCount(0);
-    for (let back = 0; back < 2; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends)
-    await backHome(bob.page); // (the account page)
+    for (let back = 0; back < 2; back++) await bob.page.keyboard.press("Escape");
+    await backHome(bob.page);
 
-    // Ann has it on her page of friends, the words and the buttons kept inside the line on any phone; she says yes
     await look(ann.page);
     await ann.page.getByTestId("account-button").click();
     await openFriends(ann.page);
@@ -1123,16 +1050,15 @@ test.describe("sending things to friends", () => {
     await row.getByTestId("plan-accept").click();
     await expect(row).toHaveAttribute("data-status", "agreed");
     await expect(row).toContainText(say(ro["friends.planAgreed"], { name: bob.name }));
-    await ann.page.keyboard.press("Escape"); // (the friends)
-    await backHome(ann.page); // (the account page)
+    await ann.page.keyboard.press("Escape");
+    await backHome(ann.page);
 
-    // The time comes, by her clock: her home screen says so with a button, kept inside the banner on any phone
     const banner = ann.page.getByTestId("friend-plan-banner");
     await expect(banner).toHaveCount(0);
-    await expect(ann.page.getByTestId("bell-badge")).toHaveCount(0); // (a plan that is on waits for nothing)
+    await expect(ann.page.getByTestId("bell-badge")).toHaveCount(0);
     await ann.page.clock.fastForward(12 * 60_000);
     await expect(banner).toContainText(say(ro["friends.planDue"], { name: bob.name }));
-    await expect(ann.page.getByTestId("bell-badge")).toHaveText("1"); // (its time has come: it waits for a party)
+    await expect(ann.page.getByTestId("bell-badge")).toHaveText("1");
     await expect(ann.page.getByTestId("account-toast")).toContainText(say(ro["friends.news.planDue"], { name: bob.name }));
     const start = ann.page.getByTestId("friend-plan-start");
     for (const width of [320, 360, 390]) {
@@ -1140,7 +1066,6 @@ test.describe("sending things to friends", () => {
       await keepClear(banner, [banner.locator("span").first(), start, ann.page.getByTestId("friend-plan-dismiss")], width, 150);
     }
 
-    // Her button opens the party of her TV and invites Bob to it; the plan is done, for Bob as well (the party is the plan)
     await start.click();
     await expect(ann.page.getByTestId("party-sheet")).toBeVisible();
     await expect(ann.page.getByTestId("party-join-code")).toBeVisible();
@@ -1154,7 +1079,6 @@ test.describe("sending things to friends", () => {
 });
 
 test.describe("how soon a friend's news comes (there is no push: each screen asks)", () => {
-  /** A phone signed up with friends on, whose clock the test moves on with `fastForward` (time goes on by itself as well): left on the account page. */
   async function phoneWithClock(browser: Browser, name: string) {
     const account = fresh(name);
     const page = await openDevice(browser, PHONE, {}, async (context) => context.clock.install());
@@ -1164,7 +1088,6 @@ test.describe("how soon a friend's news comes (there is no push: each screen ask
     return { page, account, name: nameOf(account) };
   }
   const profileOf = async (page: Page) => (await page.evaluate(() => localStorage.getItem("kino.profile")))!;
-  /** `from` sends a title to `to`, the way a screen does (the screen that sends it is not the one under test). Each title its own address: the inbox keeps one of each. */
   async function sendTitle(from: Page, to: string, title: string) {
     const url = `https://films.example/watch/${encodeURIComponent(title)}`;
     const answer = await from.request.post(`/api/profiles/${await profileOf(from)}/friends/send`, { data: { kind: "recommend", title, url, to: [to] } });
@@ -1178,7 +1101,6 @@ test.describe("how soon a friend's news comes (there is no push: each screen ask
     await befriend(ann.page, bob.page);
     const bobId = await profileOf(bob.page);
     const toast = bob.page.getByTestId("account-toast");
-    // (Making friends is something going on: Bob looks every 8 s for three minutes. His clock goes past them; Ann's page is open, so she is on the site.)
     await bob.page.clock.fastForward(3 * 60_000 + 1000);
     await expect(async () => {
       await look(bob.page);
@@ -1187,25 +1109,21 @@ test.describe("how soon a friend's news comes (there is no push: each screen ask
     }).toPass();
     await bob.page.keyboard.press("Escape");
 
-    // A friend on the site: what she sends is there within 15 s (it was up to half a minute)
-    await look(bob.page); // (a look now: the next is counted from it)
+    await look(bob.page);
     await sendTitle(ann.page, bobId, "Alpha Film");
     await bob.page.clock.fastForward(16_000);
     await expect(toast).toContainText(`${ann.name} sent you Alpha Film`, { timeout: 4000 });
 
-    // Something went on: the next is there within 8 s, even with Ann no longer shown on the site
     await chooses(ann.page, { friendsPresence: false });
     await sendTitle(ann.page, bobId, "Beta Film");
     await bob.page.clock.fastForward(9000);
     await expect(toast).toContainText(`${ann.name} sent you Beta Film`, { timeout: 3000 });
 
-    // Three quiet minutes later, with nobody on the site: the usual half minute (nothing is asked more often than it was)
     await bob.page.clock.fastForward(3 * 60_000 + 1000);
     await look(bob.page);
     await sendTitle(ann.page, bobId, "Gamma Film");
     await bob.page.clock.fastForward(16_000);
     await bob.page.waitForTimeout(2000);
-    // (Read once: an assertion that waits for no toast would pass when the toast goes away by itself.)
     expect((await toast.allTextContents()).join(" ")).not.toContain("Gamma Film");
     await bob.page.clock.fastForward(15_000);
     await expect(toast).toContainText(`${ann.name} sent you Gamma Film`, { timeout: 4000 });
@@ -1213,25 +1131,21 @@ test.describe("how soon a friend's news comes (there is no push: each screen ask
 });
 
 test.describe("plans to watch together", () => {
-  /** A moment `days` from today at `hour`:`minute`, by the clock of this machine (which the pages under test go by too). */
   const inDays = (days: number, hour: number, minute = 0) => {
     const at = new Date();
     at.setDate(at.getDate() + days);
     at.setHours(hour, minute, 0, 0);
     return at;
   };
-  /** "Saturday at 19:30": how the pages word a moment that is a few days off. */
   const wordsFor = (at: Date) => `${at.toLocaleDateString("en-GB", { weekday: "long" })} at ${timeValue(at)}`;
 
-  /** Two phones signed up with friends on and friends with each other (a friend can be planned with unless they stopped taking things). Both are left on the account page. */
   async function planners(browser: Browser) {
     const ann = await phoneWithFriends(browser, "Ann");
     const bob = await phoneWithFriends(browser, "Bob");
-    await befriend(bob.page, ann.page); // Bob gives a code, Ann types it
+    await befriend(bob.page, ann.page);
     return { ann, bob };
   }
 
-  /** The friend's page (the only friend), with the button that plans on it. */
   async function friendPage(page: Page) {
     await openFriends(page);
     await page.getByTestId("friend-row").click();
@@ -1241,12 +1155,11 @@ test.describe("plans to watch together", () => {
   test("a plan is proposed from a friend's page, answered in the bell and on the page of friends, and what the friend said comes back to the one who proposed", async ({ browser }) => {
     test.setTimeout(180_000);
     const { ann, bob } = await planners(browser);
-    await ann.page.keyboard.press("Escape"); // (Ann is at her home screen, where the bell is)
+    await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("account-screen")).toHaveCount(0);
-    const saturday = inDays(2, 19, 30); // (two days off is always said by the name of the weekday)
+    const saturday = inDays(2, 19, 30);
     const sunday = inDays(3, 21);
 
-    // Bob plans from her page. The sheet starts on a time that can be sent, says who sees it and how, and refuses a time that is too near or too far before the server is asked.
     await friendPage(bob.page);
     await bob.page.getByTestId("friend-plan").click();
     const sheet = bob.page.getByTestId("plan-sheet");
@@ -1271,7 +1184,6 @@ test.describe("plans to watch together", () => {
     await expect(bob.page.getByTestId("account-toast")).toContainText(`Plan sent to ${ann.name}`);
     await expect(sheet).toHaveCount(0);
 
-    // Ann: told in a line, a number on her bell, and the plan in the bell's list with its words and its buttons. Looking does not answer.
     await look(ann.page);
     await expect(ann.page.getByTestId("account-toast")).toContainText(`${bob.name} proposes to watch together: ${wordsFor(saturday)}`);
     await expect(ann.page.getByTestId("bell-badge")).toHaveText("1");
@@ -1284,7 +1196,6 @@ test.describe("plans to watch together", () => {
     await ann.page.keyboard.press("Escape");
     await expect(ann.page.getByTestId("bell-sheet")).toHaveCount(0);
 
-    // On her page of friends it is the same line; Accept makes it a plan that is on, in the words that both of them read
     await ann.page.getByTestId("account-button").click();
     await openFriends(ann.page);
     const row = ann.page.getByTestId("friends-inbox").getByTestId("inbox-plan");
@@ -1295,16 +1206,14 @@ test.describe("plans to watch together", () => {
     await expect(row.getByTestId("inbox-plan-detail")).toHaveText(`${wordsFor(saturday)} · Bring snacks`);
     await expect(row.getByTestId("plan-accept")).toHaveCount(0);
 
-    // Bob is told yes, and has the plan on his page of friends (the few words stay with the one who wrote them)
     await look(bob.page);
     await expect(bob.page.getByTestId("account-toast")).toContainText(`${ann.name} said yes to watching together: ${wordsFor(saturday)}`);
-    await bob.page.keyboard.press("Escape"); // (the friend's page, then the page of friends)
+    await bob.page.keyboard.press("Escape");
     const bobsRow = bob.page.getByTestId("friends-inbox").getByTestId("inbox-plan");
     await expect(bobsRow).toHaveAttribute("data-status", "agreed");
     await expect(bobsRow.getByTestId("inbox-plan-heading")).toHaveText(`Watching together with ${ann.name}`);
     await expect(bobsRow.getByTestId("inbox-plan-detail")).toHaveText(wordsFor(saturday));
 
-    // Another plan, and a no: it goes from Ann's page at once, and Bob has the news (to dismiss), while the plan that is on stays
     await bob.page.keyboard.press("Escape");
     await expect(bob.page.getByTestId("menu-friends")).toBeVisible();
     await friendPage(bob.page);
@@ -1322,12 +1231,12 @@ test.describe("plans to watch together", () => {
 
     await look(bob.page);
     await expect(bob.page.getByTestId("account-toast")).toContainText(`${ann.name} can't make it: ${wordsFor(sunday)}`);
-    await bob.page.keyboard.press("Escape"); // (the sheet is shut already: the friend's page, then the page of friends)
+    await bob.page.keyboard.press("Escape");
     const declined = bob.page.getByTestId("friends-inbox").locator('[data-testid="inbox-plan"][data-status="declined"]');
     await expect(declined.getByTestId("inbox-plan-heading")).toHaveText(`${ann.name} can't make it`);
     await expect(declined.getByTestId("inbox-plan-detail")).toHaveText(wordsFor(sunday));
     await declined.getByTestId("inbox-dismiss").click();
     await expect(declined).toHaveCount(0);
-    await expect(bob.page.getByTestId("friends-inbox").getByTestId("inbox-plan")).toHaveCount(1); // (the plan that is on stays)
+    await expect(bob.page.getByTestId("friends-inbox").getByTestId("inbox-plan")).toHaveCount(1);
   });
 });

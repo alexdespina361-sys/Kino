@@ -34,8 +34,8 @@ describe("things in sections, one under the other", () => {
 
   it("are walked as one grid: down from a short row to the next section keeps the column as far as it goes, and up goes back", () => {
     const shape: Shape = { rail: [1, 1], top: [1], chips: [4], grid: sectionRows(sections, 3), foot: [1] };
-    expect(stepFrom(shape, at("grid", 0, 2), "down")).toEqual(at("grid", 1, 0)); // (the second row of the first section has one title)
-    expect(stepFrom(shape, at("grid", 1, 0), "down")).toEqual(at("grid", 2, 0)); // (and the next section starts under it)
+    expect(stepFrom(shape, at("grid", 0, 2), "down")).toEqual(at("grid", 1, 0));
+    expect(stepFrom(shape, at("grid", 1, 0), "down")).toEqual(at("grid", 2, 0));
     expect(stepFrom(shape, at("grid", 2, 0), "down")).toEqual(at("grid", 3, 0));
     expect(stepFrom(shape, at("grid", 3, 2), "up")).toEqual(at("grid", 2, 0));
     expect(stepFrom(shape, at("grid", 3, 2), "down")).toEqual(at("foot", 0, 0));
@@ -83,13 +83,13 @@ describe("stepFrom on rows of titles", () => {
 
   it("walks from the account button to the full screen one beside it, and back", () => {
     const corner: Shape = { ...shape, top: [2] };
-    expect(stepFrom(corner, at("rows", 0, 3), "up")).toEqual(at("top", 0, 0)); // (it lands on the account button, as before)
+    expect(stepFrom(corner, at("rows", 0, 3), "up")).toEqual(at("top", 0, 0));
     expect(stepFrom(corner, at("top", 0, 0), "right")).toEqual(at("top", 0, 1));
     expect(stepFrom(corner, at("top", 0, 1), "right")).toBeNull();
     expect(stepFrom(corner, at("top", 0, 1), "left")).toEqual(at("top", 0, 0));
     expect(stepFrom(corner, at("top", 0, 0), "left")).toBeNull();
     expect(stepFrom(corner, at("top", 0, 1), "down")).toEqual({ zone: "content", row: -1, col: -1 });
-    expect(stepFrom(shape, at("top", 0, 0), "right")).toBeNull(); // one button: nowhere to go
+    expect(stepFrom(shape, at("top", 0, 0), "right")).toBeNull();
   });
 });
 
@@ -99,7 +99,7 @@ describe("stepFrom with the banner's buttons (Play, My List)", () => {
   it("goes up from the first row to the buttons, and down from them to the titles", () => {
     expect(stepFrom(shape, at("rows", 0, 4), "up")).toEqual(at("hero", 0, 0));
     expect(stepFrom(shape, at("hero", 0, 1), "down")).toEqual({ zone: "content", row: -1, col: -1 });
-    expect(stepFrom(shape, at("rows", 1, 0), "up")).toEqual(at("rows", 0, 0)); // only the first row leads to them
+    expect(stepFrom(shape, at("rows", 1, 0), "up")).toEqual(at("rows", 0, 0));
   });
 
   it("walks along the buttons, opens the menu to their left, and reaches the account button above them", () => {
@@ -118,20 +118,19 @@ describe("stepFrom with the banner's buttons (Play, My List)", () => {
 });
 
 describe("stepFrom on the search page", () => {
-  // Six keys across and a last row of two wide ones, then the results three across.
   const shape: Shape = { rail: [1, 1], top: [1], keys: [6, 6, 6, 2], results: gridRows(7, 3) };
 
   it("walks the keys, and the wide keys keep to what is above them", () => {
     expect(stepFrom(shape, at("keys", 0, 1), "right")).toEqual(at("keys", 0, 2));
-    expect(stepFrom(shape, at("keys", 2, 1), "down")).toEqual(at("keys", 3, 0)); // Space is under the left three
-    expect(stepFrom(shape, at("keys", 2, 4), "down")).toEqual(at("keys", 3, 1)); // Delete under the right three
+    expect(stepFrom(shape, at("keys", 2, 1), "down")).toEqual(at("keys", 3, 0));
+    expect(stepFrom(shape, at("keys", 2, 4), "down")).toEqual(at("keys", 3, 1));
     expect(stepFrom(shape, at("keys", 3, 0), "up")).toEqual(at("keys", 2, 1));
     expect(stepFrom(shape, at("keys", 3, 1), "up")).toEqual(at("keys", 2, 4));
   });
 
   it("goes from the keys across to the results, and back to the end of the keys' row", () => {
     expect(stepFrom(shape, at("keys", 1, 5), "right")).toEqual(at("results", 1, 0));
-    expect(stepFrom(shape, at("keys", 3, 1), "right")).toEqual(at("results", 2, 0)); // as low as the results go
+    expect(stepFrom(shape, at("keys", 3, 1), "right")).toEqual(at("results", 2, 0));
     expect(stepFrom(shape, at("results", 1, 0), "left")).toEqual(at("keys", 1, 5));
     expect(stepFrom(shape, at("results", 2, 0), "left")).toEqual(at("keys", 2, 5));
   });
@@ -143,13 +142,12 @@ describe("stepFrom on the search page", () => {
 
   it("walks the results as a grid and goes up to the account button from the first row", () => {
     expect(stepFrom(shape, at("results", 0, 1), "down")).toEqual(at("results", 1, 1));
-    expect(stepFrom(shape, at("results", 1, 2), "down")).toEqual(at("results", 2, 0)); // the last row has one
+    expect(stepFrom(shape, at("results", 1, 2), "down")).toEqual(at("results", 2, 0));
     expect(stepFrom(shape, at("results", 0, 2), "up")).toEqual(at("top", 0, 0));
   });
 });
 
 describe("stepFrom on a title's own page", () => {
-  // Over the library: the page's buttons are all the arrow keys reach, however much lies under it.
   const shape: Shape = { rail: [1, 1], top: [1], hero: [2], rows: [8, 3], detail: [3], close: [1] };
 
   it("walks along the buttons and stops at the left end, without leaving for the menu", () => {
@@ -202,17 +200,17 @@ describe("stepFrom on a show's own page (buttons, seasons, episodes, one under t
   });
 
   it("walks episodes two across (a wide screen) in reading order: along a line, and down to the same place of the next or the last of a shorter one", () => {
-    const wide: Shape = { ...shape, episodes: gridRows(5, 2), related: [4] }; // 1 2 / 3 4 / 5
+    const wide: Shape = { ...shape, episodes: gridRows(5, 2), related: [4] };
     expect(stepFrom(wide, at("seasons", 0, 2), "down")).toEqual(at("episodes", 0, 0));
     expect(stepFrom(wide, at("episodes", 0, 0), "right")).toEqual(at("episodes", 0, 1));
     expect(stepFrom(wide, at("episodes", 0, 1), "right")).toBeNull();
     expect(stepFrom(wide, at("episodes", 0, 1), "left")).toEqual(at("episodes", 0, 0));
-    expect(stepFrom(wide, at("episodes", 0, 0), "left")).toBeNull(); // (not into the menu: nothing leads out of the page)
+    expect(stepFrom(wide, at("episodes", 0, 0), "left")).toBeNull();
     expect(stepFrom(wide, at("episodes", 0, 1), "down")).toEqual(at("episodes", 1, 1));
-    expect(stepFrom(wide, at("episodes", 1, 1), "down")).toEqual(at("episodes", 2, 0)); // (the fifth is alone on its line)
+    expect(stepFrom(wide, at("episodes", 1, 1), "down")).toEqual(at("episodes", 2, 0));
     expect(stepFrom(wide, at("episodes", 1, 1), "up")).toEqual(at("episodes", 0, 1));
     expect(stepFrom(wide, at("episodes", 0, 1), "up")).toEqual(at("seasons", 0, 0));
-    expect(stepFrom(wide, at("episodes", 2, 0), "down")).toEqual(at("related", 0, 0)); // three presses from the first episode to the rows, not five
+    expect(stepFrom(wide, at("episodes", 2, 0), "down")).toEqual(at("related", 0, 0));
     expect(stepFrom(wide, at("related", 0, 3), "up")).toEqual(at("episodes", 2, 0));
   });
 
@@ -227,24 +225,22 @@ describe("stepFrom on a show's own page (buttons, seasons, episodes, one under t
 });
 
 describe("stepFrom on a title's page that lists rows of titles (the other parts of its collection, titles like it)", () => {
-  // A film: its buttons, then two rows of titles (three, and five).
   const film: Shape = { rail: [1, 1], top: [1], rows: [8], detail: [3], close: [1], related: [3, 5] };
-  // A show: the buttons, the seasons, the episodes, then one row of titles.
   const show: Shape = { rail: [1, 1], top: [1], rows: [8], detail: [2], close: [1], seasons: [4], episodes: [1, 1, 1], related: [6] };
 
   it("goes down from a film's buttons into the first row, and on to the next row, and back up the same way", () => {
     expect(stepFrom(film, at("detail", 0, 2), "down")).toEqual(at("related", 0, 0));
     expect(stepFrom(film, at("related", 0, 0), "down")).toEqual(at("related", 1, 0));
-    expect(stepFrom(film, at("related", 1, 3), "up")).toEqual(at("related", 0, 2)); // (the last title of the shorter row above)
+    expect(stepFrom(film, at("related", 1, 3), "up")).toEqual(at("related", 0, 2));
     expect(stepFrom(film, at("related", 0, 1), "up")).toEqual(at("detail", 0, 0));
-    expect(stepFrom(film, at("related", 1, 1), "down")).toBeNull(); // (the last row is the end of the page)
+    expect(stepFrom(film, at("related", 1, 1), "down")).toBeNull();
   });
 
   it("walks along a row and stops at both ends, without leaving sideways", () => {
     expect(stepFrom(film, at("related", 1, 0), "right")).toEqual(at("related", 1, 1));
     expect(stepFrom(film, at("related", 1, 4), "right")).toBeNull();
     expect(stepFrom(film, at("related", 1, 1), "left")).toEqual(at("related", 1, 0));
-    expect(stepFrom(film, at("related", 1, 0), "left")).toBeNull(); // (not into the menu either: nothing leads out of the page)
+    expect(stepFrom(film, at("related", 1, 0), "left")).toBeNull();
     expect(stepFrom(film, at("related", 0, 2), "right")).toBeNull();
   });
 
@@ -275,7 +271,7 @@ describe("stepFrom with two rows of buttons over a grid (the ratings' sections a
   const shape: Shape = { rail: [1, 1], top: [2], chips: [5, 4], grid: gridRows(7, 3) };
 
   it("goes down from the sections to the scores, and from the scores to the titles; up the same way back", () => {
-    expect(stepFrom(shape, at("chips", 0, 4), "down")).toEqual(at("chips", 1, 3)); // (the last of a shorter row)
+    expect(stepFrom(shape, at("chips", 0, 4), "down")).toEqual(at("chips", 1, 3));
     expect(stepFrom(shape, at("chips", 1, 2), "down")).toEqual(at("grid", 0, 2));
     expect(stepFrom(shape, at("grid", 0, 2), "up")).toEqual(at("chips", 1, 2));
     expect(stepFrom(shape, at("chips", 1, 1), "up")).toEqual(at("chips", 0, 1));
@@ -289,7 +285,6 @@ describe("stepFrom with two rows of buttons over a grid (the ratings' sections a
 });
 
 describe("stepFrom with the search filter (All, Movies, Series)", () => {
-  // The filter sits above the results, to the right of the keys.
   const shape: Shape = { rail: [1, 1], top: [1], keys: [6, 6, 6, 2], chips: [3], results: gridRows(7, 3) };
 
   it("reaches the filter from the first row of keys, and the rest of the keys still lead to the results", () => {
@@ -359,7 +354,7 @@ describe("stepFrom on a phone (the menu is a bar of four places along the bottom
   });
 
   it("goes from the titles up to the sections' buttons, along them, down to the titles, and up again to the account button", () => {
-    expect(stepFrom(phone, at("rows", 0, 3), "up")).toEqual(at("chips", 0, 0)); // (the page puts it on the one that is shown)
+    expect(stepFrom(phone, at("rows", 0, 3), "up")).toEqual(at("chips", 0, 0));
     expect(stepFrom(phone, at("rows", 1, 3), "up")).toEqual(at("rows", 0, 3));
     expect(stepFrom(phone, at("chips", 0, 1), "right")).toEqual(at("chips", 0, 2));
     expect(stepFrom(phone, at("chips", 0, 4), "right")).toBeNull();
@@ -385,7 +380,7 @@ describe("stepFrom on a friend's page (buttons over the titles, one button under
   const shape: Shape = { rail: [1, 1, 1], top: [1], chips: [3], grid: [4, 2], foot: [1] };
 
   it("goes down from the last row of titles to the button under them, and up from it to the last row", () => {
-    expect(stepFrom(shape, at("grid", 0, 2), "down")).toEqual(at("grid", 1, 1)); // (a row below still: the last one has only two)
+    expect(stepFrom(shape, at("grid", 0, 2), "down")).toEqual(at("grid", 1, 1));
     expect(stepFrom(shape, at("grid", 1, 1), "down")).toEqual(at("foot", 0, 0));
     expect(stepFrom(shape, at("foot", 0, 0), "up")).toEqual(at("grid", 1, 0));
   });

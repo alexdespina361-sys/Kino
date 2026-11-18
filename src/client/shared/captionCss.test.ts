@@ -10,7 +10,6 @@ describe("captionTextStyle", () => {
   });
 
   it("measures the picture on a screen as the 16:9 one that fits it, and never lets the text get unreadably small", () => {
-    // A screen as high as it is wide enough for: the picture is the screen's height. A narrower one: the picture is a strip.
     expect(captionTextStyle(style({ size: "medium" })).fontSize).toBe("max(14px, calc(min(100vh, 56.25vw) * 4.6 / 100))");
   });
 

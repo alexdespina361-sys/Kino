@@ -55,7 +55,6 @@ describe("newerOf", () => {
 
 describe("mergeCollection", () => {
   const now = 100 * DAY;
-  /** A moment shortly before `now`: n seconds before it. */
   const t = (secondsAgo: number) => now - secondsAgo * 1000;
 
   it("keeps the newer copy of each item and everything only one side has, newest first", () => {
@@ -77,7 +76,6 @@ describe("mergeCollection", () => {
     const gone: SyncItem = { key: "a", at: t(8), deleted: true };
     const merged = mergeCollection<SyncItem>([item("a", t(50))], [gone], { limit: 10, now });
     expect(merged).toEqual([gone]);
-    // ...and watching it again afterwards brings it back
     expect(mergeCollection<SyncItem>(merged, [item("a", t(1))], { limit: 10, now }).map((m) => m.deleted)).toEqual([undefined]);
   });
 
@@ -198,14 +196,14 @@ describe("resolveSettings", () => {
     expect(resolveSettings([{ key: "newsPopups", at: 1, value: false }])).toEqual({ newsPopups: false });
     expect(resolveSettings([{ key: "newsPopups", at: 1, value: true }])).toEqual({ newsPopups: true });
     expect(resolveSettings([{ key: "newsPopups", at: 1, value: "off" }])).toEqual({});
-    expect(resolveSettings([{ key: "newsPopups", at: 2, deleted: true }])).toEqual({}); // (turned back on = the default again)
+    expect(resolveSettings([{ key: "newsPopups", at: 2, deleted: true }])).toEqual({});
   });
 
   it("keeps whether the picture's quality follows the connection, which it does until it is turned off, and ignores anything else said of it", () => {
     expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: false }])).toEqual({ adaptiveQuality: false });
     expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: true }])).toEqual({ adaptiveQuality: true });
     expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: "off" }])).toEqual({});
-    expect(resolveSettings([{ key: "adaptiveQuality", at: 2, deleted: true }])).toEqual({}); // (turned back on = the default again)
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 2, deleted: true }])).toEqual({});
   });
 });
 
@@ -215,24 +213,24 @@ describe("what people type", () => {
     expect(RegisterSchema.parse({ email: " Robert ", password: "1" }).email).toBe("robert");
     expect(RegisterSchema.parse({ email: "Ana Maria 7!", password: "1" }).email).toBe("ana maria 7!");
     expect(RegisterSchema.parse({ email: "Ștefan", password: "1" }).email).toBe("ștefan");
-    expect(LoginSchema.parse({ email: "ROBERT", password: "1" }).email).toBe("robert"); // signing in finds the same account whatever the capitals
+    expect(LoginSchema.parse({ email: "ROBERT", password: "1" }).email).toBe("robert");
   });
 
   it("asks for a name, and for nothing about the password: how long, how clever, or whether there is one", () => {
     expect(RegisterSchema.safeParse({ email: "", password: "1" }).success).toBe(false);
     expect(RegisterSchema.safeParse({ email: "   ", password: "1" }).success).toBe(false);
-    expect(RegisterSchema.safeParse({ email: "a\nb", password: "1" }).success).toBe(false); // no line breaks or other invisible characters
+    expect(RegisterSchema.safeParse({ email: "a\nb", password: "1" }).success).toBe(false);
     expect(RegisterSchema.safeParse({ email: "x".repeat(255), password: "1" }).success).toBe(false);
     for (const password of ["", "1", "a", "  ", "password", "🙂", "x".repeat(200)]) expect(RegisterSchema.safeParse({ email: "robert", password }).success).toBe(true);
     expect(RegisterSchema.safeParse({ email: "robert", password: "x".repeat(201) }).success).toBe(false);
-    expect(LoginSchema.safeParse({ email: "robert", password: "" }).success).toBe(true); // (an account with none is signed in to with none)
+    expect(LoginSchema.safeParse({ email: "robert", password: "" }).success).toBe(true);
     expect(LoginSchema.safeParse({ email: "robert", password: "x".repeat(201) }).success).toBe(false);
   });
 
   it("names a first profile from the account's name, and picks the first picture not in use", () => {
     expect(avatarName("fox")).toBe("Fox");
     expect(avatarName("astronaut")).toBe("Astronaut");
-    for (const avatar of AVATAR_IDS) expect(ProfileNameSchema.safeParse(avatarName(avatar)).success, avatar).toBe(true); // (every one is a name a profile may have)
+    for (const avatar of AVATAR_IDS) expect(ProfileNameSchema.safeParse(avatarName(avatar)).success, avatar).toBe(true);
     expect(nextAvatar([])).toBe("fox");
     expect(nextAvatar(["fox", "cat"])).toBe("panda");
   });
@@ -259,7 +257,6 @@ describe("what people type", () => {
       { key: "lang", at: 1, value: "ro" },
       { key: "friends", at: 4, value: true },
     ]);
-    // (What a screen sends is still held to the settings it knows.)
     expect(SyncRequestSchema.safeParse({ since: 0, settings: [{ key: "somethingNewer", at: 2, value: true }] }).success).toBe(false);
   });
 });

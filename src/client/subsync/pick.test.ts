@@ -14,7 +14,6 @@ describe("how much speech the recogniser heard (the rate that tells a dub from a
   it("does not count the words the recogniser was not sure of", () => {
     expect(heardRate([...words(10, 0.9), ...words(40, 0.3)], 60)).toBeCloseTo(10 / 60, 5);
     expect(heardRate(words(40, 0.3), 60)).toBe(0);
-    // (Exactly as sure as the kit asks counts, and a word that has no probability is taken as sure.)
     expect(heardRate(words(6, 0.5), 60)).toBeCloseTo(0.1, 5);
     expect(heardRate(words(6), 60)).toBeCloseTo(0.1, 5);
   });

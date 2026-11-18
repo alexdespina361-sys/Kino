@@ -12,16 +12,13 @@ import { FileStickerFiles, MemoryStickerFiles, PostgresStickerFiles, personalSti
 import { makeSticker, pngHeader } from "./stickerImage";
 import { StickerBook, type StickerHost } from "./stickers";
 
-/** A square picture: every pixel `rgba`, or made by `paint`. */
 function picture(side: number, rgba: [number, number, number, number] = [200, 40, 40, 255], paint?: (x: number, y: number) => [number, number, number, number]): Buffer {
   const png = new PNG({ width: side, height: side });
   for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) png.data.set(paint ? paint(x, y) : rgba, (y * side + x) * 4);
   return PNG.sync.write(png, { colorType: 6, inputColorType: 6, inputHasAlpha: true, bitDepth: 8, deflateLevel: 9 });
 }
-/** A picture of its own for each `n`. */
 const nth = (n: number) => picture(32, [n & 255, (n >> 8) & 255, 99, 255]);
 
-/** A chunk of a PNG, with its CRC. */
 function chunk(type: string, data: Buffer): Buffer {
   const length = Buffer.alloc(4);
   length.writeUInt32BE(data.length);
@@ -38,7 +35,6 @@ function crc32(data: Buffer): number {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-/** A PNG put together by hand: its header as given, `idat` as its data. */
 function handMade(header: { width: number; height: number; depth?: number; colour?: number; interlace?: number }, idat: Buffer, extra: Buffer[] = []): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(header.width, 0);
@@ -48,7 +44,6 @@ function handMade(header: { width: number; height: number; depth?: number; colou
   ihdr[12] = header.interlace ?? 0;
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), ...extra, chunk("IDAT", idat), chunk("IEND", Buffer.alloc(0))]);
 }
-/** A picture with a chunk of text put in before its end (where a camera or an editor puts what it says of a picture). */
 function withText(png: Buffer, text: string): Buffer {
   const end = png.length - 12;
   return Buffer.concat([png.subarray(0, end), chunk("tEXt", Buffer.from(`Comment\0${text}`, "latin1")), png.subarray(end)]);
@@ -87,7 +82,6 @@ describe("a personal sticker's picture", () => {
   });
 
   it("turns away what is not such a picture, before unpacking it when its header says so", () => {
-    // (rows of white pixels that are seen, each with its filter byte: a picture that is good in every way but the one each case is about)
     const rows = (width: number, height: number) => {
       const data = Buffer.alloc((width * 4 + 1) * height, 0xff);
       for (let row = 0; row < height; row++) data[row * (width * 4 + 1)] = 0;
@@ -101,7 +95,6 @@ describe("a personal sticker's picture", () => {
       ["not square", handMade({ width: 32, height: 16 }, rows(32, 16)), "not_a_picture"],
       ["too small", handMade({ width: 8, height: 8 }, rows(8, 8)), "not_a_picture"],
       ["bigger than a page makes it", handMade({ width: PERSONAL_STICKER.side + 1, height: PERSONAL_STICKER.side + 1 }, rows(4, 4)), "not_a_picture"],
-      // (a few bytes that say they are a picture of a hundred thousand pixels a side: never unpacked)
       ["a header that would unpack to gigabytes", handMade({ width: 100_000, height: 100_000 }, deflateSync(Buffer.alloc(1024))), "not_a_picture"],
       ["interlaced", handMade({ width: 32, height: 32, interlace: 1 }, rows(32, 32)), "not_a_picture"],
       ["a depth its kind has not", handMade({ width: 32, height: 32, colour: 2, depth: 4 }, rows(12, 32)), "not_a_picture"],
@@ -124,8 +117,6 @@ describe("a personal sticker's picture", () => {
       for (let row = 0; row < height; row++) data[row * (width * 4 + 1)] = 0;
       return deflateSync(data);
     };
-    // (The header in front is a sticker's and the data is exactly what it says; the header behind it says a picture of a hundred million pixels, and
-    // the reader goes by the last one it meets.)
     const huge = Buffer.alloc(13);
     huge.writeUInt32BE(10_000, 0);
     huge.writeUInt32BE(11_300, 4);
@@ -140,7 +131,6 @@ describe("a personal sticker's picture", () => {
         expect(makeSticker(sent), name).toEqual({ ok: false, error: "not_a_picture" });
       }
       expect(read).not.toHaveBeenCalled();
-      // (a good one is still read)
       expect(makeSticker(picture(32)).ok).toBe(true);
       expect(read).toHaveBeenCalledTimes(1);
     } finally {
@@ -160,21 +150,18 @@ describe("a personal sticker's picture", () => {
       for (let row = 0; row < 32; row++) data[row * (32 * bytesPerPixel + 1)] = 0;
       const made = makeSticker(handMade({ width: 32, height: 32, colour, depth }, deflateSync(data)));
       expect(made.ok, `colour ${colour} depth ${depth}`).toBe(true);
-      if (made.ok) expect([pngHeader(made.data)?.depth, pngHeader(made.data)?.colour], `colour ${colour} depth ${depth}`).toEqual([8, colour === 4 || colour === 6 ? 6 : 2]); // (its alpha, 0xc0, is kept)
+      if (made.ok) expect([pngHeader(made.data)?.depth, pngHeader(made.data)?.colour], `colour ${colour} depth ${depth}`).toEqual([8, colour === 4 || colour === 6 ? 6 : 2]);
     }
   });
 
   it("turns away a file whose checksum is wrong", () => {
     const sent = Buffer.from(picture(32));
     const idat = sent.indexOf(Buffer.from("IDAT"));
-    sent[idat + 6] = sent[idat + 6]! ^ 0xff; // (a byte of the data changed, its CRC not)
+    sent[idat + 6] = sent[idat + 6]! ^ 0xff;
     expect(makeSticker(sent)).toEqual({ ok: false, error: "not_a_picture" });
   });
 });
 
-/* ------------------------------ the book ------------------------------ */
-
-/** What the book is told of the store and the profiles (`now` is the clock, moved by the tests). */
 class Host {
   now = Date.parse("2026-11-17T10:00:00Z");
   readonly off = new Set<string>();
@@ -259,12 +246,10 @@ describe("the book of personal stickers", () => {
     const tooMany = await stickers.make("alex", "alexs-account", nth(99));
     expect(tooMany).toMatchObject({ ok: false, error: "too_many" });
     expect((tooMany as { waitMs: number }).waitMs).toBeGreaterThan(0);
-    // (the rest of the profile's room, from an account that has made none today)
     for (let n = PERSONAL_STICKER.madePerDay; n < PERSONAL_STICKER.perProfile; n++) await make(stickers, "alex", nth(100 + n), "another-account");
     expect(await stickers.make("alex", "another-account", nth(98))).toEqual({ ok: false, error: "full" });
     const sams = await make(stickers, "sam", nth(500));
     expect(stickers.save("alex", sams)).toEqual({ ok: false, error: "full" });
-    // (a day later the account may make some again: the profile is still full)
     host.now += 24 * 3600 * 1000 + 1;
     expect(await stickers.make("alex", "alexs-account", nth(97))).toEqual({ ok: false, error: "full" });
 
@@ -272,7 +257,6 @@ describe("the book of personal stickers", () => {
     const small = book({ maxBytes: one + 10 }).stickers;
     await make(small, "alex", nth(1));
     expect(await small.make("alex", "alexs-account", nth(2))).toEqual({ ok: false, error: "site_full" });
-    // (a sticker that was not made is not counted against the account's day)
     for (let n = 0; n < PERSONAL_STICKER.madePerDay - 1; n++) expect((await small.make("alex", "alexs-account", nth(2))).ok).toBe(false);
     expect(await small.make("alex", "alexs-account", nth(2))).toEqual({ ok: false, error: "site_full" });
   });
@@ -281,7 +265,7 @@ describe("the book of personal stickers", () => {
     const { stickers, host, files } = book();
     const id = await make(stickers, "alex", nth(1));
     expect(stickers.save("sam", id).ok).toBe(true);
-    expect(stickers.save("sam", id).ok).toBe(true); // (saving one it has is nothing)
+    expect(stickers.save("sam", id).ok).toBe(true);
     expect(stickers.release("alex", id)).toEqual({ ok: true, value: null });
     expect(stickers.has(id)).toBe(true);
     expect(stickers.of("alex").stickers).toEqual([]);
@@ -341,7 +325,6 @@ describe("the book of personal stickers", () => {
     expect(second.stickers.of("sam").stickers).toEqual([{ id, mine: false }]);
     expect(second.stickers.of("alex").stickers).toEqual([{ id, mine: true }]);
     expect(await second.stickers.picture(id)).toEqual(await first.stickers.picture(id));
-    // (and the same picture made again by its maker is found)
     expect(await make(second.stickers, "alex", nth(1))).toBe(id);
     for (const broken of [null, {}, { ...(doc as object), id: "short" }, { ...(doc as object), held: [] }, { ...(doc as object), bytes: "9" }]) {
       expect(() => book().stickers.load(`sticker:${id}`, broken), JSON.stringify(broken)).toThrow();
@@ -371,7 +354,6 @@ describe("the book of personal stickers", () => {
     expect(second.stickers.has(nobodys.id)).toBe(false);
     expect(second.host.dropped).toEqual([`sticker:${nobodys.id}`]);
     expect(second.warned.join(" ")).toMatch(/1 record\(s\) have no picture/);
-    // (a home of the pictures that cannot be read is said, and nothing is let go)
     const failing = book({ files: { ...new MemoryStickerFiles(), ids: async () => Promise.reject(new Error("down")) } as unknown as StickerFiles });
     failing.stickers.load(`sticker:${kept}`, docs[0]);
     expect(await failing.stickers.reconcile()).toEqual({ pictures: 0, documents: 0, missing: 0 });
@@ -386,7 +368,6 @@ describe("the book of personal stickers", () => {
     expect((one as { value: string }).value).toBe((two as { value: string }).value);
     expect(stickers.size.stickers).toBe(1);
     expect(await files.ids()).toHaveLength(1);
-    // (and one that fails lets the next one go on)
     const failing = new MemoryStickerFiles();
     const put = failing.put.bind(failing);
     let fail = true;
@@ -402,7 +383,6 @@ describe("the book of personal stickers", () => {
     const put = files.put.bind(files);
     let hold: (() => void) | undefined;
     const { stickers } = book({ files });
-    // (the collection one short of full, and a sticker of Sam's to save into it)
     for (let n = 0; n < PERSONAL_STICKER.perProfile - 1; n++) await make(stickers, "alex", nth(200 + n), `account-${Math.floor(n / PERSONAL_STICKER.madePerDay)}`);
     const sams = await make(stickers, "sam", nth(300));
     files.put = (id, data) => new Promise<void>((resolve) => (hold = () => void put(id, data).then(resolve)));
@@ -412,7 +392,6 @@ describe("the book of personal stickers", () => {
     hold!();
     expect(await making).toEqual({ ok: false, error: "full" });
     files.put = put;
-    // (the account has all of its day still: as many as a day allows, for another profile)
     for (let n = 0; n < PERSONAL_STICKER.madePerDay; n++) await make(stickers, "kim", nth(400 + n), "late-account");
     expect(await files.ids()).toHaveLength(PERSONAL_STICKER.perProfile - 1 + 1 + PERSONAL_STICKER.madePerDay);
   });
@@ -426,8 +405,6 @@ describe("the book of personal stickers", () => {
     expect(stickers.of("alex").stickers).toEqual([]);
   });
 });
-
-/* ------------------------------ where the pictures are kept ------------------------------ */
 
 const folders: string[] = [];
 const dbs: PGlite[] = [];
@@ -472,7 +449,6 @@ for (const [name, open] of [
       await files.remove(ID);
       expect(await files.get(ID)).toBeUndefined();
       expect(await files.ids()).toEqual([OTHER]);
-      // (only a sticker's name names a picture)
       expect(await files.get("../../etc/passwd")).toBeUndefined();
     });
   });
@@ -510,7 +486,7 @@ describe("what the whole site gives to making stickers (the judge, 17 Nov: every
     budget.spend(300);
     expect(budget.wait()).toBe(0);
     clock.now += 60_000;
-    budget.spend(200); // (1100 of 1000: what was under way was finished, the next waits)
+    budget.spend(200);
     expect(budget.wait(), "until the first 600 are an hour old").toBe(3600_000 - 120_000);
     clock.now += 3600_000 - 120_000;
     expect(budget.wait()).toBe(0);
@@ -534,13 +510,11 @@ describe("what the whole site gives to making stickers (the judge, 17 Nov: every
     for (let n = 0; n < PERSONAL_STICKER.writesAtOnce; n++) await expect(stickers.make(`p${n}`, `a${n}`, nth(n + 1)), String(n)).rejects.toThrow(/not written in time/);
     expect(await stickers.make("p9", "a9", nth(99))).toEqual({ ok: false, error: "site_full" });
     expect(stickers.size.stickers).toBe(0);
-    // (they answer at last: what they wrote is let go, nothing having been made of it, and the site makes again)
     for (const go of held.splice(0)) go();
     await vi.waitFor(async () => expect(await files.ids()).toEqual([]));
     files.put = put;
     await vi.waitFor(async () => expect((await stickers.make("p9", "a9", nth(99))).ok).toBe(true));
     expect(stickers.size.stickers).toBe(1);
-    // (and it was not one of its maker's day: the first eight makers can make theirs again)
     expect((await stickers.make("p0", "a0", nth(1))).ok).toBe(true);
   });
 

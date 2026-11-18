@@ -24,9 +24,9 @@ describe("counting visitors", () => {
     counter.count("203.0.113.7", PHONE, "ro");
     counter.count("203.0.113.7", PHONE, "ro");
     counter.count("203.0.113.7", PHONE, "ro");
-    counter.count("203.0.113.9", PHONE, "ro"); // another address
-    counter.count("203.0.113.7", LAPTOP, "ro"); // the same address, another browser
-    counter.count("203.0.113.7", PHONE, "en"); // the same, another language
+    counter.count("203.0.113.9", PHONE, "ro");
+    counter.count("203.0.113.7", LAPTOP, "ro");
+    counter.count("203.0.113.7", PHONE, "en");
     expect(counter.records().days.get("2026-11-01")).toEqual({ visitors: 4, loads: 6 });
     expect(counter.records().since).toBe("2026-11-01");
   });
@@ -44,11 +44,9 @@ describe("counting visitors", () => {
     await counter.flush();
     expect(counter.records().days.get("2026-11-01")).toEqual({ visitors: 1, loads: 1 });
     expect(counter.records().days.get("2026-11-02")).toEqual({ visitors: 1, loads: 1 });
-    // the same visitor, with another salt: nothing that was kept can say it was them again
     const today = persistence.docs.get("seen:2026-11-02") as { salt: string; hashes: string[] };
     expect(today.salt).not.toBe(yesterday.salt);
     expect(today.hashes[0]).not.toBe(yesterday.hashes[0]);
-    // yesterday's hashes and their salt are gone; its number stays
     expect([...persistence.docs.keys()].sort()).toEqual(["seen:2026-11-02", "visits:2026-11-01", "visits:2026-11-02"]);
   });
 
@@ -59,9 +57,9 @@ describe("counting visitors", () => {
     await counter.flush();
     counter.rollOver();
     await counter.flush();
-    expect(persistence.docs.has("seen:2026-11-01")).toBe(true); // (still the same day)
+    expect(persistence.docs.has("seen:2026-11-01")).toBe(true);
 
-    clock += 14 * HOUR; // 2026-11-02 00:00 UTC
+    clock += 14 * HOUR;
     counter.rollOver();
     await counter.flush();
     expect([...persistence.docs.keys()]).toEqual(["visits:2026-11-01"]);
@@ -96,7 +94,6 @@ describe("counting visitors", () => {
     clock += 24 * HOUR;
     const nextDay = await open(persistence);
     await nextDay.flush();
-    // the hashes of the day that is over were deleted as the server started
     expect(persistence.docs.has("seen:2026-11-01")).toBe(false);
     nextDay.count("203.0.113.7", PHONE, "ro");
     expect(nextDay.records().days.get("2026-11-02")).toEqual({ visitors: 1, loads: 1 });
@@ -113,13 +110,11 @@ describe("counting visitors", () => {
     const counter = await open(persistence);
     for (let i = 0; i < 50; i++) counter.count("198.51.100.1", `bot ${i}`, "en");
     expect(counter.records().days.get("2026-11-01")).toEqual({ visitors: BROWSERS_PER_ADDRESS, loads: 50 });
-    // (another address is not held up by it)
     counter.count("203.0.113.7", PHONE, "ro");
     await counter.flush();
     const again = await open(persistence);
     for (let i = 50; i < 60; i++) again.count("198.51.100.1", `bot ${i}`, "en");
     expect(again.records().days.get("2026-11-01")).toEqual({ visitors: BROWSERS_PER_ADDRESS + 1, loads: 61 });
-    // (what is written names no address)
     expect(JSON.stringify([...persistence.docs.values()])).not.toContain("198.51.100.1");
   });
 
@@ -154,7 +149,7 @@ describe("counting visitors", () => {
     expect(counter.records().days.get("2026-10-31")).toEqual({ visitors: 3, loads: 5 });
     expect(counter.records().days.has("2026-10-30")).toBe(false);
     expect(warnings).toEqual(["Skipped an unreadable record (seen:2026-11-01)."]);
-    counter.count("203.0.113.7", PHONE, "ro"); // (starts a salt of its own and writes over the unreadable one)
+    counter.count("203.0.113.7", PHONE, "ro");
     await counter.flush();
     expect((memory.docs.get("seen:2026-11-01") as { hashes: string[] }).hashes).toHaveLength(1);
   });
@@ -180,7 +175,7 @@ describe("where the counts are kept", () => {
         ended = true;
       },
     });
-    await accounts.load(); // (makes the accounts' table)
+    await accounts.load();
     await accounts.save({ put: new Map([["account:a", { id: "a" }]]), remove: new Set() });
 
     const persistence = visitsPersistenceFor(accounts, "postgres");
@@ -191,11 +186,9 @@ describe("where the counts are kept", () => {
     expect(ended).toBe(false);
     const visits = await db.query("select key from kino_visits order by key");
     expect(visits.rows.map((row) => (row as { key: string }).key)).toEqual(["seen:2026-11-01", "visits:2026-11-01"]);
-    // the accounts' table has none of it, and the visits' none of the accounts'
     const docs = await db.query("select key from kino_docs");
     expect(docs.rows.map((row) => (row as { key: string }).key)).toEqual(["account:a"]);
 
-    // and it is read back after a restart
     const again = await open(visitsPersistenceFor(accounts, "postgres"));
     expect(again.records().days.get("2026-11-01")).toEqual({ visitors: 1, loads: 1 });
     await db.close();

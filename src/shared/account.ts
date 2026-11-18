@@ -1,49 +1,25 @@
 import { z } from "zod";
 
-/**
- * Accounts, profiles and what is kept for them. Shared by the server and both screens, so a change to what is stored is one
- * edit. Everything a profile keeps (what was watched, My List, settings) is a list of small items with a `key` and an `at`,
- * and two copies of the same list are combined item by item, newest first (see `mergeCollection`), so the copies on a phone,
- * a TV and the server always settle on the same answer, whatever order they met in.
- */
-
-/* ------------------------------ accounts and profiles ------------------------------ */
-
 export const MAX_PROFILES = 5;
 export const PROFILE_NAME_MAX = 16;
-/** A password can be anything, as short as one character, or nothing at all (an account with no password is open to anyone who types its name: the sign-up form says so). */
 export const PASSWORD_MIN = 0;
 
-/** The pictures a profile can have: drawn in client/account/Avatar.tsx. */
-/** (The first twelve are faces; the twelve after them are of the cinema and of what is watched there: the owner, 18 Nov, "more in theme".) */
 export const AVATAR_IDS = [
   ...(["fox", "cat", "panda", "owl", "bear", "rabbit", "frog", "penguin", "robot", "alien", "ghost", "monster"] as const),
   ...(["popcorn", "clapper", "reel", "ticket", "camera", "star", "ninja", "wizard", "astronaut", "pirate", "vampire", "dragon"] as const),
 ] as const;
 export type AvatarId = (typeof AVATAR_IDS)[number];
 export const AvatarIdSchema = z.enum(AVATAR_IDS);
-/**
- * A picture as a screen is *told* of it (its own profiles, a friend, somebody in a party): one it does not know - a picture added after this screen's
- * page was loaded - is shown as the first, rather than the whole answer being refused (and the screen signed out, or its Friends page empty).
- * What a screen *asks for* (a new profile, a change) is still one of the pictures there are.
- */
 export const AvatarSeenSchema = AvatarIdSchema.catch(AVATAR_IDS[0]);
 
-/** The languages of the website itself. */
 export const UI_LANGUAGES = ["en", "ro", "it"] as const;
 export type UiLanguage = (typeof UI_LANGUAGES)[number];
 export const UiLanguageSchema = z.enum(UI_LANGUAGES);
 
-/** The colours a profile can give the website. The first is the one everybody starts with. */
 export const ACCENTS = ["red", "blue", "purple", "green", "orange", "pink"] as const;
 export type Accent = (typeof ACCENTS)[number];
 export const AccentSchema = z.enum(ACCENTS);
 
-/**
- * What an account signs in with: any name at all (an e-mail address too: the accounts made when it had to be one still work), only not
- * one that somebody has already. Kept without capitals, so "Robert" and "robert" are the same account. (The field is still called
- * `email` where it travels and is stored, and a name that will not do is still told as `invalid_email`: older pages and saved accounts speak that.)
- */
 export const LoginNameSchema = z
   .string()
   .trim()
@@ -53,40 +29,25 @@ export const LoginNameSchema = z
   .regex(/^[^\p{Cc}\p{Cf}]+$/u, "invalid_email")
   .transform((name) => name.normalize("NFC"));
 export const NewPasswordSchema = z.string().min(PASSWORD_MIN, "weak_password").max(200, "weak_password");
-/** Who is asking: the screen the sign-in is for, so the list of devices can say "TV" or "Phone". */
 export const DeviceKindSchema = z.enum(["tv", "remote", "browser"]);
 export type DeviceKind = z.infer<typeof DeviceKindSchema>;
 
-/** `name`: the nickname the first profile goes by (others see it; the login they never do). Left out, it is named after its picture. */
 export const RegisterSchema = z.object({ email: LoginNameSchema, password: NewPasswordSchema, device: DeviceKindSchema.optional(), name: z.lazy(() => ProfileNameSchema).optional() });
 export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string().max(200), device: DeviceKindSchema.optional() });
 
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");
-/** The number that goes with a name, "Sam#2", to tell the profiles of one name apart wherever they are (see `tagLabel`). */
 export const TagNumberSchema = z.number().int().min(1).max(999_999);
 export const ProfileSchema = z.object({
   id: z.string().max(60),
   name: ProfileNameSchema,
   avatar: AvatarSeenSchema,
   tag: TagNumberSchema.optional(),
-  /**
-   * The profile is still to be set up by whoever uses it (the owner, 18 Nov: after the first login an account `must pick nickname for their first
-   * profile, subtitle settings, profile image` and what it is interested in): `all` for the first profile of a new account, whose name and picture
-   * nobody chose; `more` for a profile that was added with a name and a picture, and has its subtitles and what it watches left. Only its own
-   * account is told. Profiles from before this have none, and are asked nothing.
-   */
   setup: z.enum(["all", "more"]).optional().catch(undefined),
 });
 export type Profile = z.infer<typeof ProfileSchema>;
 export const NewProfileSchema = z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema });
-/** (`setup: "done"` says the profile has been set up: see `ProfileSchema.setup`.) */
 export const ProfilePatchSchema = NewProfileSchema.partial().extend({ setup: z.literal("done").optional() });
 
-/**
- * `google`: a Google account signs in to this one. `googleOnly`: the account was made by signing in with Google, so that is the only way in: its name was made up
- * by the server (it is shown as nobody's) and it has no password anybody knows. `childPin`: the account has a PIN that is asked before a child's profile is left
- * on its screens (see `CHILD_PIN_LENGTH`); the PIN itself never leaves the server, only that there is one.
- */
 export const AccountSchema = z.object({
   id: z.string().max(60),
   email: z.string().max(254),
@@ -95,37 +56,22 @@ export const AccountSchema = z.object({
   childPin: z.literal(true).optional(),
 });
 
-/**
- * The PIN of a child's profile (the owner, 16 Nov 2026): four digits, asked on a screen whose profile is a child's before it is left (another profile, signing out,
- * the profiles changed, the account's devices and security) or made an ordinary profile again. It is a lock of the app on the account's own screens, not of the
- * server: a child who signs in to the account on another device is not stopped by it.
- */
 export const CHILD_PIN_LENGTH = 4;
 export const ChildPinSchema = z.string().regex(/^\d{4}$/);
-/** Setting the PIN (`next`), changing it, or taking it off (`next: null`). Once there is one, the current PIN, the password, or a fresh Google confirmation says it may be. */
 export const ChildPinChangeSchema = z.object({ next: ChildPinSchema.nullable(), pin: ChildPinSchema.optional(), password: z.string().max(200).optional() });
 export type ChildPinChange = z.infer<typeof ChildPinChangeSchema>;
 export const MeSchema = z.object({ account: AccountSchema, profiles: z.array(ProfileSchema).max(MAX_PROFILES) });
 export type Me = z.infer<typeof MeSchema>;
 
-/** Whether new accounts can be made here (a server that is shared with friends may close it once they have one). */
 export const RegistrationSchema = z.enum(["open", "closed"]);
 export type Registration = z.infer<typeof RegistrationSchema>;
-/** The first thing a screen asks: who is signed in (nobody: `me` is null), may somebody new sign up, and (`google`, only when it may) can one sign in with Google at this address. */
 export const SessionStateSchema = z.object({ me: MeSchema.nullable(), registration: RegistrationSchema, google: z.boolean().optional() });
 export type SessionState = z.infer<typeof SessionStateSchema>;
 
-/**
- * How a round trip to Google ended, as the server says it to the page it sends the browser back to (`?google=`): turned down at Google, did not work, no new
- * accounts here, too many tries, that Google account is another account's, Google sign-in is not on at this address, Google is connected now, the person proved
- * again who they are. A sign-in that worked says nothing.
- */
 export const GOOGLE_OUTCOMES = ["denied", "failed", "closed", "busy", "taken", "unavailable", "linked", "reauth"] as const;
 export type GoogleOutcome = (typeof GOOGLE_OUTCOMES)[number];
 
-/** How long a request to be signed in by a phone is good for, from the moment the device is given its code. */
 export const LINK_TTL_MS = 5 * 60 * 1000;
-/** A device asking to be signed in by a phone that already is: what it is and how long the request lasts. */
 export const LinkStartSchema = z.object({ device: DeviceKindSchema.optional() });
 export const LinkStartedSchema = z.object({ code: z.string(), secret: z.string(), expiresAt: z.number() });
 export const LinkViewSchema = z.object({ code: z.string(), kind: DeviceKindSchema, label: z.string(), expiresAt: z.number() });
@@ -149,49 +95,37 @@ export const SessionInfoSchema = z.object({
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 
-/** What a device is called on that list when its owner names it ("Living room TV"), instead of the browser and system it was made out of. */
 export const DEVICE_NAME_MAX = 40;
 export const SessionRenameSchema = z.object({ label: z.string().trim().min(1, "invalid_name").max(DEVICE_NAME_MAX, "invalid_name") });
 
-/** A picture's name as a profile's name ("fox" -> "Fox"): what the first profile of a new account is called until whoever uses it chooses one. */
 export const avatarName = (avatar: AvatarId): string => avatar.charAt(0).toUpperCase() + avatar.slice(1);
 
-/** The picture a new profile gets when its maker has not chosen one: the first one not taken yet. */
 export const nextAvatar = (taken: readonly string[]): AvatarId => AVATAR_IDS.find((id) => !taken.includes(id)) ?? AVATAR_IDS[0];
-
-/* ------------------------------ what a profile keeps ------------------------------ */
 
 const KeySchema = z.string().min(1).max(400);
 const AtSchema = z.number().finite();
 
-/** A removed item stays behind as just its key and the time it was removed, so other copies learn of it instead of bringing it back. */
 const tombstone = z.object({ key: KeySchema, at: AtSchema, deleted: z.literal(true) });
 const orRemoved = <T extends z.ZodType>(schema: T) => z.union([tombstone, schema]);
 
-/** What was watched, one card per film or show: the "Continue watching" row. */
 const ProgressLive = z.object({
   key: KeySchema,
   at: AtSchema,
   title: z.string().max(300),
-  /** The link that plays it again (an episode's own page, for a show). */
   url: z.string().max(2048),
   image: z.string().max(2048).optional(),
-  /** A wide picture of it, for the TV's wide cards and banner. */
   backdrop: z.string().max(2048).optional(),
   year: z.number().int().optional(),
-  /** Where it stopped, in the film or in that episode. */
   position: z.number().finite().min(0),
   duration: z.number().finite().min(0),
   season: z.number().int().optional(),
   episode: z.number().int().optional(),
-  /** Played to the end: it leaves "Continue watching" (a show carries on with its next episode) but is remembered. */
   done: z.boolean().optional(),
 });
 export const ProgressItemSchema = orRemoved(ProgressLive);
 export type ProgressItem = z.infer<typeof ProgressItemSchema>;
 export type LiveProgress = z.infer<typeof ProgressLive>;
 
-/** Which episodes of a show were watched, to mark the episode lists (the same facts as `WatchedEntry`). */
 const WatchedLive = z.object({
   key: KeySchema,
   at: AtSchema,
@@ -206,19 +140,15 @@ export const WatchedItemSchema = orRemoved(WatchedLive);
 export type WatchedItem = z.infer<typeof WatchedItemSchema>;
 export type LiveWatched = z.infer<typeof WatchedLive>;
 
-/** The list every profile has. A title saved with a single press goes in it, and it is there before anybody makes another. */
 export const DEFAULT_LIST = "favourites";
 export const LIST_NAME_MAX = 24;
-/** How many lists a profile can have, that first one included. */
 export const MAX_LISTS = 12;
 const ListIdSchema = z.string().min(1).max(60);
 export const ListNameSchema = z.string().trim().min(1, "invalid_name").max(LIST_NAME_MAX, "invalid_name");
 
-/** My Lists: the titles somebody saved for later, each in one of their lists (a title in two lists is two items). */
 const ListLive = z.object({
   key: KeySchema,
   at: AtSchema,
-  /** Which list it is in. Absent for `DEFAULT_LIST`, so what was saved before there were lists is in it already. */
   list: ListIdSchema.optional(),
   id: z.string().max(200),
   title: z.string().max(300),
@@ -232,46 +162,34 @@ export const ListItemSchema = orRemoved(ListLive);
 export type ListItem = z.infer<typeof ListItemSchema>;
 export type LiveListItem = z.infer<typeof ListLive>;
 
-/** The lists themselves, each with its name. `DEFAULT_LIST` is never made: it is there, and is called "Favourites" in the language of the screen until somebody gives it a name. */
 const ListNameLive = z.object({
   key: ListIdSchema,
   at: AtSchema,
   name: ListNameSchema,
-  /** Where it stands among the lists after the first, once somebody has moved one (0 is the first of them). Lists that were never placed follow, in the order they were made. */
   order: z.number().int().min(0).max(MAX_LISTS).optional(),
 });
 export const ListNameItemSchema = orRemoved(ListNameLive);
 export type ListNameItem = z.infer<typeof ListNameItemSchema>;
 export type LiveListName = z.infer<typeof ListNameLive>;
 
-/** What a profile thought of a film, of a show, or of one season of a show. */
 export const RATING_NOTE_MAX = 400;
 export const MAX_SCORE = 10;
 const RatingLive = z.object({
   key: KeySchema,
-  /** The last change of any kind: what the copies settle by. */
   at: AtSchema,
   title: z.string().max(300),
-  /** The link that plays the title (a show's first episode's), to open it again from the list of ratings. */
   url: z.string().max(2048),
   image: z.string().max(2048).optional(),
   backdrop: z.string().max(2048).optional(),
   year: z.number().int().optional(),
   kind: z.enum(["movie", "series"]).optional(),
-  /** Said only for a cartoon or an anime, when the title was rated where the library said so (the ratings are filtered by it: see client/account/ratingFilter.ts). */
   section: z.enum(["cartoon", "anime"]).optional(),
-  /** Absent: the whole title (a film, or a show as a whole). */
   season: z.number().int().min(1).max(200).optional(),
   score: z.number().int().min(1).max(MAX_SCORE),
-  /** Why, in the person's words. */
   note: z.string().max(RATING_NOTE_MAX).optional(),
-  /** When the score was given (a change of the note alone does not move it). */
   ratedAt: AtSchema,
-  /** What had been watched when it was rated, worked out by the screen from what the profile watched (see rating.ts): when it was last watched... */
   watchedAt: AtSchema.optional(),
-  /** ...how much of a film (the last 5% counts as watched, since credits get skipped)... */
   percent: z.number().int().min(0).max(100).optional(),
-  /** ...and for a show or a season how many episodes were watched, out of how many there are when that is known. */
   seen: z.number().int().min(0).max(5000).optional(),
   of: z.number().int().min(1).max(5000).optional(),
 });
@@ -279,52 +197,20 @@ export const RatingItemSchema = orRemoved(RatingLive);
 export type RatingItem = z.infer<typeof RatingItemSchema>;
 export type LiveRating = z.infer<typeof RatingLive>;
 
-/** A rating is told apart by the title it is for (a show by its first episode's link, whichever episode it was found by) and, for one season of a show, which. */
 export const ratingKey = (url: string, season?: number): string => `rate:${titleLink(url)}${season ? `|s${season}` : ""}`;
 
-/** How a profile likes the website. Each setting is its own item, so changing one on the phone never undoes another changed on the TV. */
 export const SETTING_SCHEMAS = {
   lang: UiLanguageSchema,
   accent: AccentSchema,
   autoplayNext: z.boolean(),
-  /**
-   * The player's Skip button (client/tv/skip.ts) fills up for a few seconds and skips by itself: an opening, a "previously on", credits (and with credits
-   * that run to the end, on to the next episode, when `autoplayNext` is on too). Off until turned on: the button is there either way, and waits to be pressed.
-   */
   autoSkip: z.boolean(),
-  /**
-   * Preferred audio language for anime: "jp" for Japanese with subtitles, "eng" for English Dub.
-   * Defaults to "jp" when not set.
-   */
   animeAudio: z.enum(["jp", "eng"]),
-  /**
-   * A tap or click on the picture pauses and plays it. Off (until turned on) it only shows or hides the controls: the big button in the
-   * middle, the bar's own and the remote's OK key pause either way. (A remote that points and clicks like a mouse is the one that notices.)
-   */
   tapToPause: z.boolean(),
-  /** The subtitle languages that matter to this profile, in order: the subtitle lists show them first. */
   subtitleLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)).max(12),
-  /** Leave every other subtitle language out of the lists. */
   onlySubtitleLanguages: z.boolean(),
-  /**
-   * Ratings were on unless turned off here. Since 15 Nov 2026 they are on for everybody and have no switch (the owner: "remove the ratings and friends
-   * and turn it on for all accounts"): a `false` kept from before is not read for showing them, only for not showing them to friends until the profile
-   * says otherwise (see `ratingsShown` and `friendChoices` in friends.ts). It is kept as it was, never deleted, so that this can be undone.
-   */
   ratings: z.boolean(),
-  /**
-   * Friends (see friends.ts for what each is when it is not set): what a friend may do. They are settings of the profile, so the server reads them to know what
-   * a friend may be given, and they follow the profile everywhere. `friends` was the master switch; since 15 Nov 2026 friends are on for everybody, and a
-   * `false` kept from before only keeps what is watched from being shared until the profile shares it again (see `friendChoices`).
-   */
   friends: z.boolean(),
-  /** Friends are off for this profile, whatever else is set (no switch sets it now: a child profile turns them off by being one, see `child`). */
   friendsOff: z.boolean(),
-  /**
-   * A child's profile (the owner, 15 Nov 2026): only cartoons for children are shown and played (`forChildren` in library.ts), on Home, the search, the title
-   * pages and links, and friends and watch parties are off (`friendChoices` in friends.ts). Everything else is as it was. It is a setting of the profile, so it
-   * follows it to every screen it is used on.
-   */
   child: z.boolean(),
   friendsLists: z.boolean(),
   friendsRatings: z.boolean(),
@@ -333,33 +219,10 @@ export const SETTING_SCHEMAS = {
   friendsInbox: z.boolean(),
   friendsPresence: z.boolean(),
   friendsMessages: z.boolean(),
-  /**
-   * What friends say on the screen when they send something or ask for something (on unless turned off). Off, nothing of it is shown over the
-   * page or the film: it waits in the bell (and its number), which is never muted. This is only this screen's manner, so the server does not read it.
-   */
   newsPopups: z.boolean(),
-  /**
-   * The picture's quality follows the connection (on unless turned off): a film starts in the lowest quality, which arrives at once, and goes on in the best the link
-   * carries, lower when it cannot keep up and higher when it can. Off, every film is in the highest quality there is, whatever the link. This is only this screen's
-   * manner, so the server does not read it.
-   */
   adaptiveQuality: z.boolean(),
-  /**
-   * What this profile watches (the owner, 18 Nov: `they pick what they are interested in per profile`, and the others are not shown): the sections of
-   * the library it has, of Movies, Series, Cartoons and Anime. Not set: all four. The menu, the pages of rows, the categories and the rows of titles
-   * like another leave the others out; what the profile itself kept or was sent (what it is part way through, its lists and ratings, a friend's card)
-   * and what it searches for by name are shown whatever their section. A child's profile has the Cartoons whatever is set here.
-   */
   sections: z.array(z.enum(["movie", "series", "cartoon", "anime"])).min(1).max(4),
-  /**
-   * Whether the profile is told when something new of what it watches comes out (shared/titleNotices.ts): on unless turned off. The server reads it:
-   * a profile that turned it off is told nothing, in the bell or on its phone.
-   */
   titleNotices: z.boolean(),
-  /**
-   * Whether what this profile watches is counted in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off (the owner,
-   * 18 Nov 2026). Counted with no name, and a title is shown only when people of several accounts watched it. The server reads it.
-   */
   publicWatching: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
@@ -370,7 +233,6 @@ const SettingLive = z.object({ key: z.enum(SETTING_KEYS as [SettingKey, ...Setti
 export const SettingItemSchema = z.union([z.object({ key: z.enum(SETTING_KEYS as [SettingKey, ...SettingKey[]]), at: AtSchema, deleted: z.literal(true) }), SettingLive]);
 export type SettingItem = z.infer<typeof SettingItemSchema>;
 
-/** The settings that are set: values that are not a real choice are ignored, so an old or hand-edited copy cannot break the page. */
 export function resolveSettings(items: readonly SettingItem[]): Settings {
   const settings: Record<string, unknown> = {};
   for (const item of items) {
@@ -381,13 +243,6 @@ export function resolveSettings(items: readonly SettingItem[]): Settings {
   return settings as Settings;
 }
 
-/**
- * A picture of the chat that a profile keeps (the owner, 17 Nov 2026: "can save/pin stickers and gifs"): a GIF, or one of Kino's stickers, at the top of its tab
- * in the chat's panel on every screen of the profile. `text` is the message as the chat sends it (a GIF's address, a sticker's emoji), and the key says which
- * it is (`gif:` the address, `sticker:` the sticker's name). The screens draw only what they would draw in a chat (client/chat/saved.ts), so a copy made by
- * hand shows nothing and asks nobody for anything. Each is an item of its own, so that one kept on the phone and another kept on the TV before either was in
- * step with the server are both kept.
- */
 export const SAVED_PICTURES_MAX = 60;
 const SavedLive = z.object({ key: KeySchema.regex(/^(gif|sticker):/), at: AtSchema, text: z.string().min(1).max(400) });
 export const SavedItemSchema = orRemoved(SavedLive);
@@ -396,7 +251,6 @@ export type LiveSaved = z.infer<typeof SavedLive>;
 
 export const LIMITS = { progress: 60, watched: 600, list: 400, listNames: MAX_LISTS, ratings: 500, settings: SETTING_KEYS.length, saved: SAVED_PICTURES_MAX } as const;
 
-/** Everything one profile keeps, as the two screens hold it and as it travels. */
 export interface ProfileData {
   progress: ProgressItem[];
   watched: WatchedItem[];
@@ -404,15 +258,12 @@ export interface ProfileData {
   listNames: ListNameItem[];
   ratings: RatingItem[];
   settings: SettingItem[];
-  /** The chat's pictures kept at the top of the panel (`SavedItemSchema`). */
   saved: SavedItem[];
 }
 export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], saved: [] });
-/** The parts of `ProfileData`, which is what a sync goes through one by one. */
 export const COLLECTIONS = ["progress", "watched", "list", "listNames", "ratings", "settings", "saved"] as const satisfies readonly (keyof ProfileData)[];
 export type CollectionName = (typeof COLLECTIONS)[number];
 
-/** What a screen sends to bring the server up to date and ask what it missed. `since` is the last `rev` it was told of. */
 export const SyncRequestSchema = z.object({
   since: z.number().int().min(0),
   progress: z.array(ProgressItemSchema).max(LIMITS.progress * 3).default([]),
@@ -421,31 +272,24 @@ export const SyncRequestSchema = z.object({
   listNames: z.array(ListNameItemSchema).max(LIMITS.listNames + 160).default([]),
   ratings: z.array(RatingItemSchema).max(LIMITS.ratings + 160).default([]),
   settings: z.array(SettingItemSchema).max(40).default([]),
-  /** (A screen older than the server sends none.) */
   saved: z.array(SavedItemSchema).max(LIMITS.saved + 160).default([]),
 });
 export type SyncRequest = z.input<typeof SyncRequestSchema>;
 
 export const SyncResponseSchema = z.object({
-  /** The server's counter after this exchange; the next request says `since: rev`. */
   rev: z.number().int().min(0),
-  /** The server had less than the screen did (it lost its data): send everything again. */
   reset: z.boolean().optional(),
   progress: z.array(ProgressItemSchema),
   watched: z.array(WatchedItemSchema),
   list: z.array(ListItemSchema),
-  /** (A server older than the screen has no lists to tell of.) */
   listNames: z.array(ListNameItemSchema).default([]),
-  /** (...nor ratings.) */
   ratings: z.array(RatingItemSchema).default([]),
-  /** (A server newer than the screen may keep settings the screen has never heard of: those are left out, rather than the whole answer being refused and the screen never syncing again until it is reloaded.) */
   settings: z
     .array(z.unknown())
     .transform((items) => items.flatMap((item) => {
       const known = SettingItemSchema.safeParse(item);
       return known.success ? [known.data] : [];
     })),
-  /** (A server older than the screen keeps none. One that cannot be read is left out, as a setting is, rather than the whole answer being refused.) */
   saved: z
     .array(z.unknown())
     .default([])
@@ -456,20 +300,12 @@ export const SyncResponseSchema = z.object({
 });
 export type SyncResponse = z.infer<typeof SyncResponseSchema>;
 
-/* ------------------------------ keys ------------------------------ */
-
-/** A link without the part after `#`, which never changes what it plays. */
 export const canonicalUrl = (url: string): string => url.split("#")[0]!;
 
-/** One card per show (all episodes share it), one per film or other link. */
 export const progressKey = (page: { show?: string | undefined; url: string }): string => (page.show ? `show:${page.show}` : `url:${canonicalUrl(page.url)}`);
 export const watchedKey = (entry: { show: string; season: number; episode: number }): string => `${entry.show}|${entry.season}x${entry.episode}`;
-/** The link that stands for a whole title: every episode of a show (`?s=3&e=5`) is the show's first one, so a show found by any of them is one title. */
 export const titleLink = (url: string): string => canonicalUrl(url).replace(/([?&])s=\d+&e=\d+(?=&|$)/, "$1s=1&e=1");
-/** A title in a list is told apart by the link that plays it (a show by its first episode's). In `DEFAULT_LIST` the key is what it was before there were lists. */
 export const listKey = (url: string, list: string = DEFAULT_LIST): string => (list === DEFAULT_LIST ? `url:${titleLink(url)}` : `${list}|url:${titleLink(url)}`);
-
-/* ------------------------------ combining copies ------------------------------ */
 
 export interface SyncItem {
   key: string;
@@ -477,10 +313,6 @@ export interface SyncItem {
   deleted?: true;
 }
 
-/**
- * The same item in two copies: the newer one wins. At the same moment a removal wins, and after that the longer text does,
- * which means nothing except that every copy picks the same one whichever way round it compares them.
- */
 export function newerOf<T extends SyncItem>(a: T, b: T): T {
   if (a.at !== b.at) return a.at > b.at ? a : b;
   if (Boolean(a.deleted) !== Boolean(b.deleted)) return a.deleted ? a : b;
@@ -488,11 +320,8 @@ export function newerOf<T extends SyncItem>(a: T, b: T): T {
 }
 
 export interface MergeOptions<T extends SyncItem> {
-  /** How many live items to keep: the newest. */
   limit: number;
-  /** The winner of two live copies may borrow what only the loser has (a picture, a year). */
   fill?: (winner: T, loser: T) => T;
-  /** Removals are kept this long so other copies hear of them; older ones are forgotten. */
   tombstoneMs?: number;
   now?: number;
 }
@@ -500,7 +329,6 @@ export interface MergeOptions<T extends SyncItem> {
 const TOMBSTONE_MS = 45 * 24 * 3600 * 1000;
 const MAX_TOMBSTONES = 150;
 
-/** Two copies of one list become one, newest first. Neither input is changed. */
 export function mergeCollection<T extends SyncItem>(a: readonly T[], b: readonly T[], options: MergeOptions<T>): T[] {
   const byKey = new Map<string, T>();
   for (const item of [...a, ...b]) {
@@ -521,7 +349,6 @@ export function mergeCollection<T extends SyncItem>(a: readonly T[], b: readonly
   return [...live, ...gone].sort((x, y) => y.at - x.at || (x.key < y.key ? -1 : 1));
 }
 
-/** The newer progress wins, but keeps the picture or year it was missing. */
 export function fillProgress(winner: LiveProgress, loser: LiveProgress): LiveProgress {
   const image = winner.image ?? loser.image;
   const backdrop = winner.backdrop ?? loser.backdrop;
@@ -537,7 +364,6 @@ export function fillListItem(winner: LiveListItem, loser: LiveListItem): LiveLis
   return { ...winner, ...(image ? { image } : {}), ...(backdrop ? { backdrop } : {}), ...(description ? { description } : {}) };
 }
 
-/** Two copies of everything a profile keeps, combined. */
 export function mergeData(a: ProfileData, b: ProfileData, now = Date.now()): ProfileData {
   return {
     progress: mergeCollection(a.progress, b.progress, { limit: LIMITS.progress, now, fill: (w, l) => fillProgress(w as LiveProgress, l as LiveProgress) as ProgressItem }),
@@ -546,35 +372,21 @@ export function mergeData(a: ProfileData, b: ProfileData, now = Date.now()): Pro
     listNames: mergeCollection(a.listNames, b.listNames, { limit: LIMITS.listNames, now }),
     ratings: mergeCollection(a.ratings, b.ratings, { limit: LIMITS.ratings, now }),
     settings: mergeCollection(a.settings, b.settings, { limit: LIMITS.settings, now }),
-    // (A copy kept before there were saved pictures has none.)
     saved: mergeCollection(a.saved ?? [], b.saved ?? [], { limit: LIMITS.saved, now }),
   };
 }
 
-/** Whether a collection item is a live one (not a removal). */
 export const isLive = <T extends SyncItem>(item: T): item is T & { deleted?: undefined } => !item.deleted;
 
-/* ------------------------------ lists ------------------------------ */
-
-/** A list as the screens show it. `name` is absent for `DEFAULT_LIST` while nobody has renamed it: the screen calls it "Favourites" in its own language. */
 export interface ListInfo {
   id: string;
   name?: string;
 }
 
-/** The list a saved title is in. */
 export const listOf = (item: { list?: string | undefined }): string => item.list ?? DEFAULT_LIST;
 
-/**
- * What `listKey` gives for each saved title, to tell whether a title is in a list. Worked out from the links, not read from the
- * saved keys: a show saved before shows were one title (under an episode's link) still counts as the show.
- */
 export const savedKeys = (items: readonly { url: string; list?: string | undefined }[]): Set<string> => new Set(items.map((item) => listKey(item.url, listOf(item))));
 
-/**
- * The lists of a profile: the first one always, then the others in the order they were put in (`order`), and those that never were
- * in the order they were made (a new id starts with the time, so ids sort that way: a list made after a move goes last).
- */
 export function resolveLists(items: readonly ListNameItem[]): ListInfo[] {
   const named = items.filter(isLive) as LiveListName[];
   const first = named.find((item) => item.key === DEFAULT_LIST);
@@ -583,5 +395,4 @@ export function resolveLists(items: readonly ListNameItem[]): ListInfo[] {
   return [{ id: DEFAULT_LIST, ...(first ? { name: first.name } : {}) }, ...others.map(({ key, name }) => ({ id: key, name }))].slice(0, MAX_LISTS);
 }
 
-/** An id for a list somebody makes. */
 export const newListId = (now = Date.now()): string => `l${now.toString(36)}${Math.random().toString(36).slice(2, 5)}`;

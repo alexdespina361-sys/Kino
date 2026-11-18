@@ -14,16 +14,12 @@ import { QrCode } from "../shared/QrCode";
 import { FriendPickerTv, useFriendPicker } from "./Friends";
 import { BackButton, Screen } from "./Idle";
 
-/** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` in a column (see dpad.ts and Menu.tsx). */
 type Nav = Record<string, string | number | boolean>;
 const PAGE_NAV: Nav = { "data-nav": true };
 const PANEL_NAV: Nav = { "data-opt": true, "data-col": 1 };
-/** The panel's left column, where the invite is, comes before the one with the members and the way out. */
 const PANEL_INVITE_NAV: Nav = { "data-opt": true, "data-col": 0 };
-/** The panel's page for choosing friends is a single column of its own. */
 const PANEL_PICK_NAV: Nav = { "data-opt": true, "data-col": 0 };
 
-/** What can be done to a screen of the party: ask the profile on it to be friends (anybody here, short), and for the host to make it an admin or send it away. Nothing at all leaves no room taken. */
 function MemberActions({ tv, nav, onRemove, onAdmin }: { tv: PartyTv & { host: boolean }; nav: Nav; onRemove?: ((id: string) => void) | undefined; onAdmin?: ((id: string, admin: boolean) => void) | undefined }) {
   const t = useT();
   const addable = useAddable(tv.profile);
@@ -67,10 +63,6 @@ function MemberActions({ tv, nav, onRemove, onAdmin }: { tv: PartyTv & { host: b
   );
 }
 
-/**
- * Who is in the party, the host first. The host can send a guest away, or make it an admin (the film's playback is then its to steer too);
- * a screen that is gone from the network is dimmed. A screen signed in as a profile with friends on can be asked to be friends by anyone here.
- */
 function Members({ party, nav, onRemove, onAdmin }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void; onAdmin?: (id: string, admin: boolean) => void }) {
   const t = useT();
   const all = [
@@ -94,10 +86,6 @@ function Members({ party, nav, onRemove, onAdmin }: { party: PartyView; nav: Nav
   );
 }
 
-/**
- * How to get in: the steps, the code and the QR code that carries it, and the link the QR code holds, to copy into somebody's chat.
- * The code is renewed while it is on screen, so it can be a moment late.
- */
 function Invite({ code, nav }: { code: string | undefined; nav: Nav }) {
   const t = useT();
   return (
@@ -137,45 +125,34 @@ function Invite({ code, nav }: { code: string | undefined; nav: Nav }) {
 }
 
 interface PageProps {
-  /** The party this screen is in, if it is in one. */
   party: PartyView | null;
-  /** The name of the screen this one watches along with. Known before the list of who is in the party is. */
   following: string | null;
-  /** Whether the page is full screen, and the way to change that (null where the browser has no full screen to give a page). */
   fullscreen: boolean;
   onFullscreen: (() => void) | null;
-  /** Why the code that was typed was refused. `id` changes with every refusal. */
   error: { id: number; text: string } | null;
-  /** The code of a party a friend invited this screen to: the page opens on joining it. */
   joinWith?: string | null;
-  /** The moment the code of the party this screen hosts stops working, worked out when it was reported (not when a friend is told, which is later). */
   codeEndsAt?: number | null;
   onStart: () => void;
   onJoin: (code: string) => void;
   onRemove: (id: string) => void;
-  /** Make a guest an admin, or take that back. */
   onAdmin: (id: string, admin: boolean) => void;
   onEnd: () => void;
   onLeave: () => void;
   onBack: () => void;
 }
 
-/** What the TV shows for a watch party while nothing plays: starting or joining one, inviting the others, or waiting for the host. */
 export function PartyPage(p: PageProps) {
   const t = useT();
   const friends = useFriends();
   const [joining, setJoining] = useState(Boolean(p.joinWith));
   const [inviting, setInviting] = useState(false);
   const leaveRef = useRef<HTMLButtonElement>(null);
-  // Back from a party that was joined: the question again, not the number pad.
   useEffect(() => {
     if (p.following) setJoining(false);
   }, [p.following]);
 
-  // A screen that watches along: the host chooses what plays, so there is nothing to do but wait, or leave.
   if (p.following) {
     return (
-      // (Back has nowhere to go from a page that only waits: it points at the way out, and leaving stays a press of OK. A phone's own Back asks, and the second press leaves.)
       <Screen testId="tv-party-guest" onBack={() => leaveRef.current?.focus()} leaving={() => void (pressAgain("exit.leaveParty") && p.onLeave())}>
         <span className="tv-ready-icon">
           <CheckIcon />
@@ -186,7 +163,6 @@ export function PartyPage(p: PageProps) {
         <p className="tv-lead">{t("tv.followingLead")}</p>
         {p.party && <Members party={p.party} nav={PAGE_NAV} />}
         <div className="tv-actions">
-          {/* A phone's browser keeps its address bar over the page until the page goes full screen, so the way there is offered while waiting. */}
           {p.onFullscreen && (
             <button className="tv-action" onClick={p.onFullscreen} data-testid="tv-fullscreen" data-nav>
               <FullscreenIcon /> {t(p.fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
@@ -202,7 +178,6 @@ export function PartyPage(p: PageProps) {
 
   if (p.party?.role === "host") {
     const invite = p.party.code;
-    // Friends are told the code of the party, and have a button that joins it (see friends/).
     if (inviting && invite) {
       return (
         <FriendPickerTv
@@ -230,7 +205,6 @@ export function PartyPage(p: PageProps) {
             {t("party.end")}
           </button>
         </div>
-        {/* (the next thing to do is pick a film, so the remote starts on the way out: a stray OK here ends nothing) */}
         <BackButton onClick={p.onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} autoFocus />
       </Screen>
     );
@@ -239,7 +213,6 @@ export function PartyPage(p: PageProps) {
   if (joining) return <JoinPage error={p.error} {...(p.joinWith ? { initial: p.joinWith } : {})} onJoin={p.onJoin} onBack={() => setJoining(false)} />;
 
   return (
-    // (Its own key: Start turns this page into the host's, and the remote must land on that page's button, not stay on the one that went.)
     <Screen key="start" testId="tv-party" focus onBack={p.onBack}>
       <h1 className="tv-headline">{t("party.rail")}</h1>
       <p className="tv-lead">{t("party.lead")}</p>
@@ -262,29 +235,20 @@ export function PartyPage(p: PageProps) {
 
 const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
-/**
- * Typing the 6-digit code of a party: the digits of the remote or a keyboard, the number pad on screen, or into the boxes themselves: a click or a tap there
- * puts the cursor in them (a field over them, a phone's keyboard of digits comes up for it), and a code can be pasted, with Ctrl+V anywhere on the page or
- * with the Paste button where the browser lets a page read what was copied (the owner, 15 Nov). A link to the party pasted gives its code. The sixth digit sends it.
- */
-function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"]; /** A code that came with the page: it is sent as the page opens. */ initial?: string; onJoin: (code: string) => void; onBack: () => void }) {
+function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"]; initial?: string; onJoin: (code: string) => void; onBack: () => void }) {
   const t = useT();
   const [digits, setDigits] = useState(initial ?? "");
-  // The key listener below lives as long as the page, so what it reads is kept where it always finds the latest.
   const latest = useRef(digits);
   latest.current = digits;
   const submit = useRef(onJoin);
   submit.current = onJoin;
-  /** What a paste that found no code says, on the error's line (while there is no error). */
   const [note, setNote] = useState<string | null>(null);
-  /** Whether the field over the boxes has the keyboard: the box the next digit goes in shows a cursor. */
   const [typing, setTyping] = useState(false);
   const [pasting] = useState(canPaste);
   useEffect(() => {
     if (initial?.length === 6) submit.current(initial);
   }, []);
 
-  /** The code as it is now, digits only and six at most: shown in the boxes, and sent once it has all six. */
   const put = (text: string) => {
     const code = text.replace(/\D/g, "").slice(0, 6);
     setNote(null);
@@ -297,14 +261,12 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
     if (latest.current.length < 6) put(latest.current + digit);
   };
   const remove = () => put(latest.current.slice(0, -1));
-  /** Something pasted or read off the clipboard: its party code, or a word that it had none. */
   const pasted = (text: string) => {
     const code = partyCodeIn(text);
     if (code) put(code);
     else setNote(t("party.pasteNone"));
   };
 
-  // A code that was refused is used up: start over.
   useEffect(() => {
     if (!error) return;
     latest.current = "";
@@ -317,13 +279,10 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
   pastedRef.current = pasted;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // (The field over the boxes types its own digits.)
       if (event.altKey || event.ctrlKey || event.metaKey || !/^[0-9]$/.test(event.key) || isEditable(event.target)) return;
       event.preventDefault();
       if (latest.current.length < 6) putRef.current(latest.current + event.key);
     };
-    // Ctrl+V (or the browser's own Paste) wherever the focus is on this page, the field included: what was copied is read for a code, not typed in. (Not
-    // in what may be open over the page, as the feedback form, which takes a pasted picture.)
     const onPaste = (event: ClipboardEvent) => {
       const target = event.target instanceof Node ? event.target : null;
       const page = document.querySelector('[data-testid="tv-party-join-page"]');
@@ -341,12 +300,10 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
 
   const pasteNow = async () => {
     const text = await pasteText();
-    // (A screen worked only by a finger has no Ctrl+V to offer instead.)
     if (text === null) setNote(t(window.matchMedia?.("(hover: none) and (pointer: coarse)").matches ? "party.pasteRefusedTouch" : "party.pasteRefused"));
     else pasted(text);
   };
 
-  // Back takes digits back one at a time and leaves when there are none, the way a PIN screen does.
   const back = () => (latest.current ? remove() : onBack());
   const shown = error?.text ?? note;
 
@@ -354,7 +311,6 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
     <Screen testId="tv-party-join-page" compact focus onBack={back} leaving={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("party.join")}</h1>
       <p className="tv-hint">{t("party.joinHint")}</p>
-      {/* (No box of its own, but on a screen as flat as a phone on its side: there Paste goes beside the boxes, and the pad and Back keep the height they need.) */}
       <div className="tv-code-line">
         <div className="tv-code-entry" data-typing={typing ? "true" : undefined}>
           <p className="tv-code-boxes" data-testid="tv-party-digits" aria-live="polite">
@@ -364,13 +320,12 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
               </i>
             ))}
           </p>
-          {/* (Over the boxes, seen through: what a click or a tap puts the cursor in. Not one of the remote's places: the pad is that, and a TV's own keyboard would come up.) */}
           <input
             className="tv-code-field"
             data-testid="tv-party-code-input"
             type="text"
             inputMode="numeric"
-            autoComplete="off" // (not "one-time-code": a phone would offer the last code a text message brought, and six digits send at once)
+            autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
             enterKeyHint="go"
@@ -378,7 +333,6 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
             value={digits}
             onChange={(event) => put(partyCodeIn(event.target.value) ?? event.target.value)}
             onSelect={(event) => {
-              // (The cursor stays after the last digit, where the boxes show it.)
               const field = event.currentTarget;
               const end = field.value.length;
               if (field.selectionStart !== end || field.selectionEnd !== end) field.setSelectionRange(end, end);
@@ -417,10 +371,6 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
   );
 }
 
-/**
- * The panel's page for choosing the friends to tell about the party: the friends are options of one column, which the remote walks like the
- * rest of the panel (a button that is `disabled` would stop it, so Send only says `aria-disabled`), then Send and Cancel.
- */
 function InvitePicker({ build, onClose }: { build: () => Message; onClose: () => void }) {
   const t = useT();
   const { all, takers, picked, busy, problem, toggle, send } = useFriendPicker({ build, said: "friends.inviteSent", onClose });
@@ -478,9 +428,7 @@ interface PanelProps {
   party: PartyView | null;
   following: string | null;
   rootRef: RefObject<HTMLDivElement | null>;
-  /** Whether the panel is on its page for choosing the friends to invite (Back from there is the party's, see Tv.tsx). */
   inviting: boolean;
-  /** The moment the code of the party this screen hosts stops working (see PageProps). */
   codeEndsAt?: number | null;
   onInviting: (on: boolean) => void;
   onClose: () => void;
@@ -491,17 +439,14 @@ interface PanelProps {
   onLeave: () => void;
 }
 
-/** The watch party over a film: start one, see who is in it and how to join, invite friends, end it or leave it. Looks and walks like the other pickers (Menu.tsx). */
 export function PartyPanel(p: PanelProps) {
   const t = useT();
   const friends = useFriends();
   const host = p.party?.role === "host";
   const code = p.party?.code;
-  /** Friends can be told while the party has a code to join with, which only the host's screen knows. */
   const canInvite = host && friends.on && Boolean(code);
   const picking = p.inviting && canInvite;
 
-  // Back from choosing friends lands on the button that went there.
   const inviteRef = useRef<HTMLButtonElement>(null);
   const wasPicking = useRef(false);
   useEffect(() => {
@@ -509,9 +454,6 @@ export function PartyPanel(p: PanelProps) {
     wasPicking.current = picking;
   }, [picking]);
 
-  // What was focused may be gone (Start becomes the code, a guest left): land on Done, or on the first thing that is there.
-  // Never on a button that ends the party or sends somebody away: OK on a panel that has only just opened must not do that.
-  // (A press of the mouse on the panel's empty space leaves nothing focused, and that is left as it is: only a button that has gone is replaced.)
   const had = useRef<Element | null>(null);
   useEffect(() => {
     const root = p.rootRef.current;

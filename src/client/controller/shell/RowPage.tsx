@@ -11,19 +11,13 @@ import { Page } from "../AccountScreen";
 import { Tile } from "../Library";
 import { useListToggle } from "../Round";
 
-/** Empty places shown while the next titles of the row are on their way. */
 const WAITING = 6;
 
-/**
- * One row of the library on a page of its own ("See all"): every title of it, a few across and one line under the next, which is the way to look
- * through a long row on a phone held upright. The next titles are asked for as the end comes near, as they are at the end of a row that is scrolled sideways.
- */
 export function RowPage({ rowId, onClose, onOpen, onPick }: { rowId: string; onClose: () => void; onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void }) {
   const t = useT();
   const toggleFor = useListToggle(onPick);
   const scores = useScores();
   const feeding = useFeed();
-  // (A child's profile sees of the row only its titles for children, as on Home.)
   const child = useProfileData().settings.child === true;
   const row = useMemo(() => {
     const found = allRows(feeding.data, GRID_CAP).find((one) => one.id === rowId);
@@ -35,7 +29,6 @@ export function RowPage({ rowId, onClose, onOpen, onPick }: { rowId: string; onC
   const loading = loadingTitles(feeding, rowId);
   const failed = failedTitles(feeding, rowId);
 
-  // Near the end of the page (a page that does not fill the screen yet counts), the next titles are asked for; each answer, and each failure that is over, looks again.
   useEffect(() => {
     const body = grid.current?.closest<HTMLElement>(".page-body");
     if (!more || !body) return;

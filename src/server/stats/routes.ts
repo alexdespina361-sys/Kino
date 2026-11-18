@@ -7,7 +7,6 @@ import type { UnavailableStore } from "../library/unavailable";
 import { statsView, type RequestSeen } from "./summary";
 import type { VisitCounter } from "./visits";
 
-/** Programs that say what they are (search engines, link previews, uptime checks, scripts): never counted, whatever they ask. */
 const NOT_PEOPLE = /bot|crawl|spider|slurp|preview|monitor|uptime|curl|wget|python|node|go-http|java|headless|lighthouse|pingdom|facebookexternalhit|facebot|embedly|whatsapp|telegram|slack|discord|linkedin/i;
 
 const header = (request: FastifyRequest, name: string): string | undefined => {
@@ -15,7 +14,6 @@ const header = (request: FastifyRequest, name: string): string | undefined => {
   return Array.isArray(value) ? value[0] : value;
 };
 
-/** How the server read this request's address, to show to whoever asked (see `RequestSeen`). */
 const seenAs = (request: FastifyRequest): RequestSeen => ({
   address: request.ip,
   connection: request.socket.remoteAddress ?? null,
@@ -23,22 +21,10 @@ const seenAs = (request: FastifyRequest): RequestSeen => ({
   cloudflare: header(request, "cf-connecting-ip") ?? null,
 });
 
-/**
- * Count the people who open the site: a browser in which the page started. The first thing the page does when it runs is ask who is signed in
- * (`GET /api/me`, at every start), and that question is what is counted, not the page's file. A program that only fetches the page (a scanner with a
- * browser's name, which is most of what asks a public address for `/`: on 18 Nov 2026 the page was fetched 133 times and started 19 times) runs
- * nothing and asks nothing, so it is nobody. Not counted either: the question asked any other way than by the site's own page (from another site,
- * typed as an address), a robot that says so, and people who send Do Not Track or Global Privacy Control, who asked not to be. It runs after the
- * answer is sent, so it can never slow a page or break one.
- *
- * The visitor is `request.ip`, which the app has read through the proxies in front of it (`trust.ts`). The address is only ever hashed (see `VisitCounter`).
- */
 export function countVisits(app: FastifyInstance, counter: VisitCounter): void {
   app.addHook("onResponse", async (request, reply) => {
     if (request.method !== "GET" || reply.statusCode !== 200) return;
     if ((request.url.split("?")[0] ?? "").replace(/\/+$/, "") !== "/api/me") return;
-    // (A browser says where a request comes from and what for: the page's own question is from the same site and is no page, picture or frame.
-    // An old TV's browser says neither, and is counted.)
     const from = header(request, "sec-fetch-site");
     if (from && from !== "same-origin") return;
     const destination = header(request, "sec-fetch-dest");
@@ -50,18 +36,15 @@ export function countVisits(app: FastifyInstance, counter: VisitCounter): void {
   });
 }
 export interface StatsRoutesOptions {
-  /** The team's token (`FEEDBACK_ADMIN_TOKEN`): the owner's stats are read with the same one. Without it there is nothing to ask. */
   adminToken: string | undefined;
   accounts?: AccountStore | undefined;
   visits?: VisitCounter | undefined;
-  /** What nobody could play, for `GET /api/admin/unavailable`. */
   unavailable?: UnavailableStore | undefined;
   registration?: Registration | undefined;
   maxAccounts?: number | undefined;
   now?: (() => number) | undefined;
 }
 
-/** The owner's stats, `GET /api/admin/stats?days=30`: how many accounts and how many visitors, by day (see `summary.ts`), and how the server read the address of the request that asked. Counts only; the team's token and nothing else. */
 export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, { adminToken, accounts, visits, unavailable, registration = "open", maxAccounts = DEFAULT_MAX_ACCOUNTS, now = Date.now }) => {
   const team = teamGuard(adminToken, "team.stats");
   app.addHook("onRequest", async (_request, reply) => {
@@ -80,7 +63,6 @@ export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, {
       }),
     );
   });
-  // What nobody could play, the most asked for first, for whoever looks for sources (`node scripts/unavailable.mjs`): titles, episodes and dates, never who pressed Play.
   app.get<{ Querystring: { all?: string } }>("/api/admin/unavailable", async (request, reply) => {
     if (!team(request, reply)) return;
     const records = unavailable?.list() ?? [];

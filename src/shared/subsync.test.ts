@@ -14,11 +14,11 @@ describe("SharedTimingSchema", () => {
       { v: 1, lines: 0, placed: [[0, 0, 0, 0]] },
       { v: 1, lines: SUBSYNC_MAX_LINES + 1, placed: [[0, 0, 0, 0]] },
       { v: 1, lines: 10, placed: [] },
-      { v: 1, lines: 10, placed: [[10, 0, 0, 0]] }, // (a line the file does not have)
-      { v: 1, lines: 10, placed: [[3, 0, 0, 0], [3, 5, 5, 1]] }, // (twice)
-      { v: 1, lines: 10, placed: [[4, 0, 0, 0], [3, 0, 0, 0]] }, // (out of order)
+      { v: 1, lines: 10, placed: [[10, 0, 0, 0]] },
+      { v: 1, lines: 10, placed: [[3, 0, 0, 0], [3, 5, 5, 1]] },
+      { v: 1, lines: 10, placed: [[4, 0, 0, 0], [3, 0, 0, 0]] },
       { v: 1, lines: 10, placed: [[0, SUBSYNC_MAX_MOVE * 100 + 1, 0, 0]] },
-      { v: 1, lines: 10, placed: [[0, 0.5, 0, 0]] }, // (not whole centiseconds)
+      { v: 1, lines: 10, placed: [[0, 0.5, 0, 0]] },
       { v: 1, lines: 10, placed: [[0, 0, 0, 2]] },
       { v: 1, lines: 10, placed: [[0, 0, 0]] },
       { v: 1, lines: 10, placed: [[0, 0, 0, 0]], text: "Hello" }.text,
@@ -45,20 +45,20 @@ describe("mergeTimings", () => {
     const kept = timing(5, [1, 10, 10, 0], [2, 20, 20, 1], [3, 30, 30, 1]);
     const arrived = timing(5, [1, 11, 11, 1], [2, 21, 21, 0], [3, 31, 31, 1]);
     expect(mergeTimings(kept, arrived)?.placed).toEqual([
-      [1, 11, 11, 1], // (words beat none)
-      [2, 20, 20, 1], // (none does not beat words)
-      [3, 31, 31, 1], // (both had words: the newer)
+      [1, 11, 11, 1],
+      [2, 20, 20, 1],
+      [3, 31, 31, 1],
     ]);
     expect(mergeTimings(timing(5, [0, 5, 5, 0]), timing(5, [0, 6, 6, 0]))?.placed).toEqual([[0, 6, 6, 0]]);
   });
 
   it("hands back what is kept when the arrived one has nothing to add", () => {
     const kept = timing(5, [1, 10, 10, 1], [2, 20, 20, 0]);
-    expect(mergeTimings(kept, timing(5, [1, 10, 10, 1]))).toBe(kept); // (the same)
-    expect(mergeTimings(kept, timing(5, [1, 99, 99, 0]))).toBe(kept); // (no words do not replace words)
+    expect(mergeTimings(kept, timing(5, [1, 10, 10, 1]))).toBe(kept);
+    expect(mergeTimings(kept, timing(5, [1, 99, 99, 0]))).toBe(kept);
     expect(mergeTimings(kept, timing(5, [2, 20, 20, 0]))).toBe(kept);
-    expect(mergeTimings(kept, timing(5, [2, 21, 20, 0]))).not.toBe(kept); // (a different place for the line)
-    expect(mergeTimings(kept, timing(5, [3, 30, 30, 0]))).not.toBe(kept); // (a line not yet placed)
+    expect(mergeTimings(kept, timing(5, [2, 21, 20, 0]))).not.toBe(kept);
+    expect(mergeTimings(kept, timing(5, [3, 30, 30, 0]))).not.toBe(kept);
   });
 
   it("will not mix timings of files with a different number of lines", () => {

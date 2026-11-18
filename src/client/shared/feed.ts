@@ -2,44 +2,25 @@ import { useSyncExternalStore } from "react";
 import { itemsOf, LibraryMoreSchema, LibraryRowsSchema, TitleIndex, type LibraryItem, type LibraryRow, type LibrarySection } from "../../shared";
 import { spreadOf } from "./spread";
 
-/**
- * The library as it grows while a page is scrolled: the rows the server lists first (`base`), the rows it brings after them a few at a
- * time (`shelves`, one run for each of Home, Movies, Series, Cartoons and Anime), and the further pages of any row (`more`). The TV and the phone read the
- * same store, so what was scrolled to is still there when a film is closed. Every title it receives goes into one index, which the
- * screens search before the server is asked.
- */
-
-/** A row grows to this many titles as it is scrolled sideways, and a category's page to the second as it is scrolled down. */
 export const ROW_CAP = 100;
 export const GRID_CAP = 300;
-/** A page of rows, or a grid, asks the library for what comes next when it is scrolled to within this many of its own heights of its end. */
 const NEAR_BOTTOM = 1.5;
-/** Whether a page that scrolls (`box`: the one that does, and has a height) is that near its end. */
 export const nearBottom = (box: HTMLElement | null): boolean => box !== null && box.clientHeight > 0 && box.scrollHeight - box.clientHeight - box.scrollTop <= box.clientHeight * NEAR_BOTTOM;
-/** No more than this many rows are brought below the first ones. */
 export const SHELF_CAP = 60;
-/** A row brought below the first ones is left out when fewer than this many of its titles are not already shown above it. */
 export const MIN_SHELF = 8;
-/** The server has no page past this one. */
 const LAST_PAGE = 100;
-/** A question that failed is asked again after this long, and after twice that, and so on up to `RETRY_MAX_MS`. */
 const RETRY_MS = 4000;
 const RETRY_MAX_MS = 30_000;
 
-/** Home asks for rows of every section; each of the other pages for its own. */
 export type ShelfKey = "all" | LibrarySection;
 export const shelfKey = (section: LibrarySection | undefined): ShelfKey => section ?? "all";
 
-/** What has been received (its identity changes only when something arrives, so a screen that works out rows from it does so when there is news). */
 export interface FeedData {
   base: readonly LibraryRow[];
-  /** The rows brought after the first ones, and where to ask for the next: the first (0), or none (null: that was the last). */
   shelves: Readonly<Record<ShelfKey, { rows: readonly LibraryRow[]; cursor: number | null }>>;
-  /** More titles of a row, from page 2: the next page to ask for, and whether there are no more. */
   more: Readonly<Record<string, { items: readonly LibraryItem[]; next: number; last: boolean }>>;
 }
 
-/** What is being asked or could not be: "shelves:all" for the next rows of Home, "more:<row id>" for the next titles of a row. */
 export interface FeedStatus {
   busy: Readonly<Record<string, true>>;
   failed: Readonly<Record<string, true>>;
@@ -60,14 +41,11 @@ const emptyData = (): FeedData => ({
   more: {},
 });
 
-/* ------------------------------ what the pages show ------------------------------ */
-
 const without = <T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> => {
   const { [key]: _gone, ...rest } = record;
   return rest;
 };
 
-/** Titles of one row, once each, up to `cap`. */
 function onceEach(items: readonly LibraryItem[], cap: number, seen = new Set<string>()): LibraryItem[] {
   const out: LibraryItem[] = [];
   for (const item of items) {
@@ -79,10 +57,8 @@ function onceEach(items: readonly LibraryItem[], cap: number, seen = new Set<str
   return out;
 }
 
-/** The rows as they were last merged, so a row nothing was added to is the very same object (and a screen has nothing to draw again for it). */
 const merged = new WeakMap<LibraryRow, { more: readonly LibraryItem[]; cap: number; row: LibraryRow }>();
 
-/** A row with the further pages of it that have been received after its own titles (each title once), up to `cap` titles. */
 export function withMore(row: LibraryRow, more: readonly LibraryItem[] | undefined, cap: number): LibraryRow {
   if (!more || more.length === 0) return row.items.length <= cap ? row : { ...row, items: row.items.slice(0, cap) };
   const before = merged.get(row);
@@ -92,11 +68,6 @@ export function withMore(row: LibraryRow, more: readonly LibraryItem[] | undefin
   return next;
 }
 
-/**
- * The rows brought after the first ones, without the titles already shown above them (a title is on a page once), and without a row
- * that has fewer than `min` titles left. Only the first page of each is looked at, so a page scrolled further along never takes a title
- * out of the rows below it.
- */
 export function freshShelves(shown: readonly LibraryRow[], shelves: readonly LibraryRow[], min = MIN_SHELF): LibraryRow[] {
   const seen = new Set(shown.flatMap((row) => row.items.map((item) => item.id)));
   const out: LibraryRow[] = [];
@@ -109,21 +80,14 @@ export function freshShelves(shown: readonly LibraryRow[], shelves: readonly Lib
   return out;
 }
 
-/**
- * The rows of a page: the first ones, then the ones brought after them for that page. The first ones are the library's for every page (the page
- * keeps those of its section: a screen decides that, as it knows what its page is made of).
- */
 export function pageRows(data: FeedData, section: LibrarySection | undefined, cap = ROW_CAP): LibraryRow[] {
-  // (The first rows with their titles spread, so the same few do not open every one of them: see spread.ts.)
   const base = spreadOf(data.base).filter((row) => row.items.length > 0);
   const shelves = freshShelves(base, data.shelves[shelfKey(section)].rows);
   return [...base, ...shelves].map((row) => withMore(row, data.more[row.id]?.items, cap));
 }
 
-/** Every row of the shelves, of every page. */
 const shelvesOf = (data: FeedData): LibraryRow[] => Object.values(data.shelves).flatMap((shelf) => shelf.rows);
 
-/** Every row there is, each once: for the pages of the categories, which open any of them whole. */
 export function allRows(data: FeedData, cap = GRID_CAP): LibraryRow[] {
   const seen = new Set<string>();
   return [...data.base, ...shelvesOf(data)].filter((row) => row.items.length > 0 && !seen.has(row.id) && seen.add(row.id)).map((row) => withMore(row, data.more[row.id]?.items, cap));
@@ -131,33 +95,21 @@ export function allRows(data: FeedData, cap = GRID_CAP): LibraryRow[] {
 
 const rowById = (data: FeedData, id: string): LibraryRow | undefined => data.base.find((row) => row.id === id) ?? shelvesOf(data).find((row) => row.id === id);
 
-/* ------------------------------ the store ------------------------------ */
-
 export interface FeedOptions {
   fetch?: typeof fetch;
-  /** How long before the first failed question is asked again. */
   retryMs?: number;
 }
 
-/** What the screens ask of the store. `createFeed` makes one of their own for a test; the app has the one below. */
 export interface Feed {
   getSnapshot(): FeedSnapshot;
   subscribe(listener: () => void): () => void;
-  /** Every title received so far, to search before the server is asked. */
   readonly index: TitleIndex;
-  /** The rows the server listed (again): their titles are searched too. */
   setBase(rows: readonly LibraryRow[]): void;
-  /** Titles from anywhere else (like the ones a title is "like"), to be found by the search. */
   learn(items: readonly LibraryItem[]): void;
-  /** Take a title out of the search index. */
   forget?(id: string): void;
-  /** Take titles matching a condition out of the search index. */
   prune?(predicate: (item: LibraryItem) => boolean): void;
-  /** Ask for the next rows of Home (no section) or of a page of a section, if there are any and none are being asked for. */
   loadShelves(section?: LibrarySection): void;
-  /** Ask for the next page of a row, if there is one and the row has fewer than `cap` titles. */
   loadMore(rowId: string, cap?: number): void;
-  /** Forget everything (for a test). */
   reset(): void;
 }
 
@@ -167,12 +119,9 @@ export function createFeed(options: FeedOptions = {}): Feed {
   const listeners = new Set<() => void>();
   let index = new TitleIndex();
   let snapshot: FeedSnapshot = { data: emptyData(), status: { busy: {}, failed: {} } };
-  /** How many questions in a row failed, by what was asked: the wait grows with it. */
   const failures = new Map<string, number>();
-  /** A new store is made on a reset, so what an answer that was still on its way brings is left out: it is told by this. */
   let epoch = 0;
 
-  /** One change, one announcement: what came and the marks that go with it reach a screen together, so it draws once. */
   const update = (change: { id?: string; busy?: boolean; failed?: boolean; data?: (data: FeedData) => FeedData }) => {
     const { busy, failed } = snapshot.status;
     const { id } = change;
@@ -189,7 +138,6 @@ export function createFeed(options: FeedOptions = {}): Feed {
     for (const listener of [...listeners]) listener();
   };
 
-  /** One question and what comes of it. A failure marks it failed and lets it be asked again after a wait. */
   const run = <T>(id: string, url: string, parse: (body: unknown) => T, keep: (answer: T) => (data: FeedData) => FeedData) => {
     const mine = epoch;
     update({ id, busy: true });
@@ -287,34 +235,26 @@ export function createFeed(options: FeedOptions = {}): Feed {
   };
 }
 
-/** The library the TV and the phone share. */
 export const feed: Feed = createFeed();
 
-/** The store as a screen reads it: it draws again when something arrives or a question starts or fails. */
 export function useFeed(store: Feed = feed): FeedSnapshot {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
-/** Whether the next rows of a page (Home when it has no section) can still be asked for (none have been asked for, or the last answer said there are more). */
 export const hasMoreShelves = (snap: FeedSnapshot, section: LibrarySection | undefined): boolean => {
   const shelf = snap.data.shelves[shelfKey(section)];
   return shelf.cursor !== null && shelf.rows.length < SHELF_CAP;
 };
 
-/** Whether the next rows are being asked for (a screen shows a row of empty tiles in their place). */
 export const loadingShelves = (snap: FeedSnapshot, section: LibrarySection | undefined): boolean => Boolean(snap.status.busy[shelvesId(shelfKey(section))]);
 
-/** Whether the last question for the next rows failed and is waiting to be asked again. */
 export const failedShelves = (snap: FeedSnapshot, section: LibrarySection | undefined): boolean => Boolean(snap.status.failed[shelvesId(shelfKey(section))]);
 
-/** Whether a row can have more titles than it shows: it is not known to have none (a row of a place that has no further pages finds out when it is asked). */
 export const hasMoreTitles = (snap: FeedSnapshot, rowId: string, shown: number, cap = ROW_CAP): boolean => {
   const more = snap.data.more[rowId];
   return !(more?.last) && shown < cap;
 };
 
-/** Whether the next titles of a row are being asked for. */
 export const loadingTitles = (snap: FeedSnapshot, rowId: string): boolean => Boolean(snap.status.busy[moreId(rowId)]);
 
-/** Whether the last question for the next titles of a row failed and is waiting to be asked again. */
 export const failedTitles = (snap: FeedSnapshot, rowId: string): boolean => Boolean(snap.status.failed[moreId(rowId)]);

@@ -108,10 +108,10 @@ describe("newer protocol pieces", () => {
   it("a TV_SYNC may say who held the film and that it only waits for data; a TV_CMD that an admin guest steered, whose it was", () => {
     const sync = { type: "TV_SYNC", playing: false, time: 10, rate: 1 };
     expect(parseServerMessage(msg({ ...sync, by: "a1b2c3d4e5f6", waiting: true }))).toEqual({ ...sync, by: "a1b2c3d4e5f6", waiting: true });
-    expect(parseServerMessage(msg(sync))).toEqual(sync); // (an older server says neither)
+    expect(parseServerMessage(msg(sync))).toEqual(sync);
     for (const by of [1, null, "x".repeat(101)]) expect(parseServerMessage(msg({ ...sync, by }))).toBeNull();
     expect(parseServerMessage(msg({ ...sync, waiting: "yes" }))).toBeNull();
-    expect(parseServerMessage(msg({ ...sync, ended: true }))).toEqual({ ...sync, ended: true }); // (the film is over: not a pause)
+    expect(parseServerMessage(msg({ ...sync, ended: true }))).toEqual({ ...sync, ended: true });
     expect(parseServerMessage(msg({ ...sync, ended: "yes" }))).toBeNull();
 
     const pause = { type: "TV_CMD", command: { type: "PAUSE" } };
@@ -130,7 +130,7 @@ describe("newer protocol pieces", () => {
     const state = (extra: unknown) => parseClientMessage(msg({ type: "TV_STATE", state: { state: "paused", currentTime: 60, duration: 60, ...(extra as object) } }));
     expect(state({ ended: true })?.type).toBe("TV_STATE");
     expect(state({ upNext: { seconds: 8 } })).not.toBeNull();
-    expect(state({ upNext: { seconds: null } })).not.toBeNull(); // a viewer who plays the next one only on request: the card has no count
+    expect(state({ upNext: { seconds: null } })).not.toBeNull();
     expect(state({ upNext: { seconds: -1 } })).toBeNull();
     expect(state({ upNext: {} })).toBeNull();
     expect(parseClientMessage(msg({ type: "CMD", command: { type: "DISMISS_UP_NEXT" } }))).not.toBeNull();
@@ -142,7 +142,7 @@ describe("newer protocol pieces", () => {
     expect(state({ skip: { kind: "ending" } })).toBeNull();
     expect(state({ skip: {} })).toBeNull();
     expect(parseClientMessage(msg({ type: "CMD", command: { type: "SKIP_SEGMENT" } }))).not.toBeNull();
-    expect(parseClientMessage(msg({ type: "TV_PARTY_CMD", command: { type: "SKIP_SEGMENT" } }))).toBeNull(); // (a guest of a party does not skip for the host)
+    expect(parseClientMessage(msg({ type: "TV_PARTY_CMD", command: { type: "SKIP_SEGMENT" } }))).toBeNull();
   });
 });
 

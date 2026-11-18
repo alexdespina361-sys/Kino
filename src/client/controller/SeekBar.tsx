@@ -5,16 +5,10 @@ import { formatRemaining, formatTime } from "../shared/format";
 interface SeekBarProps {
   currentTime: number;
   duration: number;
-  /** Where the buffered part ends, in seconds. */
   buffered?: number;
-  /** Called once when the finger lets go (or an arrow key is pressed), never while dragging. */
   onSeek: (time: number) => void;
 }
 
-/**
- * Progress bar you can drag. While dragging it shows where you'd land and keeps ignoring the TV's own
- * time updates, so the thumb doesn't fight the finger; the seek is sent once, on release.
- */
 export function SeekBar({ currentTime, duration, buffered = 0, onSeek }: SeekBarProps) {
   useT();
   const barRef = useRef<HTMLDivElement>(null);

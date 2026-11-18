@@ -8,18 +8,15 @@ import { CHILD_PIN_LENGTH, pinAnswer, pinDigits, pinProblem } from "../account/p
 import { useT, type Key } from "../i18n";
 import { CheckIcon, LockIcon } from "../shared/icons";
 
-/** Four digits, as dots; the fourth sends them. Kept on the field while the server answers (read-only, not disabled: the keyboard stays up for another try). */
 function PinField({ label, busy, onPin, testId, problem }: { label: string; busy: boolean; onPin: (pin: string) => void; testId: string; problem: string | null }) {
   const [value, setValue] = useState("");
   const field = useRef<HTMLInputElement>(null);
-  // (A wrong one starts over, with the keyboard still up.)
   useEffect(() => {
     if (problem) field.current?.focus({ preventScroll: true });
   }, [problem]);
   return (
     <label className="auth-field pin-field">
       <span>{label}</span>
-      {/* (Text with its digits drawn as dots, not a password field: a browser would offer to keep the four digits as the site's password.) */}
       <input
         ref={field}
         type="text"
@@ -43,10 +40,6 @@ function PinField({ label, busy, onPin, testId, problem }: { label: string; busy
   );
 }
 
-/**
- * Asked before a child's profile is left (see `ChildLock`), in place of the page that was opened: the right PIN does what was waiting, Cancel drops it. A PIN forgotten is
- * taken off with the account's password (an account made with Google confirms with Google), and what was waiting is done.
- */
 export function PinAsk() {
   const t = useT();
   const account = useAccount();
@@ -133,10 +126,6 @@ export function PinAsk() {
 type Mode = "set" | "change" | "remove";
 type Step = "current" | "password" | "new" | "again";
 
-/**
- * The PIN in the settings (the account's, so on any of its profiles): set one (twice, the same), or change it or take it off with the one there is now, or with the
- * account's password when it was forgotten (an account made with Google takes it off by confirming with Google).
- */
 export function PinSetting() {
   const t = useT();
   const account = useAccount();
@@ -165,7 +154,6 @@ export function PinSetting() {
     setMode(next);
     setStep(next === "set" ? "new" : "current");
   };
-  /** The proof that it is the grown-up: the PIN there is, or the password. */
   const proof = (): Pick<ChildPinChange, "pin" | "password"> => (password ? { password } : current ? { pin: current } : {});
   const save = async (change: ChildPinChange, done: Key) => {
     setBusy(true);
@@ -216,7 +204,7 @@ export function PinSetting() {
     event.preventDefault();
     setProblem(null);
     if (mode === "remove") return void save({ next: null, password }, "pin.gone");
-    setStep("new"); // (the password is checked with the new PIN)
+    setStep("new");
   };
 
   const label: Key = step === "current" ? "pin.current" : step === "new" ? "pin.new" : "pin.again";

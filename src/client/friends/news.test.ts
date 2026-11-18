@@ -67,7 +67,7 @@ describe("what is new", () => {
   it("is not a plan that is over, one already read, or one that was there before", () => {
     const seen = plan("old", NOW + 3_600_000);
     expect(whatsNew(known(state({ inbox: [seen] })), state({ inbox: [seen] }), NOW)).toEqual([]);
-    expect(whatsNew(known(state()), state({ inbox: [plan("late", NOW)] }), NOW)).toEqual([]); // (no answer by its time: nothing to say yes to)
+    expect(whatsNew(known(state()), state({ inbox: [plan("late", NOW)] }), NOW)).toEqual([]);
     expect(whatsNew(known(state()), state({ inbox: [plan("read", NOW + 3_600_000, { read: true })] }), NOW)).toEqual([]);
   });
 
@@ -132,7 +132,6 @@ describe("saying it", () => {
     expect(describeNews([{ kind: "request", name: "Kim#2" }, proposal], t)).toBe('friends.news.plan {"name":"Sam","when":""}');
     expect(describeNews([proposal, { kind: "together", name: "Robin" }], t)).toBe('friends.news.together {"name":"Robin"}');
     expect(describeNews([proposal, { kind: "party", name: "Robin" }], t)).toBe('friends.news.party {"name":"Robin"}');
-    // (an answer is no question: with other news it counts among the rest)
     expect(describeNews([...news, { kind: "planYes", name: "Sam", when: 5 }], t)).toBe('friends.news.many {"count":3}');
   });
 
@@ -143,9 +142,8 @@ describe("saying it", () => {
     ];
     expect(describeNews(news, t)).toBe('friends.news.many {"count":2}');
     expect(describeNews([...news, { kind: "party", name: "Sam" }], t)).toBe('friends.news.party {"name":"Sam"}');
-    expect(describeNews([...news, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}'); // (a request for a party too, but an invitation first)
+    expect(describeNews([...news, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}');
     expect(describeNews([{ kind: "together", name: "Sam" }, { kind: "party", name: "Robin" }], t)).toBe('friends.news.party {"name":"Robin"}');
-    // A request to be friends is always said too, after the two above.
     expect(describeNews([...news, { kind: "request", name: "Kim#2" }], t)).toBe('friends.news.request {"name":"Kim#2"}');
     expect(describeNews([{ kind: "request", name: "Kim#2" }, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}');
   });

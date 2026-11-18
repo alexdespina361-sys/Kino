@@ -2,12 +2,6 @@ import { expect, type APIRequestContext, type Browser, type Locator, type Page }
 import { FEEDBACK_TOKEN } from "./feedbackToken";
 import { openDevice, openLibrary, openPairedPhone, openProfileByRemote, openProfilePage, openTv, PHONE, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
 
-/**
- * The Feedback button: a phone and a TV send what is wrong, what could be better or an idea, with a picture of the screen that was circled, and the team
- * (here: the admin API with the e2e token, which is what scripts/feedback.mjs talks to) reads it, asks, and the sender answers. The server these run against
- * keeps nothing (DATA_DIR=memory) and does not limit the sends (see playwright.config.ts), and every test finds its report by a word of its own.
- */
-
 const AUTH = { authorization: `Bearer ${FEEDBACK_TOKEN}` };
 let counter = 0;
 const word = () => `e2e${Date.now().toString(36)}x${++counter}`;
@@ -38,7 +32,6 @@ interface Report {
   messages: Array<{ from: "user" | "team"; text: string; asks?: boolean }>;
 }
 
-/** The reports that have this word in them, as the team reads them. */
 async function found(request: APIRequestContext, search: string): Promise<Report[]> {
   const listed = await request.get(`/api/admin/feedback?q=${encodeURIComponent(search)}&limit=20`, { headers: AUTH });
   expect(listed.status()).toBe(200);
@@ -46,7 +39,6 @@ async function found(request: APIRequestContext, search: string): Promise<Report
   return Promise.all(items.map(async (item) => (await (await request.get(`/api/admin/feedback/${item.id}`, { headers: AUTH })).json()) as Report));
 }
 
-/** The one report that has the word (waits for it to be there). */
 async function theReport(request: APIRequestContext, search: string): Promise<Report> {
   let all: Report[] = [];
   await expect.poll(async () => (all = await found(request, search)).length, { timeout: 10_000 }).toBeGreaterThan(0);
@@ -63,12 +55,10 @@ async function fileOf(request: APIRequestContext, report: Report, role: string):
 }
 
 const isPng = (bytes: Buffer) => bytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-/** A picture of one pixel: enough for a page to take as a picture. */
 const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
 const newPhone = (browser: Browser) => openDevice(browser, PHONE);
 
-/** The phone's feedback, opened the way a person does it: the account button, then Feedback beside Settings. */
 async function openFeedback(phone: Page): Promise<void> {
   await phone.goto("/");
   await phone.getByTestId("account-button").tap();
@@ -76,7 +66,6 @@ async function openFeedback(phone: Page): Promise<void> {
   await expect(phone.getByTestId("fb-start")).toBeVisible();
 }
 
-/** A drag over the picture that is being marked, between two places given as shares of its width and height. */
 async function drag(page: Page, canvas: Locator, from: [number, number], to: [number, number]): Promise<void> {
   const box = (await canvas.boundingBox())!;
   const at = (point: [number, number]) => [box.x + box.width * point[0], box.y + box.height * point[1]] as const;
@@ -87,7 +76,6 @@ async function drag(page: Page, canvas: Locator, from: [number, number], to: [nu
   await page.mouse.up();
 }
 
-/** The page's own picture of its screen, taken from the form and opened for marking. */
 async function captureAndOpen(page: Page): Promise<Locator> {
   await page.getByTestId("fb-capture").click();
   await expect(page.getByTestId("fb-capture-bar")).toBeVisible();
@@ -104,7 +92,7 @@ test.describe("feedback from a phone", () => {
     await openFeedback(phone);
     await phone.getByTestId("fb-kind-bug").tap();
     await expect(phone.getByTestId("fb-form")).toBeVisible();
-    await expect(phone.getByTestId("fb-send")).toBeDisabled(); // (nothing to send yet)
+    await expect(phone.getByTestId("fb-send")).toBeDisabled();
     await phone.getByTestId("fb-text").fill(`${mark} The code box does nothing when I type six digits`);
     await phone.getByTestId("fb-severity-annoying").tap();
 
@@ -127,18 +115,15 @@ test.describe("feedback from a phone", () => {
     const marked = await fileOf(request, report, "annotated");
     const plain = await fileOf(request, report, "screenshot");
     expect(isPng(marked) && isPng(plain)).toBe(true);
-    expect(marked.equals(plain)).toBe(false); // (the marks are on one of them)
-    // What the page said about itself: the phone, the screen it was on, and the steps that led to the form (never what was typed).
+    expect(marked.equals(plain)).toBe(false);
     expect(report.context).toMatchObject({ role: "remote", handHeld: true });
     expect(report.context.device?.viewport).toEqual([390, 844]);
     expect(report.context.where?.path).toBe("/");
     const trail = (report.context.trail ?? []).join("\n");
     expect(trail).toContain("menu-feedback");
     expect(trail).not.toContain(mark);
-    expect(trail).not.toContain("fb-"); // (the form's own presses are not the trouble)
-    // The report is kept by this phone, so that the answer can find it.
+    expect(trail).not.toContain("fb-");
     expect(await phone.evaluate(() => JSON.parse(localStorage.getItem("kino.feedback.receipts") ?? "[]").length)).toBe(1);
-    // Nothing of a draft is left.
     expect(await phone.evaluate(() => localStorage.getItem("kino.feedback.draft"))).toBeNull();
   });
 
@@ -175,7 +160,6 @@ test.describe("feedback from a phone", () => {
     await expect(phone.getByTestId("fb-pictures-problem")).toBeVisible();
     await expect(phone.getByTestId("fb-piece")).toHaveCount(2);
 
-    // A piece can be taken off again.
     await phone.getByTestId("fb-remove").last().tap();
     await expect(phone.getByTestId("fb-piece")).toHaveCount(1);
     await phone.getByTestId("fb-input-file").setInputFiles({ name: "console.log", mimeType: "text/plain", buffer: Buffer.from("TypeError: x is undefined\n") });
@@ -201,7 +185,7 @@ test.describe("feedback from a phone", () => {
     await phone.getByTestId("fb-where-button").tap();
     await phone.getByTestId("fb-area-party").tap();
     await expect(phone.getByTestId("fb-form")).toBeVisible();
-    await expect(phone.getByTestId("fb-where-button")).toContainText("Watch parties"); // (the place that was chosen is the one the form says)
+    await expect(phone.getByTestId("fb-where-button")).toContainText("Watch parties");
     await phone.getByTestId("fb-text").fill(`${mark} a party where we can all draw on the screen`);
     await phone.getByTestId("fb-send").tap();
     await expect(phone.getByTestId("fb-sent")).toBeVisible({ timeout: 15_000 });
@@ -216,7 +200,6 @@ test.describe("feedback from a phone", () => {
     await openFeedback(phone);
     await phone.getByTestId("fb-kind-other").tap();
     await phone.getByTestId("fb-text").fill(`${mark} just saying thanks`);
-    // Everything is on to begin with, and the text shown is what would go: the device, and the steps that led here.
     await phone.getByTestId("fb-preview").tap();
     const preview = phone.getByTestId("fb-preview-text");
     await expect(preview).toContainText("viewport");
@@ -226,14 +209,13 @@ test.describe("feedback from a phone", () => {
     await expect(preview).toContainText("viewport");
     await phone.getByTestId("fb-include-device").tap();
     await expect(preview).toContainText("Nothing. Only your words and pictures are sent.");
-    await phone.getByTestId("fb-answer-switch").tap(); // (no answer wanted)
+    await phone.getByTestId("fb-answer-switch").tap();
     await phone.getByTestId("fb-send").tap();
     await expect(phone.getByTestId("fb-sent")).toBeVisible({ timeout: 15_000 });
     const report = await theReport(request, mark);
     expect(report.answerable).toBe(false);
     expect(report.context.device).toBeUndefined();
     expect(report.context.trail ?? []).toEqual([]);
-    // No answer was asked for, so this phone keeps no receipt.
     expect(await phone.evaluate(() => JSON.parse(localStorage.getItem("kino.feedback.receipts") ?? "[]").length)).toBe(0);
   });
 
@@ -252,7 +234,7 @@ test.describe("feedback from a phone", () => {
     await phone.getByTestId("fb-send").tap();
     await expect(phone.getByTestId("fb-sent")).toBeVisible({ timeout: 20_000 });
     expect(tries).toBe(3);
-    await theReport(request, mark); // (exactly one: the helper says so)
+    await theReport(request, mark);
   });
 
   test("a send that is turned away says so and keeps what was written, and the same report goes through when it is tried again", async ({ browser, request }) => {
@@ -280,12 +262,11 @@ test.describe("feedback from a phone", () => {
     await phone.getByTestId("fb-kind-improve").tap();
     await phone.getByTestId("fb-text").fill(`${mark} the menu is too long`);
     await phone.getByTestId("fb-close").tap();
-    await expect(phone.getByTestId("feedback")).toHaveCount(0); // (words are kept: nothing to ask about)
+    await expect(phone.getByTestId("feedback")).toHaveCount(0);
     await phone.getByTestId("menu-feedback").tap();
     await expect(phone.getByTestId("fb-draft")).toContainText(mark);
     await phone.getByTestId("fb-draft-continue").tap();
     await expect(phone.getByTestId("fb-text")).toHaveValue(new RegExp(mark));
-    // Closing with a picture on it asks first, since a picture is not kept.
     await phone.getByTestId("fb-input-picture").setInputFiles({ name: "a.png", mimeType: "image/png", buffer: PIXEL });
     await expect(phone.getByTestId("fb-piece")).toHaveCount(1);
     await phone.getByTestId("fb-close").tap();
@@ -325,7 +306,6 @@ test.describe("feedback from a phone", () => {
     const asked = await request.post(`/api/admin/feedback/${report.id}/reply`, { headers: AUTH, data: { text: `Do you mean for every film, or only on this phone? (${mark})`, ask: true } });
     expect(asked.status()).toBe(201);
 
-    // The page is opened again, as on another day: the account's menu says there is an answer, and so does the first screen of the form.
     await phone.goto("/");
     await phone.getByTestId("account-button").tap();
     await expect(phone.getByTestId("menu-feedback")).toContainText("1");
@@ -345,7 +325,7 @@ test.describe("feedback from a phone", () => {
     await expect.poll(async () => (await theReport(request, mark)).messages.map((line) => line.from)).toEqual(["team", "user"]);
     const after = await theReport(request, mark);
     expect(after.messages[1]?.text).toContain("For every film");
-    expect(after.waiting).toBe(true); // (the team has not answered the answer)
+    expect(after.waiting).toBe(true);
   });
 });
 
@@ -358,7 +338,6 @@ test.describe("feedback from a TV", () => {
     const tv = await openLibrary(browser, withFilms);
     await openProfileByRemote(tv);
     await expect(tv.getByTestId("tv-profile-feedback")).toBeVisible();
-    // The remote starts where it did (the first button of the page), and Feedback is two buttons along: Sign in, Settings, Feedback.
     await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-profile-settings")).toBeFocused();
@@ -366,9 +345,8 @@ test.describe("feedback from a TV", () => {
     await expect(tv.getByTestId("tv-profile-feedback")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("feedback")).toBeVisible();
-    await expect(tv.getByTestId("fb-kind-bug")).toBeFocused(); // (the first choice has the remote)
+    await expect(tv.getByTestId("fb-kind-bug")).toBeFocused();
 
-    // The choices are in two rows: Right and Down move along them.
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("fb-kind-improve")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
@@ -381,13 +359,11 @@ test.describe("feedback from a TV", () => {
     await expect(tv.getByTestId("fb-text")).toBeFocused();
     await tv.keyboard.type(`${mark} the film stops after a minute`);
 
-    // Down, as often as it takes, reaches Send; OK sends.
     for (let press = 0; press < 40 && !(await tv.getByTestId("fb-send").evaluate((element) => element === document.activeElement)); press++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("fb-send")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("fb-sent")).toBeVisible({ timeout: 15_000 });
 
-    // Back closes it, and the remote is on the button it came from.
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("feedback")).toHaveCount(0);
     await expect(tv.getByTestId("tv-profile-feedback")).toBeFocused();
@@ -396,7 +372,6 @@ test.describe("feedback from a TV", () => {
     const report = await theReport(request, mark);
     expect(report.kind).toBe("bug");
     expect(report.context.role).toBe("tv");
-    // Only keys that press or leave something are noted, never what was typed.
     expect((report.context.trail ?? []).join("\n")).not.toContain(mark);
   });
 
@@ -410,7 +385,6 @@ test.describe("feedback from a TV", () => {
     for (const key of ["ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowUp", "ArrowDown", "ArrowRight", "m", "f"]) await tv.keyboard.press(key);
     await expect(tv.getByTestId("feedback")).toBeVisible();
     expect(await view()).toBe("profile");
-    // Back leaves the form and not the page behind it.
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("feedback")).toHaveCount(0);
     expect(await view()).toBe("profile");
@@ -433,7 +407,6 @@ test.describe("feedback from a TV", () => {
     const report = await theReport(request, mark);
     expect(report.attachments.map((each) => each.role).sort()).toEqual(["annotated", "screenshot"]);
     expect(isPng(await fileOf(request, report, "annotated"))).toBe(true);
-    // The picture is of the page, not of the form: the library's tiles are in it. (A form's own words are not asked of the page: nothing here reads the pixels.)
     expect(report.context.where?.view).toBeTruthy();
   });
 });
@@ -452,7 +425,6 @@ test.describe("feedback from a phone that is the screen", () => {
   });
 
   test("a TV that only a remote walks still gets the note and no buttons for pictures", async ({ browser }) => {
-    // (No pointer to speak of and no touch: the page cannot tell it from a TV's browser.)
     const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, async (context) => {
       await withFilms(context);
       await context.addInitScript(() => {
@@ -477,12 +449,11 @@ test.describe("feedback from a title that would not play", () => {
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: { title: `Broken ${mark}`, stream: { url: "/fixtures/nope.mp4", type: "mp4" } } });
     await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
-    await expect(tv.getByTestId("error-retry")).toBeFocused(); // (OK still tries again: telling the team is a press of Down away)
+    await expect(tv.getByTestId("error-retry")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("error-report")).toBeFocused();
     await tv.keyboard.press("Enter");
 
-    // The kind is known, so the first screen is skipped: the form is on this problem, with the screen's own words to begin with.
     await expect(tv.getByTestId("fb-form")).toBeVisible();
     await expect(tv.getByTestId("fb-where-button")).toContainText("A title that will not play");
     await expect(tv.getByTestId("fb-text")).toHaveValue(/^It would not play\. The screen said: /);
@@ -493,7 +464,6 @@ test.describe("feedback from a title that would not play", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("fb-sent")).toBeVisible({ timeout: 15_000 });
 
-    // Back closes the form, and the remote is on the card's button again.
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("feedback")).toHaveCount(0);
     await expect(tv.getByTestId("tv-error")).toBeVisible();
@@ -502,14 +472,12 @@ test.describe("feedback from a title that would not play", () => {
     const report = await theReport(request, mark);
     expect(report).toMatchObject({ kind: "bug", area: "wontplay" });
     expect(report.message).toMatch(/^It would not play\. The screen said: .+ /);
-    // What the page knew: what was on, and that it failed (the card is not the player, so its own title is the one asked).
     expect(report.context.playback?.state).toBe("error");
     expect(report.context.playback?.title).toBe(`Broken ${mark}`);
     expect(report.context.playback?.error).toBeTruthy();
     phone.close();
   });
 
-  // The card is the same in every language and on every screen: Romanian has the longest words, and the narrowest screen is a phone that plays on itself.
   for (const width of [320, 390, 899, 1280]) {
     test(`the card with its three buttons fits a screen ${width}px wide, in Romanian`, async ({ browser, baseURL }) => {
       const height = 700;
@@ -541,7 +509,6 @@ test.describe("feedback from a title that would not play", () => {
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-error", "SOURCE_NOT_DIRECTLY_PLAYABLE");
     await expect(phone.getByTestId("remote-report")).toBeVisible();
 
-    // Opened and closed with nothing written: the draft the first screen would have offered is untouched.
     await phone.getByTestId("remote-report").tap();
     await expect(phone.getByTestId("fb-form")).toBeVisible();
     await expect(phone.getByTestId("fb-text")).toHaveValue(/^It would not play\. The screen said: This video can't be played on the TV\./);
@@ -549,7 +516,6 @@ test.describe("feedback from a title that would not play", () => {
     await expect(phone.getByTestId("feedback")).toHaveCount(0);
     expect(await phone.evaluate(() => localStorage.getItem("kino.feedback.draft"))).toBe(draft);
 
-    // Sent with a few words more: the report has both, and the older draft is still there.
     await phone.getByTestId("remote-report").tap();
     const text = phone.getByTestId("fb-text");
     await text.fill(`${await text.inputValue()} ${mark}`);
@@ -559,7 +525,6 @@ test.describe("feedback from a title that would not play", () => {
     expect(report).toMatchObject({ kind: "bug", area: "wontplay" });
     expect(report.message).toContain("This video can't be played on the TV.");
     expect(report.context.role).toBe("remote");
-    // The phone has no video of its own: it tells how the TV's one was doing from the line that says so.
     expect(report.context.playback).toMatchObject({ state: "error", error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
     expect(await phone.evaluate(() => localStorage.getItem("kino.feedback.draft"))).toBe(draft);
   });

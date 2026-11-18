@@ -2,31 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import type { UiLanguage } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
 
-/**
- * What changed in Kino, version by version ("Kino 0.4.2"), in words for the people who watch: the owner's ask of 14 Nov 2026 ("a changelog in the
- * profile, numbered like Kino 0.4.3, plain English"). The list itself (notes.ts) is a part of the page of its own, asked for only when someone opens it;
- * this file is what the profile's tile needs without it. Each new version goes first in notes.ts, and `LATEST` is changed to it (a test checks that the two agree).
- */
 export interface ChangeNote {
-  /** "0.4.2": shown as "Kino 0.4.2". */
   version: string;
-  /** The day it was all on the site (YYYY-MM-DD). */
   date: string;
-  /** The lines, the same ones in each language, most noticeable first. */
   en: readonly string[];
   ro: readonly string[];
   it: readonly string[];
 }
 
-/** The newest version: what the profile's tile says. */
 export const LATEST = { version: "0.4.20", date: "2026-11-18" } as const;
 
-/** The newest version this screen has shown its viewer (a screen's own: each TV, phone and computer keeps its own). */
 export const SEEN_KEY = "kino.seenVersion";
 
 const parts = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
 
-/** Whether version `a` is later than `b` ("0.4.10" is later than "0.4.9"). */
 export function newer(a: string, b: string): boolean {
   const x = parts(a);
   const y = parts(b);
@@ -37,10 +26,6 @@ export function newer(a: string, b: string): boolean {
   return false;
 }
 
-/**
- * Whether the newest version is news to this screen: only when it showed an older one before. A screen that never showed any (a first visit, a cleared
- * browser) is not told, as everything is new to it: it notes the newest as seen, so that the next one is news. `seen()` is for when the page is opened.
- */
 export const freshFor = (shown: string | undefined, latest: string = LATEST.version): boolean => shown !== undefined && newer(latest, shown);
 
 export function useNews(): { fresh: boolean; seen: () => void } {
@@ -55,10 +40,8 @@ export function useNews(): { fresh: boolean; seen: () => void } {
   return { fresh, seen };
 }
 
-/** The lines of a version in the page's language. */
 export const linesOf = (note: ChangeNote, language: UiLanguage): readonly string[] => note[language] ?? note.en;
 
-/** "17 November 2026" (or "17 Nov" when `short`), in the page's language, for the day as written (no time zone moves it a day). */
 export function dayOf(date: string, language: UiLanguage, short = false): string {
   const day = new Date(`${date}T12:00:00Z`);
   if (Number.isNaN(day.getTime())) return date;
@@ -72,7 +55,6 @@ export function dayOf(date: string, language: UiLanguage, short = false): string
 
 let asked: Promise<readonly ChangeNote[]> | null = null;
 
-/** The list, asked for once (a failed ask is asked again next time). */
 export function loadNotes(): Promise<readonly ChangeNote[]> {
   asked ??= import("./notes").then(
     (module) => module.CHANGELOG,
@@ -86,7 +68,6 @@ export function loadNotes(): Promise<readonly ChangeNote[]> {
 
 export type NotesState = { status: "loading" } | { status: "ready"; notes: readonly ChangeNote[] } | { status: "failed" };
 
-/** The list for a page that shows it: loading, there, or not come (with `retry`). */
 export function useNotes(): NotesState & { retry: () => void } {
   const [state, setState] = useState<NotesState>({ status: "loading" });
   const [tries, setTries] = useState(0);

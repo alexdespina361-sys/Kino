@@ -1,160 +1,95 @@
 import { z } from "zod";
 
-/**
- * The library: rows of titles from places that offer video openly, collected and remembered by the server so the phone
- * can browse them at once. A title is only a link: playing one is the same as pasting its link, so the server's resolver
- * finds the video and the TV plays it.
- */
-
-/** Whether a title is a film or a show, when the place that listed it says so: the TV keeps the two apart. */
 export const LibraryKindSchema = z.enum(["movie", "series"]);
 export type LibraryKind = z.infer<typeof LibraryKindSchema>;
 
-/**
- * Where a title is browsed. Movies and Series are the live-action films and shows; Cartoons and Anime are animation, films and shows alike, told
- * apart by where it was made (Japanese animation is Anime, any other is a Cartoon). It is not the same as `kind`, which says only whether a title
- * is one film or a show with episodes, and so what its page lists.
- */
 export const LibrarySectionSchema = z.enum(["movie", "series", "cartoon", "anime"]);
 export type LibrarySection = z.infer<typeof LibrarySectionSchema>;
 export const LIBRARY_SECTIONS: readonly LibrarySection[] = LibrarySectionSchema.options;
 
-/**
- * The sections a profile watches, from its `sections` setting (account.ts): null for all of them (not set, or all four chosen), else the ones it
- * chose. A section a profile does not watch has no page, no line in the menu and no rows; a title or a row that says no section is always shown.
- */
 export function wantedSections(settings: { sections?: readonly LibrarySection[] | undefined }): ReadonlySet<LibrarySection> | null {
   const chosen = new Set((settings.sections ?? []).filter((section) => LIBRARY_SECTIONS.includes(section)));
   return chosen.size === 0 || chosen.size >= LIBRARY_SECTIONS.length ? null : chosen;
 }
-/** Whether a profile that watches `wanted` (see `wantedSections`) is shown a title or a row. */
 export const isWanted = (wanted: ReadonlySet<LibrarySection> | null | undefined, thing: { section?: LibrarySection | undefined; kind?: LibraryKind | undefined }): boolean => {
   const section = sectionOf(thing);
   return !wanted || !section || wanted.has(section);
 };
 
-/** The section of a title or a row: the one it says, else the one its kind is (a title that is neither a cartoon nor an anime does not say). Nothing for one that says neither. */
 export const sectionOf = (thing: { section?: LibrarySection | undefined; kind?: LibraryKind | undefined }): LibrarySection | undefined => thing.section ?? thing.kind;
 
 export const LibraryItemSchema = z.object({
   id: z.string().max(200),
   title: z.string().max(300),
   year: z.number().int().optional(),
-  /** The poster, upright. */
   image: z.string().max(2048).optional(),
-  /** A wide picture of it, for the TV's banner and the wide tiles. */
   backdrop: z.string().max(2048).optional(),
-  /** A sentence or two about it, as plain text, for the TV's banner. */
   description: z.string().max(400).optional(),
   kind: LibraryKindSchema.optional(),
-  /** Said only when it is a cartoon or an anime; a title without one is in the section of its kind (see `sectionOf`). */
   section: LibrarySectionSchema.optional(),
-  /** A page or media link, as pasted on the phone. Relative links (`/fixtures/a.mp4`) are this server's own. */
   url: z.string().max(2048),
-  /** Whether a Romanian dubbed audio track or Romanian dubbed stream is available. */
   hasRoDub: z.boolean().optional(),
-  /**
-   * Animation that the movie database files under Family or Kids: what a child profile may see (`forChildren`). Said only when it is so; an animated
-   * title without it (Family Guy, South Park, Rick and Morty) is a cartoon by its section and still not for a child.
-   */
   kids: z.literal(true).optional(),
 });
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
-/**
- * Whether a child profile may see and play a title (the owner, 15 Nov 2026: "Child account": only cartoons, no friends): a cartoon, by the title or else its
- * row, that the movie database files under Family or Kids. Anything not known to be one is not (a title of a pasted link, an anime, a film).
- */
 export const forChildren = (item: { section?: LibrarySection | undefined; kids?: true | undefined }, row?: { section?: LibrarySection | undefined }): boolean =>
   (item.section ?? row?.section) === "cartoon" && item.kids === true;
 
-/** What the library's search and "like this" answer with. A search also says how many of the first titles have all the words typed: the rest are the closest others. */
 export const LibraryItemsSchema = z.object({ items: z.array(LibraryItemSchema), exact: z.number().int().min(0).optional() });
 
 export const LibraryRowSchema = z.object({
   id: z.string().max(100),
   title: z.string().max(100),
-  /** Where the row comes from, so the phone can say so. */
   source: z.string().max(60),
-  /** What the titles in the row are, when they are all one kind. */
   kind: LibraryKindSchema.optional(),
-  /** What section the titles in the row are all in, said only when it is a cartoon or an anime (a row of films is Movies, whatever is in it besides, until it says). */
   section: LibrarySectionSchema.optional(),
   items: z.array(LibraryItemSchema).max(100),
 });
 export type LibraryRow = z.infer<typeof LibraryRowSchema>;
 
-/** The rows that come after the first ones, a few at a time as the page is scrolled: `next` is where to ask for the following ones (none: that was the last). */
 export const LibraryRowsSchema = z.object({ rows: z.array(LibraryRowSchema).max(20), next: z.number().int().min(0).nullable() });
 
-/** More titles of one row (the first twenty are in the row): `last` says there are no more. */
 export const LibraryMoreSchema = z.object({ items: z.array(LibraryItemSchema).max(100), last: z.boolean() });
 
-/** The countries whose age ratings a title's page can show: those of the languages the site speaks, and the two most people know. */
 export const AGE_COUNTRIES = ["RO", "IT", "US", "GB"] as const;
 
-/**
- * What the movie database knows about one title besides what its tile shows, asked for when the title's page is opened (so never for a title nobody opens):
- * its genres, who made it, who is in it, the age rating some countries give it, the other parts of the collection it is in (a film's sequels and prequels)
- * and titles like it. A show's other parts are its seasons, which its page lists already.
- */
 export const TitleAboutSchema = z.object({
   genres: z.array(z.string().max(40)).max(8),
-  /** Who directed a film... */
   directors: z.array(z.string().max(100)).max(4),
-  /** ...and who created a show. */
   creators: z.array(z.string().max(100)).max(4),
-  /** The top-billed cast, the first billed first. */
   cast: z.array(z.string().max(100)).max(8),
-  /** The age rating each of `AGE_COUNTRIES` gives it, as that country writes it (PG-13, AP-12, TV-MA); a country that gives none is not here. */
   ages: z.record(z.string().max(2), z.string().max(20)),
-  /** The other titles of its collection, in the order they came out. */
   parts: z.array(LibraryItemSchema).max(30),
-  /** Titles like it (none of them one of its parts). */
   similar: z.array(LibraryItemSchema).max(20),
-  /** Whether a Romanian dubbed audio track or Romanian dubbed stream is available. */
   hasRoDub: z.boolean().optional(),
 });
 export type TitleAbout = z.infer<typeof TitleAboutSchema>;
 
-/** The answer to a question about a title: `about` is none for one nobody knows (and for a place that could not be reached just now). */
 export const TitleAboutAnswerSchema = z.object({ about: TitleAboutSchema.nullable() });
 
-/** What a place knows about one episode of a show besides its number: a name, a line about it, a still from it, how long it runs. */
 export const EpisodeDetailSchema = z.object({
   season: z.number().int().min(0).max(200),
   episode: z.number().int().min(0).max(5000),
   title: z.string().max(200).optional(),
   overview: z.string().max(400).optional(),
   still: z.string().max(2048).optional(),
-  /** In minutes. */
   runtime: z.number().int().min(1).max(1000).optional(),
-  /** The link that plays it: the place that lists the episode knows how its links are made. */
   url: z.string().max(2048).optional(),
 });
 export type EpisodeDetail = z.infer<typeof EpisodeDetailSchema>;
 
-/**
- * (As many as an episode's number can be: a season of more than 500 - a long anime's one season, as TMDB lists some - was refused whole, and its page said the
- * episodes could not be listed. The page lists 24 of them at a time, see the TV's Episodes.tsx.)
- */
 export const EpisodeDetailsSchema = z.object({ episodes: z.array(EpisodeDetailSchema).max(5000) });
 
-/**
- * What no source had of one title, as the screens mark it "Not available yet" (the server's `library/unavailable.ts`): the film itself, or episodes of the
- * show. A label only: Play looks the title up as always.
- */
 export const UnavailableSchema = z.object({
   title: z.boolean(),
   episodes: z.array(z.object({ season: z.number().int().min(0).max(200), episode: z.number().int().min(0).max(5000) })).max(500),
 });
 
-/** The seasons of a show that can be watched, in order (a show's specials are not among them). */
 export const SeasonsSchema = z.object({ seasons: z.array(z.number().int().min(1).max(200)).max(200) });
 
 export const LibrarySchema = z.object({
   rows: z.array(LibraryRowSchema).max(50),
-  /** When the oldest part was collected (ms since epoch); 0 when nothing has been. */
   updatedAt: z.number(),
 });
 export type Library = z.infer<typeof LibrarySchema>;

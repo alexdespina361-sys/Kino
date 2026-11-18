@@ -7,18 +7,11 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 
-/**
- * The owner's page (docs/stats.md, "The owner's page"): the three files of owner-stats/, served from an address of their own as GitHub Pages would
- * serve them, asking a site that was started with a key and with that address named. What a browser lets through (the page's own rules, and the rule
- * about another site's pages) cannot be seen in a unit test, so it is tried here.
- */
-
 const PHONE = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/156.0 Mobile Safari/537.36";
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
 
 const listen = (server: http.Server) => new Promise<number>((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)));
 
-/** The folder of the page at an address of its own. */
 async function pageServer(): Promise<{ origin: string; close: () => Promise<void> }> {
   const server = http.createServer((request, response) => {
     const name = (request.url ?? "/").split("?")[0] === "/" ? "index.html" : path.basename((request.url ?? "").split("?")[0]!);
@@ -50,7 +43,6 @@ class Site {
     this.child.stderr!.on("data", (chunk) => (this.log += String(chunk)));
     const until = Date.now() + 60_000;
     for (;;) {
-      // (a program asks: it is not one of the people who are here)
       const up = await fetch(`${this.origin}/api/health`, { headers: { "user-agent": "node" } }).then(
         (answer) => answer.ok,
         () => false,
@@ -71,13 +63,12 @@ class Site {
 test.describe("the owner's page", () => {
   test("shows the site's counts to whoever has the key, from the page that is named and from no other; keeps the key on the device until told to forget it", async ({ browser }) => {
     test.setTimeout(120_000);
-    const key = randomBytes(24).toString("base64url"); // (made here, for this server only)
+    const key = randomBytes(24).toString("base64url");
     const named = await pageServer();
     const other = await pageServer();
     const site = new Site();
     await site.start({ OWNER_STATS_TOKEN: key, OWNER_STATS_ORIGIN: named.origin });
     try {
-      // Somebody opens the site (not signed in): one person here, one answer.
       await fetch(`${site.origin}/api/health`, { headers: { "user-agent": PHONE } });
 
       const context = await browser.newContext();
@@ -88,15 +79,13 @@ test.describe("the owner's page", () => {
       await page.goto(named.origin);
       await expect(page.locator("#board")).toBeHidden();
 
-      // A key the site does not know.
       await page.locator("#site").fill(site.origin);
       await page.locator("#key").fill("x".repeat(30));
       await page.getByRole("button", { name: "Show the numbers" }).click();
       await expect(page.locator("#wrong")).toHaveText("The site does not know this key.");
       await expect(page.locator("#board")).toBeHidden();
-      wrong.length = 0; // (the browser writes the 401 down as an error of the page: it is the answer that was expected)
+      wrong.length = 0;
 
-      // The key.
       await page.locator("#key").fill(key);
       await page.getByRole("button", { name: "Show the numbers" }).click();
       await expect(page.locator("#board")).toBeVisible();
@@ -112,15 +101,13 @@ test.describe("the owner's page", () => {
       await expect(page.locator("#days tr")).toHaveCount(30);
       await expect(page.locator("#alerts")).toBeHidden();
       await expect(page.locator("#state")).toContainText("asked again every 30 seconds");
-      await expect(page.locator("#key")).toHaveValue(""); // (not left in the box)
-      expect(wrong).toEqual([]); // (nothing the page's own rules refused, nothing that failed)
+      await expect(page.locator("#key")).toHaveValue("");
+      expect(wrong).toEqual([]);
 
-      // It is kept in this browser: the page opened again shows the numbers without asking.
       await page.reload();
       await expect(page.locator("#board")).toBeVisible();
-      await expect(page.locator("#now-people")).toHaveText("1"); // (the page's own questions are nobody's visit)
+      await expect(page.locator("#now-people")).toHaveText("1");
 
-      // A page with the same files at another address, with the key: the browser does not give it the answer.
       const stranger = await context.newPage();
       await stranger.goto(other.origin);
       await stranger.locator("#site").fill(site.origin);
@@ -130,7 +117,6 @@ test.describe("the owner's page", () => {
       await expect(stranger.locator("#board")).toBeHidden();
       await stranger.close();
 
-      // Forgetting it.
       await page.getByRole("button", { name: "Forget the key on this device" }).click();
       await expect(page.locator("#door")).toBeVisible();
       await expect(page.locator("#board")).toBeHidden();
@@ -138,7 +124,6 @@ test.describe("the owner's page", () => {
       await page.reload();
       await expect(page.locator("#door")).toBeVisible();
 
-      // The server said the page is on, and to whom; it never wrote the key.
       expect(site.log).toContain("The owner's page can read its counts");
       expect(site.log).not.toContain(key);
       await context.close();
@@ -161,7 +146,6 @@ test.describe("the owner's page", () => {
       await page.locator("#site").fill(site.origin);
       await page.locator("#key").fill("k".repeat(30));
       await page.getByRole("button", { name: "Show the numbers" }).click();
-      // (No key on the server: the browser is told of no page that may read, so all the page can say is that it could not be reached.)
       await expect(page.locator("#wrong")).not.toHaveText("");
       await expect(page.locator("#wrong")).not.toHaveText("Asking…");
       await expect(page.locator("#board")).toBeHidden();

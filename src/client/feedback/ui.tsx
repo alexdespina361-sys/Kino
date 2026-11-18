@@ -3,8 +3,6 @@ import type { FeedbackKind, FeedbackStatus } from "../../shared";
 import { useT, type Key } from "../i18n";
 import { BugIcon, BulbIcon, MessageIcon, QuestionIcon, SparkleIcon } from "../shared/icons";
 
-/** The small parts the screens of the feedback are made of. Everything that can be pressed is `data-nav`, which is what the remote's arrow keys walk over. */
-
 export function Chip({ selected, onClick, children, testId, title }: { selected: boolean; onClick: () => void; children: ReactNode; testId?: string; title?: string }) {
   return (
     <button type="button" role="radio" aria-checked={selected} className={`fb-chip${selected ? " is-on" : ""}`} data-nav data-testid={testId} title={title} onClick={onClick}>
@@ -13,7 +11,6 @@ export function Chip({ selected, onClick, children, testId, title }: { selected:
   );
 }
 
-/** A choice of one, said as a group (the chips are its radios). */
 export function Choice({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
   return (
     <div className="fb-choice" role="radiogroup" aria-label={label} data-testid={testId}>
@@ -51,13 +48,11 @@ export function KindIcon({ kind }: { kind: FeedbackKind }) {
   return <Icon />;
 }
 
-/** Where a report is in the team's hands, as a small label. */
 export function StatusChip({ status }: { status: FeedbackStatus }) {
   const t = useT();
   return <span className={`fb-status fb-status-${status}`}>{t(`feedback.status.${status}` as Key)}</span>;
 }
 
-/** When something happened, as a person says it (today, yesterday, a date). */
 export function when(at: number, now: number = Date.now(), language?: string): string {
   const age = now - at;
   if (age < 60_000) return "";

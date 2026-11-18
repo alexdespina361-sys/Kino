@@ -18,7 +18,6 @@ const open = (persistence = new MemoryPersistence(), extra: { flushMs?: number }
 const progress = (key: string, at: number, extra: Record<string, unknown> = {}) => ({ key, at, title: key, url: `https://x/${key}`, position: 10, duration: 100, ...extra });
 const request = (since: number, parts: Partial<Omit<SyncRequest, "since">> = {}): SyncRequest => ({ since, ...parts });
 
-/** `item` with the text of the fields named (each may take up to that many more characters) made longer until its JSON is exactly `chars` long. */
 function weighing<T extends object>(item: T, chars: number, fields: Array<[string, number]>): T {
   const filled = { ...item } as Record<string, unknown>;
   for (const [name] of fields) filled[name] = String(filled[name] ?? "");
@@ -31,10 +30,8 @@ function weighing<T extends object>(item: T, chars: number, fields: Array<[strin
   if (missing !== 0) throw new Error(`cannot make an item of ${chars} characters`);
   return filled as T;
 }
-/** What `items` weigh as the store counts it: their JSON in bytes (for ASCII, which `weighing` writes, that is its length in characters). */
 const weigh = (items: readonly object[]) => items.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0);
 
-/** A store with one account, and that account's first profile. */
 async function withAccount(persistence?: MemoryPersistence) {
   const store = await open(persistence);
   const created = store.createAccount("alex.popescu@example.com", "hash");
@@ -87,14 +84,14 @@ describe("usage", () => {
     advance(2 * DAY);
     const b = store.createAccount("second.person@example.com", "hash");
     advance(DAY);
-    store.createAccount("third.person@example.com", "hash"); // never signed in
+    store.createAccount("third.person@example.com", "hash");
     if (!a.ok || !b.ok) throw new Error("could not create");
     store.addProfile(a.value.id, "Kid", store.freeAvatar(a.value.id));
 
     clock = made + 5 * DAY;
     store.createSession(a.value.id, "browser", "Chrome");
     clock = made + 6 * DAY;
-    store.createSession(a.value.id, "tv", "Silk"); // the later of an account's devices is when it was last used
+    store.createSession(a.value.id, "tv", "Silk");
     clock = made + 4 * DAY;
     const { token } = store.createSession(b.value.id, "tv", "Chrome");
     store.createSession(b.value.id, "browser", "Chrome");
@@ -109,7 +106,6 @@ describe("usage", () => {
     });
     expect(JSON.stringify(usage)).not.toMatch(/example\.com|acc_|pro_|hash/);
 
-    // a device that signs out is no longer a device in use; an account with none is no longer in the list of those used
     store.endSessionByToken(token);
     store.revokeAll(b.value.id);
     expect(store.usage().lastUsedAt).toEqual([made + 6 * DAY]);
@@ -165,7 +161,6 @@ describe("profiles", () => {
 });
 
 describe("tags", () => {
-  /** An account whose first profile its owner named as the login goes ("sam.smith@x" -> "Sam", "SAM@x" -> "SAM"), as people do at setup. */
   const made = (store: AccountStore, login: string) => {
     const created = store.createAccount(login, "hash");
     if (!created.ok) throw new Error("no account");
@@ -222,7 +217,6 @@ describe("tags", () => {
 
     const taken = store.profilesOf(second.id)[0]!;
     expect(store.updateProfile(second.id, taken.id, { name: "trebert" })).toMatchObject({ ok: true, value: { tag: 2 } });
-    // (a number held by somebody else is not taken from them, a number that is free again is the lowest again)
     expect(store.updateProfile(third.id, profile.id, { name: "Ana" })).toMatchObject({ ok: true, value: { tag: 1 } });
     expect(store.profileByTag("trebert", 1)).toBeUndefined();
     expect(store.profileByTag("trebert", 2)).toBe(taken.id);
@@ -239,7 +233,6 @@ describe("tags", () => {
     expect(tagOf(reopened, early.id)).toBe(1);
     expect(tagOf(reopened, late.id)).toBe(2);
 
-    // Old records: no tags at all, or two that were given the same.
     const old = new MemoryPersistence();
     for (const [key, value] of persistence.docs) {
       if (!key.startsWith("account:")) {
@@ -251,10 +244,10 @@ describe("tags", () => {
       old.docs.set(key, doc);
     }
     const migrated = await open(old);
-    expect(tagOf(migrated, early.id)).toBe(1); // (the older profile)
+    expect(tagOf(migrated, early.id)).toBe(1);
     expect(tagOf(migrated, late.id)).toBe(2);
     await migrated.flush();
-    expect(tagOf(await open(old), late.id)).toBe(2); // (and written down: the next run finds them)
+    expect(tagOf(await open(old), late.id)).toBe(2);
 
     const clash = new MemoryPersistence();
     for (const [key, value] of persistence.docs) clash.docs.set(key, key.startsWith("account:") ? { ...(value as object), profiles: (value as { profiles: object[] }).profiles.map((profile) => ({ ...profile, tag: 1 })) } : value);
@@ -340,7 +333,6 @@ describe("sync", () => {
   it("keeps what a screen sends and hands it to another screen that asks", async () => {
     const { store, profile } = await withAccount();
     const first = store.sync(profile.id, request(0, { progress: [progress("film", clock)], list: [{ key: "url:https://x/a", at: clock, id: "1", title: "A", url: "https://x/a" }] }))!;
-    // the sender has these already
     expect(first).toMatchObject({ rev: 1, progress: [], list: [] });
 
     const second = store.sync(profile.id, request(0))!;
@@ -348,7 +340,6 @@ describe("sync", () => {
     expect(second.progress.map((p) => p.key)).toEqual(["film"]);
     expect(second.list).toHaveLength(1);
 
-    // asking again with where it got to costs nothing
     expect(store.sync(profile.id, request(second.rev))).toMatchObject({ rev: 1, progress: [], watched: [], list: [], settings: [] });
   });
 
@@ -371,7 +362,6 @@ describe("sync", () => {
     store.sync(profile.id, request(0, { progress: [progress("film", clock, { position: 80 })] }));
     const answer = store.sync(profile.id, request(1, { progress: [progress("film", clock - 5000, { position: 5 })] }))!;
     expect(answer.rev).toBe(1);
-    // nothing changed on the server, and the sender (who is up to date as of rev 1) hears nothing new
     expect(answer.progress).toEqual([]);
     const fresh = store.sync(profile.id, request(0, { progress: [progress("film", clock - 5000, { position: 5 })] }))!;
     expect(fresh.progress).toMatchObject([{ key: "film", position: 80 }]);
@@ -415,7 +405,7 @@ describe("sync", () => {
 
     advance(1000);
     store.sync(profile.id, request(1, { listNames: [{ key: "l1", at: clock, deleted: true }] }));
-    store.sync(profile.id, request(2, { listNames: [{ key: "l1", at: clock - 5000, name: "Weekend" }] })); // a copy that never heard of it
+    store.sync(profile.id, request(2, { listNames: [{ key: "l1", at: clock - 5000, name: "Weekend" }] }));
     expect(store.snapshot(profile.id)!.listNames).toEqual([{ key: "l1", at: clock, deleted: true }]);
   });
 
@@ -427,7 +417,7 @@ describe("sync", () => {
 
     advance(1000);
     store.sync(profile.id, request(1, { ratings: [{ key: "rate:u", at: clock, deleted: true }] }));
-    store.sync(profile.id, request(2, { ratings: [rating(clock - 5000)] })); // a copy that never heard of the removal
+    store.sync(profile.id, request(2, { ratings: [rating(clock - 5000)] }));
     expect(store.snapshot(profile.id)!.ratings).toEqual([{ key: "rate:u", at: clock, deleted: true }]);
     advance(1000);
     store.sync(profile.id, request(2, { ratings: [rating(clock, { score: 3 })] }));
@@ -454,7 +444,6 @@ describe("sync", () => {
     store.sync(profile.id, request(0, { progress: [progress("film", clock + 400 * DAY, { position: 99 })] }));
     const [stored] = store.snapshot(profile.id)!.progress;
     expect(stored!.at).toBeLessThan(clock + 2 * 60_000);
-    // so a real, later watch does beat it
     advance(10 * 60_000);
     store.sync(profile.id, request(1, { progress: [progress("film", clock, { position: 7 })] }));
     expect(store.snapshot(profile.id)!.progress).toMatchObject([{ position: 7 }]);
@@ -489,7 +478,6 @@ describe("sync", () => {
     const { store, profile } = await withAccount();
     const answer = store.sync(profile.id, request(7, { progress: [progress("film", clock)] }))!;
     expect(answer.reset).toBe(true);
-    // ...and still keeps what it was sent
     expect(store.snapshot(profile.id)!.progress.map((p) => p.key)).toEqual(["film"]);
     expect(store.sync(profile.id, request(0))).not.toHaveProperty("reset");
   });
@@ -514,21 +502,18 @@ describe("what an account and the whole site may keep", () => {
     const alex = made(store, "alex");
     store.sync(alex.profile, request(0, { list: Array.from({ length: 10 }, (_, n) => item(n)) }));
     expect(store.syncWeight(alex.account)).toBeGreaterThan(3000);
-    // (past it: a new one is not kept, on this profile or another of the account)
     store.sync(alex.profile, request(1, { list: [item(10)] }));
     const second = store.addProfile(alex.account, "Kid", AVATAR_IDS[0]!);
     if (!second.ok) throw new Error("no profile");
     store.sync(second.value.id, request(0, { list: [item(11)] }));
     expect(keys(store, alex.profile)).toHaveLength(10);
     expect(keys(store, second.value.id)).toEqual([]);
-    // (a change to what is kept, and a removal, are taken; the removal makes room)
     advance(1000);
     store.sync(alex.profile, request(1, { list: [{ ...item(3), title: "renamed", at: clock }, { key: item(4).key, at: clock, deleted: true }, { key: item(5).key, at: clock, deleted: true }] }));
     expect((store.items(alex.profile, "list") as Array<{ key: string; title?: string }>).find((each) => each.key === item(3).key)?.title).toBe("renamed");
     expect(store.syncWeight(alex.account)).toBeLessThan(3000);
     store.sync(alex.profile, request(2, { list: [item(12)] }));
     expect(keys(store, alex.profile)).toContain(item(12).key);
-    // (another account has its own)
     const sam = made(store, "sam");
     store.sync(sam.profile, request(0, { list: [item(1)] }));
     expect(keys(store, sam.profile)).toEqual([item(1).key]);
@@ -547,7 +532,6 @@ describe("what an account and the whole site may keep", () => {
     expect(again.syncWeight()).toBe(store.syncWeight());
     again.sync(sam.profile, request(0, { list: [item(1)] }));
     expect(keys(again, sam.profile)).toEqual([]);
-    // (alex's account goes: its weight with it)
     again.deleteAccount(alex.account);
     expect(again.syncWeight()).toBe(0);
     again.sync(sam.profile, request(0, { list: [item(1)] }));
@@ -562,9 +546,7 @@ describe("what a profile may weigh", () => {
   const budgets = { progress: 192 * 1024, watched: 256 * 1024, list: 640 * 1024, ratings: 640 * 1024 } as const;
   type Heavy = keyof typeof budgets;
   const heavy = Object.keys(budgets) as Heavy[];
-  /** A key as long as a key may be, told apart by its first characters. */
   const wide = (n: number) => `${String(n).padStart(4, "0")}${"k".repeat(396)}`;
-  /** An item of each part with every text as long as the schema it travels by allows (each is checked against it, so these are items a screen may send). */
   const longest: Record<Heavy, (n: number, at: number) => object> = {
     progress: (n, at) => ProgressItemSchema.parse({ key: wide(n), at, title: "t".repeat(300), url: "u".repeat(2048), image: "i".repeat(2048), backdrop: "b".repeat(2048), year: 2026, position: 1, duration: 2, season: 1, episode: 1, done: true }),
     watched: (n, at) => WatchedItemSchema.parse({ key: wide(n), at, show: "s".repeat(300), season: 1, episode: 1, position: 1, duration: 2, done: true }),
@@ -572,7 +554,6 @@ describe("what a profile may weigh", () => {
     ratings: (n, at) => RatingItemSchema.parse({ key: wide(n), at, title: "t".repeat(300), url: "u".repeat(2048), image: "i".repeat(2048), backdrop: "b".repeat(2048), year: 2026, kind: "movie", season: 1, score: 10, note: "n".repeat(400), ratedAt: at, watchedAt: at, percent: 100, seen: 5000, of: 5000 }),
   };
 
-  /** A profile whose every part has as many items as it may have, each as long as it may be, the newest first. */
   async function brim() {
     const persistence = new MemoryPersistence();
     const { store, profile } = await withAccount(persistence);
@@ -584,16 +565,14 @@ describe("what a profile may weigh", () => {
   it("keeps a profile filled to the brim within the budget of each part, the newest items first, in the very call that brought them", async () => {
     const { persistence, store, profile, sent } = await brim();
     for (const name of heavy) {
-      // (Looked at as that call left them: any other call would prune again.)
       const here = new Set(stored(store, profile.id, name).map((item) => item.key));
       const fit = sent[name].filter((item) => here.has(item.key));
       expect(here.size).toBe(fit.length);
-      expect(fit).toEqual(sent[name].slice(0, fit.length)); // the newest are what stayed...
+      expect(fit).toEqual(sent[name].slice(0, fit.length));
       expect(weigh(fit)).toBeLessThanOrEqual(budgets[name]);
-      expect(weigh(sent[name].slice(0, fit.length + 1))).toBeGreaterThan(budgets[name]); // ...as many as fit...
-      expect(fit.length).toBeLessThan(LIMITS[name]); // ...which is fewer than the count alone allows.
+      expect(weigh(sent[name].slice(0, fit.length + 1))).toBeGreaterThan(budgets[name]);
+      expect(fit.length).toBeLessThan(LIMITS[name]);
     }
-    // What is written down is some megabytes, where the counts alone allow some eight.
     await store.flush();
     expect(JSON.stringify(persistence.docs.get(`pdata:${profile.id}`)).length).toBeLessThan(2 * 1024 * 1024);
   });
@@ -607,7 +586,7 @@ describe("what a profile may weigh", () => {
     const after = stored(store, profile.id, "list");
     expect(after).toContainEqual(newest);
     expect(after.map((item) => item.key)).not.toContain(oldest.key);
-    expect(after).toHaveLength(before.length); // (every item is as long as the next: one in, one out)
+    expect(after).toHaveLength(before.length);
     expect(weigh(after)).toBeLessThanOrEqual(budgets.list);
   });
 
@@ -620,7 +599,6 @@ describe("what a profile may weigh", () => {
       await save(changes);
     };
     const { store, profile } = await withAccount(persistence);
-    // 400 titles in the lists and 500 ratings, a kilobyte each, 600 episodes watched and 60 cards to carry on with
     const kilobyte = <T extends object>(item: T, fields: Array<[string, number]>) => weighing(item, 1000, fields);
     const sent = {
       progress: Array.from({ length: LIMITS.progress }, (_, n) => kilobyte(progress(`show:${n}`, clock - n * 1000), [["image", 2048]])),
@@ -633,14 +611,12 @@ describe("what a profile may weigh", () => {
     const keys = (items: ReadonlyArray<{ key: string }>) => items.map((item) => item.key).sort();
     for (const name of heavy) expect(keys(stored(store, profile.id, name))).toEqual(keys(sent[name]));
 
-    // one write for all of it, and none when a call changes nothing, or says what the server has already
     await store.flush();
     expect(saves).toBe(1);
     store.sync(profile.id, request(first.rev));
     store.sync(profile.id, request(first.rev, { list: [sent.list[0]! as never] }));
     await store.flush();
     expect(saves).toBe(1);
-    // (and one that does change something is written, so the count above is counting)
     store.sync(profile.id, request(first.rev, { list: [{ ...sent.list[0]!, at: clock + 1, title: "Changed" } as never] }));
     await store.flush();
     expect(saves).toBe(2);
@@ -651,7 +627,6 @@ describe("what a profile may weigh", () => {
     { name: "watched", budget: 256 * 1024, size: 512, make: (n: number, at: number) => ({ key: `show|1x${n}`, at, show: "Show", season: 1, episode: n, position: 10, duration: 100, done: true }), pad: [["show", 300], ["key", 150]] },
     { name: "list", budget: 640 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `url:https://x/${n}`, at, id: String(n), title: `T${n}`, url: `https://x/${n}` }), pad: [["description", 400], ["image", 2048], ["backdrop", 2048]] },
     { name: "ratings", budget: 640 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `rate:https://x/${n}`, at, title: `T${n}`, url: `https://x/${n}`, score: 7, ratedAt: at }), pad: [["note", 400], ["image", 2048], ["backdrop", 2048]] },
-    // (A name of a list is 24 characters at the most. Only a store that is handed what the routes would have turned away can be given one this long, which is the one way to reach this budget.)
     { name: "listNames", budget: 32 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `l${n}`, at, name: "" }), pad: [["name", 4096]] },
   ] satisfies Array<{ name: CollectionName; budget: number; size: number; make: (n: number, at: number) => object; pad: Array<[string, number]> }>;
 
@@ -659,14 +634,12 @@ describe("what a profile may weigh", () => {
     const count = budget / size;
     const items = (oldestWeighs = size) => Array.from({ length: count }, (_, n) => weighing(make(n, clock - n * 1000), n === count - 1 ? oldestWeighs : size, pad as Array<[string, number]>));
 
-    // exactly the budget: all of it stays, and whatever comes after it, being older, has no room
     const exact = await withAccount();
     exact.store.sync(exact.profile.id, request(0, { [name]: items() } as never));
     expect(stored(exact.store, exact.profile.id, name)).toHaveLength(count);
     exact.store.sync(exact.profile.id, request(1, { [name]: [make(count, clock - count * 1000)] } as never));
     expect(stored(exact.store, exact.profile.id, name)).toHaveLength(count);
 
-    // a character more, and the oldest is the one that goes
     const over = await withAccount();
     const sent = items(size + 1);
     over.store.sync(over.profile.id, request(0, { [name]: sent } as never));
@@ -676,8 +649,6 @@ describe("what a profile may weigh", () => {
   it("counts the bytes that are written down, not the letters: a letter that is not ASCII weighs two or three of them", async () => {
     const budget = 640 * 1024;
     const count = 128;
-    // Items of 4320 letters, 400 of them Chinese ones (three bytes each in UTF-8): 5120 bytes, so 128 of them are exactly the budget of a list, where the same letters
-    // in ASCII would have been 552960 of the 655360.
     const items = (oldestWeighs = 4320) =>
       Array.from({ length: count }, (_, n) =>
         weighing({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}`, description: "漢".repeat(400) }, n === count - 1 ? oldestWeighs : 4320, [["image", 2048], ["backdrop", 2048]]),
@@ -685,18 +656,15 @@ describe("what a profile may weigh", () => {
     expect(weigh(items())).toBe(budget);
     expect(items().reduce((sum, item) => sum + JSON.stringify(item).length, 0)).toBeLessThan(budget);
 
-    // exactly the budget: all of it stays
     const exact = await withAccount();
     exact.store.sync(exact.profile.id, request(0, { list: items() }));
     expect(stored(exact.store, exact.profile.id, "list")).toHaveLength(count);
 
-    // a byte more, and the oldest is the one that goes
     const over = await withAccount();
     const sent = items(4321);
     over.store.sync(over.profile.id, request(0, { list: sent }));
     expect(stored(over.store, over.profile.id, "list").map((item) => item.key).sort()).toEqual(sent.slice(0, count - 1).map((item) => item.key).sort());
 
-    // and text of two bytes a letter (Cyrillic, Greek) is held to it as well: 160 items of 4096 letters would be 655360 of them, but they are 4496 bytes each
     const twice = await withAccount();
     const cyrillic = Array.from({ length: 160 }, (_, n) =>
       weighing({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}`, description: "ж".repeat(400) }, 4096, [["image", 2048], ["backdrop", 2048]]),
@@ -712,7 +680,6 @@ describe("what a profile may weigh", () => {
     const { store, profile } = await withAccount();
     const pad: Array<[string, number]> = [["description", 400], ["image", 2048], ["backdrop", 2048]];
     const titled = (n: number, chars: number) => weighing({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}` }, chars, pad);
-    // 159 items of 4096 leave room for 4096 more of the 160 × 4096 there is: the next one is a character too long, and the one after it is small
     const sent = [...Array.from({ length: 159 }, (_, n) => titled(n, 4096)), titled(159, 4097), titled(160, 300)];
     store.sync(profile.id, request(0, { list: sent }));
     expect(stored(store, profile.id, "list").map((item) => item.key).sort()).toEqual(sent.slice(0, 159).map((item) => item.key).sort());
@@ -722,7 +689,6 @@ describe("what a profile may weigh", () => {
     const { store, profile } = await withAccount();
     const live = Array.from({ length: 161 }, (_, n) => weighing({ key: `url:https://x/${n}`, at: clock - 1000 - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}` }, 4096, [["description", 400], ["image", 2048], ["backdrop", 2048]]));
     const removal = (n: number, at: number) => ({ key: `url:https://x/gone${n}`, at, deleted: true as const });
-    // Removals newer than every item and older than every item: the budget has room for 160 items, so the 161st goes, and no removal with it.
     const gone = [...Array.from({ length: 50 }, (_, n) => removal(n, clock + n)), ...Array.from({ length: 50 }, (_, n) => removal(50 + n, clock - 500_000 - n))];
     store.sync(profile.id, request(0, { list: [...live, ...gone] }));
     const kept = stored(store, profile.id, "list");
@@ -784,7 +750,6 @@ describe("keeping it between runs", () => {
       await fill(first, created.value.id, first.profilesOf(created.value.id)[0]!.id);
       await expectBack(await AccountStore.open({ persistence: new PostgresPersistence(db), now, flushMs: 0 }));
 
-      // removals reach the database too
       first.deleteAccount(created.value.id);
       await first.flush();
       const { rows } = await db.query("select count(*)::int as n from kino_docs");
@@ -811,11 +776,11 @@ describe("keeping it between runs", () => {
       await persistence.save({ put: new Map<string, unknown>([["c", { n: 3 }], ["b", { n: 22 }]]), remove: new Set(["a"]) });
       expect(statements).toHaveLength(1);
       expect(Object.fromEntries((await persistence.load()).entries())).toEqual({ b: { n: 22 }, c: { n: 3 } });
-      statements.length = 0; // (the load above asked the database too)
+      statements.length = 0;
 
-      await persistence.save({ put: new Map(), remove: new Set(["b", "nothing"]) }); // (only to forget)
-      await persistence.save({ put: new Map<string, unknown>([["d", { n: 4 }]]), remove: new Set() }); // (only to write)
-      await persistence.save({ put: new Map(), remove: new Set() }); // (nothing: nothing is asked of the database)
+      await persistence.save({ put: new Map(), remove: new Set(["b", "nothing"]) });
+      await persistence.save({ put: new Map<string, unknown>([["d", { n: 4 }]]), remove: new Set() });
+      await persistence.save({ put: new Map(), remove: new Set() });
       expect(statements).toHaveLength(2);
       expect(Object.fromEntries((await persistence.load()).entries())).toEqual({ c: { n: 3 }, d: { n: 4 } });
     } finally {
@@ -874,7 +839,6 @@ describe("persistenceFromEnv", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/DATABASE_URL/);
 
-    // Not when a database is set, when the folder was chosen on purpose (a persistent disk), or off Render.
     await (await persistenceFromEnv({ RENDER: "true", DATABASE_URL: "postgres://user:pass@localhost:1/db" }, log)).persistence.close?.();
     await persistenceFromEnv({ RENDER: "true", DATA_DIR: "/var/data" }, log);
     await persistenceFromEnv({}, log);
@@ -888,7 +852,6 @@ describe("persistenceFromEnv", () => {
     const hosted = "postgres://user:pass@db.example.com:5432/postgres";
     expect(databaseTls({ DATABASE_URL: hosted, DATABASE_CA_FILE: ca })).toEqual({ ca: "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n", rejectUnauthorized: true });
     expect(databaseTls({ DATABASE_URL: hosted })).toEqual({ rejectUnauthorized: false });
-    // (A local database, or one told not to, has no TLS at all; a root that was named but cannot be read stops the start.)
     expect(databaseTls({ DATABASE_URL: "postgres://user:pass@localhost:1/db", DATABASE_CA_FILE: ca })).toBeUndefined();
     expect(databaseTls({ DATABASE_URL: `${hosted}?sslmode=disable` })).toBeUndefined();
     expect(() => databaseTls({ DATABASE_URL: hosted, DATABASE_CA_FILE: path.join(dir, "missing.crt") })).toThrow();

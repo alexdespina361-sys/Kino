@@ -2,10 +2,6 @@ import { getLanguage, useT } from "../i18n";
 import { dayOf, linesOf, useNotes } from "./news";
 import "./news.css";
 
-/**
- * Every version, the newest first: its number, its day, and what changed. `remote`: on the TV's pages, where each line is a stop of the remote, so
- * that Up and Down walk the list and it scrolls with them (a list of words has no buttons to land on).
- */
 export function NewsList({ remote = false, className = "" }: { remote?: boolean; className?: string }) {
   const t = useT();
   const language = getLanguage();

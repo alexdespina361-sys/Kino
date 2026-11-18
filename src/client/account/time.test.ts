@@ -23,9 +23,8 @@ describe("ago", () => {
 });
 
 describe("the day and the hour of a plan", () => {
-  // The viewer's own clock, whatever the machine's time zone: so the moments are made by it, not by UTC. November 2026.
   const at = (day: number, hour = 0, minute = 0): number => new Date(2026, 10, day, hour, minute).getTime();
-  const now = at(12, 14, 30); // Thursday the 12th
+  const now = at(12, 14, 30);
 
   it("says yesterday, today and tomorrow by the viewer's own calendar, from the first minute of the day to the last", () => {
     expect(dayWord(at(11, 23, 59), now, "en")).toBe("yesterday");
@@ -38,7 +37,7 @@ describe("the day and the hour of a plan", () => {
   it("says the weekday for the days of the coming week, and the date for the rest", () => {
     expect(dayWord(at(14, 20), now, "en")).toBe("Saturday");
     expect(dayWord(at(18, 20), now, "en")).toBe("Wednesday");
-    expect(dayWord(at(19, 20), now, "en")).toMatch(/^Thu,? 19 Nov$/); // (a week ahead is the date: "Thursday" would read as today)
+    expect(dayWord(at(19, 20), now, "en")).toMatch(/^Thu,? 19 Nov$/);
     expect(dayWord(at(3, 20), now, "en")).toMatch(/^Tue,? 3 Nov$/);
   });
 

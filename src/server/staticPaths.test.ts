@@ -15,10 +15,6 @@ afterEach(async () => {
 
 const SECRET = "not-for-the-web-0f3a";
 
-/**
- * A built page with a file next to it (outside the folder it is served from) that no address may reach, listening on a port of its own: an address is written
- * as given only over a socket (`app.inject`, like any URL parser, tidies `..` away before the app sees it, and then it proves nothing about the app).
- */
 async function site() {
   dir = await mkdtemp(path.join(tmpdir(), "kino-paths-"));
   const client = path.join(dir, "client");
@@ -34,7 +30,6 @@ async function site() {
   return { app, port: (app.server.address() as AddressInfo).port };
 }
 
-/** One GET, with the address written exactly as given. */
 function get(port: number, address: string, accept = "*/*"): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const request = http.request({ host: "127.0.0.1", port, path: address, headers: { accept } }, (response) => {
@@ -51,7 +46,6 @@ describe("what the static folders give out", () => {
   it("never gives out a file from outside the folder, however the address is written", async () => {
     const { app, port } = await site();
     try {
-      // (The file is really served at the address it has, so a 404 below says something.)
       expect(await get(port, "/assets/index-abc123.js")).toEqual({ status: 200, body: "console.log(1)" });
       const ways = [
         "/../secret.txt",
@@ -91,7 +85,6 @@ describe("what the static folders give out", () => {
         for (const accept of ["*/*", "text/html"]) {
           const answer = await get(port, url, accept);
           expect(answer.body, `${url} (${accept})`).not.toContain(SECRET);
-          // (A page that is not found is the page itself for a browser that asks for a page: that is no file of the disk.)
           expect([200, 400, 403, 404], `${url} (${accept})`).toContain(answer.status);
         }
       }

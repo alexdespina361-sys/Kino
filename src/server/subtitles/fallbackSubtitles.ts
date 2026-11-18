@@ -24,19 +24,15 @@ export interface FallbackSearchParams {
   tmdbId?: string | number;
 }
 
-/** How much of a page of the sites is read (they are a few KB). */
 const MAX_PAGE_BYTES = 1024 * 1024;
-/** The seasons kept in memory, and their text, before the ones asked about longest ago go (a season in five languages is a few MB). */
 export const MAX_KEPT_SEASONS = 60;
 export const MAX_KEPT_CHARS = 64 * 1024 * 1024;
-/** A season the sites had nothing for is not asked about again for this long. */
 export const NOTHING_FOR = 6 * 60 * 60 * 1000;
 
 async function pageText(res: Response): Promise<string> {
   return (await readCapped(res, MAX_PAGE_BYTES))?.toString("utf8") ?? "";
 }
 
-/** A short mark of a file's name, so two files whose first 30 letters are the same still have ids of their own. */
 function mark(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 8);
 }
@@ -44,7 +40,6 @@ function mark(text: string): string {
 export function srtToVtt(srt: string): string {
   let clean = srt.replace(/^\uFEFF/, "").trim();
   if (clean.startsWith("WEBVTT")) return clean;
-  // Convert timestamps 00:00:00,000 -> 00:00:00.000
   clean = clean.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
   return `WEBVTT\n\n${clean}`;
 }
@@ -58,9 +53,6 @@ export function normalizeSearchTitle(t: string): string {
     .trim();
 }
 
-/**
- * Normalizes language codes from tvsubtitles (e.g. "br" -> "pt", "ua" -> "uk", "gr" -> "el")
- */
 export function normalizeTvSubtitlesLang(raw: string): string {
   const l = raw.toLowerCase().trim();
   if (l === "br") return "pt";
@@ -73,10 +65,8 @@ export function normalizeTvSubtitlesLang(raw: string): string {
 
 export class FallbackSubtitleManager {
   private cacheByTitleSeason = new Map<string, FallbackSubtitleRecord[]>();
-  private subtitleById = new Map<string, string>(); // id -> vtt
-  /** How much text `subtitleById` holds (see `MAX_KEPT_CHARS`). */
+  private subtitleById = new Map<string, string>();
   private keptChars = 0;
-  /** The seasons the sites had nothing for, and when that was found (see `NOTHING_FOR`). */
   private nothingSince = new Map<string, number>();
   private pending = new Map<string, Promise<FallbackSubtitleRecord[]>>();
   private dataDir?: string;
@@ -91,12 +81,7 @@ export class FallbackSubtitleManager {
     return this.subtitleById.get(subId);
   }
 
-  /**
-   * Returns subtitles for a title/episode, falling back to TVSubtitles and SubDL.
-   * All extracted season episodes are saved/cached in memory and on disk.
-   */
   async getSubtitles(params: FallbackSearchParams): Promise<SubtitleTrack[]> {
-    // (Only an episode of a series: a film of the same name as a show must not get the show's lines.)
     const season = Number(params.season);
     const episode = Number(params.episode);
     if (!params.title || !Number.isInteger(season) || !Number.isInteger(episode) || season < 0 || episode < 1) return [];
@@ -118,8 +103,6 @@ export class FallbackSubtitleManager {
       seasonSubs = await underway;
     }
 
-    // The requested episode's files only. A file with no episode number in its name goes with every episode only when it is the season's one file
-    // of its language and site (a pack of many unnumbered files cannot be told apart, and the wrong episode's lines are worse than none).
     const episodeMatches = seasonSubs.filter((sub) => {
       if (sub.episode !== undefined) return sub.episode === episode;
       return seasonSubs!.filter((other) => other.lang === sub.lang && other.source === sub.source).length === 1;
@@ -133,10 +116,6 @@ export class FallbackSubtitleManager {
     }));
   }
 
-  /**
-   * Fetches season pack(s) from TVSubtitles (and SubDL if configured), extracts all episode subtitles,
-   * stores them in memory and saves them to disk.
-   */
   private async fetchAndCacheSeason(
     title: string,
     season: number,
@@ -144,7 +123,6 @@ export class FallbackSubtitleManager {
   ): Promise<FallbackSubtitleRecord[]> {
     const key = `${normalizeSearchTitle(title)}:s${season}`;
 
-    // 1. Try disk cache if configured
     if (this.dataDir) {
       const diskSubs = await this.loadFromDisk(key);
       if (diskSubs && diskSubs.length > 0) {
@@ -155,21 +133,17 @@ export class FallbackSubtitleManager {
 
     const records: FallbackSubtitleRecord[] = [];
 
-    // 2. Fetch from TVSubtitles
     try {
       const tvSubs = await this.fetchTVSubtitlesSeason(title, season);
       records.push(...tvSubs);
     } catch {
-      // tvsubtitles failed or had no match
     }
 
-    // 3. Fetch from SubDL if configured with API key
     if (process.env.SUBDL_API_KEY) {
       try {
         const subdlSubs = await this.fetchSubDLSeason(title, season, params);
         records.push(...subdlSubs);
       } catch {
-        // subdl failed
       }
     }
 
@@ -195,7 +169,6 @@ export class FallbackSubtitleManager {
     this.keep(key, records);
   }
 
-  /** Keeps a season as the newest, and lets the seasons asked about longest ago go while there are too many of them or too much text. */
   private keep(key: string, records: FallbackSubtitleRecord[]): void {
     this.cacheByTitleSeason.delete(key);
     this.cacheByTitleSeason.set(key, records);
@@ -218,14 +191,10 @@ export class FallbackSubtitleManager {
     }
   }
 
-  /**
-   * Searches TVSubtitles, finds the season page, downloads season pack zips, and unzips all episodes.
-   */
   async fetchTVSubtitlesSeason(title: string, season: number): Promise<FallbackSubtitleRecord[]> {
     const records: FallbackSubtitleRecord[] = [];
     const normTitle = normalizeSearchTitle(title);
 
-    // Step A: Search for show ID
     const searchRes = await this.get("http://www.tvsubtitles.net/search2.php", {
       method: "POST",
       headers: {
@@ -241,18 +210,16 @@ export class FallbackSubtitleManager {
     const showMatches = [...searchHtml.matchAll(/<a\s+href="\/tvshow-(\d+)\.html">([^<]+)<\/a>/g)];
     if (showMatches.length === 0) return [];
 
-    // Strict title matching: candidate title must match normalized query after stripping trailing years (e.g. " (2004-2010)")
     const bestShow = showMatches.find((m) => {
       const rawCand = m[2] ?? "";
       const strippedCand = rawCand.replace(/\s*\(\d{4}(?:-\d{4})?\)\s*$/g, "").trim();
       return normalizeSearchTitle(strippedCand) === normTitle;
     });
     if (!bestShow) {
-      return []; // Do not guess or pick random show to avoid assigning subtitles for the wrong series
+      return [];
     }
     const showId = bestShow[1] ?? '';
 
-    // Step B: Fetch season overview page
     const seasonUrl = `http://www.tvsubtitles.net/tvshow-${showId}-${season}.html`;
     const seasonRes = await this.get(seasonUrl, {
       headers: { "User-Agent": "Mozilla/5.0" },
@@ -261,11 +228,9 @@ export class FallbackSubtitleManager {
     if (!seasonRes.ok) return [];
     const seasonHtml = await pageText(seasonRes);
 
-    // Find season pack links e.g. <a href="subtitle-3593-1-en.html">
     const packLinks = [...seasonHtml.matchAll(/<a\s+href="subtitle-(\d+)-(\d+)-([a-z]{2})\.html">/g)];
     if (packLinks.length === 0) return [];
 
-    // Prioritize English ('en') and Romanian ('ro') season packs first
     const targetLangs = new Set(["en", "ro"]);
     const priorityPacks = packLinks.filter((p) => targetLangs.has(p[3] ?? ""));
     const otherPacks = packLinks.filter((p) => !targetLangs.has(p[3] ?? ""));
@@ -301,7 +266,6 @@ export class FallbackSubtitleManager {
         const normLang = normalizeTvSubtitlesLang(rawLang);
 
         for (const item of extracted) {
-          // (A file that says it is of another season is not this season's.)
           if (item.season !== undefined && item.season !== season) continue;
           const epNum = item.episode;
           const cleanName = item.name.replace(/\.(srt|vtt)$/i, "").trim();
@@ -322,9 +286,6 @@ export class FallbackSubtitleManager {
     return records;
   }
 
-  /**
-   * Fetches subtitles from SubDL API if SUBDL_API_KEY is configured.
-   */
   async fetchSubDLSeason(
     title: string,
     season: number,
@@ -363,7 +324,6 @@ export class FallbackSubtitleManager {
 
     if (!json?.status || !Array.isArray(json.subtitles)) return [];
 
-    // Download up to 3 zip archives from SubDL
     const toDownload = json.subtitles.slice(0, 3);
     await Promise.allSettled(
       toDownload.map(async (sub, idx) => {
@@ -422,7 +382,6 @@ export class FallbackSubtitleManager {
       const filePath = path.join(dir, `${cleanKey}.json`);
       await writeFile(filePath, JSON.stringify(subs), "utf8");
     } catch {
-      // ignore disk write errors
     }
   }
 }

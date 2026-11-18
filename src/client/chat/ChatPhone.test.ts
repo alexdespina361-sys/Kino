@@ -48,7 +48,6 @@ describe("the chat on the phone", () => {
     expect(tagOf(html, "chat-panel-btn")).toContain('aria-expanded="false"');
     expect(tagOf(html, "chat-panel-btn")).toContain('aria-label="Titles, GIFs and stickers"');
     for (const id of ["chat-title-btn", "chat-gif-btn", "chat-sticker-btn", "chat-tools", "chat-panel"]) expect(has(html, id), id).toBe(false);
-    // (Something typed changes nothing: the one button stays, there is no + to fold into.)
     expect(count(render({ session: fakeSession({ state: { lines } }) }), "chat-panel-btn")).toBe(1);
   });
 
@@ -62,7 +61,7 @@ describe("the chat on the phone", () => {
     const html = render({ session: fakeSession({ state: { lines: [] } }) });
     expect(has(html, "chat-empty")).toBe(true);
     expect(has(html, "chat-privacy")).toBe(true);
-    expect(html).toContain("200 messages"); // (in English: the line is the server's numbers, said)
+    expect(html).toContain("200 messages");
     expect(html).toContain("30 days");
     expect(html).toContain("without encryption");
     expect(has(html, "chat-compose")).toBe(true);
@@ -72,7 +71,7 @@ describe("the chat on the phone", () => {
     const html = render({ session: fakeSession({ state: { lines, open: false } }) });
     expect(has(html, "chat-closed")).toBe(true);
     expect(has(html, "chat-compose")).toBe(false);
-    expect(has(html, "chat-lines")).toBe(true); // (what was said before can still be read)
+    expect(has(html, "chat-lines")).toBe(true);
   });
 
   it("does not claim the friend is not taking messages before it knows", () => {
@@ -106,7 +105,7 @@ describe("the chat on the phone", () => {
   it("tells that the friend cannot answer when this profile takes no messages", () => {
     expect(has(render({ receiving: false }), "chat-mine-off")).toBe(true);
     expect(has(render(), "chat-mine-off")).toBe(false);
-    expect(has(render({ receiving: false }), "chat-compose")).toBe(true); // (it can still write)
+    expect(has(render({ receiving: false }), "chat-compose")).toBe(true);
   });
 
   it("lets every message be pressed, for a reaction (and one's own, to take it back); a friend who takes no messages, or no friend any more, takes no reactions", () => {

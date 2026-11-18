@@ -4,18 +4,12 @@ import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { openDevice, openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
 
-/**
- * The corners and edges of the TV's pages that every page shares: the way out of a full-screen page, a code that can be copied, the wordmark
- * that stays beside the menu when it opens, and the keys of the search keyboard. (What a page holds is tested with the page.)
- */
-
 const HD = { width: 1280, height: 720 };
 const FULL_HD = { width: 1920, height: 1080 };
 
 const films = Array.from({ length: 6 }, (_, index) => ({ id: `f${index}`, title: `Film number ${index + 1}`, year: 1930 + index, url: `/fixtures/sample.mp4?n=${index}` }));
 const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: films }] };
 
-/** Where a button is (its right edge and top, its height) and what it is filled with. */
 const look = (page: Page, testId: string) =>
   page.getByTestId(testId).evaluate((element) => {
     const { top, right, height } = element.getBoundingClientRect();
@@ -27,18 +21,18 @@ for (const viewport of [HD, FULL_HD]) {
     const tv = await openLibrary(browser, undefined, viewport);
     const seen: Record<string, Awaited<ReturnType<typeof look>>> = {};
 
-    await tv.getByTestId("rail-connect").click(); // the code of a phone to connect
+    await tv.getByTestId("rail-connect").click();
     seen["connect"] = await look(tv, "tv-back-to-library");
     await tv.getByTestId("tv-back-to-library").click();
 
-    await tv.getByTestId("rail-party").click(); // the watch party's two ways in
+    await tv.getByTestId("rail-party").click();
     seen["party"] = await look(tv, "tv-back-to-library");
     await tv.getByTestId("tv-party-join").click();
     seen["join"] = await look(tv, "tv-party-join-back");
     await tv.getByTestId("tv-party-join-back").click();
     await tv.getByTestId("tv-back-to-library").click();
 
-    await openTvSignIn(tv); // signing in: the code, then the form
+    await openTvSignIn(tv);
     seen["sign-in"] = await look(tv, "tv-signin-back");
     await tv.getByTestId("tv-signin-email").click();
     seen["form"] = await look(tv, "tv-signin-form-back");
@@ -100,11 +94,10 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD, { width: 800,
     const browse = tv.getByTestId("tv-browse");
     const under = () => tv.evaluate(({ x, y }) => (document.elementFromPoint(x, y)?.closest(".tv-rail") ? "menu" : "page"), middle);
 
-    // A mouse: it opens the menu by resting on it, then goes up to the wordmark (under the open menu) and clicks.
     await tv.getByTestId("rail-search").click();
     await expect(browse).toHaveAttribute("data-view", "search");
     const away = { x: viewport.width - 10, y: viewport.height - 10 };
-    await tv.mouse.move(away.x, away.y); // (off the menu, to come back to it)
+    await tv.mouse.move(away.x, away.y);
     await expect(menu).toHaveAttribute("data-open", "false");
     const strip = await rect(menu);
     await tv.mouse.move(strip.left + 20, viewport.height / 2, { steps: 4 });
@@ -117,7 +110,6 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD, { width: 800,
     await expect(browse).toHaveAttribute("data-view", "home");
     await expect(menu).toHaveAttribute("data-open", "false");
 
-    // The remote in the menu, on another page than home (its focus opens it); the mouse clicks the wordmark: home, the menu shut, the remote on the titles.
     await tv.mouse.move(away.x, away.y);
     await tv.getByTestId("rail-search").focus();
     await expect(menu).toHaveAttribute("data-open", "true");
@@ -138,7 +130,7 @@ test("on a touch screen, with the menu open over it, a tap on the wordmark shuts
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   const browse = tv.getByTestId("tv-browse");
   const menu = tv.getByTestId("tv-rail");
-  await tv.getByTestId("rail-search").focus(); // (the remote, or a keyboard, in the menu: open over the wordmark)
+  await tv.getByTestId("rail-search").focus();
   await tv.keyboard.press("Enter");
   await expect(browse).toHaveAttribute("data-view", "search");
   await tv.getByTestId("rail-search").focus();
@@ -203,7 +195,7 @@ test("a code on the screen is selected whole by a click, and the button under it
   await copy.click();
   await expect(copy).toContainText(en["friends.codeCopied"]);
   expect(await tv.evaluate(() => navigator.clipboard.readText())).toBe(digits);
-  await expect(copy).toContainText(en["friends.copyCode"], { timeout: 6_000 }); // (it says so for a moment, and goes back)
+  await expect(copy).toContainText(en["friends.copyCode"], { timeout: 6_000 });
 });
 
 test("the sign-in code has its button too, and the remote reaches it", async ({ browser }) => {
@@ -225,13 +217,12 @@ for (const [language, words] of [["en", en], ["ro", ro], ["it", italian]] as con
       const tv = await openLibrary(browser, withLibrary(library), viewport, { "kino.lang": language });
       await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
       const brand = tv.locator(".tv-rail-brand");
-      await expect(brand).toHaveCSS("opacity", "0"); // (shut, the page's own wordmark is the one that shows)
+      await expect(brand).toHaveCSS("opacity", "0");
 
       await tv.keyboard.press("ArrowLeft");
       await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "true");
       await expect(brand).toHaveCSS("opacity", "1");
 
-      // The same place as the page's own wordmark, which the open menu covers: the name does not move.
       const [mine, page] = await tv.evaluate(() => {
         const rect = (selector: string) => {
           const { left, top, width, height } = document.querySelector(selector)!.getBoundingClientRect();
@@ -243,7 +234,6 @@ for (const [language, words] of [["en", en], ["ro", ro], ["it", italian]] as con
       expect(Math.abs(mine.top - page.top), "the wordmark's top").toBeLessThanOrEqual(2);
       expect(Math.abs(mine.height - page.height), "the wordmark's height").toBeLessThanOrEqual(2);
 
-      // Clear of the first line, and every line's words whole (none ends in dots).
       const first = (await tv.getByTestId("rail-search").boundingBox())!;
       expect(mine.top + mine.height, "the wordmark is above the first line").toBeLessThanOrEqual(first.y);
       const cut = await tv.getByTestId("tv-rail").locator("button span").evaluateAll((spans) =>
@@ -277,7 +267,7 @@ test("a server without accounts still has the corner button, as Profile, and Set
     browser,
     async (context) => {
       await withLibrary(library)(context);
-      await context.route("**/api/me", (route) => route.fulfill({ status: 404, body: "not found" })); // (what a server without accounts answers)
+      await context.route("**/api/me", (route) => route.fulfill({ status: 404, body: "not found" }));
     },
     HD,
   );
@@ -291,6 +281,6 @@ test("a server without accounts still has the corner button, as Profile, and Set
   await tv.getByTestId("tv-profile-settings").click();
   await expect(tv.getByTestId("tv-account")).toBeVisible();
   await expect(tv.getByTestId("tv-sign-in")).toHaveCount(0);
-  await expect(tv.getByTestId("tv-lang-en")).toBeVisible(); // (what is the device's own is all there: the language, the colour, what playback does)
+  await expect(tv.getByTestId("tv-lang-en")).toBeVisible();
   await expect(tv.getByTestId("tv-autoplay")).toBeVisible();
 });

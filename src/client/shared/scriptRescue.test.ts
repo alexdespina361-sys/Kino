@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { reloadForScript, scriptIsMissing } from "./scriptRescue";
 
-/** The browser's storage for one visit, as a map. */
 const kept = () => {
   const map = new Map<string, string>();
   return { getItem: (key: string) => map.get(key) ?? null, setItem: (key: string, value: string) => void map.set(key, value) };
@@ -9,9 +8,9 @@ const kept = () => {
 
 describe("scriptIsMissing", () => {
   it.each([
-    "Failed to fetch dynamically imported module: https://kino.example/assets/Tv-D4EAXG6x.js", // Chrome
-    "error loading dynamically imported module: https://kino.example/assets/Tv-D4EAXG6x.js", // Firefox
-    "Importing a module script failed.", // Safari
+    "Failed to fetch dynamically imported module: https://kino.example/assets/Tv-D4EAXG6x.js",
+    "error loading dynamically imported module: https://kino.example/assets/Tv-D4EAXG6x.js",
+    "Importing a module script failed.",
     "Loading chunk 12 failed.",
   ])("knows the browser's words: %s", (message) => {
     expect(scriptIsMissing(new TypeError(message))).toBe(true);
@@ -29,9 +28,9 @@ describe("reloadForScript", () => {
     const reload = vi.fn();
     const storage = kept();
     expect(reloadForScript(reload, 1_000_000, storage)).toBe(true);
-    expect(reloadForScript(reload, 1_000_000 + 59_999, storage)).toBe(false); // (the page that came up after the first still cannot get its script)
+    expect(reloadForScript(reload, 1_000_000 + 59_999, storage)).toBe(false);
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(reloadForScript(reload, 1_000_000 + 60_000, storage)).toBe(true); // (a minute later it may be the connection that was back, or a version that came out)
+    expect(reloadForScript(reload, 1_000_000 + 60_000, storage)).toBe(true);
     expect(reload).toHaveBeenCalledTimes(2);
   });
 

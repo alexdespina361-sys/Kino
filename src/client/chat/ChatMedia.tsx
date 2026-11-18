@@ -9,14 +9,8 @@ import type { PersonalLines } from "./ChatLines";
 import { mediaOf, type ChatMedia } from "./search";
 import { dayOf, stampOf } from "./state";
 
-/**
- * The chat's GIFs and stickers, together (the owner, 17 Nov: "image gallery in the 3 dots"): the newest first, small, each one asked for only as it comes
- * into view; a press shows the message it is in the chat. A personal sticker shows while stickers are on, else (or when its picture does not come) a tile
- * that says it is not available, which still shows the message.
- */
 export function MediaGrid({ lines, name, now, personal, onShow, nav = false }: { lines: readonly ChatLine[]; name: string; now: number; personal?: PersonalLines | undefined; onShow: (id: number) => void; nav?: boolean }) {
   const t = useT();
-  // (A child's profile has no GIFs in it: the chat says one is there and asks nothing of KLIPY, ChatLines.tsx `Gif`, and its gallery has the stickers alone.)
   const child = useProfileData().settings.child === true;
   const media = useMemo(() => mediaOf(lines).filter((item) => !(child && item.kind === "gif")), [lines, child]);
   if (media.length === 0) {
@@ -63,10 +57,6 @@ function MediaTile({ item, name, now, personal, onShow, nav }: { item: ChatMedia
   );
 }
 
-/**
- * The gallery on the TV's pages, where a message can be pressed (a computer, a hand-held screen): a page of its own, as the stickers' is, with the arrow
- * at the top on a hand-held screen and the Back pill on a computer. A press goes back to the chat and shows the message there.
- */
 export function ChatMediaTv({ lines, name, now, personal, narrow, onShow, onBack }: { lines: readonly ChatLine[]; name: string; now: number; personal?: PersonalLines | undefined; narrow: boolean; onShow: (id: number) => void; onBack: () => void }) {
   const t = useT();
   const title = t("chat.mediaTitle", { name });
@@ -100,7 +90,6 @@ export function ChatMediaTv({ lines, name, now, personal, narrow, onShow, onBack
   );
 }
 
-/** The gallery on a phone: a sheet over the chat; a press shuts it and shows the message. */
 export function ChatMediaSheet({ lines, name, now, personal, onShow, onClose }: { lines: readonly ChatLine[]; name: string; now: number; personal?: PersonalLines | undefined; onShow: (id: number) => void; onClose: () => void }) {
   const t = useT();
   return (

@@ -1,60 +1,32 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Keepable } from "../accounts/rateLimit";
 
-/**
- * What is going on right now, for the owner's page (docs/stats.md, "The owner's page"): how many people are using the site this minute, how many of
- * them signed in, and how the server answered in each of the last hours. Counts only. Who is here is in memory and nowhere else (a restart forgets it); the hours are written down over a restart, as numbers that name nobody.
- *
- * A person is a browser at an address, told from another by a hash of the two, salted with a secret made when the server starts and never written
- * down: the address and the browser's name are only ever hashed, and a hash is let go a quarter of an hour after it was last seen. (The count of
- * visitors by day - visits.ts - is another thing: this one is of the last minutes, and counts whoever asks the site anything, not page loads.)
- */
-
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
-/** A browser that asked nothing for this long is no longer here. */
 export const HERE_MS = 5 * MINUTE;
-/** ...and is forgotten after this long. */
 const KEEP_MS = 15 * MINUTE;
-/** No more than this many are kept (a flood of made-up browsers cannot grow what is held). */
 export const MAX_HERE = 50_000;
-/** How many hours of answers are kept. */
 export const HOURS_KEPT = 48;
-/**
- * How many browsers one address counts as, at most: a home is a few people with a few screens each, and one visitor that gives its browser a new name at
- * every question is still one of them (the review of 18 Nov: it could be any number of people up to `MAX_HERE`, and crowd the real ones out). The count
- * of visitors by day has the same rule (visits.ts).
- */
 export const BROWSERS_PER_ADDRESS = 8;
-/** The sweep that makes room when `MAX_HERE` are kept runs no more often than this. */
 const HARD_SWEEP_MS = 1000;
 
 export interface HereNow {
-  /** Browsers that asked the site something in the last five minutes. */
   people: number;
-  /** ...of them, the ones that brought a session (signed in). */
   signedIn: number;
   guests: number;
 }
 
-/** How the server answered in one hour. */
 export interface HourAnswers {
-  /** The hour's start (ms, UTC). */
   hour: number;
-  /** Every answer to the site's own api and pages. */
   requests: number;
-  /** Turned away: not signed in, or not allowed (401, 403). */
   refused: number;
-  /** Told to wait (429): somebody asked more than the limits allow. */
   limited: number;
-  /** The server's own failures (500 and over). */
   failed: number;
 }
 
 export class LiveCount implements Keepable {
   private readonly salt = randomBytes(18).toString("base64url");
   private readonly here = new Map<string, { at: number; signedIn: boolean; from: string }>();
-  /** How many of those that are kept came from each address (by a hash of it alone). */
   private readonly fromAddress = new Map<string, number>();
   private readonly hours = new Map<number, HourAnswers>();
   private swept = 0;
@@ -62,7 +34,6 @@ export class LiveCount implements Keepable {
 
   constructor(private readonly clock: () => number = Date.now) {}
 
-  /** A browser asked the site something. (The address and the browser's name are only ever seen here, to be hashed.) */
   seen(address: string, agent: string, signedIn: boolean): void {
     const now = this.clock();
     const hash = this.hashOf(address, agent.slice(0, 300));
@@ -73,7 +44,6 @@ export class LiveCount implements Keepable {
         this.sweptHard = now;
         this.sweep(now, true);
       }
-      // (Past the address's few, a new browser is one of those already counted; past the most that are kept, it is not counted.)
       if (this.here.size < MAX_HERE && (this.fromAddress.get(from) ?? 0) < BROWSERS_PER_ADDRESS) {
         this.here.set(hash, { at: now, signedIn, from });
         this.fromAddress.set(from, (this.fromAddress.get(from) ?? 0) + 1);
@@ -88,7 +58,6 @@ export class LiveCount implements Keepable {
     return createHash("sha256").update([this.salt, ...parts].join("\0")).digest("base64url").slice(0, 16);
   }
 
-  /** One answer went out. */
   answered(status: number): void {
     const now = this.clock();
     const hour = now - (now % HOUR);
@@ -127,7 +96,6 @@ export class LiveCount implements Keepable {
     return { people, signedIn, guests: people - signedIn };
   }
 
-  /** How the server answered in the hours that are kept: numbers that name nobody, written down over a restart (accounts/rateLimit.ts). Who is here is not. */
   kept(): unknown {
     const from = this.clock() - HOURS_KEPT * HOUR;
     return [...this.hours.values()].filter((each) => each.hour > from).map((each) => [each.hour, each.requests, each.refused, each.limited, each.failed]);
@@ -146,7 +114,6 @@ export class LiveCount implements Keepable {
     }
   }
 
-  /** The last hours, the oldest first, every hour among them (an hour in which nothing was asked is all zeroes). */
   answers(count = 24): HourAnswers[] {
     const now = this.clock();
     const last = now - (now % HOUR);
@@ -157,14 +124,7 @@ export class LiveCount implements Keepable {
   }
 }
 
-/**
- * Whether the last whole hour, or the one that is running, looks unlike the ones before it: far more answers that turned somebody away or told
- * somebody to wait, or of the server's own failures, than the usual hour had. A plain rule, said in words, for a person to look into: it stops
- * nothing by itself. (The owner, 18 Nov 2026: the page is "the base for future real time security".)
- */
 export function oddHours(hours: readonly HourAnswers[]): Array<{ hour: number; what: "refused" | "limited" | "failed"; count: number; usual: number }> {
-  // (Only the hours in which the server answered anything are "the ones before": after a restart there are none for a while, and an hour is not odd
-  // for being the first.)
   const before = hours.slice(0, -2).filter((each) => each.requests > 0);
   if (before.length < 6) return [];
   const out: Array<{ hour: number; what: "refused" | "limited" | "failed"; count: number; usual: number }> = [];
@@ -172,7 +132,6 @@ export function oddHours(hours: readonly HourAnswers[]): Array<{ hour: number; w
     const sorted = before.map((each) => each[what]).sort((a, b) => a - b);
     const usual = sorted[Math.floor(sorted.length / 2)] ?? 0;
     for (const each of hours.slice(-2)) {
-      // (Five times the usual hour, and enough of them to be more than one person's slip.)
       if (each[what] >= 30 && each[what] > 5 * Math.max(usual, 2)) out.push({ hour: each.hour, what, count: each[what], usual });
     }
   }
