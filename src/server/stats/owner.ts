@@ -22,9 +22,8 @@ import { dayOf, type VisitCounter } from "./visits";
 
 export const OWNER_STATS = "/api/owner/stats";
 const DAY_MS = 24 * 3600 * 1000;
-/** How many of the newest reports are listed, and how much of a heading. */
+/** How many of the newest reports are listed (what sort each is and how it stands: never its heading or its words, which are a person's own). */
 const LATEST_REPORTS = 10;
-const HEADING_MAX = 90;
 
 /** Programs that fetch pages and say so: not people who are here now. */
 const NOT_PEOPLE = /bot|crawl|spider|slurp|preview|monitor|uptime|curl|wget|python|node|go-http|java|headless|lighthouse|pingdom|facebookexternalhit|facebot|embedly|whatsapp|telegram|slack|discord|linkedin/i;
@@ -45,7 +44,7 @@ export interface OwnerStatsView {
     /** Nobody of the team has touched it. */
     fresh: number;
     received: Windows;
-    latest: Array<{ id: string; at: number; kind: string; area: string; status: string; heading: string }>;
+    latest: Array<{ id: string; at: number; kind: string; area: string; status: string }>;
   };
   /** How the server answered in each of the last 24 hours, the oldest first, and the hours that look unlike the others. */
   answers?: HourAnswers[];
@@ -136,7 +135,7 @@ export function ownerView(options: Omit<OwnerStatsOptions, "token" | "origin">, 
             latest: [...reports]
               .sort((a, b) => b.createdAt - a.createdAt)
               .slice(0, LATEST_REPORTS)
-              .map((report) => ({ id: report.id, at: report.createdAt, kind: report.kind, area: report.area, status: report.status, heading: report.title.slice(0, HEADING_MAX) })),
+              .map((report) => ({ id: report.id, at: report.createdAt, kind: report.kind, area: report.area, status: report.status })),
           },
         }
       : {}),

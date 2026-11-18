@@ -97,8 +97,8 @@ created, movies/content watched (minutes), feedback received", and "the base for
   progress comes in: how far a film's card moved on, when that is no more than the time that went by (a jump ahead is no watching), and never more than
   the time that went by on the server's clock. A guest's watching is kept on the guest's device and never reaches the server, so it is not in the number.
   Nothing is counted for the time before the key was set.
-- **Feedback**: how many reports, how many are open, how many nobody has touched, and the ten newest: kind, area, how it stands and the heading (90
-  characters). Never the words of a report or who sent it: those are the team's (`scripts/feedback.mjs`).
+- **Feedback**: how many reports, how many are open, how many nobody has touched, and the ten newest: kind, area, how it stands and when it
+  came. Never the heading or the words of a report, or who sent it: those are a person's own and the team's to read (`scripts/feedback.mjs`).
 - **How the server answered** in each of the last 24 hours: answers, turned away (401, 403), told to wait (429), the server's own failures (500 and
   over). An hour that has far more of one of these than the usual hour (five times, and thirty at least) is named at the top of the page. It names
   nothing else and stops nothing by itself: it is where a person, or later a program, starts to look.

@@ -113,8 +113,8 @@
     latest.forEach(function (report) {
       var line = make("li");
       line.appendChild(make("span", "tag" + (report.status === "new" ? " is-new" : ""), String(report.status).replace("_", " ")));
-      line.appendChild(make("span", "", report.heading || "(no heading)"));
-      line.appendChild(make("span", "when", report.kind + " · " + report.area + " · " + ago(report.at, view.at)));
+      line.appendChild(make("span", "", report.kind + " · " + report.area));
+      line.appendChild(make("span", "when", ago(report.at, view.at)));
       list.appendChild(line);
     });
 

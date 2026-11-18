@@ -70,7 +70,7 @@ describe("the owner's page: its answer", () => {
       ["r2", "bug", "tv", "in_review"],
       ["r1", "bug", "tv", "done"],
     ]);
-    expect(view.feedback!.latest[1]!.heading).toHaveLength(90);
+    expect(Object.keys(view.feedback!.latest[0]!).sort()).toEqual(["area", "at", "id", "kind", "status"]);
     expect(view.answers).toHaveLength(24);
     expect(view.answers!.at(-1)).toMatchObject({ requests: 2, limited: 1 });
     expect(view.odd).toEqual([]);
@@ -82,6 +82,7 @@ describe("the owner's page: its answer", () => {
     // Not an address of anybody, not the words of a report, not the address the server was asked from.
     expect(response.body).not.toContain("example.com");
     expect(response.body).not.toContain("the words of the report");
+    for (const heading of ["Old and closed", "The newest", "xxx"]) expect(response.body).not.toContain(heading);
     expect(response.body).not.toContain("203.0.113");
   });
 

@@ -30,6 +30,8 @@ const cheap = { N: 1024, r: 8, p: 1 } as const;
 const T0 = Date.parse("2026-11-02T12:00:00Z");
 const DAY = 24 * 3600 * 1000;
 const TOKEN = "the-teams-token-is-at-least-24-characters";
+/** The key of the owner's page (stats/owner.ts): it reads counts and nothing else, and is no token of the team's. */
+const OWNER_KEY = "the-owners-key-is-its-own-24-characters";
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("not really a picture")]);
 const sha = (data: Buffer | undefined) => createHash("sha256").update(data ?? "").digest("hex");
 /** A picture of one colour, its own for each name (as base64, the way a page sends it to be made a personal sticker). */
@@ -280,7 +282,7 @@ async function world(): Promise<World> {
   const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now, stickers: { on: true } });
   const registry = new Registry({ now: () => clock.now });
   const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), now: () => clock.now });
-  const app = await buildApp({ accounts: store, passwordCost: cheap, registry, feedback, signUpsPerHour: 1000, feedbackSendsPer10Min: 1000, feedbackAdminToken: TOKEN });
+  const app = await buildApp({ accounts: store, passwordCost: cheap, registry, feedback, signUpsPerHour: 1000, feedbackSendsPer10Min: 1000, feedbackAdminToken: TOKEN, ownerStatsToken: OWNER_KEY, ownerStatsOrigin: "https://owner.example" });
   apps.push(app);
   const bare: Bare = { app, store, persistence, feedback, registry, clock, team: new Client(app, { authorization: `Bearer ${TOKEN}` }) };
   const tess = await join(bare, "tess");
@@ -337,7 +339,14 @@ interface Snapshot {
   kept: Map<string, string>;
   shown: Record<string, unknown>;
 }
-const snapshot = async (w: World, o: Owner): Promise<Snapshot> => ({ kept: await kept(w, o), shown: await seen(w, o) });
+/**
+ * (What is shown is read first: a screen that is told of a friend's messages gives them their one tick, "received", which is kept in the chat. That is
+ * the reading's own doing and the same every time, so what is kept is looked at after it; a tick that anything else moved still shows as a change.)
+ */
+const snapshot = async (w: World, o: Owner): Promise<Snapshot> => {
+  const shown = await seen(w, o);
+  return { kept: await kept(w, o), shown };
+};
 
 /** What differs between two states of what is kept. */
 function differences(before: Map<string, string>, after: Map<string, string>): string[] {
@@ -421,6 +430,10 @@ const ROWS: Row[] = [
   row("DELETE /api/profiles/:id", { id: ["spare", "profile"] }),
   row("POST /api/profiles/:id/sync", { id: asking }, { body: () => ({ since: 0, list: [planted] }) }),
   row("POST /api/profiles/:id/screen", { id: asking }),
+  // what a profile is told of the titles it watches (new episodes, seasons, films): its own to read, to mark as looked at and to clear
+  row("GET /api/profiles/:id/title-notices", { id: asking }),
+  row("POST /api/profiles/:id/title-notices/seen", { id: asking }, { body: () => ({}) }),
+  row("POST /api/profiles/:id/title-notices/dismiss", { id: asking }, { body: () => ({ id: "tv-1" }) }),
   // signing a TV in from a phone (the code is what the TV shows: whoever holds it may look at it; see "signing a TV in")
   row("GET /api/link/:code", { code: "link" }, { open: ["code"] }),
   row("POST /api/link/:code/approve", { code: "link" }, { open: ["code"] }),
@@ -475,6 +488,7 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/search": "the catalogue",
   "GET /api/library/rows": "the catalogue",
   "GET /api/library/more": "the catalogue",
+  "GET /api/library/names": "the catalogue: what titles are called in the viewer's language (TMDB's names), the same for everybody and slowed per address",
   "GET /api/library/similar": "the catalogue",
   "GET /api/library/about": "the catalogue",
   "GET /api/library/title": "the catalogue",
@@ -506,6 +520,7 @@ const PUBLIC: Record<string, string> = {
   "POST /api/feedback/check": "asks after reports by their keys: a key is its report's owner (see 'feedback that belongs to a key')",
   "GET /api/subsync/:key": "shared subtitle timings, found by a hash of the subtitle file: the same for everybody, a TV has no account",
   "PUT /api/subsync/:key": "open to every screen and slowed per address; what is left is never trusted, the one who takes a timing checks it against the sound it hears",
+  "OPTIONS /api/owner/stats": "the browser's question before the owner's page may ask: answered only to the one page the server names (OWNER_STATS_ORIGIN), and it says nothing of the site",
   "GET /fixtures/*": "the test films the repo ships",
   "GET /*": "the website's own files",
 };
@@ -531,6 +546,9 @@ const TEAM: Array<{ route: string; body?: object; query?: string; ok: number }> 
   { route: "DELETE /api/admin/feedback/:id", ok: 204 },
 ];
 
+/** The owner's page: its own key and nothing else (see "the owner's page has a key of its own"). */
+const OWNER = ["GET /api/owner/stats"];
+
 /** Every route the server has when it is made the way `index.ts` makes it, as `METHOD /path` (the HEAD that goes with each GET left out). */
 async function registered(): Promise<string[]> {
   const client = await mkdtemp(path.join(tmpdir(), "kino-authz-client-"));
@@ -547,7 +565,7 @@ async function registered(): Promise<string[]> {
   try {
     const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
     const visits = await VisitCounter.open({ persistence: new MemoryPersistence(), flushMs: 0 });
-    apps.push(await buildApp({ accounts, visits, passwordCost: cheap, feedbackAdminToken: TOKEN, clientDir: client, fixturesDir: fixtures }));
+    apps.push(await buildApp({ accounts, visits, passwordCost: cheap, feedbackAdminToken: TOKEN, ownerStatsToken: OWNER_KEY, clientDir: client, fixturesDir: fixtures }));
   } finally {
     unsubscribe("fastify.initialization", watch);
   }
@@ -654,7 +672,7 @@ async function probe(each: Row): Promise<string[]> {
 
 describe("the routes of the server", () => {
   it("are every one in a row of the table, in the list of the public ones (with the reason) or in the team's: a route added later has to be put in one", async () => {
-    const known = new Set([...ROWS.map((each) => each.route), ...Object.keys(PUBLIC), ...TEAM.map((each) => each.route)]);
+    const known = new Set([...ROWS.map((each) => each.route), ...Object.keys(PUBLIC), ...TEAM.map((each) => each.route), ...OWNER]);
     const routes = await registered();
     expect(routes.filter((route) => !known.has(route)), "routes that nobody has said anything about").toEqual([]);
     expect([...known].filter((route) => !routes.includes(route)), "rows and reasons for routes that are not there").toEqual([]);
@@ -754,8 +772,8 @@ describe("the team's side", () => {
 
   it("takes the team's token as a Bearer and nothing else: not a sign-in, not the token of one", { timeout: 60_000 }, async () => {
     const w = await world();
+    const shown = await seen(w, w.a); // (read first: see `snapshot`)
     const before = await kept(w);
-    const shown = await seen(w, w.a);
     const sorts: Array<[string, Client, string?]> = [
       ["somebody signed in", w.b.client],
       ["a visitor", new Client(w.app)],
@@ -776,6 +794,34 @@ describe("the team's side", () => {
     // with the token it is all there to read and to change, and the last route takes the report away
     for (const entry of TEAM) expect((await call(w, w.team, entry)).statusCode, entry.route).toBe(entry.ok);
     expect((await call(w, w.team, TEAM.find((entry) => entry.route === "GET /api/admin/feedback/:id")!)).statusCode).toBe(404);
+  });
+
+  it("the owner's page has a key of its own: no sign-in, no team's token opens it, it opens nothing of the team's, and what it shows is nobody's own", { timeout: 60_000 }, async () => {
+    const w = await world();
+    const shown = await seen(w, w.a); // (read first: see `snapshot`)
+    const before = await kept(w);
+    const sorts: Array<[string, Client]> = [
+      ["somebody signed in", w.b.client],
+      ["a visitor", new Client(w.app)],
+      ["a wrong key", new Client(w.app, { authorization: `Bearer ${OWNER_KEY}x` })],
+      ["the team's token", w.team],
+      ["the token of a session", new Client(w.app, { authorization: `Bearer ${w.b.client.token}` })],
+      ["the right key anywhere but in a Bearer", new Client(w.app, { authorization: `Basic ${OWNER_KEY}`, "x-api-key": OWNER_KEY, cookie: `token=${OWNER_KEY}` })],
+    ];
+    for (const [who, client] of sorts) {
+      const reply = await client.get("/api/owner/stats");
+      expect([reply.statusCode, reply.data?.error], who).toEqual([401, "unauthorized"]);
+      for (const o of [w.a, w.b]) expect(leaks(reply.body, o), who).toEqual([]);
+    }
+    const owner = new Client(w.app, { authorization: `Bearer ${OWNER_KEY}` });
+    const view = await owner.get("/api/owner/stats");
+    expect(view.statusCode).toBe(200);
+    expect(view.data.accounts.total).toBeGreaterThanOrEqual(2);
+    for (const o of [w.a, w.b]) expect(leaks(view.body, o), `${o.login}'s things in the owner's counts`).toEqual([]);
+    // (the key reads counts: it is no token of the team's)
+    for (const entry of TEAM) expect((await call(w, owner, entry)).statusCode, entry.route).toBe(401);
+    expect(differences(before, await kept(w))).toEqual([]);
+    expect(await seen(w, w.a)).toEqual(shown);
   });
 
   it("slows down whoever keeps guessing the token", async () => {

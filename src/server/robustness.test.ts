@@ -425,6 +425,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/library/search": { query: () => ({ q: "casa" }) },
   "GET /api/library/rows": { query: () => ({ cursor: "0", section: "movie" }) },
   "GET /api/library/more": { query: () => ({ row: "row1", page: "2" }) },
+  "GET /api/library/names": { query: () => ({ lang: "ro", ids: "movie-603,tv-1399" }) },
   "GET /api/library/similar": { query: () => ({ url: TITLE }) },
   "GET /api/library/about": { query: () => ({ url: TITLE }), ok: [200] },
   "GET /api/library/title": { query: () => ({ id: "filmpire-movie-603" }), ok: [200] },
@@ -474,6 +475,10 @@ const SPECS: Record<string, Spec> = {
   "POST /api/link/:code/deny": { params: { code: (w) => w.linkDeny }, ok: [204] },
   "GET /api/profiles/:id/friends": { params: profile },
   "POST /api/profiles/:id/screen": { params: profile },
+  // (sixty a minute for an account: the sweep asks more, and is told to wait)
+  "GET /api/profiles/:id/title-notices": { params: profile, ok: [429] },
+  "POST /api/profiles/:id/title-notices/seen": { params: profile, body: () => ({ ids: ["tv-1399"] }), ok: [429] },
+  "POST /api/profiles/:id/title-notices/dismiss": { params: profile, body: () => ({ id: "tv-1399" }), ok: [429] },
   "GET /api/profiles/:id/friends/kept": { params: profile },
   "POST /api/profiles/:id/friends/invites": { params: profile, ok: [201] },
   "DELETE /api/profiles/:id/friends/invites/:code": { params: { ...profile, code: (w) => w.ownInvite }, ok: [204, 404] },
