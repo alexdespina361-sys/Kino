@@ -5,7 +5,7 @@ import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { AnimeHintSchema, isHttpUrl, isNameLanguage, LibraryKindSchema, LibrarySectionSchema, NAME_ID, NAMES_AT_ONCE, type Registration } from "../shared";
+import { AnimeHintSchema, isHttpUrl, isNameLanguage, LibraryKindSchema, LibrarySectionSchema, NAME_ID, NAMES_AT_ONCE, type LibraryItem, type Registration } from "../shared";
 import type { GoogleConfig } from "./accounts/google";
 import { createAnimeSkipLookup, type AnimeSkipLookup } from "./anime/skipTimes";
 import type { PasswordCost } from "./accounts/password";
@@ -42,6 +42,7 @@ import { MemorySubsyncStore, type SubsyncStore } from "./subsync/store";
 import { MemoryOfficialStore, Officials, type OfficialStore } from "./subtitles/official";
 import { officialRoutes } from "./subtitles/officialRoutes";
 import { trustedProxies, visitorOf } from "./trust";
+import { watchedOnKino } from "./accounts/watching";
 
 export interface AppOptions {
   /** Accounts, profiles and what they watched. Without it the server has no sign-in and every screen just keeps its own history. The app closes it when it stops. */
@@ -154,6 +155,8 @@ export function hasTag(header: string | undefined, tag: string): boolean {
 }
 
 const root = path.resolve(import.meta.dirname, "../..");
+/** How long what people watch on Kino is kept before it is worked out again (`/api/watching`). */
+const WATCHING_FRESH_MS = 15 * 60_000;
 
 export function defaultClientDir(): string {
   return process.env.CLIENT_DIR ?? path.join(root, "dist/client");
@@ -526,6 +529,28 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     } catch {
       return reply.code(502).header("Cache-Control", "no-store").send({ error: "The library could not be reached" });
     }
+  });
+  // What people watch on Kino, for a row on Home (accounts/watching.ts): titles only, in their order, as the library knows them. Worked out at most once in a
+  // quarter of an hour (it goes through every profile), and the same for everybody, so a browser may keep it for ten minutes.
+  let watching: { at: number; items: LibraryItem[] } | undefined;
+  let working: Promise<void> | undefined;
+  const workOutWatching = async () => {
+    const at = Date.now();
+    const ids = accounts ? watchedOnKino(accounts) : [];
+    const items: LibraryItem[] = [];
+    for (const id of ids) {
+      // (As a link to its page is answered: one the library would not play is left out.)
+      const item = await library.title(id).catch(() => null);
+      if (item) items.push(item);
+    }
+    watching = { at, items };
+  };
+  app.get("/api/watching", async (_request, reply) => {
+    if (!watching || Date.now() - watching.at > WATCHING_FRESH_MS) {
+      working ??= workOutWatching().finally(() => (working = undefined));
+      await working;
+    }
+    return reply.header("Cache-Control", "public, max-age=600").send({ items: watching?.items ?? [] });
   });
   app.get<{ Querystring: { url?: string; season?: string } }>("/api/library/episodes", async (request, reply) => {
     const link = request.query.url ?? "";

@@ -492,6 +492,7 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/similar": "the catalogue",
   "GET /api/library/about": "the catalogue",
   "GET /api/library/title": "the catalogue",
+  "GET /api/watching": "what people watch on Kino: titles only, no name and no count, the same for everybody (accounts/watching.ts)",
   "GET /api/library/episodes": "the catalogue",
   "GET /api/library/seasons": "the catalogue",
   "GET /api/library/unavailable": "the catalogue: what no source had, the same for everybody",

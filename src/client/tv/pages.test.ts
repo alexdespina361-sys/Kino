@@ -237,6 +237,22 @@ describe("rowsOfPage: movies and series", () => {
     expect(child.some((r) => r.id === "picks" || r.id.startsWith("because:"))).toBe(false);
   });
 
+  it("has what people watch on Kino after Home's second row: not on a section's page, not on a child's profile, not of sections the profile leaves out, not with too few", () => {
+    const watching = [item("w0", "movie"), item("w1", "series"), item("w2", "movie"), item("w3", "movie"), item("w4", "series", { section: "anime" })];
+    const personal = [own("picks", "picks", [item("pf0", "movie")]), own("k")];
+    const home = rowsOfPage("home", data({ rows: many, progress: [card("going")], personal, watching }));
+    expect(home.map((r) => r.id).slice(0, 7)).toEqual(["continue", "r0", "picks", "r1", "watching", "r2", "because:k"]);
+    expect(home[4]).toMatchObject({ layout: "wide", title: t("rows.watching") });
+    expect(home[4]!.entries.map((entry) => entry.id)).toEqual(["w0", "w1", "w2", "w3", "w4"]);
+    expect(rowsOfPage("movies", data({ rows: many, watching })).some((r) => r.id === "watching")).toBe(false);
+    const child = rowsOfPage("home", data({ rows: many, watching, child: { allows: () => true } as unknown as NonNullable<PageData["child"]> }));
+    expect(child.some((r) => r.id === "watching")).toBe(false);
+    // A profile that watches films only: four films are a row, three are not.
+    const films = rowsOfPage("home", data({ rows: many, watching: [...watching, item("w5", "movie")], wanted: new Set(["movie"]) }));
+    expect(films.find((r) => r.id === "watching")!.entries.map((entry) => entry.id)).toEqual(["w0", "w2", "w3", "w5"]);
+    expect(rowsOfPage("home", data({ rows: many, watching, wanted: new Set(["movie"]) })).some((r) => r.id === "watching")).toBe(false);
+  });
+
   it("leaves what the profile has seen out of the library's rows after the first, while a row has enough without it", () => {
     const long = [row("top", "movie", 8), row("long", "movie", 8), row("short", "movie", 6)];
     const progress = [card("top-1", { done: true }), card("long-1", { done: true }), card("long-5"), card("short-0", { done: true })];

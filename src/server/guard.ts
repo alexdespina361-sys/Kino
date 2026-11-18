@@ -9,8 +9,7 @@ const MINUTE = 60_000;
  * files. `script-src 'self'` turns away a script written into a page (inline, or an `on...=` in markup) and one from another site, which is what a slip in the escaping
  * would be used for (the judge, 16 Nov: the header said nothing about scripts). It keeps `'unsafe-eval'`, as the subtitle aligner's WebAssembly needs it in the Chromium
  * 94 of a Hisense, which has no `'wasm-unsafe-eval'` yet (a newer browser takes that one for the same, and for the frame boost's runtime). There is no `default-src`:
- * the pictures, the sound and the videos come from many places. (The pages have no inline script; the workers are files of the site; the kino-direct extension
- * puts no script in the page.)
+ * the pictures, the sound and the videos come from many places. (The pages have no inline script; the workers are files of the site.)
  */
 const BASELINE_POLICY = "base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
 

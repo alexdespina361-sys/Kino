@@ -3,7 +3,7 @@ import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openLibrary, openProfilePage, openProfilePlace, openTvSignIn, pressProfilePlace, test, tvRoot, withLibrary, type ProfilePlace, showProfilePage } from "./helpers";
+import { openLibrary, openProfilePage, openProfilePlace, openTvSignIn, pressProfilePlace, test, tvRoot, withLibrary, type ProfilePlace, showProfilePage, nameFirstProfile, PICTURE_NAMED } from "./helpers";
 
 /**
  * Friends, on the TV: switched on in the settings of the account, then a place on the profile's page for them: the friends' page (invitations to
@@ -37,7 +37,8 @@ const films = (baseURL: string) => ({
 });
 
 /** A new screen, signed up with the email form. Friends are still off. */
-async function signedInScreen(browser: Browser, name: string, options: { viewport?: { width: number; height: number }; library?: unknown; language?: Language } = {}): Promise<Screen> {
+/** A screen signed in to a new account, its profile named `name` as Kino named it after the login (`asMade`: left with the name of its picture, and the page as signing in leaves it). */
+async function signedInScreen(browser: Browser, name: string, options: { viewport?: { width: number; height: number }; library?: unknown; language?: Language; asMade?: boolean } = {}): Promise<Screen> {
   const account = fresh(name);
   const page = await openLibrary(browser, options.library ? withLibrary(options.library) : undefined, options.viewport ?? HD, options.language ? { "kino.lang": options.language } : {});
   await openTvSignIn(page);
@@ -47,7 +48,11 @@ async function signedInScreen(browser: Browser, name: string, options: { viewpor
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
+  if (options.asMade) return { page, name: (await page.getByTestId("tv-account-chip").getAttribute("aria-label"))!.match(PICTURE_NAMED)![0] };
+  await nameFirstProfile(page, nameOf(account));
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
+  await showProfilePage(page); // (where signing in leaves a screen: the page was opened again to show the name)
   return { page, name: nameOf(account) };
 }
 
@@ -259,7 +264,7 @@ test.describe("the profile's page, as what is on it changes under the remote", (
   });
 
   test("a card says how its place stands now, not as it stood when the remote came to it", async ({ browser }) => {
-    const ann = await signedInScreen(browser, "Ann");
+    const ann = await signedInScreen(browser, "Ann", { asMade: true });
     await ann.page.getByTestId("rail-home").click(); // (signing in leaves the screen on the profile's page: start from Home, as anyone would)
     await openProfilePage(ann.page);
     await expect(ann.page.getByTestId("tv-profile-settings")).toBeFocused(); // (the first button of the page has the remote)

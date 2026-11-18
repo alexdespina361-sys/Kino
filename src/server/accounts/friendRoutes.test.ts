@@ -93,7 +93,10 @@ async function person(app: FastifyInstance, login: string): Promise<Person> {
   const client = new Client(app);
   const registered = await client.post("/api/auth/register", { email: login, password: "x" });
   expect(registered.statusCode).toBe(201);
-  return profileOf(client, registered.data.profiles[0]);
+  // (Its owner names it at setup, here as the login goes: "alex" -> "Alex". A new profile is named after its picture.)
+  const named = await client.call("PATCH", `/api/profiles/${registered.data.profiles[0].id}`, { name: login.charAt(0).toUpperCase() + login.slice(1) });
+  expect(named.statusCode).toBe(200);
+  return profileOf(client, named.data.profiles[0]);
 }
 
 /** One of the profiles of a signed-in account. */

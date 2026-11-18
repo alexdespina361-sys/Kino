@@ -152,13 +152,8 @@ export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 export const DEVICE_NAME_MAX = 40;
 export const SessionRenameSchema = z.object({ label: z.string().trim().min(1, "invalid_name").max(DEVICE_NAME_MAX, "invalid_name") });
 
-/** The name a first profile gets from what the account signs in with: "alex.popescu@x.com" -> "Alex", "robert" -> "Robert", "my tv" -> "My tv", "qa-alpha" -> "Qa alpha". */
-export function nameFromEmail(login: string): string {
-  const own = login.includes("@") ? (login.split("@")[0]?.split(/[._+-]/)[0] ?? "") : login; // an address gives the part before the @, which is a name; a name is the name
-  const word = own.replace(/[._+-]+/g, " ").replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim(); // (a dash or a dot between words is a space, not nothing: "qa-alpha" is not "qaalpha")
-  if (!word) return "Me";
-  return (word.charAt(0).toUpperCase() + word.slice(1)).slice(0, PROFILE_NAME_MAX).trim();
-}
+/** A picture's name as a profile's name ("fox" -> "Fox"): what the first profile of a new account is called until whoever uses it chooses one. */
+export const avatarName = (avatar: AvatarId): string => avatar.charAt(0).toUpperCase() + avatar.slice(1);
 
 /** The picture a new profile gets when its maker has not chosen one: the first one not taken yet. */
 export const nextAvatar = (taken: readonly string[]): AvatarId => AVATAR_IDS.find((id) => !taken.includes(id)) ?? AVATAR_IDS[0];
@@ -360,6 +355,11 @@ export const SETTING_SCHEMAS = {
    * a profile that turned it off is told nothing, in the bell or on its phone.
    */
   titleNotices: z.boolean(),
+  /**
+   * Whether what this profile watches is counted in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off (the owner,
+   * 18 Nov 2026). Counted with no name, and a title is shown only when people of several accounts watched it. The server reads it.
+   */
+  publicWatching: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];

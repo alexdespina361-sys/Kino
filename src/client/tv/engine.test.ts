@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hold, isHeld } from "../subsync/hold";
 import { AudioTap } from "../subsync/tap";
 import { signedRelayUrl } from "../../server/streamRelay/links";
-import { prepareBrowserStream } from "./browserStream";
 import {
   DIRECT_START_MS,
   LONE_PROXY_BUFFER_AHEAD_S,
@@ -77,7 +76,6 @@ const FakeHls = vi.hoisted(() => {
   return FakeHls;
 });
 vi.mock("hls.js", () => ({ default: FakeHls }));
-vi.mock("./browserStream", () => ({ prepareBrowserStream: vi.fn() }));
 
 /** What hls.js aims at: seconds of film downloaded ahead of the picture, `max(8 * maxBufferSize / bitrate, maxBufferLength)`, never more than `maxMaxBufferLength`. */
 function aheadSeconds(policy: ReturnType<typeof bufferPolicy>, bitsPerSecond: number): number {
@@ -167,49 +165,6 @@ const stubBrowser = () => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "log").mockImplementation(() => {});
 };
-
-describe("an installed direct-playback extension", () => {
-  beforeEach(() => {
-    vi.mocked(prepareBrowserStream).mockReset();
-    FakeHls.instances.length = 0;
-    FakeHls.supported = true;
-    stubBrowser();
-  });
-  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-
-  it("replaces the relay and server token with the viewer's direct source", async () => {
-    const { engine } = newEngine();
-    const direct = "https://farragoandfulcrum.website/pl/movie/master.m3u8?token=server";
-    const fresh = direct.replace("server", "viewer");
-    vi.mocked(prepareBrowserStream).mockReturnValueOnce(Promise.resolve(fresh));
-    await engine.load("https://relay.example/?url=film", "hls", undefined, undefined, direct);
-    expect(prepareBrowserStream).toHaveBeenCalledWith(direct);
-    expect(FakeHls.instances.at(-1)!.url).toBe(fresh);
-    engine.destroy();
-  });
-
-  it("does not let a slow token response replace a newer movie", async () => {
-    const { engine } = newEngine();
-    let finish!: (url: string) => void;
-    vi.mocked(prepareBrowserStream).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-    const old = engine.load("https://relay.example/old", "hls");
-    await engine.load("https://cdn.example/new.m3u8", "hls");
-    finish("https://cdn.example/old.m3u8");
-    await old;
-    expect(FakeHls.instances).toHaveLength(1);
-    expect(FakeHls.instances[0]!.url).toBe("https://cdn.example/new.m3u8");
-    engine.destroy();
-  });
-
-  it("reports a token failure without attempting the blocked relay", async () => {
-    const { engine, states } = newEngine();
-    vi.mocked(prepareBrowserStream).mockReturnValueOnce(Promise.reject(new Error("Provider blocked")));
-    await engine.load("https://relay.example/?url=film", "hls");
-    expect(FakeHls.instances).toHaveLength(0);
-    expect(states.at(-1)).toMatchObject({ state: "error", error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
-    engine.destroy();
-  });
-});
 
 describe("a picture that comes through this server", () => {
   const levels = [

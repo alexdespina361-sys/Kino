@@ -1,5 +1,4 @@
 import type Hls from "hls.js";
-import { prepareBrowserStream } from "./browserStream";
 import {
   IDLE_STATE,
   type OfficialOfferLine,
@@ -399,21 +398,7 @@ export class PlayerEngine {
     this.emit();
 
     // Media may be root-relative (local fixtures); resolve against the TV's own origin.
-    let src = new URL(url, location.href).href;
-    const browserStream = type === "hls" ? prepareBrowserStream(directUrl ?? src) : undefined;
-    if (browserStream) {
-      try {
-        src = await browserStream;
-        if (generation !== this.generation) return;
-        directUrl = undefined;
-      } catch (error) {
-        if (generation === this.generation) {
-          console.warn("[Kino direct playback]", error instanceof Error ? error.message : "Could not prepare video");
-          this.fail(PlayerError.NotDirectlyPlayable);
-        }
-        return;
-      }
-    }
+    const src = new URL(url, location.href).href;
 
     // Attach external subtitle tracks if provided
     if (subtitles?.length) {

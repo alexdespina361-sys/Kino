@@ -34,7 +34,7 @@ class Client {
   cookie = "";
   constructor(private readonly app: FastifyInstance) {}
 
-  async call(method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: unknown): Promise<LightMyRequestResponse & { data: any }> {
+  async call(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, payload?: unknown): Promise<LightMyRequestResponse & { data: any }> {
     const response = await this.app.inject({ method, url, headers: this.cookie ? { cookie: this.cookie } : {}, ...(payload === undefined ? {} : { payload: payload as object }) });
     const set = response.headers["set-cookie"];
     const header = Array.isArray(set) ? set[0] : set;
@@ -68,6 +68,8 @@ async function person(app: FastifyInstance, login: string): Promise<Person> {
   const registered = await client.call("POST", "/api/auth/register", { email: login, password: "x" });
   expect(registered.statusCode).toBe(201);
   const id = registered.data.profiles[0].id as string;
+  // (Its owner names it at setup, here as the login goes: "alex" -> "Alex". A new profile is named after its picture.)
+  expect((await client.call("PATCH", `/api/profiles/${id}`, { name: login.charAt(0).toUpperCase() + login.slice(1) })).statusCode).toBe(200);
   const me: Person = {
     client,
     id,

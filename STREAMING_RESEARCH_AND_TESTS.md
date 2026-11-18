@@ -1,6 +1,9 @@
 # Kino Streaming Research, Implementation, and Test Log
 
-**Current result, 16 October 2026:** the [Kino Direct Playback extension](extensions/kino-direct/README.md) played the live source in Chromium
+**18 November 2026:** the extension below was removed from the repository and the player (the owner: deprecated). Video goes through the
+relay on the Oracle box (`kino-relay.24-7.ro`, [STREAM_RELAY_SETUP.md](STREAM_RELAY_SETUP.md)). What follows is the record as it was.
+
+**Result, 16 October 2026:** the Kino Direct Playback extension (`extensions/kino-direct`, since removed) played the live source in Chromium
 with Kino's HUD, pause, seek and resume, with no relay and no website video traffic. The companion website update must be present on the
 server; installing the extension alone cannot upgrade an older website build. For browsers without extensions, the Cloudflare Worker remains rejected. The separate Node relay described in
 [STREAM_RELAY_SETUP.md](STREAM_RELAY_SETUP.md) played the original live stream in Chromium with Kino's HUD, pause, seek and resume;

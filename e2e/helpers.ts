@@ -1,5 +1,5 @@
 import { chromium, expect, test as base, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
-import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type PlayHint, type ServerMessage } from "../src/shared";
+import { AVATAR_IDS, avatarName, parseServerMessage, PROFILE_NAME_MAX, type Command, type NormalizedMedia, type PlayerState, type PlayHint, type ServerMessage } from "../src/shared";
 import { COMPACT_MAX_WIDTH, COMPACT_MIN_HEIGHT } from "../src/client/tv/compact";
 
 /**
@@ -422,4 +422,41 @@ export async function loadOnTv(phone: Page, media: NormalizedMedia): Promise<voi
     ws.close();
   }, media);
   await phone.reload();
+}
+
+/**
+ * Names a signed-in page's first profile, as its owner does when it is set up (a new account's is named after its picture, never after its login: the
+ * owner, 18 Nov), and loads the page again to have it. The specs that find people by name use it to give each the name its login would suggest.
+ */
+/** What a new account's first profile is called until it is set up: the name of its picture ("Fox"), whichever it got. */
+export const PICTURE_NAME = new RegExp(`^(${AVATAR_IDS.map(avatarName).join("|")})$`);
+/** The same, anywhere in a text (a button's label, "Account and profiles: Fox"). */
+export const PICTURE_NAMED = new RegExp(`\\b(${AVATAR_IDS.map(avatarName).join("|")})\\b`);
+
+/**
+ * The name Kino gave a first profile until 18 Nov 2026, from the login: "viewer@kino.test" -> "Viewer", "Robert x1" -> "Robert x1". The tests that are about
+ * something else name their profiles so (`nameFirstProfile`), and read them as before.
+ */
+export function loginName(login: string): string {
+  const own = login.includes("@") ? (login.split("@")[0]?.split(/[._+-]/)[0] ?? "") : login;
+  const word = own.replace(/[._+-]+/g, " ").replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim();
+  return word ? (word.charAt(0).toUpperCase() + word.slice(1)).slice(0, PROFILE_NAME_MAX).trim() : "Me";
+}
+
+/**
+ * Names the first profile of the account this page has just signed in to (a new one is named after its picture), as the profile's settings would, and
+ * opens the page again so that it shows the name. Waits for the sign-in to have happened first.
+ */
+export async function nameFirstProfile(page: Page, name: string): Promise<void> {
+  let id: string | undefined;
+  await expect
+    .poll(async () => {
+      const state = (await (await page.request.get("/api/me")).json()) as { me: { profiles: Array<{ id: string }> } | null };
+      id = state.me?.profiles[0]?.id;
+      return id !== undefined;
+    }, { timeout: 15_000 })
+    .toBe(true);
+  const renamed = await page.request.patch(`/api/profiles/${id}`, { data: { name } });
+  expect(renamed.ok(), `rename to ${name}: ${renamed.status()}`).toBe(true);
+  await page.reload();
 }

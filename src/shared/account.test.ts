@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AVATAR_IDS,
   DEFAULT_LIST,
   emptyData,
   fillProgress,
@@ -10,10 +11,11 @@ import {
   LoginSchema,
   mergeCollection,
   mergeData,
-  nameFromEmail,
+  avatarName,
   newerOf,
   newListId,
   nextAvatar,
+  ProfileNameSchema,
   progressKey,
   RegisterSchema,
   resolveLists,
@@ -228,16 +230,9 @@ describe("what people type", () => {
   });
 
   it("names a first profile from the account's name, and picks the first picture not in use", () => {
-    expect(nameFromEmail("alex.popescu@x.com")).toBe("Alex");
-    expect(nameFromEmail("ioana_m@x.com")).toBe("Ioana");
-    expect(nameFromEmail("@x.com")).toBe("Me");
-    expect(nameFromEmail("robert")).toBe("Robert");
-    expect(nameFromEmail("my tv 2")).toBe("My tv 2");
-    expect(nameFromEmail("###")).toBe("Me");
-    expect(nameFromEmail("qa-alpha")).toBe("Qa alpha"); // a name with a dash in it is two words, not one glued together
-    expect(nameFromEmail("john.smith")).toBe("John smith");
-    expect(nameFromEmail("ioana_m")).toBe("Ioana m");
-    expect(nameFromEmail("a very long name for a profile")).toBe("A very long name");
+    expect(avatarName("fox")).toBe("Fox");
+    expect(avatarName("astronaut")).toBe("Astronaut");
+    for (const avatar of AVATAR_IDS) expect(ProfileNameSchema.safeParse(avatarName(avatar)).success, avatar).toBe(true); // (every one is a name a profile may have)
     expect(nextAvatar([])).toBe("fox");
     expect(nextAvatar(["fox", "cat"])).toBe("panda");
   });
