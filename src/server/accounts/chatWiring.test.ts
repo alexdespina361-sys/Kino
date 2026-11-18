@@ -1,7 +1,8 @@
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHAT_KEEP_MS, type ChatThread, type FriendsState } from "../../shared";
 import { buildApp } from "../app";
+import { CHAT_SENDS_AN_HOUR } from "./chatRoutes";
 import { FeedbackStore, MemoryFeedbackBackend } from "../feedback/store";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
@@ -251,6 +252,34 @@ describe("reporting a chat", () => {
     await feedback.update("1", (draft) => void (draft.status = "done"));
     expect((await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev })).statusCode).toBe(204);
     expect(feedback.list().map((record) => record.area)).toEqual(["friends"]);
+  });
+});
+
+describe("how much an account sends", () => {
+  it("is so many messages an hour on top of the twenty a minute, and the next one goes when the hour of the first is over", async () => {
+    const time = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    try {
+      const { alex, sam } = await friends();
+      const first = clock.now;
+      // (Three seconds and a bit apart: under the book's twenty a minute, so it is the hour that counts.)
+      for (let n = 0; n < CHAT_SENDS_AN_HOUR; n++) {
+        clock.now += 3100;
+        const sent = await alex.say(sam, `line ${n}`);
+        if (sent.statusCode !== 201) throw new Error(`message ${n} was a ${sent.statusCode}`);
+      }
+      clock.now += 3100;
+      const refused = await alex.say(sam, "one more");
+      expect([refused.statusCode, refused.data.error]).toEqual([429, "rate_limited"]);
+      const wait = Number(refused.headers["retry-after"]);
+      expect(wait).toBeGreaterThan(0);
+      expect(wait).toBeLessThanOrEqual(60 * 60);
+      // The friend may still answer (an hour of one's own), and a refused one was not counted: the hour after the first message, one more goes.
+      expect((await sam.say(alex, "hi")).statusCode).toBe(201);
+      clock.now = first + 3100 + 60 * 60_000;
+      expect((await alex.say(sam, "one more")).statusCode).toBe(201);
+    } finally {
+      time.mockRestore();
+    }
   });
 });
 

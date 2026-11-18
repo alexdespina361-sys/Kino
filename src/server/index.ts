@@ -49,6 +49,8 @@ const accounts = await AccountStore.open({
   // (A new profile is set up by whoever uses it the first time: its name and picture, its subtitles, what it watches. PROFILE_SETUP=off: nobody is asked.)
   askSetup: process.env.PROFILE_SETUP !== "off",
   stickers: { files: stickerFilesFor(persistence, kind), on: personalStickersOn(), moving: movingStickersOn(), ...(personalStickersMaxBytes() ? { maxBytes: personalStickersMaxBytes()! } : {}) },
+  // (What the profiles of the whole site keep together, in MB: 64 unless set. accounts/store.ts SYNC_SITE_BYTES.)
+  ...(Number(process.env.SYNC_SITE_MB) > 0 ? { syncSiteBytes: Number(process.env.SYNC_SITE_MB) * 1024 * 1024 } : {}),
 });
 // Which phone goes with which TV is kept in the same place, so a restart (a free host sleeps when nobody is using it) does not undo every pairing.
 const registry = new Registry();
@@ -142,10 +144,18 @@ const app = await buildApp({
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
   ...(Number(process.env.SIGNUPS_PER_HOUR) > 0 ? { signUpsPerHour: Number(process.env.SIGNUPS_PER_HOUR) } : {}),
+  ...(Number(process.env.SIGNUPS_PER_DAY) > 0 ? { signUpsPerDay: Number(process.env.SIGNUPS_PER_DAY) } : {}),
   // (Password and PIN checks an address may cause in a quarter of an hour: 150 unless set. The click-through tests sign in hundreds of times from this machine.)
   ...(Number(process.env.SLOW_CHECKS_PER_15_MIN) > 0 ? { slowChecksPer15Min: Number(process.env.SLOW_CHECKS_PER_15_MIN) } : {}),
   // (Phones paired with a TV from one address in an hour: 30 unless set, see MAX_NEW_PAIRS. The click-through tests pair hundreds from this machine.)
-  ...(Number(process.env.PAIRINGS_PER_HOUR) > 0 ? { hub: { maxNewPairs: Number(process.env.PAIRINGS_PER_HOUR) } } : {}),
+  ...(Number(process.env.PAIRINGS_PER_HOUR) > 0 || Number(process.env.SOCKETS_PER_NETWORK) > 0
+    ? {
+        hub: {
+          ...(Number(process.env.PAIRINGS_PER_HOUR) > 0 ? { maxNewPairs: Number(process.env.PAIRINGS_PER_HOUR) } : {}),
+          ...(Number(process.env.SOCKETS_PER_NETWORK) > 0 ? { maxSocketsPerNetwork: Number(process.env.SOCKETS_PER_NETWORK) } : {}),
+        },
+      }
+    : {}),
   ...(google ? { google } : {}),
   ...(fcm ? { push: new FcmSender(fcm, Date.now, console) } : {}),
   ...(androidAppDir ? { androidAppDir } : {}),

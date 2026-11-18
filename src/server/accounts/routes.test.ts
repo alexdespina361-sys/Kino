@@ -13,7 +13,7 @@ afterEach(async () => {
 
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 
-async function start(options: { registration?: "open" | "closed"; maxAccounts?: number; signUpsPerHour?: number; persistence?: MemoryPersistence } = {}) {
+async function start(options: { registration?: "open" | "closed"; maxAccounts?: number; signUpsPerHour?: number; syncWritesPerDay?: number; persistence?: MemoryPersistence } = {}) {
   const store = await AccountStore.open({ persistence: options.persistence ?? new MemoryPersistence(), flushMs: 0 });
   const app = await buildApp({
     accounts: store,
@@ -21,6 +21,7 @@ async function start(options: { registration?: "open" | "closed"; maxAccounts?: 
     ...(options.registration ? { registration: options.registration } : {}),
     ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
     ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
+    ...(options.syncWritesPerDay ? { syncWritesPerDay: options.syncWritesPerDay } : {}),
   });
   apps.push(app);
   return { app, store };
@@ -463,6 +464,27 @@ describe("keeping what was watched", () => {
     expect((await client.post(`/api/profiles/${profile}/sync`, { since: -1 })).statusCode).toBe(400);
     expect((await client.post(`/api/profiles/${profile}/sync`, { since: 0, progress: [{ key: "x" }] })).statusCode).toBe(400);
     expect((await client.post(`/api/profiles/${profile}/sync`, { since: 0, settings: [{ key: "evil", at: 1, value: 1 }] })).statusCode).toBe(400);
+  });
+
+  it("takes only so many syncs with changes from an account in a day, keeps answering what is new, and keeps the other accounts' days apart", async () => {
+    const { app } = await start({ syncWritesPerDay: 3 });
+    const { client: phone, me } = await signedUp(app);
+    const profile = me.profiles[0].id as string;
+    const at = Date.now();
+    const write = (n: number) => phone.post(`/api/profiles/${profile}/sync`, { since: 0, progress: [film(at + n, n)] });
+    for (let n = 1; n <= 3; n++) expect((await write(n)).statusCode).toBe(200);
+    const refused = await write(4);
+    expect([refused.statusCode, refused.data.error]).toEqual([429, "rate_limited"]);
+    expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+    expect(Number(refused.headers["retry-after"])).toBeLessThanOrEqual(24 * 60 * 60); // (until midnight UTC)
+    // Asking what is new is not a write: the account's other screens still get the day's changes (the last one taken is there, the one turned away is not).
+    const tv = new Client(app);
+    await tv.post("/api/auth/login", credentials);
+    const pulled = await tv.post(`/api/profiles/${profile}/sync`, { since: 0 });
+    expect([pulled.statusCode, pulled.data.progress]).toEqual([200, [expect.objectContaining({ position: 3 })]]);
+    // ...and another account has a day of its own.
+    const { client: other, me: them } = await signedUp(app, "sam@example.com");
+    expect((await other.post(`/api/profiles/${them.profiles[0].id as string}/sync`, { since: 0, progress: [film(at, 1)] })).statusCode).toBe(200);
   });
 
   it("is still there after the server restarts", async () => {

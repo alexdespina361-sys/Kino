@@ -142,6 +142,97 @@ export class WorkBudget implements Keepable {
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * "No more than `max` of these in a day" (the UTC day: it begins again at midnight for every key at once), counted per key as one number. A day's
+ * allowance of thousands kept as moments, as `RateLimiter` keeps them, would be thousands of numbers a key in memory and in the keeper's file (the review
+ * of 18 Nov). `by` counts several at once (a question of 40 titles is 40). Kept over a restart when it is given a name, as the limiters are.
+ */
+export class DayCount implements Keepable {
+  private day = -1;
+  private readonly counts = new Map<string, number>();
+  private before: { day: number; counts: Map<string, number>; name: (key: string) => string } | undefined;
+
+  constructor(
+    private readonly max: number,
+    private readonly now: () => number = Date.now,
+    name?: string,
+    /** How many keys a day may have; past it the one counted first is let go (a flood of new keys cannot grow what is held). */
+    private readonly keysMax = 100_000,
+  ) {
+    if (name) keeper?.take(name, this);
+  }
+
+  private today(): Map<string, number> {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (day !== this.day) {
+      this.day = day;
+      this.counts.clear();
+    }
+    if (this.before && this.before.day !== day) this.before = undefined;
+    return this.counts;
+  }
+
+  /** How many this key has had today (what was counted before a restart is taken up the first time a key is asked about). */
+  count(key: string): number {
+    const counts = this.today();
+    if (this.before) {
+      const named = this.before.name(key);
+      const old = this.before.counts.get(named);
+      if (old !== undefined) {
+        this.before.counts.delete(named);
+        if (this.before.counts.size === 0) this.before = undefined;
+        this.put(counts, key, (counts.get(key) ?? 0) + old);
+      }
+    }
+    return counts.get(key) ?? 0;
+  }
+
+  /** How long until this key may have one more (the next midnight, UTC); 0 when it may now. */
+  wait(key: string, by = 1): number {
+    return this.count(key) + by > this.max ? Math.max(1, (this.day + 1) * DAY_MS - this.now()) : 0;
+  }
+
+  hit(key: string, by = 1): void {
+    if (by > 0) this.put(this.today(), key, this.count(key) + by);
+  }
+
+  undo(key: string, by = 1): void {
+    const left = this.count(key) - by;
+    if (left > 0) this.counts.set(key, left);
+    else this.counts.delete(key);
+  }
+
+  private put(counts: Map<string, number>, key: string, value: number): void {
+    if (!counts.has(key) && counts.size >= this.keysMax) {
+      const first = counts.keys().next();
+      if (!first.done) counts.delete(first.value);
+    }
+    counts.set(key, value);
+  }
+
+  kept(name: (key: string) => string): unknown {
+    const counts = this.today();
+    const all: Array<[string, number]> = [...counts].map(([key, value]) => [name(key), value]);
+    for (const each of this.before?.counts ?? []) all.push(each);
+    return all.length === 0 ? [] : [this.day, all.slice(-KEPT_KEYS_MAX)];
+  }
+
+  restore(data: unknown, name: (key: string) => string): void {
+    if (!Array.isArray(data) || !Array.isArray(data[1])) return;
+    const day = Math.floor(this.now() / DAY_MS);
+    // (only today's: a count of a day that is over counts for nothing)
+    if (data[0] !== day) return;
+    const counts = new Map<string, number>();
+    for (const entry of (data[1] as unknown[]).slice(-KEPT_KEYS_MAX)) {
+      if (!Array.isArray(entry) || typeof entry[0] !== "string" || !Number.isSafeInteger(entry[1]) || (entry[1] as number) <= 0) continue;
+      counts.set(entry[0], Math.min(entry[1] as number, this.max));
+    }
+    if (counts.size > 0) this.before = { day, counts, name };
+  }
+}
+
 /* ------------------------------ kept over a restart ------------------------------ */
 
 /** How many keys of one limiter are written down, the newest: a file that somebody could make grow is not kept whole. */

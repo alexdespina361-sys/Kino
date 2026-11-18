@@ -3664,6 +3664,49 @@ describe("connections that would hold the hub's room", () => {
     }
   });
 
+  it("takes only so many from one IPv6 network (a /48) at once, all its /64s together, and another network's all the same", async () => {
+    const app = await buildApp({ hub: { maxSocketsPerNetwork: 2 } });
+    await app.ready();
+    try {
+      const open = [await Client.open(app, "2001:db8:1:1::5"), await Client.open(app, "2001:db8:1:2::5")];
+      const third = await Client.open(app, "2001:db8:1:3::5");
+      expect(await closedCode(third)).toBe(1013);
+      const elsewhere = await Client.open(app, "2001:db8:2:1::5");
+      elsewhere.send({ type: "TV_HELLO" });
+      await elsewhere.next("TV_WELCOME");
+      [...open, elsewhere].forEach((client) => client.close());
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("has so many TVs that nobody paired connected from one address at once: one more is turned away, another address's is not", async () => {
+    const app = await buildApp({ hub: { maxUnpairedPerAddress: 2 } });
+    await app.ready();
+    try {
+      const tvs = [];
+      for (let n = 0; n < 2; n++) {
+        const tv = await Client.open(app, "203.0.113.7");
+        tv.send({ type: "TV_HELLO" });
+        await tv.next("TV_WELCOME");
+        tvs.push(tv);
+      }
+      const third = await Client.open(app, "203.0.113.7");
+      third.send({ type: "TV_HELLO" });
+      expect(await closedCode(third)).toBe(1013);
+      const neighbour = await Client.open(app, "198.51.100.9");
+      neighbour.send({ type: "TV_HELLO" });
+      await neighbour.next("TV_WELCOME");
+      // (phones are counted apart from TVs)
+      const phone = await Client.open(app, "203.0.113.7");
+      phone.send({ type: "CTL_HELLO" });
+      await phone.next("CTL_WELCOME");
+      [...tvs, neighbour, phone].forEach((client) => client.close());
+    } finally {
+      await app.close();
+    }
+  });
+
   it("pairs only so many phones from one address in an hour (each is kept for months), and the others' all the same", async () => {
     const app = await buildApp({ hub: { maxNewPairs: 1 } });
     await app.ready();

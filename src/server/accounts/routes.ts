@@ -24,7 +24,7 @@ import { friendRoutes, type PartyLookup } from "./friendRoutes";
 import { googleRoutes, type GoogleConfig } from "./google";
 import { LinkRegistry } from "./links";
 import { decoyHash, hashPassword, verifyPassword, type PasswordCost } from "./password";
-import { RateLimiter } from "./rateLimit";
+import { DayCount, RateLimiter } from "./rateLimit";
 import type { ScreenProofs } from "./screens";
 import { PUSH_TOKEN_PATTERN, SESSION_TTL_MS, type AccountStore, type StoreError } from "./store";
 
@@ -37,6 +37,10 @@ export interface AccountRoutesOptions {
   maxAccounts?: number;
   /** How many accounts one address may make in an hour (10 unless set). A household or a school behind one address may want more. */
   signUpsPerHour?: number;
+  /** How many accounts the whole site may make in a day, every address together (`DEFAULT_SIGNUPS_PER_DAY` unless set, or ten hours of `signUpsPerHour` if that is more). */
+  signUpsPerDay?: number;
+  /** How many times in a UTC day an account's screens may send what changed (`SYNC_WRITES_A_DAY` unless set). */
+  syncWritesPerDay?: number;
   /** How many slow checks or hashes (a password, a PIN, the hash of a new one) an address may cause in a quarter of an hour; 150 unless set. */
   slowChecksPer15Min?: number;
   /** Tests use a cheaper password hash. */
@@ -61,6 +65,30 @@ const MINUTE = 60_000;
 
 /** How many accounts there can be unless the host says otherwise (env MAX_ACCOUNTS). */
 export const DEFAULT_MAX_ACCOUNTS = 500;
+/**
+ * How many accounts the whole site makes in a day unless the host says otherwise (env SIGNUPS_PER_DAY). An address may make 10 an hour, so fifty
+ * addresses together could take all of `DEFAULT_MAX_ACCOUNTS` in an hour, and the places would be gone for good (the review of 18 Nov). Past this the
+ * next sign-up waits for the next day (midnight UTC): a flood costs a day's sign-ups, not the site's places.
+ */
+export const DEFAULT_SIGNUPS_PER_DAY = 100;
+/**
+ * How many times in a UTC day an account's screens may send what changed (env SYNC_WRITES_PER_DAY): a screen sends what changed some seconds after it changed,
+ * and at most every 45 seconds while it is open, so a household watching all day on a few screens sends some thousands. The 600 a minute all day would be
+ * most of a million writes by one account. A sync that only asks what is new is not counted, and one turned away keeps its changes on the screen for the next day.
+ */
+export const SYNC_WRITES_A_DAY = 20_000;
+/** Whether a sync carries anything the screen changed (a sync with none only asks what is new). */
+const carriesChanges = (sync: SyncRequestParsed): boolean =>
+  sync.progress.length + sync.watched.length + sync.list.length + sync.listNames.length + sync.ratings.length + sync.settings.length + sync.saved.length > 0;
+type SyncRequestParsed = ReturnType<typeof SyncRequestSchema.parse>;
+
+/** What a sign-up asks of the limits, whichever way it comes (the form, Google, the app's Google): the address's few an hour and the site's day. */
+export interface SignUpLimits {
+  wait(ip: string): number;
+  hit(ip: string): void;
+  /** The account was not made after all (a name taken, the places gone meanwhile): the site's day has its place back. The address's stays counted. */
+  notMade(): void;
+}
 /** Whether a new account can be made now: not once registration is closed, nor once there are as many accounts as are allowed. */
 export const signUpsNow = (registration: Registration, accounts: number, maxAccounts: number): Registration => (registration === "closed" || accounts >= maxAccounts ? "closed" : "open");
 
@@ -105,10 +133,20 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const failedByEmail = new RateLimiter(10, 15 * MINUTE, undefined, "login.failedByName");
   const failedByIp = new RateLimiter(100, 15 * MINUTE, undefined, "login.failedByIp");
   const signUpByIp = new RateLimiter(options.signUpsPerHour ?? 10, 60 * MINUTE, undefined, "signUp.byIp");
+  const signUpsSite = new DayCount(options.signUpsPerDay ?? Math.max(DEFAULT_SIGNUPS_PER_DAY, 10 * (options.signUpsPerHour ?? 0)), undefined, "signUp.siteDay");
+  const signUps: SignUpLimits = {
+    wait: (ip) => Math.max(signUpByIp.wait(ip), signUpsSite.wait("all")),
+    hit: (ip) => {
+      signUpByIp.hit(ip);
+      signUpsSite.hit("all");
+    },
+    notMade: () => signUpsSite.undo("all"),
+  };
   const linkStartByIp = new RateLimiter(60, 5 * MINUTE, undefined, "link.startByIp");
   const linkPollByIp = new RateLimiter(900, MINUTE);
   const linkLookupByAccount = new RateLimiter(30, 5 * MINUTE, undefined, "link.lookupByAccount");
   const syncByAccount = new RateLimiter(600, MINUTE);
+  const syncWritesByAccount = new DayCount(options.syncWritesPerDay ?? SYNC_WRITES_A_DAY, undefined, "sync.writesByAccountDay");
   // (The app says where it is reached when the profile or the token changes, once a page: a few times an hour. Each saying walks every sign-in of the site.)
   const pushByAccount = new RateLimiter(30, 10 * MINUTE, undefined, "push.devicesByAccount");
   // Four digits are 10,000 tries: a few wrong ones per account, then a wait (the visitor's wrong ones count where its wrong passwords do).
@@ -163,7 +201,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const signOutCookie = (request: FastifyRequest, reply: FastifyReply) => reply.header("Set-Cookie", setCookie("", request.protocol === "https", 0));
 
   // "Continue with Google" (google.ts): its sign-ups count with the others of the address.
-  const google = googleRoutes(app, { store, authenticate, signIn, readCookie, registrationNow, signUpByIp, passwordCost: options.passwordCost }, options.google);
+  const google = googleRoutes(app, { store, authenticate, signIn, readCookie, registrationNow, signUps, passwordCost: options.passwordCost }, options.google);
 
   // (A try is counted against the account BEFORE the check, which takes a while (scrypt), and forgotten when it was right: counted after it, a thousand tries sent at
   // once would all be let in before the first was counted. The 10,000 PINs are few.)
@@ -212,13 +250,22 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   app.post("/api/auth/register", async (request, reply) => {
     if (registrationNow() === "closed") return reply.code(403).send({ error: "registration_closed" });
-    const wait = signUpByIp.wait(request.ip);
+    const wait = signUps.wait(request.ip);
     if (wait > 0) return tooMany(reply, wait);
     const parsed = RegisterSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply, parsed.error);
-    signUpByIp.hit(request.ip);
-    const created = store.createAccount(parsed.data.email, await hashPassword(parsed.data.password, options.passwordCost));
-    if (!created.ok) return refused(reply, created.error);
+    signUps.hit(request.ip);
+    const hash = await hashPassword(parsed.data.password, options.passwordCost);
+    // (Asked again after the hash, which takes a while: sign-ups sent together must not end past the most there may be.)
+    if (registrationNow() === "closed") {
+      signUps.notMade();
+      return reply.code(403).send({ error: "registration_closed" });
+    }
+    const created = store.createAccount(parsed.data.email, hash);
+    if (!created.ok) {
+      signUps.notMade();
+      return refused(reply, created.error);
+    }
     signIn(request, reply, created.value.id, parsed.data.device ?? "browser");
     return reply.code(201).send(meOf(created.value.id));
   });
@@ -421,7 +468,11 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     syncByAccount.hit(auth.accountId);
     const parsed = SyncRequestSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply, parsed.error);
+    const writes = carriesChanges(parsed.data);
+    const overToday = writes ? syncWritesByAccount.wait(auth.accountId) : 0;
+    if (overToday > 0) return tooMany(reply, overToday);
     const answer = store.sync(request.params.id, parsed.data);
+    if (answer && writes) syncWritesByAccount.hit(auth.accountId);
     return answer ? reply.send(answer) : refused(reply, "not_found");
   });
 

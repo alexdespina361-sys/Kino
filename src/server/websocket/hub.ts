@@ -21,6 +21,7 @@ import { RateLimiter } from "../accounts/rateLimit";
 import type { ScreenProfiles } from "../accounts/screens";
 import type { ResolveFn, ResolveResult } from "../resolvers";
 import { MAX_PHONES_PER_TV, type Controller, type Device, type Registry } from "../sessions/registry";
+import { networkOf } from "../trust";
 
 /** Close code sent to an older TV page when a newer page takes over the same device. */
 export const CLOSE_REPLACED = 4000;
@@ -105,6 +106,10 @@ export interface HubOptions {
   maxSocketsPerAddress?: number;
   /** Connections open at once in all (see MAX_SOCKETS). */
   maxSockets?: number;
+  /** Connections one network (an IPv6 /48) may have open at once (see MAX_SOCKETS_PER_NETWORK). */
+  maxSocketsPerNetwork?: number;
+  /** TVs, and phones, that nobody has paired one address may have connected at once (see MAX_UNPAIRED_PER_ADDRESS). */
+  maxUnpairedPerAddress?: number;
   /** Phones paired with a TV (by its code or its control code) from one address in an hour (see MAX_NEW_PAIRS). */
   maxNewPairs?: number;
   /** How long a party's host has to have been away for a guest's page, opened afresh, not to be put back in its party (see `tvHello`). Default HOST_GONE_MS. */
@@ -121,6 +126,17 @@ const HOST_GONE_MS = 60_000;
 export const MAX_SOCKETS_PER_ADDRESS = 100;
 /** How many connections may be open at once in all (each holds some memory and a file of the system's). */
 export const MAX_SOCKETS = 20_000;
+/**
+ * How many one IPv6 network of a customer (a /48: trust.ts `networkOf`) may have open at once, all its /64s together. Each /64 is an address with
+ * `MAX_SOCKETS_PER_ADDRESS` of its own, and a /48 is 65,536 of them: one customer could have taken every place (the review of 18 Nov). Four addresses'
+ * worth, as a mobile network that gives each phone a /64 of one block may (env SOCKETS_PER_NETWORK).
+ */
+export const MAX_SOCKETS_PER_NETWORK = 400;
+/**
+ * How many TVs, and how many phones, that nobody has paired one address may have connected at once. A household has a few; many behind one address of a
+ * mobile network some tens. 50 addresses could otherwise hold all `MAX_UNPAIRED` places, and no new TV could connect.
+ */
+export const MAX_UNPAIRED_PER_ADDRESS = 40;
 /** How many phones may be paired with a TV from one address in an hour: a pair is kept for months (see KEEP_PAIRINGS_DAYS), where a TV or phone that nobody paired goes in minutes. */
 export const MAX_NEW_PAIRS = 30;
 
@@ -181,9 +197,12 @@ export class Hub {
   private readonly unnamed = new Map<WebSocket, number>();
   /** How many connections are open now, for each address and in all. */
   private readonly openByAddress = new Map<string, number>();
+  private readonly openByNetwork = new Map<string, number>();
   private openInAll = 0;
   private readonly maxSocketsPerAddress: number;
   private readonly maxSockets: number;
+  private readonly maxSocketsPerNetwork: number;
+  private readonly maxUnpairedPerAddress: number;
   /** Phones paired lately, counted for each address (see MAX_NEW_PAIRS). */
   private readonly newPairs: RateLimiter;
   private readonly hostGoneMs: number;
@@ -208,6 +227,8 @@ export class Hub {
     this.resolvesByAddress = new RateLimiter(options.maxResolvesByAddress ?? 60, resolveWindowMs);
     this.maxSocketsPerAddress = options.maxSocketsPerAddress ?? MAX_SOCKETS_PER_ADDRESS;
     this.maxSockets = options.maxSockets ?? MAX_SOCKETS;
+    this.maxSocketsPerNetwork = options.maxSocketsPerNetwork ?? MAX_SOCKETS_PER_NETWORK;
+    this.maxUnpairedPerAddress = options.maxUnpairedPerAddress ?? MAX_UNPAIRED_PER_ADDRESS;
     this.newPairs = new RateLimiter(options.maxNewPairs ?? MAX_NEW_PAIRS, 3_600_000, undefined, "pairing.newPairs");
     this.hostGoneMs = options.hostGoneMs ?? HOST_GONE_MS;
     const helloWithinMs = options.helloWithinMs ?? 30_000;
@@ -230,12 +251,18 @@ export class Hub {
   /** `address` is where the connection comes from (the request's `ip`); wrong codes are counted against it. */
   handleConnection(socket: WebSocket, address?: string): void {
     // (No room: closed before anything is kept of it, and its page tries again in a moment.)
-    if (this.openInAll >= this.maxSockets || (address !== undefined && (this.openByAddress.get(address) ?? 0) >= this.maxSocketsPerAddress)) {
+    const network = address === undefined ? undefined : networkOf(address);
+    if (
+      this.openInAll >= this.maxSockets ||
+      (address !== undefined && (this.openByAddress.get(address) ?? 0) >= this.maxSocketsPerAddress) ||
+      (network !== undefined && (this.openByNetwork.get(network) ?? 0) >= this.maxSocketsPerNetwork)
+    ) {
       socket.close(1013, "busy");
       return;
     }
     this.openInAll += 1;
     if (address !== undefined) this.openByAddress.set(address, (this.openByAddress.get(address) ?? 0) + 1);
+    if (network !== undefined) this.openByNetwork.set(network, (this.openByNetwork.get(network) ?? 0) + 1);
     let conn: Conn = { role: "none", socket };
     const now = Date.now();
     this.lastSeen.set(socket, now);
@@ -264,6 +291,11 @@ export class Hub {
       this.lastSeen.delete(socket);
       this.unnamed.delete(socket);
       this.openInAll -= 1;
+      if (network !== undefined) {
+        const left = (this.openByNetwork.get(network) ?? 1) - 1;
+        if (left > 0) this.openByNetwork.set(network, left);
+        else this.openByNetwork.delete(network);
+      }
       if (address !== undefined) {
         const left = (this.openByAddress.get(address) ?? 1) - 1;
         if (left > 0) this.openByAddress.set(address, left);
@@ -331,10 +363,19 @@ export class Hub {
    * Whether there is room for one more TV (or phone) that nobody has paired. When `maxUnpaired` of them are here already, the one that came first and is not connected is
    * let go of to make room; false when every one of them is connected.
    */
-  private hasRoomFor(kind: "tv" | "phone"): boolean {
+  private hasRoomFor(kind: "tv" | "phone", socket: WebSocket): boolean {
     const free = kind === "tv" ? this.registry.freeTvs() : this.registry.freePhones();
-    if (free.length < this.maxUnpaired) return true;
     const connected = kind === "tv" ? this.tvs : this.controllers;
+    // (An address has so many of them connected at once: see MAX_UNPAIRED_PER_ADDRESS.)
+    const address = this.addresses.get(socket);
+    if (address !== undefined) {
+      let here = 0;
+      for (const id of free) {
+        const open = connected.get(id);
+        if (open && this.addresses.get(open) === address && ++here >= this.maxUnpairedPerAddress) return false;
+      }
+    }
+    if (free.length < this.maxUnpaired) return true;
     const gone = free.find((id) => !connected.has(id));
     if (gone === undefined) return false;
     this.forget(gone);
@@ -410,7 +451,7 @@ export class Hub {
     const { socket } = conn;
     const wanted = mine ?? named;
     // (A TV that this server does not know is a new one, and there is room for only so many that nobody has paired.)
-    if (!(wanted && this.registry.getDevice(wanted)) && !this.hasRoomFor("tv")) return this.turnAway(conn);
+    if (!(wanted && this.registry.getDevice(wanted)) && !this.hasRoomFor("tv", socket)) return this.turnAway(conn);
     const device = this.registry.tvHello(wanted);
     this.goneSince.delete(device.id); // (its time starts over when it goes again, however soon that is)
     this.awaySince.delete(device.id);
@@ -562,7 +603,7 @@ export class Hub {
     if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getController(named)))) return this.refuseHello(conn);
     const { socket } = conn;
     const wanted = mine ?? named;
-    if (!(wanted && this.registry.getController(wanted)) && !this.hasRoomFor("phone")) return this.turnAway(conn);
+    if (!(wanted && this.registry.getController(wanted)) && !this.hasRoomFor("phone", socket)) return this.turnAway(conn);
     const controller = this.registry.controllerHello(wanted);
     this.goneSince.delete(controller.id);
     this.phoneOpened(controller.id, socket);

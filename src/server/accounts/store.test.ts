@@ -497,6 +497,61 @@ describe("sync", () => {
   });
 });
 
+describe("what an account and the whole site may keep", () => {
+  const item = (n: number, at = clock) => ({ key: `url:https://x/${n}`, at, id: String(n), title: `t${n}`.padEnd(250, "t"), url: `https://x/${n}` });
+  const keys = (store: AccountStore, profileId: string) => (store.items(profileId, "list") as Array<{ key: string; deleted?: true }>).filter((each) => !each.deleted).map((each) => each.key);
+  const made = (store: AccountStore, email: string) => {
+    const account = store.createAccount(email, "hash");
+    if (!account.ok) throw new Error("could not create");
+    return { account: account.value.id, profile: store.profilesOf(account.value.id)[0]!.id };
+  };
+
+  it("keeps no new item once the account keeps what it may; what it keeps stays, changes and removals are taken, another account is not held up", async () => {
+    const store = await AccountStore.open({ persistence: new MemoryPersistence(), now, flushMs: 0, syncAccountBytes: 3000 });
+    const alex = made(store, "alex");
+    store.sync(alex.profile, request(0, { list: Array.from({ length: 10 }, (_, n) => item(n)) }));
+    expect(store.syncWeight(alex.account)).toBeGreaterThan(3000);
+    // (past it: a new one is not kept, on this profile or another of the account)
+    store.sync(alex.profile, request(1, { list: [item(10)] }));
+    const second = store.addProfile(alex.account, "Kid", AVATAR_IDS[0]!);
+    if (!second.ok) throw new Error("no profile");
+    store.sync(second.value.id, request(0, { list: [item(11)] }));
+    expect(keys(store, alex.profile)).toHaveLength(10);
+    expect(keys(store, second.value.id)).toEqual([]);
+    // (a change to what is kept, and a removal, are taken; the removal makes room)
+    advance(1000);
+    store.sync(alex.profile, request(1, { list: [{ ...item(3), title: "renamed", at: clock }, { key: item(4).key, at: clock, deleted: true }, { key: item(5).key, at: clock, deleted: true }] }));
+    expect((store.items(alex.profile, "list") as Array<{ key: string; title?: string }>).find((each) => each.key === item(3).key)?.title).toBe("renamed");
+    expect(store.syncWeight(alex.account)).toBeLessThan(3000);
+    store.sync(alex.profile, request(2, { list: [item(12)] }));
+    expect(keys(store, alex.profile)).toContain(item(12).key);
+    // (another account has its own)
+    const sam = made(store, "sam");
+    store.sync(sam.profile, request(0, { list: [item(1)] }));
+    expect(keys(store, sam.profile)).toEqual([item(1).key]);
+  });
+
+  it("keeps no new item for anybody once the whole site keeps what it may, weighs what it loads after a restart, and lets go of a deleted profile's weight", async () => {
+    const persistence = new MemoryPersistence();
+    const store = await AccountStore.open({ persistence, now, flushMs: 0, syncSiteBytes: 3000 });
+    const alex = made(store, "alex");
+    const sam = made(store, "sam");
+    store.sync(alex.profile, request(0, { list: Array.from({ length: 10 }, (_, n) => item(n)) }));
+    store.sync(sam.profile, request(0, { list: [item(1)] }));
+    expect(keys(store, sam.profile)).toEqual([]);
+    await store.flush();
+    const again = await AccountStore.open({ persistence, now, flushMs: 0, syncSiteBytes: 3000 });
+    expect(again.syncWeight()).toBe(store.syncWeight());
+    again.sync(sam.profile, request(0, { list: [item(1)] }));
+    expect(keys(again, sam.profile)).toEqual([]);
+    // (alex's account goes: its weight with it)
+    again.deleteAccount(alex.account);
+    expect(again.syncWeight()).toBe(0);
+    again.sync(sam.profile, request(0, { list: [item(1)] }));
+    expect(keys(again, sam.profile)).toEqual([item(1).key]);
+  });
+});
+
 describe("what a profile may weigh", () => {
   type Stored = Array<{ key: string; deleted?: true }>;
   const stored = (store: AccountStore, profileId: string, name: CollectionName) => store.items(profileId, name) as unknown as Stored;

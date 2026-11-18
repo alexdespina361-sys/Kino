@@ -532,6 +532,46 @@ describe("how often an address may ask for what makes the server fetch from anot
     }
   });
 
+  it("has a day's allowance besides the minute's for the search, the questions about a title and the rows, each by itself, until UTC midnight", async () => {
+    const places: LibrarySource = {
+      id: "places",
+      name: "Places",
+      load: async () => [],
+      search: async (words) => [{ id: words, title: words, url: `https://x.example/${words}` }],
+      shelves: async () => ({ rows: [], next: null }),
+      more: async () => ({ items: [], last: true }),
+    };
+    let now = Date.parse("2026-11-18T22:00:00Z");
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const { resolve, calls } = resolver();
+      const site = await buildApp({ resolve, librarySources: [places], fetchesPerDay: { search: 2, titles: 3, browse: 2 } });
+      app = site;
+      const about = { url: `/api/library/about?url=${encodeURIComponent(PAGE)}` };
+      const like = { url: `/api/library/similar?url=${encodeURIComponent(PAGE)}` };
+      // The minute's allowances are far from used up here: it is the day's that turns them away.
+      expect(await codes(site, [{ url: "/api/library/search?q=alpha" }, { url: "/api/library/search?q=bravo" }])).toEqual([200, 200]);
+      const refused = await site.inject({ url: "/api/library/search?q=charlie" });
+      expect([refused.statusCode, refused.headers["retry-after"], refused.json()]).toEqual([429, String(2 * 60 * 60), { error: "rate_limited", retryAfter: 2 * 60 * 60 }]); // (until midnight)
+      // The questions about a title and what is like one share their day; the rows have their own, and the search's is not touched by them.
+      expect(await codes(site, [about, like, about, like])).toEqual([200, 200, 200, 429]);
+      expect(await codes(site, [{ url: "/api/library/rows?cursor=0" }, { url: "/api/library/more?row=a&page=2" }, { url: "/api/library/rows?cursor=1" }])).toEqual([200, 200, 429]);
+      // Another address has its own day. The look-up of a link has none (it is the playing of a film).
+      expect((await site.inject({ ...about, remoteAddress: "198.51.100.9" })).statusCode).toBe(200);
+      const looked = calls.length;
+      expect((await site.inject(`/api/resolve?url=${PAGE}/day`)).statusCode).toBe(200);
+      expect(calls.length).toBe(looked + 1);
+      // A minute before midnight, still no; at midnight, a new day.
+      now = Date.parse("2026-11-18T23:59:00Z");
+      const late = await site.inject({ url: "/api/library/search?q=delta" });
+      expect([late.statusCode, late.headers["retry-after"]]).toEqual([429, "60"]);
+      now = Date.parse("2026-11-19T00:00:00Z");
+      expect(await codes(site, [{ url: "/api/library/search?q=echo" }, about, { url: "/api/library/rows?cursor=2" }])).toEqual([200, 200, 200]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it.each([
     ["/api/resolve?url=https://example.com/film", 60, {}],
     ["/api/library/about?url=https://example.com/film", 120, {}],
