@@ -21,20 +21,28 @@ async function choose(tv: Page, entry: string) {
 }
 
 /**
- * A profile that loved one film, saved another to watch and played a third to the end, and a library that knows titles like the first two: the row of
- * what it might like is made of the saved one's (the loved one's have a row of their own), and the film it has seen is out of its row of the library.
+ * A profile that loved one film, saved another to watch and played a third to the end, and a library that knows titles like the first two: what both
+ * led to is the row of what it might like, each has a row of the rest of its own, and the film it has seen is out of its row of the library. The
+ * library knows titles like the first of the loved film's row too: a row of "More like ..." on a page long enough to have a place for it.
  */
 const LOVED = "https://films.example/loved-film";
 const KEPT = "https://films.example/kept-film";
 const SEEN = base.rows[1]!.items[2]!; // ("Base 2 3")
+const some = (id: string, title: string, count: number) => Array.from({ length: count }, (_, i) => film(`${id}${i}`, `${title} ${i + 1}`));
+const likeOf = (asked: string | null, second = KEPT) =>
+  asked === LOVED
+    ? [film("l1", "Like Loved One"), film("l2", "Like Loved Two"), ...some("m", "Like Both", 5)]
+    : asked === second
+      ? [...some("m", "Like Both", 5), ...some("k", "Like Kept", 6)]
+      : asked === film("l1", "").url
+        ? some("n", "Next", 5)
+        : [];
 const withTaste = async (context: BrowserContext) => {
   await withLibrary(base)(context);
-  await context.route(/\/api\/library\/similar/, (route) => {
-    const asked = new URL(route.request().url()).searchParams.get("url");
-    const items = asked === LOVED ? [film("l1", "Like Loved One"), film("l2", "Like Loved Two")] : asked === KEPT ? [film("l2", "Like Loved Two"), ...Array.from({ length: 6 }, (_, i) => film(`k${i}`, `Like Kept ${i + 1}`))] : [];
-    return route.fulfill({ json: { items } });
-  });
+  await context.route(/\/api\/library\/similar/, (route) => route.fulfill({ json: { items: likeOf(new URL(route.request().url()).searchParams.get("url")) } }));
 };
+/** The rows of the TV's page that are the library's or the profile's own, by name, in their order. */
+const rowNames = (tv: Page) => tv.locator("section.tv-row").evaluateAll((rows) => rows.map((row) => row.getAttribute("aria-label") ?? "").filter((name) => /^(Base \d+|You might like|Because you .*|More like .*)$/.test(name)));
 const tasteStorage = () =>
   guestStorage({
     ratings: [{ key: `rate:${LOVED}`, at: Date.now(), title: "Loved Film", url: LOVED, score: 9, ratedAt: Date.now() }],
@@ -184,17 +192,83 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     await expect(loved.getByTestId("tv-browse-tile")).toHaveText([/Like Loved One/, /Like Loved Two/]);
   });
 
-  test("what a profile might like is a row of its own, of titles like what it saved too, and a film it has seen is out of the rows under the first", async ({ browser }) => {
+  test("what a profile might like and the titles like what it loved and saved are rows among the library's, all the way down; a film it has seen is out of the rows under the first", async ({ browser }) => {
     const tv = await openLibrary(browser, withTaste, undefined, tasteStorage());
     const picks = tv.getByRole("region", { name: "You might like" });
     await expect(picks).toBeVisible();
-    // (Titles like the saved film; the one that is like the loved film too is in that film's row over it, and in one row only.)
-    await expect(picks.getByTestId("tv-browse-tile")).toHaveText([/Like Kept 1/, /Like Kept 2/, /Like Kept 3/, /Like Kept 4/, /Like Kept 5/, /Like Kept 6/]);
+    // (What the loved film and the saved one both led to; each of those titles is in this row only, and the rest are in the rows of the two films.)
+    await expect(picks.getByTestId("tv-browse-tile")).toHaveText([/Like Both 1/, /Like Both 2/, /Like Both 3/, /Like Both 4/, /Like Both 5/]);
     await expect(tv.getByRole("region", { name: "Because you loved Loved Film" }).getByTestId("tv-browse-tile")).toHaveText([/Like Loved One/, /Like Loved Two/]);
+    await expect(tv.getByRole("region", { name: "Because you saved Kept Film" }).getByTestId("tv-browse-tile")).toHaveText([/Like Kept 1/, /Like Kept 2/, /Like Kept 3/, /Like Kept 4/, /Like Kept 5/, /Like Kept 6/]);
+    // Not all on top: the first under the ranking, then one under every second row of the library.
+    await expect.poll(() => rowNames(tv)).toEqual(["Base 1", "You might like", "Base 2", "Base 3", "Because you loved Loved Film", "Base 4", "Base 5", "Because you saved Kept Film"]);
     // The film played to the end is not in its row any more (the one after it has its place); a title of the first row, the ranking, would be.
     const second = tv.getByRole("region", { name: "Base 2", exact: true }).getByTestId("tv-browse-tile");
     await expect(second.nth(1)).toHaveText(/Base 2 2/);
     await expect(second.nth(2)).toHaveText(/Base 2 4/);
+  });
+
+  // A longer page has a place for more of them: a row of titles like the first of a row before. The library's answers come late here, when the remote is
+  // four rows down: the rows that come in over it leave it where it is on the screen (see `noteAnchor` in the TV's Browse; left to the browser, the row
+  // the remote was on went off the bottom of the screen).
+  test("rows of the profile's own that come late leave the remote where it is, and go on to \"More like ...\"", async ({ browser }) => {
+    const FOND = "https://films.example/fond-film";
+    const tall = { updatedAt: Date.now(), rows: Array.from({ length: 9 }, (_, i) => rowOf(`b${i}`, `Base ${i + 1}`, 20)) };
+    let answer!: () => void;
+    const held = new Promise<void>((resolve) => (answer = resolve));
+    const tv = await openLibrary(
+      browser,
+      async (context) => {
+        await withLibrary(tall)(context);
+        await context.route(/\/api\/library\/similar/, async (route) => {
+          await held;
+          await route.fulfill({ json: { items: likeOf(new URL(route.request().url()).searchParams.get("url"), FOND) } });
+        });
+      },
+      undefined,
+      guestStorage({
+        ratings: [
+          { key: `rate:${LOVED}`, at: Date.now(), title: "Loved Film", url: LOVED, score: 9, ratedAt: Date.now() },
+          { key: `rate:${FOND}`, at: Date.now() - 5000, title: "Fond Film", url: FOND, score: 10, ratedAt: Date.now() - 5000 },
+        ],
+      }),
+    );
+    await expect(tiles(tv).first()).toBeFocused();
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown"); // the ranking, two rows, the categories: the fourth row of the library
+    const on = tv.locator(":focus");
+    await expect(on).toHaveAttribute("title", "Base 4 1");
+    // (the page has come to rest on it)
+    const top = async () => Math.round((await on.boundingBox())!.y);
+    let rest = await top();
+    await expect.poll(async () => { const was = rest; rest = await top(); return rest === was; }, { intervals: [150] }).toBe(true);
+    expect(await rowNames(tv)).toEqual(Array.from({ length: 9 }, (_, i) => `Base ${i + 1}`));
+
+    answer();
+    await expect.poll(() => rowNames(tv)).toEqual([
+      "Base 1",
+      "You might like",
+      "Base 2",
+      "Base 3",
+      "Because you loved Loved Film",
+      "Base 4",
+      "Base 5",
+      "Because you loved Fond Film",
+      "Base 6",
+      "Base 7",
+      "More like Like Loved One",
+      "Base 8",
+      "Base 9",
+    ]);
+    await expect(tv.getByRole("region", { name: "More like Like Loved One" }).getByTestId("tv-browse-tile")).toHaveText([/Next 1/, /Next 2/, /Next 3/, /Next 4/, /Next 5/]);
+    // Two rows came in over the one the remote is on: it is still on it, and where it was on the screen.
+    await expect(tv.locator(":focus")).toHaveAttribute("title", "Base 4 1");
+    await expect.poll(top).toBeGreaterThanOrEqual(rest - 2);
+    expect(await top()).toBeLessThanOrEqual(rest + 2);
+    // ...and the remote goes on from there: up is the row of categories, and over it the row that came in.
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.locator(":focus")).toHaveAttribute("data-testid", "tv-category-tile");
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.locator(":focus")).toHaveAttribute("title", "Like Loved One");
   });
 });
 
@@ -295,7 +369,7 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     await expect(phone.getByTestId("library-closest")).toHaveCount(0); // (the line above the title says it)
   });
 
-  test("titles a profile scored high get a row of titles like them, above the library's own", async ({ browser }) => {
+  test("titles a profile scored high get a row of titles like them, under the library's first row", async ({ browser }) => {
     const url = "https://films.example/loved-film";
     const phone = await pairedPhone(
       browser,
@@ -308,15 +382,19 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     const loved = phone.getByTestId("library-because");
     await expect(loved.locator("h3")).toHaveText("Because you loved Loved Film");
     await expect(loved.getByTestId("library-tile")).toHaveText([/Like Loved One/, /Like Loved Two/]);
-    await expect(phone.locator('[data-testid="library-because"], [data-testid="library-row"]').first()).toHaveAttribute("data-testid", "library-because");
+    await expect(phone.locator('[data-testid="library-because"], [data-testid="library-row"]').nth(1)).toHaveAttribute("data-testid", "library-because");
   });
 
-  test("what a profile might like is a row of its own under those, and a film it has seen is out of the rows under the first", async ({ browser }) => {
+  test("what a profile might like and the titles like what it loved and saved are rows among the library's, all the way down; a film it has seen is out of the rows under the first", async ({ browser }) => {
     const phone = await pairedPhone(browser, withTaste, tasteStorage());
     const picks = phone.getByTestId("library-picks");
     await expect(picks.locator("h3")).toHaveText("You might like");
-    await expect(picks.getByTestId("library-tile")).toHaveText([/Like Kept 1/, /Like Kept 2/, /Like Kept 3/, /Like Kept 4/, /Like Kept 5/, /Like Kept 6/]);
-    await expect(phone.locator('[data-testid="library-because"], [data-testid="library-picks"], [data-testid="library-row"]').nth(1)).toHaveAttribute("data-testid", "library-picks");
+    await expect(picks.getByTestId("library-tile")).toHaveText([/Like Both 1/, /Like Both 2/, /Like Both 3/, /Like Both 4/, /Like Both 5/]);
+    await expect(phone.getByTestId("library-because").locator("h3")).toHaveText(["Because you loved Loved Film", "Because you saved Kept Film"]);
+    await expect(phone.getByTestId("library-because").nth(1).getByTestId("library-tile")).toHaveText([/Like Kept 1/, /Like Kept 2/, /Like Kept 3/, /Like Kept 4/, /Like Kept 5/, /Like Kept 6/]);
+    // Not all on top: the first under the library's first row, then one under every second row.
+    const kinds = () => phone.locator('[data-testid="library-because"], [data-testid="library-picks"], [data-testid="library-row"]').evaluateAll((rows) => rows.map((row) => (row as HTMLElement).dataset.testid!.replace("library-", "")));
+    await expect.poll(kinds).toEqual(["row", "picks", "row", "row", "because", "row", "row", "because"]);
     const second = phone.getByTestId("library-row").filter({ has: phone.getByRole("heading", { name: "Base 2", exact: true }) }).getByTestId("library-tile");
     await expect(second.nth(1)).toHaveText(/Base 2 2/);
     await expect(second.nth(2)).toHaveText(/Base 2 4/);

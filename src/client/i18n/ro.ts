@@ -1002,6 +1002,8 @@ export const ro: Dictionary = {
   "rows.because": "Pentru că ai urmărit {title}",
   "rows.loved": "Pentru că ți-a plăcut {title}",
   "rows.picks": "S-ar putea să-ți placă",
+  "rows.saved": "Pentru că ai salvat {title}",
+  "rows.moreLike": "Mai multe ca {title}",
   "rows.moreFailed": "Nu s-au putut încărca mai multe titluri. Se încearcă din nou…",
 
   /* ratings: a score out of ten, why, and what was watched */

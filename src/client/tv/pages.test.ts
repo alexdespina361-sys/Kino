@@ -3,6 +3,7 @@ import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type LibrarySection, t
 import { t } from "../i18n";
 import { askedTime, asOpened, backOf, cardOf, cardsToLookUp, episodeWindow, EPISODES_AT_ONCE, freshSimilar, gridOf, hasRows, heldStart, heroActions, isProfilePage, isRowsPage, listedWindow, ofSection, openedAt, overviewActions, playLabel, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
 import type { ChildGate } from "../shared/childGate";
+import type { PersonalRow } from "../shared/taste";
 import { episodeRows } from "./Episodes";
 
 describe("a long season's episodes, 24 at a time", () => {
@@ -58,7 +59,9 @@ const saved = (key: string, list?: string): LiveListItem => ({ key, at: 1, id: k
 const rated = (key: string, score: number, ratedAt: number, extra: Partial<LiveRating> = {}): LiveRating => ({ key: `rate:${key}`, at: ratedAt, title: `Rated ${key}`, url: `https://x.example/${key}`, score, ratedAt, ...extra });
 
 const FIRST: ListInfo = { id: DEFAULT_LIST };
-const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], all: overrides.rows ?? [], progress: [], lists: [FIRST], list: [], ratings: [], because: [], ...overrides });
+const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], all: overrides.rows ?? [], progress: [], lists: [FIRST], list: [], ratings: [], ...overrides });
+/** One of the profile's own rows, as the page is given them (shared/taste.ts makes them). */
+const own = (key: string, why: PersonalRow["why"] = "watched", items: LibraryItem[] = [item(`like-${key}`)]): PersonalRow => ({ id: why === "picks" ? "picks" : `because:${key}`, key, title: `T ${key}`, why, items });
 const library = [row("m1", "movie"), row("s1", "series"), row("m2", "movie"), row("s2", "series"), row("m3", "movie"), row("s3", "series")];
 
 describe("viewKey", () => {
@@ -118,28 +121,24 @@ describe("viewKey", () => {
 });
 
 describe("rowsOfPage: home", () => {
-  it("starts with what is part way through, then titles like the ones watched last or loved, then its lists, then the library", () => {
-    const rows = rowsOfPage(
-      "home",
-      data({
-        rows: library,
-        progress: [card("a"), card("b", { done: true })],
-        list: [saved("l1")],
-        because: [
-          { key: "https://x.example/a", title: "Card a", why: "watched", items: [item("sim")] },
-          { key: "https://x.example/z", title: "Rated z", why: "loved", items: [item("sim2")] },
-        ],
-      }),
-    );
-    expect(rows.slice(0, 4).map((r) => r.id)).toEqual(["continue", "because:https://x.example/a", "because:https://x.example/z", `list:${DEFAULT_LIST}`]);
+  it("starts with what is part way through and its lists; the profile's own rows are among the library's, the first under the ranking and one under every second row after it, all the way down", () => {
+    const personal = [own("a"), own("z", "loved"), own("s", "saved"), own("q", "like"), own("left", "like")];
+    const rows = rowsOfPage("home", data({ rows: library, progress: [card("a"), card("b", { done: true })], list: [saved("l1")], personal }));
+    expect(rows.map((r) => r.id)).toEqual(["continue", `list:${DEFAULT_LIST}`, "m1", "because:a", "s1", "m2", "because:z", "categories", "s2", "m3", "because:s", "s3"]);
     expect(rows[0]!.entries.map((e) => e.title)).toEqual(["Card a"]); // the finished one is not part way through
-    expect(rows[1]!.title).toBe(t("rows.because", { title: "Card a" }));
-    expect(rows[2]!.title).toBe(t("rows.loved", { title: "Rated z" }));
-    expect(rows.slice(4, 7).map((r) => r.id)).toEqual(["m1", "s1", "m2"]);
+    // Each says why it is there; a row there is no place for yet (the library has six rows so far) waits for the page to grow.
+    expect(rows.filter((r) => r.id.startsWith("because:")).map((r) => r.title)).toEqual([t("rows.because", { title: "T a" }), t("rows.loved", { title: "T z" }), t("rows.saved", { title: "T s" })]);
+    expect(rows.find((r) => r.id === "because:z")).toMatchObject({ layout: "wide" });
+    expect(rows.find((r) => r.id === "because:z")!.entries.map((e) => e.id)).toEqual(["like-z"]);
+    // A page that has grown has a place for the next one, and what was laid out is where it was.
+    const grown = rowsOfPage("home", data({ rows: [...library, row("m4", "movie"), row("s4", "series")], progress: [card("a")], list: [saved("l1")], personal }));
+    expect(grown.map((r) => r.id).slice(0, rows.length)).toEqual(rows.map((r) => r.id));
+    expect(grown.map((r) => r.id).slice(rows.length)).toEqual(["m4", "because:q", "s4"]);
+    expect(grown.find((r) => r.id === "because:q")!.title).toBe(t("rows.moreLike", { title: "T q" }));
   });
 
   it("leaves out the rows this profile has nothing for", () => {
-    const rows = rowsOfPage("home", data({ rows: library, because: [{ key: "k", title: "T", why: "watched", items: [] }] }));
+    const rows = rowsOfPage("home", data({ rows: library, personal: [] }));
     expect(rows[0]!.id).toBe("m1");
     expect(rows.map((r) => r.id)).not.toContain("continue");
     expect(rows.map((r) => r.id).some((id) => id.startsWith("list:"))).toBe(false);
@@ -164,8 +163,8 @@ describe("rowsOfPage: home", () => {
 
   it("draws the second library row and every third after it as wide cards, with the categories still after the third, and nothing else", () => {
     const many = Array.from({ length: 8 }, (_, i) => row(`r${i}`, "movie", 20));
-    const rows = rowsOfPage("home", data({ rows: many, progress: [], because: [{ key: "k", title: "T", why: "watched", items: [item("b")] }] }));
-    expect(rows.map((each) => `${each.id}${each.shape ? "=" + each.shape : ""}`)).toEqual(["because:k", "r0", "r1=landscape", "r2", "categories", "r3", "r4=landscape", "r5", "r6", "r7=landscape"]);
+    const rows = rowsOfPage("home", data({ rows: many, progress: [], personal: [own("k")] }));
+    expect(rows.map((each) => `${each.id}${each.shape ? "=" + each.shape : ""}`)).toEqual(["r0", "because:k", "r1=landscape", "r2", "categories", "r3", "r4=landscape", "r5", "r6", "r7=landscape"]);
     // (Its layout stays "wide": that is what a row that grows sideways is.)
     expect(rows.find((each) => each.id === "r1")!.layout).toBe("wide");
     // A section's page counts its own rows.
@@ -220,27 +219,22 @@ describe("rowsOfPage: movies and series", () => {
     expect(rowsOfPage("series", data({ rows: many, progress }))[0]!.entries.map((e) => e.title)).toEqual(["Card show"]);
   });
 
-  it("has no list or because rows of its own: those are on Home", () => {
-    const rows = rowsOfPage("movies", data({ rows: many, list: [saved("l")], because: [{ key: "k", title: "x", why: "watched", items: [item("s")] }] }));
+  it("has no rows of the lists (those are on Home), and the profile's own rows among its rows as Home has them", () => {
+    const rows = rowsOfPage("movies", data({ rows: many, progress: [card("film")], list: [saved("l")], personal: [own("k"), own("n", "like"), own("o", "like"), own("p", "like"), own("none", "like")] }));
     expect(rows.map((r) => r.id).some((id) => id.startsWith("list:"))).toBe(false);
-    expect(rows.map((r) => r.id).some((id) => id.startsWith("because:"))).toBe(false);
+    expect(rows.map((r) => r.id)).toEqual(["continue", "r0", "because:k", "r2", "r4", "because:n", "categories", "r6", "r8", "because:o", "r10"]);
   });
 
-  it("has a row of what the profile might like: on Home what the rows of titles like another do not show, on a section's page that section's", () => {
+  it("has the row of what the profile might like where the first of its own rows is, under the ranking; a child's profile has none of them", () => {
     const films = Array.from({ length: 6 }, (_, at) => item(`pf${at}`, "movie"));
-    const shows = Array.from({ length: 5 }, (_, at) => item(`ps${at}`, "series"));
-    const home = rowsOfPage("home", data({ rows: many, progress: [card("going")], because: [{ key: "k", title: "x", why: "watched", items: [item("s")] }], picks: films, pool: [...films, ...shows] }));
-    expect(home.map((r) => r.id).slice(0, 3)).toEqual(["continue", "because:k", "picks"]);
+    const personal = [own("picks", "picks", films), own("k")];
+    const home = rowsOfPage("home", data({ rows: many, progress: [card("going")], personal }));
+    expect(home.map((r) => r.id).slice(0, 6)).toEqual(["continue", "r0", "picks", "r1", "r2", "because:k"]);
     expect(home[2]).toMatchObject({ layout: "wide", title: t("rows.picks") });
     expect(home[2]!.entries.map((entry) => entry.id)).toEqual(films.map((film) => film.id));
-    // The page of a section: after what is part way through, its own titles of them (what a title of no stated kind is, nobody can tell).
-    const series = rowsOfPage("series", data({ rows: many, picks: films, pool: [...films, ...shows, item("unsaid")] }));
-    expect(series[0]!.id).toBe("picks");
-    expect(series[0]!.entries.map((entry) => entry.id)).toEqual(shows.map((show) => show.id));
-    // Too few are no row; a profile that watches only some sections has only those; a child's profile has none.
-    expect(rowsOfPage("home", data({ rows: many, picks: films.slice(0, 4) })).some((r) => r.id === "picks")).toBe(false);
-    expect(rowsOfPage("home", data({ rows: many, picks: films, wanted: new Set<LibrarySection>(["series"]) })).some((r) => r.id === "picks")).toBe(false);
-    expect(rowsOfPage("home", data({ rows: many, picks: films, pool: films, child: { allows: () => true } as unknown as NonNullable<PageData["child"]> })).some((r) => r.id === "picks")).toBe(false);
+    expect(rowsOfPage("series", data({ rows: many, personal })).map((r) => r.id).slice(0, 2)).toEqual(["r1", "picks"]);
+    const child = rowsOfPage("home", data({ rows: many, personal, child: { allows: () => true } as unknown as NonNullable<PageData["child"]> }));
+    expect(child.some((r) => r.id === "picks" || r.id.startsWith("because:"))).toBe(false);
   });
 
   it("leaves what the profile has seen out of the library's rows after the first, while a row has enough without it", () => {
@@ -345,10 +339,11 @@ describe("rowsOfPage: the four sections", () => {
     expect(cardsToLookUp([{ ...naruto, done: true }], rows, new Map())).toEqual([]); // (a finished one is in no row of the page)
   });
 
-  it("has no list or because rows of its own, as Movies and Series have none: those are on Home", () => {
+  it("has no rows of the lists, as Movies and Series have none (those are on Home), and the first of the profile's own rows under its ranking", () => {
     for (const page of ["cartoons", "anime"] as const) {
-      const rows = titles(page, { list: [saved("l")], because: [{ key: "k", title: "x", why: "watched", items: [item("s")] }] });
-      expect(rows.map((r) => r.id).some((id) => id.startsWith("list:") || id.startsWith("because:")), page).toBe(false);
+      const rows = titles(page, { list: [saved("l")], personal: [own("k")] });
+      expect(rows.map((r) => r.id).some((id) => id.startsWith("list:")), page).toBe(false);
+      expect(rows[1]!.id, page).toBe("because:k");
     }
   });
 
@@ -357,19 +352,13 @@ describe("rowsOfPage: the four sections", () => {
     expect(rowsOfPage("anime", data({ rows: [...plain, ...cartoons] }))).toEqual([]);
   });
 
-  it("leaves the sections a profile does not watch out of Home: their rows, their categories, and the titles like one it watched", () => {
+  it("leaves the sections a profile does not watch out of Home: their rows and their categories (its own rows are made of what it watches: shared/taste.ts)", () => {
     const wanted = new Set<LibrarySection>(["movie", "anime"]);
     const home = titles("home", { wanted });
     expect(ids(home)).toEqual(["r0", "r2", "r4", "a0", "a1", "a2", "a3", "a4", "a5"]);
     const categories = home.find((r) => r.layout === "categories")!;
     expect(categories.entries.length).toBeGreaterThan(0);
     expect(categories.entries.map((entry) => entry.id).filter((id) => /^(r[135]|c\d)$/.test(id))).toEqual([]);
-
-    const like = { key: "k", title: "x", why: "watched" as const, items: [item("film", "movie"), item("show", "series"), item("toon", "movie", { section: "cartoon" }), item("ani", "series", { section: "anime" })] };
-    const because = titles("home", { wanted, because: [like] }).find((r) => r.id.startsWith("because:"))!;
-    expect(because.entries.map((entry) => entry.id)).toEqual(["film", "ani"]);
-    // (a row of which nothing is left is no row)
-    expect(titles("home", { wanted: new Set<LibrarySection>(["cartoon"]), because: [{ ...like, items: [item("film", "movie")] }] }).some((r) => r.id.startsWith("because:"))).toBe(false);
   });
 
   it("keeps what the profile is part way through and what it saved, whatever section they are in, and shows a child's profile the cartoons whatever it says", () => {

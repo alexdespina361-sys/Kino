@@ -9,8 +9,8 @@ import { rowTitle, useT } from "../i18n";
 import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { hueOf, Poster, posterSizes } from "../shared/Poster";
-import { useLikes } from "../shared/recommend";
-import { PICKS_MIN, seenKeys, withoutSeen } from "../shared/taste";
+import { titleOfPersonal, useLikes } from "../shared/recommend";
+import { personalAfter, personalSlots, seenKeys, withoutSeen, type PersonalRow } from "../shared/taste";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { landscapeRows } from "../shared/shapes";
 import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
@@ -133,8 +133,6 @@ export function Library({
 
   // The library as it has grown: its first rows, the ones brought after them as the page is scrolled, and more of each row (see the feed).
   const feeding = useFeed();
-  // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
-  const { because: liked, picks: likedPicks, pool: likedPool } = useLikes();
   /** A child's profile (see the TV's Browse): the Cartoons for children are all it has, on Home and in the search, and it has no filters. */
   const { settings, progress: watchedCards, ratings: givenScores } = useProfileData();
   const child = settings.child === true;
@@ -154,21 +152,15 @@ export function Library({
   }, [feeding.data, pageSection, child, mine]);
   // (Some rows are wide cards, by the same rule as on the TV: see shared/shapes.ts.)
   const wideRows = useMemo(() => landscapeRows(displayedRows), [displayedRows]);
-  const because = useMemo(
-    () =>
-      child
-        ? liked.map((like) => ({ ...like, items: like.items.filter((item) => forChildren(item)) })).filter((like) => like.items.length > 0)
-        : mine
-          ? liked.map((like) => ({ ...like, items: like.items.filter((item) => isWanted(mine, item)) })).filter((like) => like.items.length > 0)
-          : liked,
-    [liked, child, mine],
+  // The profile's own rows ("Because you watched ...", "More like ...", "You might like"; shared/taste.ts), of the titles this page shows: among the
+  // library's rows, the first under the first of them and then one under every second row, as many as the page has a place for (more are asked for as it
+  // grows under the scrolling). A child's profile has them of the titles for children, without the row of what it might like.
+  const keepLike = useMemo<((item: LibraryItem) => boolean) | undefined>(
+    () => (child ? (item) => forChildren(item) : pageSection ? (item) => sectionOf(item) === pageSection : mine ? (item) => isWanted(mine, item) : undefined),
+    [child, pageSection, mine],
   );
-  // What the profile might like, of what it has not seen (shared/taste.ts): on the page of everything under the rows of "Because you ...", on the page of
-  // a section the ones of that section. And what it has seen is left out of the library's rows after the first. Neither for a child's profile.
-  const mightLike = useMemo(
-    () => (child ? [] : pageSection ? likedPool.filter((item) => sectionOf(item) === pageSection) : likedPicks.filter((item) => isWanted(mine, item))),
-    [child, pageSection, likedPool, likedPicks, mine],
-  );
+  const personal = useLikes({ want: searchPage ? 0 : personalSlots(displayedRows.length), keep: keepLike, picks: !child });
+  // (What the profile has seen is left out of the library's rows after the first; not for a child's profile.)
   const seen = useMemo(() => (child ? new Set<string>() : seenKeys(watchedCards, givenScores)), [child, watchedCards, givenScores]);
   const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);
 
@@ -328,6 +320,18 @@ export function Library({
 
   const toggleOf = (item: LibraryItem) => toggleFor(listEntryOf(item));
   const open = (item: LibraryItem) => () => onOpen(entryOfItem(item));
+  /** One of the profile's own rows (none: nothing). */
+  const own = (row: PersonalRow | undefined) =>
+    row && (
+      <div className="lib-row" key={row.id} data-testid={row.why === "picks" ? "library-picks" : "library-because"} data-why={row.why}>
+        <h3>{titleOfPersonal(row)}</h3>
+        <Scroller>
+          {row.items.map((item) => (
+            <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+          ))}
+        </Scroller>
+      </div>
+    );
   /** The first row that has titles: what the search page lists until something is typed. */
   const suggested = searchPage && answers === null ? displayedRows.find((row) => row.items.length > 0) : undefined;
   /** What Home opens with (the rows page only; the filter's first row when a kind is chosen). */
@@ -410,27 +414,6 @@ export function Library({
       ) : (
         <>
           {heroItem && <Hero item={heroItem} toggle={toggleOf(heroItem)} onOpen={onOpen} {...(onPlay ? { onPlay } : {})} />}
-          {(shownFilter === "all" || child) &&
-            because.map((like) => (
-              <div className="lib-row" key={`because:${like.key}`} data-testid="library-because">
-                <h3>{t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title })}</h3>
-                <Scroller>
-                  {like.items.map((item) => (
-                    <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
-                  ))}
-                </Scroller>
-              </div>
-            ))}
-          {mightLike.length >= PICKS_MIN && (
-            <div className="lib-row" data-testid="library-picks">
-              <h3>{t("rows.picks")}</h3>
-              <Scroller>
-                {mightLike.map((item) => (
-                  <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
-                ))}
-              </Scroller>
-            </div>
-          )}
           {displayedRows.map((row, index) => (
             <Fragment key={row.id}>
               <div className={`lib-row${wideRows.has(row.id) ? " is-wide is-landscape" : ""}`} data-testid="library-row" data-shape={wideRows.has(row.id) ? "landscape" : undefined}>
@@ -450,6 +433,8 @@ export function Library({
                   ))}
                 </Scroller>
               </div>
+              {/* (Under the first row and every second one after it, as on the TV: the next of the profile's own rows.) */}
+              {own(personal[personalAfter(index) ?? -1])}
               {/* (After the third row, as on the TV: a row of the page's categories, each a card that opens the whole row.) */}
               {onSeeAll && index === CATEGORIES_AFTER - 1 && displayedRows.length > CATEGORIES_AFTER + 1 && <CategoryRow rows={displayedRows} onOpen={onSeeAll} />}
             </Fragment>

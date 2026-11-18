@@ -1,5 +1,5 @@
 import { Fragment, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, tagLabel, titleLink, wantedSections, type Library, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, sectionOf, tagLabel, titleLink, wantedSections, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -30,6 +30,7 @@ import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
 import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { useLikes } from "../shared/recommend";
+import { personalSlots } from "../shared/taste";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { AboutText } from "./AboutText";
@@ -461,14 +462,19 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const feeding = useFeed();
   const rows = feeding.data.base;
   const hasTiles = status === "ready" && rows.length > 0;
-  // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
-  const { because, picks, pool } = useLikes();
   /** What section the rows of this page are in: Home has all of them (a child's profile has the Cartoons on every page of rows: see `child`). */
   const pageSection = isRowsPage(view) ? (child ? "cartoon" : sectionOfPage(view.kind)) : undefined;
   // (A profile that watches one section only is brought the rows of that section on Home too: of the rows of all four, most would be left out as they came,
   // and the page asked a dozen times for what two answers hold. Only what is asked of the library: Home is still Home, with its own rows above them.)
   const feedSection = pageSection ?? (isRowsPage(view) && wanted?.size === 1 ? [...wanted][0] : undefined);
   const pageLibraryRows = useMemo(() => pageRows(feeding.data, feedSection), [feeding.data, feedSection]);
+  // The profile's own rows ("Because you watched ...", "More like ...", "You might like"), of the titles this page shows, as many as it has a place for
+  // among the library's rows: more are asked for as the page grows under the scrolling (see shared/taste.ts). A child's profile has none.
+  const keepLike = useMemo<((item: LibraryItem) => boolean) | undefined>(
+    () => (pageSection ? (item) => sectionOf(item) === pageSection : wanted ? (item) => isWanted(wanted, item) : undefined),
+    [pageSection, wanted],
+  );
+  const personal = useLikes({ want: child ? 0 : personalSlots(pageLibraryRows.length), keep: keepLike, showing: isRowsPage(view) });
   /** The rows of this page that the library can add titles to as they are scrolled (the ranking of ten, which is not scrolled, is not one). */
   const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
   // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
@@ -481,8 +487,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const shownRatings = useMemo(() => (childGate ? ratings.filter((rating) => childGate.allows({ id: rating.key, url: rating.url, kind: rating.kind })) : ratings), [childGate, ratings]);
   const shownProgress = useMemo(() => (childGate ? progress.filter((card) => childGate.allows({ id: card.key, url: card.url })) : progress), [childGate, progress]);
   const data = useMemo<PageData>(
-    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], because, picks, pool, looked, child: childGate, wanted }),
-    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, because, picks, pool, looked, childGate, wanted],
+    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], personal, looked, child: childGate, wanted }),
+    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, personal, looked, childGate, wanted],
   );
 
   const rowsPage = hasRows(view);
@@ -906,7 +912,31 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   }, [feeding, status, view, feedSection, homeRows.length, grid?.entries.length, allRowsDrawn]);
   const askShelves = () => {
     if (status === "ready" && allRowsDrawn && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(feedSection);
+    noteAnchor();
   };
+  // A row that comes in over the one the screen is on (one of the profile's own, whose answer came late) must not push it down the screen: the page is
+  // put back by as much as the row on top of the screen moved. (A browser has a way of its own for this, `overflow-anchor`; it did not hold on this page -
+  // the row the remote was on went off the bottom of a 720p screen - and an older TV's has none, so it is turned off in tv.css and done here for all.)
+  // Not at the very top of the page, where what comes in is what the page begins with.
+  const anchor = useRef<{ page: string; id: string; gap: number } | null>(null);
+  const rowBoxes = () => (rowsRef.current ? (Array.from(rowsRef.current.children) as HTMLElement[]).filter((each) => each.classList.contains("tv-row")) : []);
+  const noteAnchor = () => {
+    const top = rowsRef.current?.scrollTop ?? 0;
+    const box = top < 2 ? undefined : rowBoxes().find((each) => each.offsetTop + each.offsetHeight > top + 1);
+    anchor.current = box ? { page: viewKey(latest.current.view), id: box.dataset.rowId ?? "", gap: box.offsetTop - top } : null;
+  };
+  const drawnIds = drawnRows.map((row) => row.id).join("\n");
+  useLayoutEffect(() => {
+    const rows = rowsRef.current;
+    const was = anchor.current;
+    // (Only on the page it was noted on: another page has rows of the same names, and begins where the remote is put.)
+    const box = was && was.page === rowsKey ? rowBoxes().find((each) => each.dataset.rowId === was.id) : undefined;
+    if (rows && was && box) {
+      const moved = box.offsetTop - rows.scrollTop - was.gap;
+      if (Math.abs(moved) > 1) rows.scrollTop += moved;
+    }
+    noteAnchor();
+  }, [drawnIds]); // eslint-disable-line react-hooks/exhaustive-deps
   const askTitles = () => {
     if (status === "ready" && view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
   };
@@ -1856,6 +1886,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   <section
                     className="tv-row"
                     key={row.id}
+                    data-row-id={row.id}
                     data-layout={row.layout}
                     data-shape={row.shape}
                     data-posters={row.layout === "wide" && !row.shape && row.entries[0] && isTitle(row.entries[0]) ? "true" : undefined}

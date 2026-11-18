@@ -5,8 +5,8 @@ import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
 import type { ChildGate } from "../shared/childGate";
 import { formatTime } from "../shared/format";
-import type { Because } from "../shared/recommend";
-import { PICKS_MIN, seenKeys, withoutSeen } from "../shared/taste";
+import { titleOfPersonal } from "../shared/recommend";
+import { personalAfter, seenKeys, withoutSeen, type PersonalRow } from "../shared/taste";
 import { landscapeRows } from "../shared/shapes";
 import { addressOf, type TitleOpening } from "../shared/titleAddress";
 import type { GridSection } from "./browseNav";
@@ -201,12 +201,11 @@ export interface PageData {
   list: readonly LiveListItem[];
   /** What this profile rated (nothing at all when it has turned ratings off). */
   ratings: readonly LiveRating[];
-  /** "Because you watched ..." and "Because you loved ...": a title, and the titles like it. */
-  because: readonly Because[];
-  /** What the profile might like (shared/taste.ts): without the titles of the rows of "Because you ...", for Home, which has those rows... */
-  picks?: readonly LibraryItem[] | undefined;
-  /** ...and with them, for the page of a section, which has not. */
-  pool?: readonly LibraryItem[] | undefined;
+  /**
+   * The profile's own rows for this page, in their order (shared/taste.ts): what it might like, "Because you watched ...", "More like ...". Made of the
+   * titles the page shows already (a section's, the sections the profile watches): they are put among the library's rows as they are.
+   */
+  personal?: readonly PersonalRow[] | undefined;
   /** The sections the server gave for titles of "Continue watching" the rows do not list, by the title's address (`tv-46260`; see cardSections.ts). */
   looked?: ReadonlyMap<string, LibrarySection>;
   /**
@@ -616,9 +615,11 @@ export function cardsToLookUp(progress: readonly LiveProgress[], rows: readonly 
 }
 
 /**
- * The rows under the banner. Home has what this profile is part way through, titles like the ones it watched last or loved, a row for each of
- * its lists that has a title in it, then the library's rows with a row of categories among them. Movies, Series, Cartoons and Anime have the library's
- * rows of their section, and what is part way through of it.
+ * The rows under the banner. Home has what this profile is part way through, a row for each of its lists that has a title in it, then the library's
+ * rows with a row of categories among them. Movies, Series, Cartoons and Anime have the library's rows of their section, and what is part way through
+ * of it. On all of them the profile's own rows (what it might like, titles like one it watched, more like one of those) stand among the library's:
+ * the first under the ranking, then one under every second row (`personalAfter`), for as far as the page goes. The owner, 18 Nov 2026, of a page
+ * that had them all on top: "then everything else is top movies, top series ... It should be continuously mixed throughout the scroll".
  */
 export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   const { child } = data;
@@ -632,18 +633,9 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   // (A child's profile's cards are its gate's to say: what it lets through is a cartoon for children, wherever the library lists it.)
   const going = unfinished(data.progress).filter((card) => (child ? child.allows(ownTitle(card, isShowCard(card))) : !places || sectionOfCard(card, places) === section));
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
-  if (!section) {
-    for (const like of data.because) {
-      const items = like.items.filter((item) => isWanted(wanted, item));
-      if (items.length > 0) out.push({ id: `${BECAUSE_ROW}${like.key}`, layout: "wide", title: t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title }), entries: items.map(entryOfItem) });
-    }
-  }
-  // What the profile might like, of what it has not seen: on Home under the rows of titles like one it watched, on the page of a section (which has none of
-  // those) the ones of that section. Not on a child's profile, whose titles are the few for children.
-  if (!child) {
-    const picks = section ? (data.pool ?? []).filter((item) => sectionOf(item) === section) : (data.picks ?? []).filter((item) => isWanted(wanted, item));
-    if (picks.length >= PICKS_MIN) out.push({ id: PICKS_ROW, layout: "wide", title: t("rows.picks"), entries: picks.map(entryOfItem) });
-  }
+  // The profile's own rows, among the library's below. Not on a child's profile, whose titles are the few for children.
+  const personal = child ? [] : (data.personal ?? []);
+  const own = (row: PersonalRow): HomeRow => ({ id: row.why === "picks" ? PICKS_ROW : `${BECAUSE_ROW}${row.key}`, layout: "wide", title: titleOfPersonal(row), entries: row.items.map(entryOfItem) });
   if (!section) {
     for (const info of data.lists) {
       const saved = data.list.filter((item) => listOf(item) === info.id);
@@ -666,6 +658,8 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
       ...(wide.has(row.id) ? { shape: "landscape" as const } : {}),
       entries: (index === 0 ? row.items.slice(0, RANKED) : withoutSeen(row.items, seen)).map(entryOfItem),
     });
+    const next = personalAfter(index);
+    if (next !== undefined && personal[next]) out.push(own(personal[next]));
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, section));
   });
   return out;

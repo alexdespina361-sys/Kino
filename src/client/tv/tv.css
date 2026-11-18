@@ -1224,6 +1224,8 @@
   position: relative;
   overflow: hidden auto;
   scrollbar-width: none;
+  /* (The page keeps its own place when a row comes in over the one on the screen: see `noteAnchor` in Browse.tsx. The browser's way did not hold here.) */
+  overflow-anchor: none;
 }
 .tv-rows::-webkit-scrollbar { display: none; }
 .tv-row { padding-bottom: 0.2em; }
