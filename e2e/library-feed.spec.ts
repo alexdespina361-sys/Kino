@@ -230,6 +230,7 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
     const on = tv.locator(":focus");
     await expect(on).toHaveAttribute("title", "Base 4 1");
+    await expect.poll(async () => Math.abs(await offTheTop(tv))).toBeLessThanOrEqual(2);
     const top = async () => Math.round((await on.boundingBox())!.y);
     let rest = await top();
     await expect.poll(async () => { const was = rest; rest = await top(); return rest === was; }, { intervals: [150] }).toBe(true);
