@@ -1366,7 +1366,7 @@ test.describe("a show's own page on the TV", () => {
     await expect(episodes(tv).first()).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(episodes(tv).nth(1)).toBeFocused();
-    expect((await episodes(tv).nth(1).boundingBox())!.y).toBeCloseTo((await episodes(tv).first().boundingBox())!.y, 0);
+    expect(await tv.evaluate(() => { const [a, b] = document.querySelectorAll('[data-testid="tv-episode"]'); return Math.abs(a!.getBoundingClientRect().y - b!.getBoundingClientRect().y); })).toBeLessThan(0.5);
     await tv.keyboard.press("ArrowRight");
     await expect(episodes(tv).nth(1)).toBeFocused();
     await tv.keyboard.press("ArrowDown");
