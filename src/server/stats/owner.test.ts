@@ -160,13 +160,17 @@ describe("the owner's page: who is counted as here", () => {
     return { live, server };
   }
 
-  it("counts a person who asks the site's own api or opens one of its pages, signed in when they bring a session", async () => {
+  it("counts a person whose page asks the site's own api, signed in when they bring a session; a page that was only fetched is an answer and nobody", async () => {
     const { live, server } = await counted();
-    await server.inject({ url: "/api/library?x=1", headers: { "user-agent": PHONE }, remoteAddress: "203.0.113.7" });
-    await server.inject({ url: "/tv/", headers: { "user-agent": PHONE, cookie: `${COOKIE}=abc` }, remoteAddress: "203.0.113.8" });
+    await server.inject({ url: "/api/library?x=1", headers: { "user-agent": PHONE, "sec-fetch-site": "same-origin" }, remoteAddress: "203.0.113.7" });
+    await server.inject({ url: "/api/library", headers: { "user-agent": PHONE, cookie: `${COOKIE}=abc` }, remoteAddress: "203.0.113.8" });
     await server.inject({ url: "/api/refuses", headers: { "user-agent": PHONE }, remoteAddress: "203.0.113.7" });
     expect(live.now()).toEqual({ people: 2, signedIn: 1, guests: 1 });
-    expect(live.answers(1)[0]).toMatchObject({ requests: 3, refused: 1 });
+    // (a scanner with a browser's name fetches the page and runs nothing; another site's page asks the api)
+    await server.inject({ url: "/tv/", headers: { "user-agent": PHONE }, remoteAddress: "203.0.113.50" });
+    await server.inject({ url: "/api/library", headers: { "user-agent": PHONE, "sec-fetch-site": "cross-site" }, remoteAddress: "203.0.113.51" });
+    expect(live.now()).toEqual({ people: 2, signedIn: 1, guests: 1 });
+    expect(live.answers(1)[0]).toMatchObject({ requests: 5, refused: 1 });
   });
 
   it("does not count a file of the page, the owner's own look, a program that says what it is, nor a browser that asks not to be tracked", async () => {

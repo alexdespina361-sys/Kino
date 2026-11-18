@@ -115,68 +115,76 @@ describe("the owner's stats", () => {
 });
 
 describe("counting the people who open the site", () => {
+  /** What a browser sends when the site's own page, having started, asks who is signed in. */
+  const asks = (agent = PHONE, extra: Record<string, string> = {}) => ({ accept: "*/*", "user-agent": agent, "accept-language": "ro", "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty", ...extra });
+  const ME = "/api/me";
+
   async function site(options: { trustProxy?: number } = {}) {
     const visits = await VisitCounter.open({ persistence: new MemoryPersistence(), flushMs: 0 });
-    const server = await buildApp({ clientDir: await siteFolder(), visits, feedbackAdminToken: TOKEN, ...options });
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
+    const server = await buildApp({ clientDir: await siteFolder(), visits, accounts, feedbackAdminToken: TOKEN, ...options });
     const today = () => [...visits.records().days.values()].reduce((sum, each) => ({ visitors: sum.visitors + each.visitors, loads: sum.loads + each.loads }), { visitors: 0, loads: 0 });
     return { server, visits, today };
   }
 
-  it("counts the phone's page and the TV's, a person once however often, and every load", async () => {
+  it("counts a browser in which the page started: a person once however often, and every start", async () => {
     const { server, today } = await site();
-    await server.inject({ url: "/", headers: page() });
-    await server.inject({ url: "/", headers: page() });
-    await server.inject({ url: "/tv", headers: page() });
-    await server.inject({ url: "/tv/", headers: page() });
-    await server.inject({ url: "/?party=ABCD", headers: page() }); // (a query is still the page)
-    expect(today()).toEqual({ visitors: 1, loads: 5 });
-    await server.inject({ url: "/", headers: page(LAPTOP) });
-    expect(today()).toEqual({ visitors: 2, loads: 6 });
+    expect((await server.inject({ url: ME, headers: asks() })).statusCode).toBe(200);
+    await server.inject({ url: ME, headers: asks() });
+    await server.inject({ url: `${ME}?x=1`, headers: asks() });
+    expect(today()).toEqual({ visitors: 1, loads: 3 });
+    await server.inject({ url: ME, headers: asks(LAPTOP) });
+    expect(today()).toEqual({ visitors: 2, loads: 4 });
+    // (an old TV's browser says nothing of where its question comes from, and is somebody)
+    await server.inject({ url: ME, headers: { "user-agent": "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4) AppleWebKit/538.1 TV Safari/538.1", "accept-language": "ro" } });
+    expect(today()).toEqual({ visitors: 3, loads: 5 });
     await server.close();
   });
 
-  it("counts a page the browser already has, which the server answers with a 304", async () => {
+  it("does not count a program that fetches the page and runs nothing, whatever browser it says it is", async () => {
     const { server, today } = await site();
-    const first = await server.inject({ url: "/", headers: page() });
-    expect(first.statusCode).toBe(200);
-    const again = await server.inject({ url: "/", headers: page(PHONE, { "if-none-match": String(first.headers.etag) }) });
-    expect(again.statusCode).toBe(304);
-    expect(today().loads).toBe(2);
+    for (const url of ["/", "/tv", "/tv/", "/?party=ABCD"]) {
+      const answer = await server.inject({ url, headers: page() });
+      expect(answer.statusCode, url).toBe(200);
+      await server.inject({ url, headers: page(PHONE, { "if-none-match": String(answer.headers.etag) }) });
+    }
+    expect(today()).toEqual({ visitors: 0, loads: 0 });
     await server.close();
   });
 
-  it("does not count what is not a person opening a page", async () => {
+  it("does not count what is not the site's own page asking", async () => {
     const { server, today } = await site();
     const refused: Array<[string, { url: string; method?: "GET" | "HEAD" | "POST"; headers?: Record<string, string> }]> = [
-      ["a file of the site", { url: "/assets/app-abc123.js", headers: page() }],
-      ["the api", { url: "/api/health", headers: page() }],
+      ["a file of the site", { url: "/assets/app-abc123.js", headers: asks() }],
+      ["another question of the api", { url: "/api/health", headers: asks() }],
       ["a path the site does not have (the page answers it all the same)", { url: "/wp-login.php", headers: page() }],
-      ["a deeper path", { url: "/tv/anything", headers: page() }],
+      ["a deeper path", { url: "/api/me/anything", headers: asks() }],
       ["the notice about the count", { url: "/privacy.html", headers: page() }],
-      ["a request that is not a GET", { url: "/", method: "HEAD", headers: page() }],
-      ["something that is not asking for a page", { url: "/", headers: { ...page(), accept: "application/json" } }],
-      ["a frame", { url: "/", headers: page(PHONE, { "sec-fetch-dest": "iframe" }) }],
-      ["a prefetch", { url: "/", headers: page(PHONE, { "sec-purpose": "prefetch" }) }],
-      ["Do Not Track", { url: "/", headers: page(PHONE, { dnt: "1" }) }],
-      ["Global Privacy Control", { url: "/", headers: page(PHONE, { "sec-gpc": "1" }) }],
-      ["a search engine", { url: "/", headers: page("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)") }],
-      ["a link preview", { url: "/", headers: page("WhatsApp/2.23.20 A") }],
-      ["a script", { url: "/", headers: page("curl/8.4.0") }],
-      ["a headless test browser", { url: "/", headers: page("Mozilla/5.0 HeadlessChrome/156.0 Safari/537.36") }],
-      ["a request with no browser named", { url: "/", headers: { accept: "text/html", "user-agent": "" } }],
+      ["a request that is not a GET", { url: ME, method: "HEAD", headers: asks() }],
+      ["the question typed as an address", { url: ME, headers: page(PHONE, { "sec-fetch-site": "none" }) }],
+      ["the question from another site's page", { url: ME, headers: asks(PHONE, { "sec-fetch-site": "cross-site" }) }],
+      ["the question from a page of a sister address", { url: ME, headers: asks(PHONE, { "sec-fetch-site": "same-site" }) }],
+      ["the question as a picture or a frame", { url: ME, headers: asks(PHONE, { "sec-fetch-dest": "image" }) }],
+      ["Do Not Track", { url: ME, headers: asks(PHONE, { dnt: "1" }) }],
+      ["Global Privacy Control", { url: ME, headers: asks(PHONE, { "sec-gpc": "1" }) }],
+      ["a search engine", { url: ME, headers: asks("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)") }],
+      ["a link preview", { url: ME, headers: asks("WhatsApp/2.23.20 A") }],
+      ["a script", { url: ME, headers: asks("curl/8.4.0") }],
+      ["a headless test browser", { url: ME, headers: asks("Mozilla/5.0 HeadlessChrome/156.0 Safari/537.36") }],
+      ["a request with no browser named", { url: ME, headers: { accept: "*/*", "user-agent": "" } }],
     ];
     for (const [, request] of refused) await server.inject(request);
     expect(today()).toEqual({ visitors: 0, loads: 0 });
-    // and the same page, asked for as a person does, is counted: nothing above was refused for being wrong in some other way
-    await server.inject({ url: "/", headers: page() });
+    // and the same question, asked as the page asks it, is counted: nothing above was refused for being wrong in some other way
+    await server.inject({ url: ME, headers: asks() });
     expect(today()).toEqual({ visitors: 1, loads: 1 });
     await server.close();
   });
 
-  it("does not count a page that was not served", async () => {
+  it("does not count a question that was not answered", async () => {
     const { server, today } = await site();
-    await server.inject({ url: "/api/nothing-here", headers: page() });
-    await server.inject({ url: "/", method: "POST", headers: page() });
+    await server.inject({ url: "/api/nothing-here", headers: asks() });
+    await server.inject({ url: ME, method: "POST", headers: asks() });
     expect(today()).toEqual({ visitors: 0, loads: 0 });
     await server.close();
   });
@@ -184,15 +192,15 @@ describe("counting the people who open the site", () => {
   it("tells visitors apart by the address behind Cloudflare and the host's proxy, and by nothing a visitor can send when there is no proxy", async () => {
     const behind = await site({ trustProxy: 1 });
     // (Cloudflare in front of the host: the visitor, then the Cloudflare machine the host's proxy saw. Two people through the same machine are two.)
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.7, 172.70.1.2" }) });
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) });
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) }); // (the second one again)
+    await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.7, 172.70.1.2" }) });
+    await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) });
+    await behind.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) }); // (the second one again)
     expect(behind.today()).toEqual({ visitors: 2, loads: 3 });
     await behind.server.close();
 
     const alone = await site();
-    await alone.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.7", "cf-connecting-ip": "203.0.113.7" }) });
-    await alone.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.8", "cf-connecting-ip": "203.0.113.8" }) });
+    await alone.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.7", "cf-connecting-ip": "203.0.113.7" }) });
+    await alone.server.inject({ url: ME, headers: asks(PHONE, { "x-forwarded-for": "203.0.113.8", "cf-connecting-ip": "203.0.113.8" }) });
     expect(alone.today()).toEqual({ visitors: 1, loads: 2 });
     await alone.server.close();
   });
@@ -200,13 +208,14 @@ describe("counting the people who open the site", () => {
   it("writes the counts when the server stops, and the owner reads them from the same server", async () => {
     const persistence = new MemoryPersistence();
     const visits = await VisitCounter.open({ persistence }); // (the real delay: only stopping writes it)
-    const server = await buildApp({ clientDir: await siteFolder(), visits, feedbackAdminToken: TOKEN });
-    await server.inject({ url: "/", headers: page() });
-    await server.inject({ url: "/tv", headers: page(LAPTOP) });
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
+    const server = await buildApp({ clientDir: await siteFolder(), visits, accounts, feedbackAdminToken: TOKEN });
+    await server.inject({ url: ME, headers: asks() });
+    await server.inject({ url: ME, headers: asks(LAPTOP) });
 
     const stats = (await server.inject({ url: "/api/admin/stats?days=1", headers: auth })).json();
     expect(stats.visits.visitors.today).toBe(2);
-    expect(stats.days).toEqual([{ day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), visitors: 2, loads: 2 }]);
+    expect(stats.days).toEqual([{ day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), newAccounts: 0, accounts: 0, visitors: 2, loads: 2 }]);
     expect(persistence.docs.size).toBe(0);
     await server.close();
     expect([...persistence.docs.keys()].map((key) => key.split(":")[0]).sort()).toEqual(["seen", "visits"]);
@@ -219,7 +228,6 @@ describe("counting the people who open the site", () => {
     await server.close();
   });
 });
-
 describe("which address a request is read as", () => {
   const HOST_PROXY = "10.8.0.4"; // (the connection: the host's own proxy)
 

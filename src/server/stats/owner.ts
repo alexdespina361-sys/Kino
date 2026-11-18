@@ -90,6 +90,11 @@ export function countLive(app: FastifyInstance, live: LiveCount): void {
     const path = (request.url.split("?")[0] ?? "").replace(/\/+$/, "");
     if (path === OWNER_STATS || !(path.startsWith("/api/") || path === "" || path === "/tv")) return;
     live.answered(reply.statusCode);
+    // (Who is here asked the site something from its own page. A page's file that was only fetched, which is what a scanner with a browser's name does,
+    // is among the answers and is nobody; so is a question from another site.)
+    if (!path.startsWith("/api/")) return;
+    const from = request.headers["sec-fetch-site"];
+    if (from && from !== "same-origin") return;
     const agent = String(request.headers["user-agent"] ?? "");
     if (!agent || NOT_PEOPLE.test(agent) || request.headers.dnt === "1" || request.headers["sec-gpc"] === "1") return;
     live.seen(request.ip, agent, Boolean(readCookie(request.headers.cookie, COOKIE)));
