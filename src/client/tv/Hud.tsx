@@ -3,7 +3,7 @@ import { LibraryItemsSchema, type LibraryItem, type PlayerState } from "../../sh
 import { hintOf } from "../account/cards";
 import { useProfileData } from "../account/store";
 import { t, useT } from "../i18n";
-import { formatEndsAt, formatRemaining, formatTime } from "../shared/format";
+import { formatClock, formatEndsAt, formatRemaining, formatTime } from "../shared/format";
 import { useFullscreen } from "../shared/fullscreen";
 import {
   Back10Icon,
@@ -127,7 +127,6 @@ export interface HudProps {
   badge: string;
   /** What this episode is called, when it is known and is more than its number. */
   episodeName?: string | undefined;
-  clock: string;
   /** Label of the next episode, when there is one. */
   nextLabel: string | null;
   /** Label of the episode before this one, when there is one. */
@@ -685,7 +684,7 @@ export function Hud(p: HudProps) {
             )}
           </div>
           <div className="hud-time-of-day">
-            <div className="hud-clock">{p.clock}</div>
+            <HudClock />
             {endsAt && <div className="hud-ends">{t("hud.endsAt", { time: endsAt })}</div>}
           </div>
         </header>
@@ -936,4 +935,14 @@ export function EndCard(p: EndCardProps) {
       )}
     </div>
   );
+}
+
+/** The time of day in the corner. It keeps its own state, so the minute changing redraws this line and not the whole TV screen with its rows of tiles. */
+function HudClock() {
+  const [clock, setClock] = useState(() => formatClock(new Date()));
+  useEffect(() => {
+    const timer = setInterval(() => setClock(formatClock(new Date())), 10_000);
+    return () => clearInterval(timer);
+  }, []);
+  return <div className="hud-clock">{clock}</div>;
 }

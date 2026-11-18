@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { guestStorage, openLibrary, openProfilePlace, openTvSignIn, sleepingServer, test, tvRoot, withLibrary, showProfilePage } from "./helpers";
+import { guestStorage, openLibrary, openProfilePlace, openTvSignIn, PICTURE_NAMED, sleepingServer, test, tvRoot, withLibrary, showProfilePage } from "./helpers";
 
 /**
  * The remote's Back key on the TV. Every page, menu and window that opens over the library or the film is opened (with the mouse, which is
@@ -185,7 +185,7 @@ test("the remote's Back, on a screen with a profile and friends", async ({ brows
   await tv.getByTestId("auth-email").fill(name);
   await tv.getByTestId("auth-password").fill("kino-test-pass-1"); // (a password that is not asked about)
   await tv.getByTestId("auth-submit").click();
-  await expect(tv.getByTestId("tv-account-chip")).toContainText(name);
+  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED); // (a new profile is named after its picture)
   await showProfilePage(tv); // (friends are on for everybody: the profile's page has them at once)
   await expect(tv.locator('[data-entry="profile:friends"]')).toBeVisible();
   await tv.getByTestId("rail-home").click();

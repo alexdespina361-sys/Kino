@@ -641,6 +641,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       root: clientDir,
       prefix: "/",
       dotfiles: "ignore",
+      // The build packs its scripts and styles once, as tightly as brotli and gzip go (scripts/finish-build.mjs: `name.js.br`, `name.js.gz`), and a browser
+      // that takes one of those is sent that file as it is: smaller than what the server would pack on the fly (a slow TV's first start, 18 Nov: 376 KB ->
+      // 319 KB), and no work for the server. A file with no packed copy is sent as before (packed on the fly by @fastify/compress, which leaves these alone).
+      preCompressed: true,
       // Vite names the files in /assets after what is in them, so a changed file has a new name and an old one can be kept for good.
       // The subtitle aligner's model and worker are the same: a changed one goes in a new numbered folder (public/subtitle-sync/1/README.md).
       // The page itself is always checked again, which is how a new build reaches a screen that still has the old one.

@@ -52,6 +52,47 @@ describe("serving the built page", () => {
     }
   });
 
+  it("sends a script's packed copy, made by the build, to a browser that takes it, with the script's own type and caching; the script itself to one that does not", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
+    await mkdir(path.join(dir, "assets"));
+    await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
+    const script = `console.log("${"kino ".repeat(400)}")`;
+    const { brotliCompressSync, gzipSync } = await import("node:zlib");
+    await writeFile(path.join(dir, "assets", "index-abc123.js"), script);
+    await writeFile(path.join(dir, "assets", "index-abc123.js.br"), brotliCompressSync(script));
+    await writeFile(path.join(dir, "assets", "index-abc123.js.gz"), gzipSync(script));
+    await writeFile(path.join(dir, "assets", "loose-def456.js"), script);
+    const app = await buildApp({ clientDir: dir });
+    try {
+      const { brotliDecompressSync, gunzipSync } = await import("node:zlib");
+      const br = await app.inject({ url: "/assets/index-abc123.js", headers: { "accept-encoding": "br, gzip" } });
+      expect([br.statusCode, br.headers["content-encoding"]]).toEqual([200, "br"]);
+      expect(br.headers["content-type"]).toMatch(/javascript/);
+      expect(br.headers["cache-control"]).toMatch(/max-age=31536000.*immutable/);
+      expect(br.headers.vary).toMatch(/accept-encoding/i);
+      expect(brotliDecompressSync(br.rawPayload).toString()).toBe(script);
+
+      const gz = await app.inject({ url: "/assets/index-abc123.js", headers: { "accept-encoding": "gzip" } });
+      expect([gz.statusCode, gz.headers["content-encoding"]]).toEqual([200, "gzip"]);
+      expect(gunzipSync(gz.rawPayload).toString()).toBe(script);
+
+      const plain = await app.inject({ url: "/assets/index-abc123.js", headers: { "accept-encoding": "identity" } });
+      expect([plain.statusCode, plain.headers["content-encoding"], plain.body]).toEqual([200, undefined, script]);
+
+      // A script with no packed copy (a build from before) is packed on the fly, as it always was.
+      const loose = await app.inject({ url: "/assets/loose-def456.js", headers: { "accept-encoding": "br" } });
+      expect([loose.statusCode, loose.headers["content-encoding"]]).toEqual([200, "br"]);
+      expect(brotliDecompressSync(loose.rawPayload).toString()).toBe(script);
+
+      // The page itself is untouched by it.
+      const page = await app.inject({ url: "/", headers: { "accept-encoding": "br" } });
+      expect(page.statusCode).toBe(200);
+      expect(page.headers["cache-control"]).not.toMatch(/immutable|31536000/);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("says which build it serves, never kept anywhere, and the new one once index.html is a new build; nothing while there is no page (the owner's ask, 17 Nov)", async () => {
     dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
     const page = (script: string) => `<!doctype html><title>Kino</title><script type="module" crossorigin src="/assets/${script}.js"></script>`;

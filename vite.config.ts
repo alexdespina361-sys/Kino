@@ -21,6 +21,13 @@ export default defineConfig({
         index: fileURLToPath(new URL("index.html", import.meta.url)),
         upscale: fileURLToPath(new URL("labs/upscale/index.html", import.meta.url)),
       },
+      // React and zod, which every page needs and which change only when a dependency is updated, in a file of their own: its name (a hash of what is in
+      // it) stays the same from one deploy to the next, so a TV that has it keeps it, already compiled, instead of downloading ~300 KB again with the app.
+      output: {
+        codeSplitting: {
+          groups: [{ name: "vendor", test: /[\\/]node_modules[\\/](react|react-dom|scheduler|zod)[\\/]/ }],
+        },
+      },
     },
   },
   // Dev only: Vite serves the UI, Fastify serves /api, /ws and /fixtures. In production Fastify serves everything.

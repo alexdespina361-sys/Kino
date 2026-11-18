@@ -563,6 +563,19 @@ export function TvAccountPanel({
                   <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={top && !several} />
                   <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
                   {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => grownUp(() => account.withGoogle("link"))} testId="tv-connect-google" />}
+                  {/* Whether what it watches is counted, with no name, in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off. The server
+                      reads it, and counts accounts only, so it is here with what a signed-in profile has (in the third column it made a 720p screen's columns too tall). */}
+                  {!child && (
+                    <SettingsSwitch
+                      label={t("settings.publicWatching")}
+                      on={settings.publicWatching !== false}
+                      onToggle={() => {
+                        set("publicWatching", settings.publicWatching !== false ? false : undefined);
+                        account.syncNow();
+                      }}
+                      testId="tv-public-watching"
+                    />
+                  )}
                 </>
               ) : (
                 account.status === "ready" && (
@@ -684,18 +697,6 @@ export function TvAccountPanel({
                     account.syncNow();
                   }}
                   testId="tv-title-notices"
-                />
-              )}
-              {/* Whether what it watches is counted, with no name, in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off. The server reads it. */}
-              {!child && (
-                <SettingsSwitch
-                  label={t("settings.publicWatching")}
-                  on={settings.publicWatching !== false}
-                  onToggle={() => {
-                    set("publicWatching", settings.publicWatching !== false ? false : undefined);
-                    account.syncNow();
-                  }}
-                  testId="tv-public-watching"
                 />
               )}
               {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to

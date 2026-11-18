@@ -92,7 +92,9 @@ export const CLOSEST_MAX = 30;
  * has listed, the screens every one they were sent), instead of one made from the titles on the screen at each question.
  */
 export class TitleIndex {
-  private readonly index = new MiniSearch<LibraryItem>({ fields: ["title", "joined", "year"], extractField: fieldOf });
+  /** The words of the titles, made the first time something is looked for (`find`), and kept up to date from then on: a TV that starts takes in
+   *  hundreds of titles before anybody searches, and making this then cost its first rows 30-50 ms (measured 18 Nov). */
+  private words: MiniSearch<LibraryItem> | null = null;
   private readonly titles = new Map<string, LibraryItem>();
   /** When each was added, the first to be met being the likeliest to be the popular ones (the places list those first). */
   private readonly order = new Map<string, number>();
@@ -112,14 +114,14 @@ export class TitleIndex {
   add(items: Iterable<LibraryItem>): void {
     for (const item of items) {
       if (this.titles.has(item.id)) continue;
-      this.index.add(item);
+      this.words?.add(item);
       this.titles.set(item.id, item);
       this.order.set(item.id, this.count++);
     }
     if (this.titles.size > this.capacity) {
       // (the oldest go, down to nine tenths of the capacity, so that this is not done again at every few titles)
       for (const id of [...this.titles.keys()].slice(0, this.titles.size - this.capacity + Math.ceil(this.capacity / 10))) {
-        this.index.discard(id);
+        this.words?.discard(id);
         this.titles.delete(id);
         this.order.delete(id);
       }
@@ -134,7 +136,7 @@ export class TitleIndex {
   /** Takes an item out of the index. */
   remove(id: string): void {
     if (!this.titles.has(id)) return;
-    this.index.discard(id);
+    this.words?.discard(id);
     this.titles.delete(id);
     this.order.delete(id);
   }
@@ -143,11 +145,20 @@ export class TitleIndex {
   discardWhere(predicate: (item: LibraryItem) => boolean): void {
     for (const [id, item] of this.titles) {
       if (predicate(item)) {
-        this.index.discard(id);
+        this.words?.discard(id);
         this.titles.delete(id);
         this.order.delete(id);
       }
     }
+  }
+
+  /** The words of the titles, made now from those that are in if nothing was looked for yet (in the order they came). */
+  private wordsNow(): MiniSearch<LibraryItem> {
+    if (!this.words) {
+      this.words = new MiniSearch<LibraryItem>({ fields: ["title", "joined", "year"], extractField: fieldOf });
+      this.words.addAll([...this.titles.values()]);
+    }
+    return this.words;
   }
 
   /**
@@ -159,6 +170,7 @@ export class TitleIndex {
   find(query: string, tier: Tier = "strict"): LibraryItem[] {
     const q = normalizeQuery(query);
     if (!q || this.titles.size === 0) return [];
+    const index = this.wordsNow();
     const words = q.split(" ");
     const typed = new Set(words);
     const held = words.length > 1 && words.some((word) => word.length >= 4); // (a short word alone is too little to go on)
@@ -170,15 +182,15 @@ export class TitleIndex {
       boostTerm: (term: string) => (typed.has(term) ? 1 : 0.5),
       boostDocument: (id: string) => 1 + 0.1 * (1 - Math.min(1, (this.order.get(id) ?? 0) / Math.max(1, this.count))),
     };
-    if (tier === "strict") return this.index.search({ combineWith: "AND", queries: words.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 5 ? 0.2 : false) }).map((hit) => this.titles.get(hit.id)!);
-    if (tier === "relaxed") return this.index.search({ combineWith: "AND", queries: words.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 4 ? 0.25 : false) }).map((hit) => this.titles.get(hit.id)!);
+    if (tier === "strict") return index.search({ combineWith: "AND", queries: words.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 5 ? 0.2 : false) }).map((hit) => this.titles.get(hit.id)!);
+    if (tier === "relaxed") return index.search({ combineWith: "AND", queries: words.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 4 ? 0.25 : false) }).map((hit) => this.titles.get(hit.id)!);
     const significant = words.filter((word) => !NOISE.has(word) && !COMMON.has(word) && word.length >= 2);
     if (significant.length === 0) return [];
     const need = Math.ceil(significant.length / 2);
     // (a hit counts the words it has, not the spellings of one word it matched: a long word is asked in each of its swapped spellings too)
     const wordOf = new Map<string, number>();
     significant.forEach((word, at) => spellings(word).forEach((spelling) => wordOf.has(spelling) || wordOf.set(spelling, at)));
-    return this.index
+    return index
       .search({ combineWith: "OR", queries: significant.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 5 ? 0.2 : false) })
       .filter((hit) => significant.length === 1 || new Set(hit.queryTerms.flatMap((term) => (wordOf.has(term) ? [wordOf.get(term)!] : []))).size >= need)
       .map((hit) => this.titles.get(hit.id)!);
