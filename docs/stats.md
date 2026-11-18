@@ -41,11 +41,15 @@ the address is read from").
 - **people** is visitors, added up day by day: a person who comes on three days is three. It is **browsers, not human beings**: one
   person on a phone and on a TV is two, two people on one address with the same browser are one, and a phone that changes address in the
   middle of a day (mobile data to Wi-Fi) may be two. It is a good number to watch rise and fall, not one to quote to the unit.
-- **loads** is the page loads that were counted (the phone's page `/` and the TV's `/tv`, with a page the browser already had counting too).
+- **loads** is how many times the page started in a browser (see below), a person's second and third time included.
+- **Until 2026-11-18 the numbers are too high.** Up to that day a visitor was whatever fetched the page `/` or `/tv` and called itself a browser,
+  and most of what does that to a public address is a scanner: on 18 Nov the page was fetched 133 times and started in a browser 19 times, while
+  the count said 29 visitors. From then on a visitor is a browser in which the page ran. The earlier days were left as they were counted.
 
 ## How a visitor is counted, and what is kept
 
-The server looks at a page load of `/` or `/tv` once it has been answered, and makes **a hash of the address it came from, the browser's name and the browser's
+A visitor is **a browser in which the page started**. The first thing the page does when it runs is ask who is signed in (`GET /api/me`); the server
+looks at that question once it has been answered (not at the page's file, which a program can fetch without running anything), and makes **a hash of the address it came from, the browser's name and the browser's
 language, salted with a secret made for the day** (sha256, cut to 16 characters). The hash only tells a second load of the same day from a new visitor. At the end
 of the day the hashes are deleted together with the salt (a second after midnight UTC while the server is running, otherwise as it starts or at the next
 visit), so what was kept cannot be turned back into an address and cannot tell today's visitor from yesterday's. What stays is the number of the day.
@@ -63,9 +67,11 @@ nothing to another service. **Outside the counter, and not touched by it:** the 
 keeps it for a short while) and the records of Render and Cloudflare, which any site behind them has. A day stops adding new visitors at 20,000 (the loads go on
 being counted), so a flood of made-up browsers cannot grow what is kept.
 
-**Not counted:** anything that is not a person opening a page (files of the site, the API, a request that does not ask for a page, a page in a frame,
-a prefetch), a path the site does not have, robots that say what they are (search engines, link previews, uptime checks, scripts), and **people whose browser
-sends Do Not Track or Global Privacy Control**. A robot that calls itself a browser is counted; there is no telling it apart.
+**Not counted:** a page that was fetched and never ran (a scanner, a link preview, a prefetch), the files of the site and the rest of the API, the
+question asked any other way than by the site's own page (from another site, typed as an address), robots that say what they are (search engines,
+link previews, uptime checks, scripts), and **people whose browser sends Do Not Track or Global Privacy Control**. A robot that runs the whole page
+in a real browser and does not say what it is is still counted; there is no telling it apart. A screen that stays open for days (a TV) is a
+visitor on the day its page started, not on the days after.
 
 **Where the address is read from.** From the connection, through the proxies in front of the server: `TRUST_PROXY` says how many there are (1 on Render), and
 Cloudflare's addresses and the ones inside a host's own network are passed over as well, so the visitor is the first address of `X-Forwarded-For`, read from the
