@@ -60,7 +60,7 @@ export interface StatsRoutesOptions {
 
 /** The owner's stats, `GET /api/admin/stats?days=30`: how many accounts and how many visitors, by day (see `summary.ts`), and how the server read the address of the request that asked. Counts only; the team's token and nothing else. */
 export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, { adminToken, accounts, visits, unavailable, registration = "open", maxAccounts = DEFAULT_MAX_ACCOUNTS, now = Date.now }) => {
-  const team = teamGuard(adminToken);
+  const team = teamGuard(adminToken, "team.stats");
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
   });

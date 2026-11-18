@@ -19,7 +19,7 @@ import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import type { NameBook } from "./library/names";
-import { RateLimiter } from "./accounts/rateLimit";
+import { keepOverRestart, RateLimiter } from "./accounts/rateLimit";
 import { playKeyOf, UnavailableStore } from "./library/unavailable";
 import { MemoryPersistence } from "./accounts/persistence";
 import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
@@ -301,6 +301,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // The owner's page (stats/owner.ts): its own key, its own answer. Who is here now and how the server answers are counted only while there is a key to read them with.
   if (options.ownerStatsToken && options.ownerStatsToken.length >= FEEDBACK_TOKEN_MIN) {
     const live = new LiveCount();
+    keepOverRestart("stats.hours", live);
     countLive(app, live);
     // (Seconds of film, as the profiles' progress comes in: one number a day, kept with the visitors'.)
     if (accounts && options.visits) accounts.onWatched((seconds) => options.visits?.watched(seconds));
@@ -322,7 +323,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   if (!proxyVideo && proxyExemptHosts.length > 0) app.log.info(`The proxy carries no film, except from: ${proxyExemptHosts.join(", ")}.`);
   // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
   fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo });
-  const nameLookups = new RateLimiter(options.nameLookupsPer10Min ?? 2400, 10 * 60 * 1000);
+  const nameLookups = new RateLimiter(options.nameLookupsPer10Min ?? 2400, 10 * 60 * 1000, undefined, "library.nameLookups");
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
   const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
@@ -371,7 +372,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // reports and whether a new one would be turned away, and so on told anyone how the site was used and when its feedback box was full. A
   // request that brings a wrong token gets the team guard's 401 (slowed per address), not the short answer, so a mistyped token is noticed.
   // (A server with no team token has no team's side: there, any request gets the short answer.)
-  const teamOnly = teamGuard(options.feedbackAdminToken);
+  const teamOnly = teamGuard(options.feedbackAdminToken, "team.site");
   const hasTeam = (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN;
   app.get("/api/health", async (request, reply) => {
     reply.header("Cache-Control", "no-store");

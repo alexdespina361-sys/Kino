@@ -61,6 +61,33 @@ describe("how the server answered, by the hour", () => {
     expect(hours[2]).toMatchObject({ requests: 1 });
   });
 
+  it("hands its hours over a restart and takes them back, added to what the new life counted; who is here is not handed over", () => {
+    let clock = Date.parse("2026-11-18T10:20:00Z");
+    const first = new LiveCount(() => clock);
+    first.seen("203.0.113.7", PHONE, true);
+    for (const status of [200, 200, 401, 429, 500]) first.answered(status);
+    clock += HOUR;
+    first.answered(200);
+    const handed = JSON.parse(JSON.stringify(first.kept())) as unknown;
+    expect(JSON.stringify(handed)).not.toContain("203.0.113");
+
+    clock += 30_000;
+    const second = new LiveCount(() => clock);
+    second.answered(429); // (already counting when what was kept is given back)
+    second.restore(handed);
+    expect(second.now()).toEqual({ people: 0, signedIn: 0, guests: 0 });
+    expect(second.answers(2)).toEqual([
+      { hour: Date.parse("2026-11-18T10:00:00Z"), requests: 5, refused: 1, limited: 1, failed: 1 },
+      { hour: Date.parse("2026-11-18T11:00:00Z"), requests: 2, refused: 0, limited: 1, failed: 0 },
+    ]);
+
+    // What no server wrote is let go: an hour that is not an hour, one from the future, one too old, numbers that are none.
+    const third = new LiveCount(() => clock);
+    third.restore([[clock + 5, 9, 9, 9, 9], [Date.parse("2026-11-19T10:00:00Z"), 9, 0, 0, 0], [Date.parse("2026-11-10T10:00:00Z"), 9, 0, 0, 0], "x", [Date.parse("2026-11-18T10:00:00Z"), -4, "many", 1.5, null]]);
+    expect(third.answers(HOURS_KEPT).reduce((all, each) => all + each.requests + each.refused + each.limited + each.failed, 0)).toBe(0);
+    third.restore({ not: "a list" });
+  });
+
   it("keeps two days of hours and no more", () => {
     let clock = Date.parse("2026-11-18T10:20:00Z");
     const live = new LiveCount(() => clock);

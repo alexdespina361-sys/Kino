@@ -22,7 +22,7 @@ export interface SubsyncStats {
  */
 export function subsyncRoutes(app: FastifyInstance, { store, stats }: { store: SubsyncStore; stats: SubsyncStats }): void {
   const reads = new RateLimiter(120, MINUTE);
-  const writes = new RateLimiter(60, 10 * MINUTE);
+  const writes = new RateLimiter(60, 10 * MINUTE, undefined, "subsync.writes");
   const tooMany = (reply: FastifyReply, waitMs: number) => {
     const seconds = Math.max(1, Math.ceil(waitMs / 1000));
     return reply.header("Retry-After", seconds).code(429).send({ error: "rate_limited", retryAfter: seconds });

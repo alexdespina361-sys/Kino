@@ -146,7 +146,7 @@ export function ownerView(options: Omit<OwnerStatsOptions, "token" | "origin">, 
 
 export const ownerStatsRoutes: FastifyPluginAsync<OwnerStatsOptions> = async (app, options) => {
   const allowed = originOf(options.origin);
-  const keyed = teamGuard(options.token);
+  const keyed = teamGuard(options.token, "owner.stats");
   /** Tells a browser that the named page may read the answer (and only that one). */
   const cors = (request: FastifyRequest, reply: Parameters<typeof keyed>[1]) => {
     reply.header("Cache-Control", "no-store");

@@ -206,7 +206,7 @@ export function stickerRoutes(app: FastifyInstance, helpers: FriendRouteHelpers,
  *   DELETE /api/admin/stickers?by=<id>    take down every one a profile or an account made
  */
 export function stickerAdminRoutes(app: FastifyInstance, options: { stickers: StickerBook; adminToken: string | undefined }): void {
-  const team = teamGuard(options.adminToken);
+  const team = teamGuard(options.adminToken, "team.stickers");
   const { stickers } = options;
 
   app.get("/api/admin/stickers", async (request, reply) => {

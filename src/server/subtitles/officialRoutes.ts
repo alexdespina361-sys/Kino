@@ -28,8 +28,8 @@ export function officialRoutes(
   app: FastifyInstance,
   { officials, adminToken, fetchFile }: { officials: Officials; adminToken: string | undefined; fetchFile: (track: string) => Promise<string | undefined> },
 ): void {
-  const offers = new RateLimiter(20, 60 * MINUTE);
-  const team = teamGuard(adminToken);
+  const offers = new RateLimiter(20, 60 * MINUTE, undefined, "official.offers");
+  const team = teamGuard(adminToken, "team.official");
 
   app.get<{ Params: { file: string } }>("/api/subtitles/official/:file", async (request, reply) => {
     const match = /^([0-9a-f]{20})-([0-9a-z]{1,12})\.vtt$/.exec(request.params.file);

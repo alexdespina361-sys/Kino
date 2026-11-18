@@ -298,13 +298,13 @@ function redirectFor(config: GoogleConfig, request: FastifyRequest): string | un
 export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, config: GoogleConfig | undefined): { here(request: FastifyRequest): boolean } {
   const { store } = helpers;
   const flows = new Map<string, Flow>();
-  const startsByIp = new RateLimiter(30, FLOW_MS);
+  const startsByIp = new RateLimiter(30, FLOW_MS, undefined, "google.startsByIp");
   // (The app's: see `AppTrip`.)
   const tickets = new Map<string, { mode: "link" | "reauth"; device: DeviceKind; next: "/" | "/tv"; accountId: string; sessionId: string; challenge: string; at: number }>();
   const handoffs = new Map<string, Handoff>();
-  const claimsByIp = new RateLimiter(30, FLOW_MS);
+  const claimsByIp = new RateLimiter(30, FLOW_MS, undefined, "google.claimsByIp");
   // (Each ticket is counted, by the address and by the account: one account could otherwise make so many that the tickets of others are pushed out, the judge, 17 Nov.)
-  const ticketsByAccount = new RateLimiter(10, FLOW_MS, () => store.clock());
+  const ticketsByAccount = new RateLimiter(10, FLOW_MS, () => store.clock(), "google.ticketsByAccount");
 
   app.post<{ Body: Record<string, unknown> }>("/api/auth/google/app-ticket", async (request, reply) => {
     const auth = helpers.authenticate(request);

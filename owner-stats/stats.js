@@ -131,7 +131,7 @@
     text(
       "answers-sum",
       hours.length
-        ? number(sum.requests) + " answers · " + number(sum.refused) + " turned away · " + number(sum.limited) + " told to wait · " + number(sum.failed) + " server failures (kept in memory: a restart begins again)"
+        ? number(sum.requests) + " answers · " + number(sum.refused) + " turned away · " + number(sum.limited) + " told to wait · " + number(sum.failed) + " server failures"
         : "Not counted on this server.",
     );
     var bars = $("bars");

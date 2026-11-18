@@ -169,9 +169,9 @@ const tooManyOpen = (reply: FastifyReply) => reply.header("Retry-After", 3600).c
  * (`FEEDBACK_ADMIN_TOKEN`) as a Bearer; otherwise the answer is sent. Without a token that is long enough there is no team's side, and the answer is a
  * 404 (there is nothing to find). Wrong tries are slowed per address.
  */
-export function teamGuard(adminToken: string | undefined): (request: FastifyRequest, reply: FastifyReply) => boolean {
+export function teamGuard(adminToken: string | undefined, kept?: string): (request: FastifyRequest, reply: FastifyReply) => boolean {
   const tokenDigest = typeof adminToken === "string" && adminToken.length >= FEEDBACK_TOKEN_MIN ? digest(adminToken) : undefined;
-  const triedToken = new RateLimiter(10, 15 * MINUTE);
+  const triedToken = new RateLimiter(10, 15 * MINUTE, undefined, kept); // (`kept`: the name the wrong tries are kept under over a restart, rateLimit.ts)
   return (request, reply) => {
     if (!tokenDigest) {
       void reply.code(404).send({ error: "NOT_FOUND" });
@@ -198,13 +198,13 @@ export function teamGuard(adminToken: string | undefined): (request: FastifyRequ
  * kept there; the server keeps only a hash of it), and a signed-in account sees its reports on all of its devices.
  */
 export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (app, { store, adminToken, accountOf, sendsPer10Min = 6 }) => {
-  const perAddress = new RateLimiter(sendsPer10Min, 10 * MINUTE);
-  const perAddressDay = new RateLimiter(Math.max(40, sendsPer10Min * 7), DAY);
-  const everyone = new RateLimiter(Math.max(200, sendsPer10Min * 30), HOUR);
-  const replies = new RateLimiter(30, 10 * MINUTE);
+  const perAddress = new RateLimiter(sendsPer10Min, 10 * MINUTE, undefined, "feedback.perAddress");
+  const perAddressDay = new RateLimiter(Math.max(40, sendsPer10Min * 7), DAY, undefined, "feedback.perAddressDay");
+  const everyone = new RateLimiter(Math.max(200, sendsPer10Min * 30), HOUR, undefined, "feedback.everyone");
+  const replies = new RateLimiter(30, 10 * MINUTE, undefined, "feedback.replies");
   const reads = new RateLimiter(120, MINUTE);
   /** Every try to send, whatever comes of it, counted before the body is read: a request that is turned away has cost what it cost to read. */
-  const tries = new RateLimiter(Math.max(30, sendsPer10Min * 5), 10 * MINUTE);
+  const tries = new RateLimiter(Math.max(30, sendsPer10Min * 5), 10 * MINUTE, undefined, "feedback.tries");
   /**
    * The most reports one address may have open at once (see `TooManyOpen`): as many as it may send in ten minutes. A person has a few things to say
    * before anybody has looked at the first, so this is far above what one needs, and an address cannot fill the room with reports nobody has dealt with.
@@ -359,7 +359,7 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
 
   /* ------------------------------ the team's side ------------------------------ */
 
-  const team = teamGuard(adminToken);
+  const team = teamGuard(adminToken, "team.feedback");
 
   app.get<{ Querystring: { status?: string; kind?: string; area?: string; q?: string; waiting?: string; limit?: string } }>("/api/admin/feedback", async (request, reply) => {
     if (!team(request, reply)) return;

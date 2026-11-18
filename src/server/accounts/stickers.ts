@@ -110,11 +110,11 @@ export class StickerBook {
      */
     readonly options: { on: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number; writeMs?: number; siteWorkMs?: number; log?: { warn(message: string): void } },
   ) {
-    this.made = new RateLimiter(PERSONAL_STICKER.madePerDay, DAY, () => host.now());
-    this.tried = new RateLimiter(MOVING_STICKER.triesPerDay, DAY, () => host.now());
+    this.made = new RateLimiter(PERSONAL_STICKER.madePerDay, DAY, () => host.now(), "stickers.madePerDay");
+    this.tried = new RateLimiter(MOVING_STICKER.triesPerDay, DAY, () => host.now(), "stickers.triedPerDay");
     this.pictureReads = new RateLimiter(PERSONAL_STICKER.picturesPerMinute, 60_000, () => host.now());
     this.arrivals = new RateLimiter(PERSONAL_STICKER.sitePerMinute, 60_000, () => host.now());
-    this.work = new WorkBudget(options.siteWorkMs ?? PERSONAL_STICKER.siteWorkMsPerHour, 3600_000, () => host.now());
+    this.work = new WorkBudget(options.siteWorkMs ?? PERSONAL_STICKER.siteWorkMsPerHour, 3600_000, () => host.now(), "stickers.siteWork");
   }
 
   /**

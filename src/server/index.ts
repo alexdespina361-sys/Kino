@@ -1,6 +1,8 @@
 import "./loadEnv"; // (first: the settings a PC keeps in .env.local are read before the modules that look at them)
+import path from "node:path";
 import { googleFromEnv } from "./accounts/google";
 import { persistenceFromEnv } from "./accounts/persistence";
+import { keepLimitsIn, LimitKeeper } from "./accounts/rateLimit";
 import { AccountStore } from "./accounts/store";
 import { movingStickersOn, personalStickersMaxBytes, personalStickersOn, stickerFilesFor } from "./accounts/stickerFiles";
 import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
@@ -26,6 +28,11 @@ const port = Number(process.env.PORT ?? 8787);
 if (process.env.LIBRARY !== "off" && !process.env.TMDB_API_KEY)
   console.warn("TMDB_API_KEY is not set: the movie database answers nothing without a key, so the library has no titles (the box: /etc/kino-web.env; a PC: .env.local).");
 const host = process.env.HOST ?? "0.0.0.0";
+
+// What the limiters counted (wrong passwords, sign-ups, the day's allowances) is kept over a restart, so that a push forgives nobody: one small file
+// next to the rest of what is kept, written every minute and when the server stops (accounts/rateLimit.ts). Before anything that makes a limiter.
+const limits = process.env.DATA_DIR === "memory" ? undefined : LimitKeeper.open(path.resolve(process.env.DATA_DIR ?? "data", "limits.json"), (message) => console.warn(message));
+keepLimitsIn(limits);
 
 /** How many proxies sit in front of this server. A host like Render has one; on a PC there is none. `TRUST_PROXY` overrides: a number, `true` or `false`. */
 function trustProxy(env: NodeJS.ProcessEnv): boolean | number {
@@ -154,6 +161,9 @@ app.log.info(ownerStatsToken && ownerStatsToken.length >= FEEDBACK_TOKEN_MIN ? `
 app.log.info(google ? `Google sign-in is on at ${google.redirectUris.map((address) => new URL(address).host).join(", ")}.` : "Google sign-in is off.");
 app.log.info(fcm ? `The app's notifications are on (Firebase project ${fcm.projectId}).` : "The app's notifications are off.");
 
+app.log.info(limits ? `Limits are kept over a restart (${limits.names.length} of them).` : "Limits are kept in memory only.");
+limits?.every(60_000);
+
 await app.listen({ port, host });
 
 // A host stops a server with SIGTERM (a free Render instance does when it has been idle, and at every deploy): write what
@@ -161,6 +171,8 @@ await app.listen({ port, host });
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     app.log.info(`${signal}: saving and stopping.`);
+    limits?.stop();
+    limits?.save();
     setTimeout(() => process.exit(1), 8000).unref();
     app.close().then(
       () => process.exit(0),
