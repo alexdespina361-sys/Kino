@@ -12,6 +12,7 @@ import {
   trackLabel, OFFICIAL_PATH
 } from "../../shared";
 import { reloadForScript, scriptIsMissing } from "../shared/scriptRescue";
+import { thisTier, type Tier } from "../role";
 import { isHeld, markNoLanguage, release } from "../subsync/hold";
 import type { SyncStatus } from "../subsync/session";
 import { canCapture, ElementTap } from "../subsync/capture";
@@ -107,14 +108,29 @@ export const PARTY_BUFFER_BYTES = 32 * 1024 * 1024;
 export const LONE_PROXY_BUFFER_AHEAD_S = 90;
 export const LONE_PROXY_BUFFER_BYTES = 48 * 1024 * 1024;
 
-export function bufferPolicy(inParty: boolean, isProxied = false): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number } {
-  if (inParty) {
-    return { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES };
-  }
-  if (isProxied) {
-    return { maxBufferLength: 30, maxMaxBufferLength: LONE_PROXY_BUFFER_AHEAD_S, maxBufferSize: LONE_PROXY_BUFFER_BYTES };
-  }
-  return { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
+export const LITE_BUFFER = { maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 32 * 1024 * 1024 } as const;
+export const BACK_BUFFER_S: Record<Tier, number> = { full: 90, lite: 30 };
+
+export function bufferPolicy(inParty: boolean, isProxied = false, tier: Tier = "full"): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number; backBufferLength: number } {
+  const base = inParty
+    ? { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES }
+    : isProxied
+      ? { maxBufferLength: 30, maxMaxBufferLength: LONE_PROXY_BUFFER_AHEAD_S, maxBufferSize: LONE_PROXY_BUFFER_BYTES }
+      : { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
+  const capped =
+    tier === "lite"
+      ? { maxBufferLength: Math.min(base.maxBufferLength, LITE_BUFFER.maxBufferLength), maxMaxBufferLength: Math.min(base.maxMaxBufferLength, LITE_BUFFER.maxMaxBufferLength), maxBufferSize: Math.min(base.maxBufferSize, LITE_BUFFER.maxBufferSize) }
+      : base;
+  return { ...capped, backBufferLength: BACK_BUFFER_S[tier] };
+}
+
+let warmed = false;
+export function warmPlayer(): void {
+  if (warmed || (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+  warmed = true;
+  const fetchIt = () => void import("hls.js").catch(() => (warmed = false));
+  if (typeof requestIdleCallback === "function") requestIdleCallback(fetchIt, { timeout: 3000 });
+  else setTimeout(fetchIt, 1500);
 }
 
 export const DIRECT_START_MS = 12_000;
@@ -342,7 +358,7 @@ export class PlayerEngine {
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        ...bufferPolicy(this.inParty, usesWebsiteProxy(src)),
+        ...bufferPolicy(this.inParty, usesWebsiteProxy(src), thisTier()),
         lowLatencyMode: false,
         preserveManualLevelOnError: true,
         ...(adaptive ? { startLevel: 0 } : {}),
@@ -543,7 +559,7 @@ export class PlayerEngine {
     this.inParty = inParty;
     if (this.hls) {
       const isProxied = usesWebsiteProxy(this.hls.url || this.video.src || location.href);
-      Object.assign(this.hls.config, bufferPolicy(inParty, isProxied));
+      Object.assign(this.hls.config, bufferPolicy(inParty, isProxied, thisTier()));
     }
   }
 
