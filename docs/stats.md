@@ -80,6 +80,50 @@ gets them is a say in a rate limit and a count, no more.
 **Turning it off:** `VISITOR_COUNT=off` on the host (and restart): nobody is counted, the stats say so, and what was counted stays until it is deleted
 (`drop table kino_visits` in the database, or the file `visits.json`).
 
+## The owner's page
+
+A page the owner opens in a browser (the owner, 18 Nov 2026: "a webpage that is hosted on github, where I can see: active users/guests, accounts
+created, movies/content watched (minutes), feedback received", and "the base for future real time security"). The page is three files in
+`owner-stats/` and holds no numbers: it asks the site, `GET /api/owner/stats?days=30`, every 30 seconds while it is looked at.
+
+**What it shows**
+
+- **Here now**: browsers that asked the site something in the last five minutes, how many of them brought a session (signed in) and how many did not
+  (guests), and how many screens and phones are connected. Kept in memory only (`stats/live.ts`): a restart begins again. A browser is told from another
+  by a hash of its address and its name with a secret made at the start of the server; nothing but the hash is held, for a quarter of an hour.
+  Programs that say what they are, and browsers that send "Do Not Track" or "Global Privacy Control", are not among the people.
+- **Accounts** and **Visitors**: the numbers of the command above.
+- **Watched**: minutes of film played by signed-in profiles, all together, one number a day (kept with the visitors'). It is counted as a profile's
+  progress comes in: how far a film's card moved on, when that is no more than the time that went by (a jump ahead is no watching), and never more than
+  the time that went by on the server's clock. A guest's watching is kept on the guest's device and never reaches the server, so it is not in the number.
+  Nothing is counted for the time before the key was set.
+- **Feedback**: how many reports, how many are open, how many nobody has touched, and the ten newest: kind, area, how it stands and the heading (90
+  characters). Never the words of a report or who sent it: those are the team's (`scripts/feedback.mjs`).
+- **How the server answered** in each of the last 24 hours: answers, turned away (401, 403), told to wait (429), the server's own failures (500 and
+  over). An hour that has far more of one of these than the usual hour (five times, and thirty at least) is named at the top of the page. It names
+  nothing else and stops nothing by itself: it is where a person, or later a program, starts to look.
+
+**The key.** `OWNER_STATS_TOKEN` on the server (24 characters at least; `openssl rand -base64 30` makes one). It reads this one answer and nothing
+else: not the reports' words, not the team's side of anything, and it changes nothing. It is not the team's token and must not be the same one. Without
+it the address is not there (404) and none of the above is counted. A wrong key is slowed like the team's: ten from one address close the door for a
+quarter of an hour. The page keeps the key in the browser it was typed in (`localStorage`), and has a button that forgets it.
+
+**The page somewhere else.** A browser lets a page of another site read the answer only if the server names that page's origin:
+`OWNER_STATS_ORIGIN=https://<name>.github.io` (an origin: nothing after the name). One origin, exactly; no `*`. The key is what keeps the numbers, the
+origin only says whose script may read them, so a GitHub page of somebody else cannot, even with the key, from a browser. The page itself is locked
+down (`Content-Security-Policy`: its own script and style, and connections only), writes everything it shows as text, and sends no referrer.
+
+**Putting it up on GitHub Pages** (three steps, the owner's: none is done until the owner says so)
+
+1. On the box, in `/etc/kino-web.env`: `OWNER_STATS_TOKEN=...` and `OWNER_STATS_ORIGIN=https://<github-name>.github.io`, then restart `kino-web`.
+2. In the repository's *Settings → Pages*, *Source: GitHub Actions*. Copy `owner-stats/pages-workflow.example.yml` to
+   `.github/workflows/owner-stats-pages.yml` (it publishes the folder `owner-stats/` and nothing else) and run it from the *Actions* tab.
+3. Open `https://<github-name>.github.io/<repository>/`, type the site and the key.
+
+The repository is public, and so is the page: it is an empty frame until a key is typed. Nothing secret is in it.
+
+**Not tried:** the page on GitHub Pages itself and the server's settings on the box (it is off there until the owner sets the key). Tried: the answer,
+the key, the origin rule and the first question a browser asks (`OPTIONS`), in tests; what is counted as a person; the minutes, with clocks set wrong.
 ## The notice
 
 The app has no privacy text of its own (nothing for the accounts, the history or the feedback either). The visit count has a notice, `public/privacy.html`, served
@@ -99,4 +143,5 @@ link it from wherever a privacy text goes. Whether it is enough is the owner's c
 ## Where it is
 
 `src/server/stats/visits.ts` (the counter and where it is kept), `summary.ts` (the numbers), `routes.ts` (the hook that counts and `/api/admin/stats`),
+`live.ts` (who is here now, the answers by the hour), `owner.ts` (`/api/owner/stats`), `owner-stats/` (the page),
 `AccountStore.usage()` in `src/server/accounts/store.ts` (the accounts' side, numbers and moments only), `scripts/feedback.mjs` (`stats`) and `scripts/stats.mjs`.

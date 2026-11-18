@@ -130,6 +130,10 @@ export class Hub {
   private readonly controllers = new Map<string, WebSocket>(); // controllerId -> socket
   /** Every page of each phone that is open, the one opened last at the end: a phone may have more than one (`controllers` has the one that answers for it; when that closes, the one before takes its place). */
   private readonly phoneSockets = new Map<string, Set<WebSocket>>(); // controllerId -> sockets
+  /** How many screens and how many phones are connected right now (the owner's stats: a count, never which). */
+  connected(): { tvs: number; phones: number } {
+    return { tvs: this.tvs.size, phones: this.controllers.size };
+  }
   /** Latest PLAY_URL per device, so a slow resolve can't overwrite a newer choice (or a STOP). */
   private readonly resolveSeq = new Map<string, number>();
   /** The link each TV last had looked up (the address of the page, which is what a result is kept by), to know which one a failure on that TV is about. */
