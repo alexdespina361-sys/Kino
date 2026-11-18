@@ -45,9 +45,14 @@ export interface AccountRoutesOptions {
   screens?: ScreenProofs;
   /** Hands a reported chat to the team (see feedback/chatReport.ts). Without it a chat cannot be reported. */
   chatReport?: ChatReporter;
+  /** The notices of new episodes and films of what a profile watches (server/titleNotices). Without it there are none. */
+  titleNotices?: TitleNoticeBook;
   /** Signing in with Google (see google.ts). Without it there is none. */
   google?: GoogleConfig;
 }
+
+import type { TitleNoticeBook } from "../titleNotices/book";
+import { titleNoticeRoutes } from "../titleNotices/routes";
 
 export const COOKIE = "kino_session";
 const MINUTE = 60_000;
@@ -464,4 +469,6 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   // (A small chat between two friends: the same helpers, since who is asking and who is a friend are decided the same way.)
   chatRoutes(app, friendHelpers, { chat: store.chats, stickers: store.stickers, ...(options.chatReport ? { report: options.chatReport } : {}) });
   stickerRoutes(app, friendHelpers, store.stickers);
+  // (What is new of the titles a profile watches: server/titleNotices. Without a book there is none to tell of.)
+  titleNoticeRoutes(app, friendHelpers, options.titleNotices);
 };

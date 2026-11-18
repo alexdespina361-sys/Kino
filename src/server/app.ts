@@ -26,6 +26,7 @@ import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
 import { AppReleases, appReleaseRoutes } from "./push/appRelease";
 import type { PushSender } from "./push/fcm";
 import { PushHub } from "./push/push";
+import type { TitleNoticeBook } from "./titleNotices/book";
 import { isOwnPage, looksLikePage, requestForLog } from "./requestLog";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
@@ -89,6 +90,8 @@ export interface AppOptions {
   librarySources?: LibrarySource[];
   /** Where the names of titles in a viewer's language come from (library/names.ts). None by default: nothing here reaches the network unless asked. */
   names?: NameBook;
+  /** The notices of new episodes and films of what a profile watches (titleNotices/book.ts). None by default: nothing here reaches the network unless asked. */
+  titleNotices?: TitleNoticeBook;
   /** How many titles an address may have looked up for their names in ten minutes, of those not kept yet (2400 unless set). */
   nameLookupsPer10Min?: number;
   /** The clock the library keeps its time by; tests move it. */
@@ -189,6 +192,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(screens ? { screens } : {}),
       // (A chat reported by one of the two friends goes to the team as feedback does. The store is made below, after the accounts: it is looked at when a report is sent.)
       chatReport: (report) => chatReporter(feedback)(report),
+      ...(options.titleNotices ? { titleNotices: options.titleNotices } : {}),
       // (What friends are invited to: the party a code is open with, and the code that party is joined with now, for a friend who was invited to it.)
       parties: {
         partyOf: (code) => registry.partyOfCode(code),
@@ -307,6 +311,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const stickersOn = accounts?.stickers.on === true;
   // The Android app (docs/android-app.md): its notifications go out when the host has a Firebase key, and its builds are offered when the host keeps them.
   const pushHub = accounts ? new PushHub(accounts, options.push, app.log) : undefined;
+  // What is new of the titles a profile watches: looked for once the site is up, and a profile's phone is told through the hub.
+  if (options.titleNotices) {
+    const titleNotices = options.titleNotices;
+    titleNotices.onTell((profile) => void pushHub?.titleNotice(profile));
+    app.addHook("onListen", async () => titleNotices.start());
+    app.addHook("onClose", async () => titleNotices.close());
+  }
   const releases = options.androidAppDir ? new AppReleases(options.androidAppDir, pushHub, app.log) : undefined;
   if (releases) {
     await releases.start();

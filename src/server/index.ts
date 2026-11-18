@@ -10,6 +10,9 @@ import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
 import { createNameBook } from "./library/names";
 import { UnavailableStore, unavailablePersistenceFor } from "./library/unavailable";
+import { TitleNoticeBook, titleNoticePersistenceFor } from "./titleNotices/book";
+import { followersOf } from "./titleNotices/followers";
+import { tmdbTitleSource } from "./titleNotices/source";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
 import { VisitCounter, visitsPersistenceFor } from "./stats/visits";
@@ -68,6 +71,16 @@ const unavailable = await UnavailableStore.open({ persistence: unavailablePersis
   return undefined;
 });
 
+// What is new of the titles a profile watches (a new episode, a new season, a new film of a series: src/server/titleNotices) is looked for where there is a library,
+// and kept next to the accounts. TITLE_NOTICES=off is the kill switch. A home that cannot be opened must not take the site down with it: then there are none.
+const titleNotices =
+  process.env.LIBRARY === "off" || /^(0|off|false|no)$/i.test(process.env.TITLE_NOTICES ?? "")
+    ? undefined
+    : await TitleNoticeBook.open({ persistence: titleNoticePersistenceFor(persistence, kind), source: tmdbTitleSource(), followers: () => followersOf(accounts), log: console }).catch((error: Error) => {
+        console.warn(`The notices of new episodes could not be opened (${error.message}); there are none until the next start.`);
+        return undefined;
+      });
+
 // "Continue with Google" is on once GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS are all set (docs/google-sign-in.md); what is wrong with them is said, never the secret.
 const google = googleFromEnv(process.env, (message) => console.warn(message));
 
@@ -98,6 +111,7 @@ const app = await buildApp({
   feedback,
   ...(visits ? { visits } : {}),
   ...(unavailable ? { unavailable } : {}),
+  ...(titleNotices ? { titleNotices } : {}),
   ...(feedbackAdminToken ? { feedbackAdminToken } : {}),
   ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).

@@ -11,6 +11,7 @@ import { describeNews, isUrgent, known, whatsNew, type Known } from "./news";
 import { chatMark, friendOnline, LIVELY_FOR_MS, lookPace, QUIET_MS, stirring, WAKE_GAP_MS, type ChatMark } from "./pace";
 import { duePlans, inboxToShow, nextPlanMoment, whenText } from "./plans";
 import { withoutOnline } from "./stale";
+import { useTitleNoticeLooks } from "../titleNotices/notices";
 
 /** The longest a timer can be set for (a plan can be thirty days away; a longer wait is made of several). */
 const LONGEST_WAIT_MS = 2_000_000_000;
@@ -106,6 +107,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
   const { settings } = useProfileData();
   const profileId = account.me && account.profile ? account.profile.id : undefined;
   const on = profileId !== undefined && friendChoices(settings).friends; // (on for everybody: see friendChoices)
+  // (What is new of the titles the profile watches is asked for beside the friends, whether they are on or not: it is the bell's too.)
+  useTitleNoticeLooks();
 
   const [state, setState] = useState<FriendsState | null>(null);
   const [status, setStatus] = useState<FriendsValue["status"]>("off");

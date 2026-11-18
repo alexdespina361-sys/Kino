@@ -1694,16 +1694,14 @@ test.describe("movies, series, and the rest of the menu", () => {
     expect(await tv.evaluate(() => JSON.parse(localStorage.getItem("kino.cardSections") ?? "{}"))).toEqual({ "tv-46260": "anime" });
   });
 
-  test("Categories keeps the categories of the cartoons and of the anime after those of the films and the series, each saying which", async ({ browser }) => {
+  test("Categories keeps the categories of the cartoons and of the anime after those of the films and the series, each a tile with its name only", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(animatedLibrary));
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
     await choose(tv, "rail-categories");
     const names = () => tv.getByTestId("tv-category-tile").evaluateAll((all) => all.map((tile) => tile.getAttribute("title")));
     expect(await names()).toEqual(["Action", "Comedy", "Horror", "Romance", "Thriller", "Western", "Crime", "Drama", "Toon Films", "Toon Shows", "Manga Films", "Manga Shows"]);
-    await expect(tv.getByTestId("tv-category-tile").nth(0)).toContainText("Movies");
-    await expect(tv.getByTestId("tv-category-tile").nth(6)).toContainText("Series");
-    await expect(tv.getByTestId("tv-category-tile").nth(8)).toContainText("Cartoons");
-    await expect(tv.getByTestId("tv-category-tile").nth(10)).toContainText("Anime");
+    // (A tile says its name and nothing under it since 18 Nov 2026: the few whose name did not say their section had a second line, which read as a leftover.)
+    for (const [at, section] of [[0, "Movies"], [6, "Series"], [8, "Cartoons"], [10, "Anime"]] as const) await expect(tv.getByTestId("tv-category-tile").nth(at)).not.toContainText(section);
   });
 
   test("Movies and Series are pages of their own, each with only its kind", async ({ browser }) => {
@@ -1759,7 +1757,7 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("tv-hero-title")).toHaveText("Reel 1");
   });
 
-  test("Categories lists every one, those of films first and then those of series, each saying which; one opens as a grid, and Back returns to the list", async ({ browser }) => {
+  test("Categories lists every one, those of films first and then those of series; one opens as a grid, and Back returns to the list", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
     await choose(tv, "rail-categories");
@@ -1768,8 +1766,8 @@ test.describe("movies, series, and the rest of the menu", () => {
     const names = () => tv.getByTestId("tv-category-tile").evaluateAll((all) => all.map((tile) => tile.getAttribute("title")));
     expect(await names()).toEqual(["Action", "Comedy", "Horror", "Romance", "Thriller", "Western", "Crime", "Drama"]); // (the library lists them as films and series alternate)
     await expect(tv.getByTestId("tv-category-tile").first()).toBeFocused();
-    await expect(tv.getByTestId("tv-category-tile").first()).toContainText("Movies");
-    await expect(tv.getByTestId("tv-category-tile").nth(6)).toContainText("Series");
+    await expect(tv.getByTestId("tv-category-tile").first()).not.toContainText("Movies"); // (a tile has its name only)
+    await expect(tv.getByTestId("tv-category-tile").nth(6)).not.toContainText("Series");
     for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowRight"); // five to a row
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-category-tile").nth(7)).toBeFocused(); // (the second row has three)

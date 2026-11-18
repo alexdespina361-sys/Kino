@@ -42,6 +42,8 @@ final class Notices {
             case "plan": return "{name} asks when you can watch together";
             case "planYes": return "{name} said yes to your plan";
             case "planNo": return "{name} can't make your plan";
+            // (Not from a friend: something new of a title the profile watches. The site never says which.)
+            case "title": return "Something you watch has a new episode or film";
             default: return "";
         }
     }
@@ -76,12 +78,15 @@ final class Notices {
     }
 
     static void friend(Context context, String kind, String name, String friend) {
-        String english = english(kind);
-        if (english.isEmpty() || !allowed(context)) return;
+        // (A kind this version has no words for is shown in the site's words, when the site gave some: a kind added to the site later needs no new app.
+        // One that neither knows is not shown.)
+        String words = word(context, kind, english(kind));
+        if (words.isEmpty() || !allowed(context)) return;
         channels(context);
         String who = name == null || name.trim().isEmpty() ? "Kino" : name.trim();
-        String text = word(context, kind, english).replace("{name}", who);
-        String tag = (friend == null ? "friend" : friend) + (kind.equals("chat") ? ":chat" : ":inbox");
+        String text = words.replace("{name}", who);
+        // (One notification for each friend's messages and one for what each sent; one for everything that is from nobody, by its kind.)
+        String tag = friend == null || friend.isEmpty() ? kind : friend + (kind.equals("chat") ? ":chat" : ":inbox");
         NotificationCompat.Builder built = new NotificationCompat.Builder(context, FRIENDS)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle(who)

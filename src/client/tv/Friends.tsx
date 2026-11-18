@@ -12,6 +12,8 @@ import { bellRows, type BellRow } from "../friends/pages";
 import { PLAN_DAYS, PLAN_HOURS, defaultPlan, planLines, planMoment, planOffered, planStatus, whenLabel } from "../friends/plans";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { useBell } from "../friends/useBell";
+import { ShownTitle } from "../shared/Shown";
+import { BELL_TITLES, entryOfNotice, noticeLine, useTitleNotices } from "../titleNotices/notices";
 import { useCleared } from "../friends/useCleared";
 import { useClearChat } from "../chat/useClearChat";
 import { usePeek } from "../friends/usePeek";
@@ -684,7 +686,7 @@ function BellLine({
       <button className="tv-bell-line" onClick={() => onPress(entry)} onFocus={light("line")} onBlur={unlight} data-nav data-testid={testId} data-entry={entry.id}>
         <span className="tv-bell-icon">{row.avatar ? <Avatar id={row.avatar} className="tv-bell-avatar" /> : entry.plan ? <ClockIcon /> : entry.party || entry.wants || entry.ask ? <UsersIcon /> : <PlayIcon />}</span>
         <span className="tv-bell-text">
-          <b>{row.heading}</b>
+          <b>{row.notice ? <ShownTitle of={entry} /> : row.heading}</b>
           {row.detail && <small>{row.detail}</small>}
         </span>
       </button>
@@ -718,6 +720,9 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
   const { cleared, clear } = useCleared();
   const clearChat = useClearChat();
   const { waiting, joined, lately, more } = bellRows(friends.state, Date.now(), cleared, seenBefore);
+  // What is new of the titles the profile watches: its own lines, which a profile with friends off has too (the bell is then only these).
+  const titles = useTitleNotices();
+  const fresh = titles.items.slice(0, BELL_TITLES).map((notice): BellRow => ({ entry: entryOfNotice(notice), heading: notice.title, detail: noticeLine(notice), notice: notice.id }));
   const page = useRef<HTMLDivElement>(null);
   /**
    * A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote, if it is still on the
@@ -733,7 +738,8 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
       const left = crosses.filter((each) => each !== button);
       if (at >= 0) (left[Math.min(at, left.length - 1)] ?? page.current?.parentElement?.querySelector<HTMLElement>("[data-testid=tv-bell-friends]"))?.focus();
     }
-    if (row.activity) clear([row.activity]);
+    if (row.notice) titles.dismiss(row.notice);
+    else if (row.activity) clear([row.activity]);
     else if (row.entry.inboxId) void friends.dismiss(row.entry.inboxId).catch(() => undefined);
     else if (row.entry.chat) clearChat(row.entry.chat);
   };
@@ -745,15 +751,18 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
   useEffect(() => {
     if (friends.unread > 0) void friends.markRead().catch(() => undefined);
   }, [friends.unread]);
+  useEffect(() => {
+    if (titles.unread > 0) titles.seen();
+  }, [titles.unread]);
 
   return (
     <Screen testId="tv-bell-page" compact focus onBack={onClose}>
       <h1 className="tv-headline tv-headline-small">{t("bell.title")}</h1>
-      {!friends.state ? (
+      {!friends.state && friends.on ? (
         <p className="tv-lead" role="status">
           <span className="spinner" /> {friends.status === "offline" ? t("friends.offline") : t("common.loading")}
         </p>
-      ) : waiting.length === 0 && joined.length === 0 && lately.length === 0 ? (
+      ) : waiting.length === 0 && fresh.length === 0 && joined.length === 0 && lately.length === 0 ? (
         // Nothing new: a quiet picture of the bell and two lines, with room round them (the owner, 15 Nov: "the page should feel roomier and nicer").
         <div className="tv-bell-empty" data-testid="tv-bell-empty">
           <span className="tv-bell-empty-icon" aria-hidden="true">
@@ -779,6 +788,16 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
               )}
             </section>
           )}
+          {fresh.length > 0 && (
+            <section>
+              <h2 className="tv-bell-heading">{t("bell.newTitles")}</h2>
+              <ul className="tv-bell-list" data-testid="tv-bell-titles">
+                {fresh.map((row, at) => (
+                  <BellLine key={row.entry.id} row={row} at={waiting.length + at} onPress={onPress} onClear={(button) => clearLine(row, button)} testId="tv-bell-title" />
+                ))}
+              </ul>
+            </section>
+          )}
           {joined.length > 0 && (
             <section>
               <h2 className="tv-bell-heading">{t("bell.joined")}</h2>
@@ -801,11 +820,13 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
           )}
         </div>
       )}
-      <div className="tv-actions">
-        <button className="tv-action tv-action-primary" onClick={onFriends} data-nav data-testid="tv-bell-friends">
-          {t("bell.openFriends")}
-        </button>
-      </div>
+      {friends.on && (
+        <div className="tv-actions">
+          <button className="tv-action tv-action-primary" onClick={onFriends} data-nav data-testid="tv-bell-friends">
+            {t("bell.openFriends")}
+          </button>
+        </div>
+      )}
       <BackButton onClick={onClose} testId="tv-bell-back" />
     </Screen>
   );

@@ -677,7 +677,7 @@ test.describe("profiles made and changed on the TV itself", () => {
     await tv.keyboard.press("ArrowRight");
     await expect(inColumn(1)).toHaveCount(1);
     for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown");
-    await expect(tv.getByTestId("tv-subtitle-languages")).toBeFocused(); // the last of the middle column, and Down from it goes nowhere
+    await expect(inColumn(1)).toHaveAttribute("data-testid", /^tv-anime-audio-/); // the last of the middle column, and Down from it goes nowhere
     await tv.keyboard.press("ArrowLeft");
     await expect(inColumn(0)).toHaveCount(1);
 

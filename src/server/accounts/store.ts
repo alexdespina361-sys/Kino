@@ -406,6 +406,10 @@ export class AccountStore {
   countAccounts() {
     return this.accounts.size;
   }
+  /** Every profile there is (for what looks after all of them: the notices of new episodes, server/titleNotices). */
+  profileIds(): string[] {
+    return [...this.profileOwner.keys()];
+  }
   usage(): AccountUsage {
     const now = this.now();
     const lastUsed = new Map<string, number>();
