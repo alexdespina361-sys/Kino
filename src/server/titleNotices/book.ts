@@ -24,6 +24,8 @@ import type { FilmPart, TitleSource } from "./source";
 const HOUR = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR;
 export const HOLD_MS = 36 * HOUR;
+/** How far into the day of its next episode a running show is asked about. */
+const AIR_LOOK_MS = 12 * HOUR;
 /** How many titles of a profile are followed (the newest first), and how many titles are asked about at each look. */
 export const FOLLOWED_MAX = 80;
 export const TITLES_PER_LOOK = 6;
@@ -37,6 +39,10 @@ const SURELY_HOME_MS = 365 * DAY_MS;
 /** How many films of one series are asked about at one look (the rest at the next). */
 const HOME_CHECKS = 4;
 const PARTS_MAX = 60;
+/** A first season longer than this is one a page may show in parts (a long anime): its episodes are not told of by number. */
+export const ONE_SEASON_MAX = 26;
+/** How often a line of the journal says that the movie database cannot be asked. */
+const WARN_EVERY_MS = 6 * HOUR;
 const FLUSH_MS = 5_000;
 const RETRY_SAVE_MS = 60_000;
 
@@ -70,6 +76,8 @@ interface ShowDoc {
   year?: number;
   /** The last episode that is out, and news by now. */
   last: Ep | null;
+  /** The first episode after it that aired and is not news yet, and when it is. */
+  waiting?: Ep & { ripeAt: number };
 }
 interface FilmDoc {
   v: 1;
@@ -128,6 +136,7 @@ export class TitleNoticeBook {
   private watchers = new Map<string, Follower[]>();
   private seriesWatchers = new Map<string, Array<{ follower: Follower; like: string }>>();
   private sweptAt = -Infinity;
+  private warnedAt = -Infinity;
   private stale = true;
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -181,7 +190,8 @@ export class TitleNoticeBook {
 
   private schedule(delay = this.options.flushMs ?? FLUSH_MS) {
     if ((this.options.flushMs ?? FLUSH_MS) <= 0) return;
-    this.saveTimer ??= setTimeout(() => void this.flush(), delay);
+    // (A save that failed has said so and is tried again by itself: nothing is left to hear of it here.)
+    this.saveTimer ??= setTimeout(() => void this.flush().catch(() => {}), delay);
     this.saveTimer.unref?.();
   }
   private touch(key: string) {
@@ -250,11 +260,12 @@ export class TitleNoticeBook {
     return doc.items.map((item) => ({ ...item }));
   }
 
-  /** The profile has looked at them. */
-  seen(profileId: string): TitleNotice[] {
+  /** The profile has looked at them: at the ones its bell listed (`ids`), or at all of them. */
+  seen(profileId: string, ids?: readonly string[]): TitleNotice[] {
     const doc = this.profiles.get(profileId);
-    if (doc?.items.some((item) => !item.read)) {
-      doc.items = doc.items.map((item) => (item.read ? item : { ...item, read: true }));
+    const looked = (item: TitleNotice) => !item.read && (!ids || ids.includes(item.id));
+    if (doc?.items.some(looked)) {
+      doc.items = doc.items.map((item) => (looked(item) ? { ...item, read: true } : item));
       this.touch(`p:${profileId}`);
     }
     return this.of(profileId);
@@ -376,7 +387,12 @@ export class TitleNoticeBook {
 
   private async lookOnce(): Promise<void> {
     const now = this.now();
-    if (this.stale || now - this.sweptAt >= SWEEP_MS) this.sweep();
+    if (this.stale || now - this.sweptAt >= SWEEP_MS) {
+      const first = this.sweptAt === -Infinity;
+      this.sweep();
+      // (One line when it starts, so the journal shows it running and how much there is to ask.)
+      if (first) this.options.log?.warn(`New episodes: ${this.titles.size} titles watched by ${this.watchers.size > 0 ? this.profiles.size : 0} profiles with something kept, ${[...this.titles.values()].filter((doc) => doc.nextAt <= now).length} to ask about now (${TITLES_PER_LOOK} a minute).`);
+    }
     const due = [...this.titles.values()]
       .filter((doc) => doc.nextAt <= now)
       .sort((a, b) => a.nextAt - b.nextAt)
@@ -388,10 +404,14 @@ export class TitleNoticeBook {
         if (doc.kind === "tv") await this.lookAtShow(doc, toTell);
         else if (doc.kind === "movie") await this.lookAtFilm(doc);
         else await this.lookAtSeries(doc, toTell);
-      } catch {
+      } catch (error) {
         // (The movie database could not be asked: what is known stays, and it is asked again in a while.)
         this.counts.failed++;
         doc.nextAt = this.now() + HOUR / 2;
+        if (this.now() - this.warnedAt >= WARN_EVERY_MS) {
+          this.warnedAt = this.now();
+          this.options.log?.warn(`New episodes: the movie database could not be asked about ${doc.key} (${(error as Error).message}); asked again in half an hour. ${this.counts.failed} of ${this.counts.asked} questions have failed since the start.`);
+        }
       }
       this.touchTitle(doc);
     }
@@ -421,16 +441,26 @@ export class TitleNoticeBook {
     if (show.name) doc.name = show.name;
     for (const part of ["image", "backdrop", "year"] as const) if (show[part] !== undefined) (doc as unknown as Record<string, unknown>)[part] = show[part];
 
-    let ripensAt: number | undefined;
-    if (show.last && later(show.last, doc.last ?? ZERO)) {
-      const ripe = show.last.day ? dayStart(show.last.day) + HOLD_MS : now;
-      // (The first look at a show tells nobody anything: what is out by then is what everybody starts from.)
-      if (first || now >= ripe) doc.last = { season: show.last.season, episode: show.last.episode };
-      else ripensAt = ripe;
+    // An episode that waits to be news (`waiting`) is news when its time has come, whatever aired after it: a show with an episode every day would
+    // otherwise never have one that is (each look would find a newer one, not yet news). The one after it then waits its own time.
+    if (doc.waiting && (!show.last || later(doc.waiting, show.last))) delete doc.waiting; // (the movie database took it back)
+    if (doc.waiting && now >= doc.waiting.ripeAt) {
+      if (later(doc.waiting, doc.last ?? ZERO)) doc.last = { season: doc.waiting.season, episode: doc.waiting.episode };
+      delete doc.waiting;
     }
+    if (show.last && later(show.last, doc.last ?? ZERO)) {
+      const ripeAt = show.last.day ? dayStart(show.last.day) + HOLD_MS : now;
+      // (The first look at a show tells nobody anything: what is out by then is what everybody starts from.)
+      if (first || now >= ripeAt) {
+        doc.last = { season: show.last.season, episode: show.last.episode };
+        delete doc.waiting;
+      } else if (!doc.waiting) doc.waiting = { season: show.last.season, episode: show.last.episode, ripeAt };
+    } else delete doc.waiting;
     const today = this.today();
-    const usual = show.ended ? now + 7 * DAY_MS : show.nextDay && show.nextDay > today ? Math.min(Math.max(dayStart(show.nextDay) + HOLD_MS, now + HOUR), now + 7 * DAY_MS) : now + (show.nextDay ? 3 * HOUR : DAY_MS);
-    doc.nextAt = ripensAt !== undefined ? Math.min(Math.max(ripensAt, now + HOUR / 4), usual) : usual;
+    // (A running show is asked about on the day of its next episode, which then waits its time: asked only once that time has come, a show with an
+    // episode every day would have the one after it by then, and the first of them would never be news by itself.)
+    const usual = show.ended ? now + 7 * DAY_MS : show.nextDay && show.nextDay > today ? Math.min(Math.max(dayStart(show.nextDay) + AIR_LOOK_MS, now + HOUR), now + 7 * DAY_MS) : now + (show.nextDay ? 3 * HOUR : DAY_MS);
+    doc.nextAt = doc.waiting ? Math.min(Math.max(doc.waiting.ripeAt, now + HOUR / 4), usual) : usual;
 
     for (const follower of this.watchers.get(doc.key) ?? []) {
       const kept = this.profile(follower.profile);
@@ -456,8 +486,9 @@ export class TitleNoticeBook {
         ...(doc.image ? { image: doc.image } : {}),
         ...(doc.backdrop ? { backdrop: doc.backdrop } : {}),
         ...(doc.year ? { year: doc.year } : {}),
-        season: fresh.season,
-        episode: fresh.episode,
+        // (A show the movie database keeps as one long season is played in parts, numbered otherwise on its page - library/filmpire.ts `partsOf`:
+        // its notice says that an episode is out, and not which number.)
+        ...(fresh.season === 1 && fresh.episode > ONE_SEASON_MAX ? {} : { season: fresh.season, episode: fresh.episode }),
         ...(count !== undefined && count >= 2 ? { count: Math.min(count, 5000) } : {}),
         read: false,
       });

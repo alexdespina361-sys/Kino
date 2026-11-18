@@ -16,7 +16,11 @@ Code: `src/shared/titleNotices.ts` (what a notice is), `src/server/titleNotices/
   turned the notices off is told nothing and gets no backlog when it turns them on again.
 - **An episode is news a day and a half after the start of the day it aired** (`HOLD_MS`): TMDB dates an episode by the day in its own country, which
   begins up to a day before the episode is shown, and the places it plays from have it some hours later. The library lists an episode from its air date,
-  so a notice never points at an episode the title's page does not list.
+  so a notice never points at an episode the title's page does not list. An episode that aired waits its own day and a half (`waiting` in the show's
+  document), whatever airs after it: a show with an episode every day tells of each one in turn.
+- **A long first season is told of without numbers** (`ONE_SEASON_MAX`, 26): a show TMDB keeps as one season of hundreds of episodes is played in parts
+  (`partsOf` in `library/filmpire.ts`), and its page numbers them otherwise. The notice says "A new episode is out".
+- **The bell lists the six newest** and marks those as looked at (`POST …/seen {ids}`); one that is not listed yet stays news until it is.
 - **A film is news once it can be watched at home** (a digital, physical or TV release in TMDB's release dates), as the library's own rule has it. A child's
   profile is told of the shows it watches, never of a film it has not seen.
 - **One line for each title**, the newest news of it; 30 lines at most, kept a month.
@@ -26,7 +30,7 @@ Code: `src/shared/titleNotices.ts` (what a notice is), `src/server/titleNotices/
 ## Cost
 
 One question to TMDB for each title, for everybody who watches it, and only when something may have changed: a show that is over once a week, a running
-one on the day its next episode is due (plus the day and a half), one with no date for its next episode once a day, a series of films once a week (daily
+one on the day its next episode is due and again when that episode is news, one with no date for its next episode once a day, a series of films once a week (daily
 while a film of it is about to come out). Six titles a minute at most (`TITLES_PER_LOOK`, `LOOK_MS`), so a start with everything due takes a while and
 hurts nobody. What is known is kept (`title-notices.json` in `DATA_DIR`, or the table `kino_title_notices`), so a restart asks about nothing again and
 tells nobody twice.

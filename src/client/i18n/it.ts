@@ -1201,6 +1201,8 @@ export const it: Dictionary = {
   "bell.newTitles": "Nuovi episodi e film",
   "titleNotice.episode": "Nuovo episodio: stagione {season}, episodio {episode}",
   "titleNotice.episodes_other": "{count} nuovi episodi, fino alla stagione {season}, episodio {episode}",
+  "titleNotice.episodeNoNumber": "È uscito un nuovo episodio",
+  "titleNotice.episodesNoNumber_other": "Sono usciti {count} nuovi episodi",
   "titleNotice.season": "È uscita la stagione {season}",
   "titleNotice.film": "È uscito un nuovo film",
   "titleNotice.filmLike": "Un nuovo film, dopo {title}",

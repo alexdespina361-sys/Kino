@@ -119,6 +119,64 @@ describe("new episodes of what a profile watches", () => {
     expect(book.of("ana")).toHaveLength(1);
   });
 
+  it("tells of a show with an episode every day: each one a day and a half after its day, though a newer one has aired by then", async () => {
+    const { tmdb, clock, told, book, watch } = await setup(at("2026-11-10", 12));
+    tmdb.shows.set(7, show(1, 5, "2026-11-10", { nextDay: "2026-11-11" }));
+    watch([watcher("ana", ["tv-7"])]);
+    await book.look();
+    const seen: Array<number | undefined> = [];
+    // Looked at every hour for four days, as the days go by: the 11th's episode is out on the 11th, and so on.
+    for (let hour = 13; hour <= 5 * 24; hour++) {
+      clock.now = at("2026-11-10", hour);
+      const day = Math.floor(hour / 24);
+      tmdb.shows.set(7, show(1, 5 + day, `2026-11-${10 + day}`, { nextDay: `2026-11-${11 + day}` }));
+      await book.look();
+      const [item] = book.of("ana");
+      if (item && item.episode !== seen[seen.length - 1]) {
+        seen.push(item.episode);
+        // Each is news from a day and a half after the start of its day.
+        expect(clock.now).toBe(at(`2026-11-${10 + item.episode! - 5}`) + HOLD_MS);
+        book.seen("ana");
+      }
+    }
+    expect(seen).toEqual([6, 7, 8]);
+    expect(told).toEqual(["ana", "ana", "ana"]);
+    // (and the movie database was asked a few times a day, not every hour)
+    expect(tmdb.asked.length).toBeLessThan(16);
+  });
+
+  it("does not tell of an episode the movie database took back", async () => {
+    const { tmdb, clock, book, watch } = await setup(at("2026-11-10", 12));
+    tmdb.shows.set(7, show(1, 5, "2026-11-08"));
+    watch([watcher("ana", ["tv-7"])]);
+    await book.look();
+    clock.now = at("2026-11-11", 12);
+    tmdb.shows.set(7, show(1, 6, "2026-11-11"));
+    await book.look();
+    tmdb.shows.set(7, show(1, 5, "2026-11-08")); // (it was listed by mistake)
+    clock.now = at("2026-11-11") + HOLD_MS + HOUR;
+    await book.look();
+    expect(book.of("ana")).toEqual([]);
+  });
+
+  it("tells of an episode of one long season without its number, as its page numbers it in parts", async () => {
+    const { tmdb, clock, book, watch } = await setup();
+    tmdb.shows.set(7, show(1, 1122, "2026-11-01"));
+    tmdb.shows.set(8, show(1, 26, "2026-11-01", { name: "Short" }));
+    watch([watcher("ana", ["tv-7", "tv-8"])]);
+    await book.look();
+    clock.now += 2 * DAY;
+    tmdb.shows.set(7, show(1, 1124, "2026-11-09"));
+    tmdb.shows.set(8, show(1, 27, "2026-11-09", { name: "Short" }));
+    await book.look();
+    const long = book.of("ana").find((item) => item.id === "tv-7");
+    expect(long).toMatchObject({ what: "episode", count: 2 });
+    expect(long).not.toHaveProperty("season");
+    expect(long).not.toHaveProperty("episode");
+    // (the 27th of a first season is one such too: nobody can tell from here whether its page cuts it)
+    expect(book.of("ana").find((item) => item.id === "tv-8")).not.toHaveProperty("episode");
+  });
+
   it("starts a profile that begins a show later from what is out then, and tells each profile once", async () => {
     const { tmdb, clock, told, book, watch } = await setup();
     tmdb.shows.set(7, show(1, 5, "2026-11-01"));
@@ -232,6 +290,41 @@ describe("new episodes of what a profile watches", () => {
     expect(again.of("ana")).toHaveLength(1);
   });
 
+  it("says so when what changed cannot be kept, tries again by itself, and lets nothing fall on the floor", async () => {
+    const tmdb = fakeSource();
+    const inner = new MemoryPersistence();
+    let broken = true;
+    let saves = 0;
+    const persistence = {
+      load: () => inner.load(),
+      save: async (changes: Parameters<MemoryPersistence["save"]>[0]) => {
+        saves++;
+        if (broken) throw new Error("disk full");
+        await inner.save(changes);
+      },
+    };
+    const warned: string[] = [];
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => void unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const book = await TitleNoticeBook.open({ persistence, source: tmdb.source, followers: () => [watcher("ana", ["tv-7"])], flushMs: 5, log: { warn: (message) => void warned.push(message) } });
+      tmdb.shows.set(7, show(1, 5, "2026-11-01"));
+      await book.look();
+      await new Promise((resolve) => setTimeout(resolve, 60)); // (the timer's save fails)
+      expect(saves).toBeGreaterThan(0);
+      expect(warned.some((line) => line.includes("disk full"))).toBe(true);
+      expect(unhandled).toEqual([]);
+      // Once it can be kept again, it is: nothing was forgotten.
+      broken = false;
+      await book.flush();
+      expect([...(await inner.load()).keys()].sort()).toEqual(["p:ana", "t:tv-7"]);
+      await book.close();
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("tells a profile's phone a few times a day at most, though the bell has every one", async () => {
     const { tmdb, clock, told, book, watch } = await setup();
     const keys = Array.from({ length: TELLS_PER_DAY + 2 }, (_, index) => `tv-${index + 1}`);
@@ -268,6 +361,8 @@ describe("new episodes of what a profile watches", () => {
     tmdb.shows.set(8, show(1, 6, "2026-11-09", { name: "Other" }));
     await book.look();
     expect(book.of("ana").map((item) => item.read)).toEqual([false, false]);
+    // The ones its bell listed are looked at, the rest are news still.
+    expect(book.seen("ana", ["tv-8", "tv-99"]).map((item) => [item.id, item.read])).toEqual(expect.arrayContaining([["tv-7", false], ["tv-8", true]]));
     expect(book.seen("ana").map((item) => item.read)).toEqual([true, true]);
     expect(book.dismiss("ana", "tv-7").map((item) => item.id)).toEqual(["tv-8"]);
     expect(book.of("nobody")).toEqual([]);

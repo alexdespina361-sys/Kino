@@ -53,3 +53,5 @@ export const TitleNoticesSchema = z.object({
 export type TitleNotices = z.infer<typeof TitleNoticesSchema>;
 
 export const TitleNoticeDismissSchema = z.object({ id: z.string().regex(TITLE_NOTICE_ID) });
+/** The ones the bell listed, which are looked at now (it lists the newest few, and the rest are news still); none named, all of them. */
+export const TitleNoticeSeenSchema = z.object({ ids: z.array(z.string().regex(TITLE_NOTICE_ID)).max(TITLE_NOTICES_MAX).optional() });

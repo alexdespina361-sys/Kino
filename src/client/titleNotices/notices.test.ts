@@ -9,6 +9,9 @@ describe("a notice of something new of a title", () => {
     expect(noticeLine(notice({ season: 2, episode: 4 }))).toBe("New episode: season 2, episode 4");
     expect(noticeLine(notice({ season: 2, episode: 6, count: 3 }))).toBe("3 new episodes, up to season 2, episode 6");
     expect(noticeLine(notice({ what: "season", season: 3, episode: 1 }))).toBe("Season 3 is out");
+    // (a show played in parts: no number, as its page numbers its episodes otherwise)
+    expect(noticeLine(notice({}))).toBe("A new episode is out");
+    expect(noticeLine(notice({ count: 4 }))).toBe("4 new episodes are out");
     expect(noticeLine(notice({ id: "movie-9", what: "film" }))).toBe("A new film is out");
     expect(noticeLine(notice({ id: "movie-9", what: "film", like: "Part One" }))).toBe("A new film, after Part One");
   });

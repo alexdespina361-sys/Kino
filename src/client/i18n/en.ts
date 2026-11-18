@@ -1204,6 +1204,8 @@ export const en = {
   "bell.newTitles": "New episodes and films",
   "titleNotice.episode": "New episode: season {season}, episode {episode}",
   "titleNotice.episodes_other": "{count} new episodes, up to season {season}, episode {episode}",
+  "titleNotice.episodeNoNumber": "A new episode is out",
+  "titleNotice.episodesNoNumber_other": "{count} new episodes are out",
   "titleNotice.season": "Season {season} is out",
   "titleNotice.film": "A new film is out",
   "titleNotice.filmLike": "A new film, after {title}",

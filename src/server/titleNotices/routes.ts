@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { TitleNoticeDismissSchema } from "../../shared";
+import { TitleNoticeDismissSchema, TitleNoticeSeenSchema } from "../../shared";
 import type { FriendRouteHelpers } from "../accounts/friendRoutes";
 import { RateLimiter } from "../accounts/rateLimit";
 import type { TitleNoticeBook } from "./book";
@@ -34,7 +34,9 @@ export function titleNoticeRoutes(app: FastifyInstance, helpers: FriendRouteHelp
 
   app.post<{ Params: { id: string } }>(`${base}/seen`, async (request, reply) => {
     if (!asker(request, reply, writesByAccount, request.params.id)) return reply;
-    return reply.send({ items: book?.seen(request.params.id) ?? [] });
+    const parsed = TitleNoticeSeenSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return invalid(reply, parsed.error);
+    return reply.send({ items: book?.seen(request.params.id, parsed.data.ids) ?? [] });
   });
 
   app.post<{ Params: { id: string } }>(`${base}/dismiss`, async (request, reply) => {

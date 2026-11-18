@@ -45,6 +45,8 @@ export const resetTitleNotices = () => keep(undefined, NONE);
 /** What the line of a notice says under the title's name. */
 export function noticeLine(notice: TitleNotice): string {
   if (notice.what === "film") return notice.like ? t("titleNotice.filmLike", { title: notice.like }) : t("titleNotice.film");
+  // (A show that is played in parts is told of without a number: its page numbers its episodes otherwise than the movie database does.)
+  if (notice.what === "episode" && (notice.season === undefined || notice.episode === undefined)) return notice.count ? t("titleNotice.episodesNoNumber", { count: notice.count }) : t("titleNotice.episodeNoNumber");
   const season = notice.season ?? 1;
   const episode = notice.episode ?? 1;
   if (notice.what === "season") return t("titleNotice.season", { season });
@@ -93,13 +95,21 @@ export function useTitleNoticeLooks(): void {
   }, [profileId]);
 }
 
-/** The notices of the profile in use, the newest first, with how many were not looked at; `seen` when the bell is opened, `dismiss` for the cross of one. */
+/** The ones the bell lists that were not looked at. */
+const unseen = (all: readonly TitleNotice[]) => all.slice(0, BELL_TITLES).filter((item) => !item.read);
+
+/**
+ * The notices of the profile in use: the newest few, which the bell lists, with how many of them were not looked at; `seen` when the bell is opened,
+ * `dismiss` for the cross of one. One that is not listed yet (there are more than the bell lists) is neither counted nor looked at: it is news when
+ * it comes into the list, as the ones before it are cleared.
+ */
 export function useTitleNotices(): { items: readonly TitleNotice[]; unread: number; seen: () => void; dismiss: (id: string) => void } {
   const kept = useSyncExternalStore(subscribe, () => items);
   const profileId = useSyncExternalStore(subscribe, () => ownerId);
   const seen = useCallback(() => {
-    if (!profileId || !items.some((item) => !item.read)) return;
-    void ask(TitleNoticesSchema, "POST", `${base(profileId)}/seen`).then(taken(profileId)).catch(() => undefined);
+    const ids = unseen(items).map((item) => item.id);
+    if (!profileId || ids.length === 0) return;
+    void ask(TitleNoticesSchema, "POST", `${base(profileId)}/seen`, { ids }).then(taken(profileId)).catch(() => undefined);
   }, [profileId]);
   const dismiss = useCallback(
     (id: string) => {
@@ -110,5 +120,5 @@ export function useTitleNotices(): { items: readonly TitleNotice[]; unread: numb
     },
     [profileId],
   );
-  return { items: kept, unread: kept.filter((item) => !item.read).length, seen, dismiss };
+  return { items: kept.length > BELL_TITLES ? kept.slice(0, BELL_TITLES) : kept, unread: unseen(kept).length, seen, dismiss };
 }
