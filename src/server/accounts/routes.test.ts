@@ -89,6 +89,16 @@ describe("signing up and in", () => {
     expect(registered.headers["cache-control"]).toBe("no-store");
 
     expect((await client.get("/api/me")).data.me.account.email).toBe("alex@example.com");
+
+    // A nickname chosen on the form is the first profile's name (and one that is no name is refused, with no account made).
+    const other = new Client(app);
+    const named = await other.post("/api/auth/register", { email: "sam-login", password: credentials.password, name: "  Sammy " });
+    expect(named.statusCode).toBe(201);
+    expect(named.data.profiles).toMatchObject([{ name: "Sammy" }]);
+    for (const name of ["", "   ", "x".repeat(17), 7]) {
+      const refused = await new Client(app).post("/api/auth/register", { email: `bad-${String(name).length}-${typeof name}`, password: credentials.password, name });
+      expect(refused.statusCode, JSON.stringify(name)).toBe(400);
+    }
   });
 
   it("gives the cookie a full term again each time the page asks who is signed in, so a device in use stays signed in; a visitor who is not signed in gets none", async () => {

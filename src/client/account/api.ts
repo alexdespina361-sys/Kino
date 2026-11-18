@@ -67,7 +67,7 @@ const link = (code: string) => `/api/link/${encodeURIComponent(code)}`;
 export const api = {
   /** Who is signed in. A 404 means this server has no accounts (an older one). */
   session: (): Promise<SessionState> => ask(SessionStateSchema, "GET", "/api/me"),
-  register: (email: string, password: string, device: DeviceKind): Promise<Me> => ask(MeSchema, "POST", "/api/auth/register", { email, password, device }),
+  register: (email: string, password: string, device: DeviceKind, name?: string): Promise<Me> => ask(MeSchema, "POST", "/api/auth/register", { email, password, device, ...(name ? { name } : {}) }),
   login: (email: string, password: string, device: DeviceKind): Promise<Me> => ask(MeSchema, "POST", "/api/auth/login", { email, password, device }),
   logout: async (): Promise<void> => void (await request("POST", "/api/auth/logout", {})),
 

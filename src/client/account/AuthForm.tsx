@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import type { Me } from "../../shared";
+import { PROFILE_NAME_MAX, type Me } from "../../shared";
 import { useT } from "../i18n";
 import { useBack } from "../tv/dpad";
 import { useAccount } from "./AccountProvider";
@@ -32,6 +32,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
   const [mode, setMode] = useState<"signIn" | "signUp">(initialMode === "signUp" && open ? "signUp" : "signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nickname, setNickname] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<Weakness | null>(null);
@@ -59,7 +60,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
     setBusy(true);
     setError(null);
     try {
-      const me = await (signingUp ? account.signUp(email.trim(), password) : account.signIn(email.trim(), password));
+      const me = await (signingUp ? account.signUp(email.trim(), password, nickname.trim() || undefined) : account.signIn(email.trim(), password));
       onDone?.(me);
     } catch (cause) {
       setError(describeError(cause));
@@ -146,6 +147,24 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
         {tv ? <input {...passwordField} type="password" {...nav} /> : <PasswordInput {...passwordField} />}
         {signingUp && <small data-testid="auth-password-hint">{t(password ? "auth.passwordHint" : "auth.noPasswordNote")}</small>}
       </label>
+      {/* The name others see (friends, parties, chat): chosen here, or later with the picture; left empty, the profile is named after its picture. */}
+      {signingUp && (
+        <label className="auth-field" htmlFor={`${id}-nickname`}>
+          <span>{t("auth.nickname")}</span>
+          <input
+            id={`${id}-nickname`}
+            data-testid="auth-nickname"
+            type="text"
+            autoComplete="nickname"
+            enterKeyHint="go"
+            maxLength={PROFILE_NAME_MAX}
+            value={nickname}
+            onChange={(event) => setNickname(event.target.value)}
+            {...nav}
+          />
+          <small>{t("auth.nicknameHint")}</small>
+        </label>
+      )}
 
       {error && (
         <p className="auth-error" role="alert" data-testid="auth-error">

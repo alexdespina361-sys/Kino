@@ -459,9 +459,9 @@ export class AccountStore {
    * A new account with its first profile, named after its picture ("Fox") until whoever uses it chooses a name (`Profile.setup`). Not after the login:
    * whoever knows somebody's login would find their profile by its name in the lists of friends and parties (the audit of 3 Nov; the owner, 18 Nov).
    */
-  createAccount(email: string, hash: string): Result<AccountDoc> {
+  createAccount(email: string, hash: string, name?: string): Result<AccountDoc> {
     if (this.emails.has(email)) return fail("email_taken");
-    return ok(this.make(email, hash));
+    return ok(this.make(email, hash, name));
   }
 
   /**

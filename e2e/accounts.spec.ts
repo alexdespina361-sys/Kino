@@ -112,6 +112,31 @@ test.describe("accounts and profiles", () => {
     await expect(phone.locator(".news-lines li").first()).toBeVisible();
   });
 
+  test("a nickname typed when the account is made is the first profile's name, on the phone and on the TV; only making an account asks for one", async ({ browser }) => {
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await phone.getByTestId("account-button").click();
+    await expect(phone.getByTestId("auth-nickname")).toHaveCount(0); // (signing in: no nickname)
+    await phone.getByTestId("auth-switch").click();
+    await expect(phone.getByTestId("auth-nickname")).toHaveAttribute("maxlength", "16");
+    await phone.getByTestId("auth-email").fill(`nick-login-${Date.now().toString(36)}${++counter}`);
+    await phone.getByTestId("auth-password").fill("kino-test-pass-1");
+    await phone.getByTestId("auth-nickname").fill(" Mira ");
+    await phone.getByTestId("auth-submit").click();
+    await expect(phone.getByTestId("account-profile-name")).toHaveText("Mira");
+
+    const tv = await openLibrary(browser);
+    await openTvSignIn(tv);
+    await tv.getByTestId("tv-signin-email").click();
+    await tv.getByTestId("auth-switch").click();
+    await expect(tv.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
+    await tv.getByTestId("auth-email").fill(`nick-tv-${Date.now().toString(36)}${++counter}`);
+    await tv.getByTestId("auth-password").fill("kino-test-pass-1");
+    await tv.getByTestId("auth-nickname").fill("Telly");
+    await tv.getByTestId("auth-submit").click();
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Telly/);
+  });
+
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
     test.setTimeout(60_000);
     // A name and a password of one character: what somebody who only wants to watch types.

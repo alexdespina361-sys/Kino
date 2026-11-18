@@ -102,7 +102,7 @@ export interface AccountContextValue {
   say(text: string, news?: NewsLevel): void;
 
   signIn(email: string, password: string): Promise<Me>;
-  signUp(email: string, password: string): Promise<Me>;
+  signUp(email: string, password: string, name?: string): Promise<Me>;
   /** `deleted`: the account has just been deleted on the server, which has ended its sessions too (so there is nothing to send what is left to, and nobody to sign out). */
   signOut(options?: { deleted?: boolean }): Promise<void>;
   /** A sign-in that already happened on the server (a TV signed in from a phone). */
@@ -481,8 +481,8 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         setMe(signedIn);
         return signedIn;
       },
-      async signUp(email, password) {
-        const created = await api.register(email, password, device);
+      async signUp(email, password, name) {
+        const created = await api.register(email, password, device, name);
         setMe(created);
         return created;
       },

@@ -37,6 +37,8 @@ export const ro: Dictionary = {
   "auth.password": "Parolă",
   "auth.newPassword": "Parolă nouă",
   "auth.passwordHint": "Orice îți place, chiar și un singur caracter",
+  "auth.nickname": "Poreclă",
+  "auth.nicknameHint": "Ce văd prietenii. Opțional: o poți alege și mai târziu.",
   "auth.noPasswordNote": "Lasă gol pentru fără parolă. Atunci oricine scrie acest nume poate deschide contul.",
   "auth.warnNone": "Fără parolă, oricine scrie acest nume de utilizator poate deschide contul tău, așa că poate fi împărțit cu alții foarte ușor.",
   "auth.warnWeak": "Parola aceasta se ghicește ușor, așa că cineva ți-ar putea deschide contul încercând-o.",
