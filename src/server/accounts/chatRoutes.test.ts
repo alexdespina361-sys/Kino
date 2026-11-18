@@ -432,6 +432,28 @@ describe("reporting a chat", () => {
     expect(reports).toHaveLength(5);
   });
 
+  it("is six a day for an account, however the hours go (kept over a restart: what an account has open is not)", async () => {
+    let now = 1_700_000_000_000;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const world = await start();
+      const sam = person(world, "sam");
+      const alex = person(world, "alex");
+      befriend(world, alex, sam);
+      const sent = (await write(sam, alex, "hello")).data as ChatThread;
+      const report = () => alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev });
+      for (let i = 0; i < 5; i++) expect((await report()).statusCode).toBe(204);
+      now += 60 * 60_000 + 1;
+      expect((await report()).statusCode).toBe(204);
+      expect((await report()).data.error).toBe("rate_limited");
+      now += 23 * 60 * 60_000;
+      expect((await report()).statusCode).toBe(204);
+      expect(world.reports).toHaveLength(7);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("does not use up an account's few an hour on a team's side that is full: a report that was not kept is not one it sent", async () => {
     const { alex, sam, reports, teamSide } = await friends();
     const sent = (await write(sam, alex, "hello")).data as ChatThread;

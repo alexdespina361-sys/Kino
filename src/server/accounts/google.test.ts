@@ -651,16 +651,38 @@ describe("what a sign-in with Google does not take", () => {
     expect((await ana.post("/api/me/password", { current: "", next: "mine now" })).statusCode).toBe(401);
   });
 
-  it("keeps 2000 flows at the most: the oldest is let go", async () => {
+  it("keeps 2000 flows at the most, and never pushes out a sign-in that is under way: a new one waits until one is done or has run out", async () => {
     const { app } = await site();
     const first = new Browser(app);
     const start = await first.get("/api/auth/google/start?device=remote&next=/");
     const to = new URL(String(start.headers.location));
-    for (let n = 0; n < 2000; n++) await new Browser(app).get("/api/auth/google/start?device=remote&next=/");
+    for (let n = 0; n < 1999; n++) await new Browser(app).get("/api/auth/google/start?device=remote&next=/");
+    expect((await new Browser(app).get("/api/auth/google/start?device=remote&next=/")).headers.location).toBe("/?google=busy");
     const code = google.issue({ challenge: to.searchParams.get("code_challenge")!, redirectUri: to.searchParams.get("redirect_uri")!, claims: claimsFor(to.searchParams.get("nonce")!, ANA) });
-    expect((await first.get(`/api/auth/google/callback?state=${to.searchParams.get("state")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
+    expect((await first.get(`/api/auth/google/callback?state=${to.searchParams.get("state")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE)).headers.location).toBe("/");
+    // (the first one is done: its place is free)
+    expect((await new Browser(app).get("/api/auth/google/start?device=remote&next=/")).headers.location).toMatch(/^https:\/\/accounts\.google\.com\//);
+    expect((await new Browser(app).get("/api/auth/google/start?device=remote&next=/")).headers.location).toBe("/?google=busy");
+    // (ten minutes on, the ones nobody finished have run out)
+    clock.now += 10 * 60_000 + 1;
     expect((await viaGoogle(new Browser(app))).where).toBe("/");
   }, 30_000);
+
+  it("lets one address have five sign-ins under way at once: a sixth lets go of its own oldest, and nobody else's", async () => {
+    const { app } = await site();
+    const browser = new Browser(app);
+    const states: string[] = [];
+    for (let n = 0; n < 6; n++) states.push(new URL(String((await browser.get("/api/auth/google/start?device=remote&next=/")).headers.location)).searchParams.get("state")!);
+    const other = new Browser(app);
+    const theirs = await other.get("/api/auth/google/start?device=remote&next=/");
+    const to = new URL(String(theirs.headers.location));
+    for (let n = 0; n < 6; n++) await browser.get("/api/auth/google/start?device=remote&next=/");
+    // (the browser's first was let go: its way back fails; the other address's is still there)
+    browser.jar.set("kino_oauth", states[0]!);
+    expect((await browser.get(`/api/auth/google/callback?state=${states[0]}&code=x`, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
+    const code = google.issue({ challenge: to.searchParams.get("code_challenge")!, redirectUri: to.searchParams.get("redirect_uri")!, claims: claimsFor(to.searchParams.get("nonce")!, ANA) });
+    expect((await other.get(`/api/auth/google/callback?state=${to.searchParams.get("state")}&code=${encodeURIComponent(code)}`, FROM_GOOGLE)).headers.location).toBe("/");
+  });
 
   it("lets an address start 30 sign-ins in ten minutes", async () => {
     const { app } = await site();

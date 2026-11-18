@@ -349,6 +349,20 @@ describe("sync", () => {
     expect(store.sync(profile.id, request(second.rev))).toMatchObject({ rev: 1, progress: [], watched: [], list: [], settings: [] });
   });
 
+  it("keeps a saved GIF only as the pages would draw it: KLIPY's address, under the key it makes", async () => {
+    const { store, profile } = await withAccount();
+    const gif = "https://static.klipy.com/ii/abc/1/2/x.webp";
+    store.sync(profile.id, request(0, {
+      saved: [
+        { key: `gif:${gif}`, at: clock, text: gif },
+        { key: "gif:https://evil.example/x.gif", at: clock, text: "https://evil.example/x.gif" },
+        { key: `gif:${gif}?other`, at: clock, text: gif },
+        { key: "sticker:heart", at: clock, text: "❤️" },
+      ],
+    }));
+    expect(store.sync(profile.id, request(0))!.saved.map((item) => item.key)).toEqual([`gif:${gif}`, "sticker:heart"]);
+  });
+
   it("answers an older copy with the newer one it has", async () => {
     const { store, profile } = await withAccount();
     store.sync(profile.id, request(0, { progress: [progress("film", clock, { position: 80 })] }));

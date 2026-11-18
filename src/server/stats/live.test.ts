@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HERE_MS, HOURS_KEPT, LiveCount, oddHours, type HourAnswers } from "./live";
+import { BROWSERS_PER_ADDRESS, HERE_MS, HOURS_KEPT, LiveCount, oddHours, type HourAnswers } from "./live";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -15,6 +15,19 @@ describe("who is here now", () => {
     live.seen("203.0.113.7", LAPTOP, true); // (the same home, another device)
     live.seen("203.0.113.8", PHONE, false);
     expect(live.now()).toEqual({ people: 3, signedIn: 1, guests: 2 });
+  });
+
+  it("counts one address as a few people at most, however many names its browser gives itself; a new one is counted once room is made", () => {
+    let clock = Date.parse("2026-11-18T10:00:00Z");
+    const live = new LiveCount(() => clock);
+    for (let i = 0; i < 500; i++) live.seen("198.51.100.1", `made up ${i}`, false);
+    live.seen("203.0.113.7", PHONE, true);
+    expect(live.now()).toEqual({ people: BROWSERS_PER_ADDRESS + 1, signedIn: 1, guests: BROWSERS_PER_ADDRESS });
+    // (they leave; a quarter of an hour later the address's places are free again)
+    clock += 16 * MINUTE;
+    live.seen("203.0.113.9", PHONE, false); // (the sweep of the minute runs)
+    live.seen("198.51.100.1", LAPTOP, true);
+    expect(live.now()).toEqual({ people: 2, signedIn: 1, guests: 1 });
   });
 
   it("no longer counts a browser that asked nothing for five minutes, and counts it again when it is back", () => {

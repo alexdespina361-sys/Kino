@@ -109,6 +109,8 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const linkPollByIp = new RateLimiter(900, MINUTE);
   const linkLookupByAccount = new RateLimiter(30, 5 * MINUTE, undefined, "link.lookupByAccount");
   const syncByAccount = new RateLimiter(600, MINUTE);
+  // (The app says where it is reached when the profile or the token changes, once a page: a few times an hour. Each saying walks every sign-in of the site.)
+  const pushByAccount = new RateLimiter(30, 10 * MINUTE, undefined, "push.devicesByAccount");
   // Four digits are 10,000 tries: a few wrong ones per account, then a wait (the visitor's wrong ones count where its wrong passwords do).
   const wrongPinByAccount = new RateLimiter(5, 15 * MINUTE, undefined, "childPin.wrongByAccount");
   // Checking a password or a PIN, and making the hash of a new one, is slow on purpose (scrypt, on a few threads everybody shares). An address may
@@ -247,6 +249,9 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     if (!auth) return signedOut(reply);
     const parsed = PushDeviceSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply, parsed.error);
+    const wait = pushByAccount.wait(auth.accountId);
+    if (wait > 0) return tooMany(reply, wait);
+    pushByAccount.hit(auth.accountId);
     if (!store.setPush(auth.sessionId, parsed.data.token, parsed.data.profileId)) return reply.code(404).send({ error: "not_found" });
     return reply.code(204).send();
   });
@@ -254,6 +259,9 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   app.delete("/api/push", async (request, reply) => {
     const auth = authenticate(request);
     if (!auth) return signedOut(reply);
+    const wait = pushByAccount.wait(auth.accountId);
+    if (wait > 0) return tooMany(reply, wait);
+    pushByAccount.hit(auth.accountId);
     store.clearPush(auth.sessionId);
     return reply.code(204).send();
   });

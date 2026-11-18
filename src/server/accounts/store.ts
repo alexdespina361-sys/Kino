@@ -29,6 +29,7 @@ import {
   type SyncRequest,
   type SyncResponse,
 } from "../../shared";
+import { gifOf } from "../../shared/gifs";
 import { ChatBook } from "./chat";
 import { FriendBook } from "./friends";
 import type { Persistence } from "./persistence";
@@ -838,6 +839,7 @@ export class AccountStore {
       for (const sent of sentItems) {
         const candidate: SyncItem = { ...sent, at: Math.min(sent.at, now + FUTURE_SLACK_MS) };
         if (name === "settings" && !candidate.deleted && !validSetting(candidate)) continue;
+        if (name === "saved" && !candidate.deleted && !validSaved(candidate)) continue;
         const have = map.get(candidate.key)?.item;
         if (name === "progress" && this.watchedTell && have) played += playedBetween(have, candidate);
         let winner = have ? newerOf(have, candidate) : candidate;
@@ -935,6 +937,13 @@ const emptyProfileData = (): ProfileData => ({ rev: 0, collections: Object.fromE
 function validSetting(item: SyncItem): boolean {
   const schema = SETTING_SCHEMAS[item.key as SettingKey];
   return Boolean(schema) && schema.safeParse((item as { value?: unknown }).value).success;
+}
+
+/** A kept picture of the chat that the pages would draw (client/chat/saved.ts): a GIF only as `gifOf` reads it, under the key it makes. (Kino's stickers are the pages' own list.) */
+function validSaved(item: SyncItem): boolean {
+  const { key, text } = item as { key: string; text?: unknown };
+  if (!key.startsWith("gif:")) return true;
+  return typeof text === "string" && gifOf(text) === text && key === `gif:${text}`;
 }
 
 /** The newer of two copies keeps what only the older one knew (a picture, a year). */

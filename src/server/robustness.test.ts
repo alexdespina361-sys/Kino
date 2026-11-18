@@ -456,8 +456,8 @@ const SPECS: Record<string, Spec> = {
   "POST /api/auth/google/app-ticket": { body: () => ({ mode: "link", challenge: "c".repeat(43), device: "tv", next: "/tv" }), ok: [200, 400] },
   "GET /api/auth/google/app-claim": { query: () => ({ code: "c".repeat(43), verifier: "v".repeat(43) }) },
   // (The Android app: its notifications, and its builds, of which the sweep's server keeps none.)
-  "PUT /api/push": { body: (w) => ({ token: "sweep-device-token-".padEnd(48, "x"), profileId: w.profile }), ok: [204] },
-  "DELETE /api/push": { ok: [204] },
+  "PUT /api/push": { body: (w) => ({ token: "sweep-device-token-".padEnd(48, "x"), profileId: w.profile }), ok: [204, 429] },
+  "DELETE /api/push": { ok: [204, 429] },
   "GET /api/app/android": { ok: [404] },
   "GET /app/android/:file": { params: { file: () => "kino-1.apk" }, ok: [404] },
   "GET /app/kino.apk": { ok: [404] },

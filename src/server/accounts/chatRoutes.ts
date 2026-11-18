@@ -30,6 +30,13 @@ export interface ChatReport {
 
 /** How many pictures of personal stickers a report carries (a report has room for eight files, and the chat's words are one). */
 export const REPORT_STICKER_PICTURES = 7;
+/** ...and how many bytes of them, all together: the newest that fit. (Seven moving ones could be 4 MB, of the room the team's side has for everything people send.) */
+export const REPORT_STICKER_BYTES = 1_500_000;
+/**
+ * How many chat reports an account may send in a day. The reports an account has open are counted from what this run of the server took (feedback/chatReport.ts),
+ * so a restart forgives them: this one is kept over a restart, and bounds what an account can put in the team's room whatever happens in between.
+ */
+export const CHAT_REPORTS_A_DAY = 6;
 /**
  * Hands a report to the team (see `chatReporter` in feedback/chatReport.ts). Nothing was kept when it answers `"full"` (the team's side cannot take it now) or
  * `"too_many_open"` (the account has as many reports open as it may: the team has not dealt with them yet).
@@ -51,6 +58,7 @@ const STATUS: Record<ChatError | "changed", number> = {
   chat_off: 403,
   empty: 400,
   too_long: 400,
+  not_a_picture: 400,
   rate_limited: 429,
   gone: 404,
   changed: 409,
@@ -87,6 +95,7 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
   const reportsByAccount = new RateLimiter(5, 60 * MINUTE, undefined, "chat.reportsByAccount");
   // (And the whole site's: a number of accounts cannot send reports faster than the team can read them. A form's own allowance is separate: see feedback/routes.ts.)
   const reportsEveryone = new RateLimiter(60, 60 * MINUTE, undefined, "chat.reportsEveryone");
+  const reportsByAccountDay = new RateLimiter(CHAT_REPORTS_A_DAY, 24 * 60 * MINUTE, undefined, "chat.reportsByAccountDay");
   // (The pictures of a chat's personal stickers come many at once when it opens: they have their own allowance, and take nothing of the reads'.)
   const picturesByAccount = new RateLimiter(600, MINUTE);
 
@@ -188,20 +197,25 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (!report) return helpers.refused(reply, "not_found");
     const parsed = ChatReportSchema.safeParse(request.body);
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
-    const wait = Math.max(reportsByAccount.wait(me.accountId), reportsEveryone.wait("all"));
+    const wait = Math.max(reportsByAccount.wait(me.accountId), reportsByAccountDay.wait(me.accountId), reportsEveryone.wait("all"));
     if (wait > 0) return helpers.tooMany(reply, wait);
     const held = chat.lastLines(me.profileId, me.friendId);
     if (!held.ok) return fail(reply, held);
     if (held.value.rev !== parsed.data.rev) return refuse(reply, "changed");
     if (held.value.lines.length === 0) return refuse(reply, "gone");
     reportsByAccount.hit(me.accountId);
+    reportsByAccountDay.hit(me.accountId);
     reportsEveryone.hit("all");
     // (The pictures of the personal stickers in it, the newest first and each once, as they are now: whether the stickers are on or not, they are what was sent.)
     const named = [...new Set(held.value.lines.map((line) => line.sticker).filter(isStickerId).reverse())].slice(0, REPORT_STICKER_PICTURES);
     const pictures: Array<{ sticker: string; data: Buffer }> = [];
+    let bytes = 0;
     for (const sticker of named) {
       const data = await stickers?.picture(sticker).catch(() => undefined);
-      if (data) pictures.push({ sticker, data });
+      // (One that does not fit is left out, and said to be: see chatTranscript.)
+      if (!data || bytes + data.length > REPORT_STICKER_BYTES) continue;
+      bytes += data.length;
+      pictures.push({ sticker, data });
     }
     const sent = await report({
       reporter: sideOf(me.profileId),
@@ -216,6 +230,7 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     // minutes will not change it, so the page is told to try again later; both ways the page may try again later.)
     if (sent === "full" || sent === "too_many_open") {
       reportsByAccount.undo(me.accountId);
+      reportsByAccountDay.undo(me.accountId);
       reportsEveryone.undo("all");
       return reply.header("Retry-After", 3600).code(sent === "full" ? 503 : 429).send({ error: sent });
     }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FilePersistence, MemoryPersistence, PostgresPersistence, type Persistence } from "../accounts/persistence";
+import { BROWSERS_PER_ADDRESS } from "./live";
 import { dayOf, MAX_VISITORS_A_DAY, VisitCounter, visitsPersistenceFor } from "./visits";
 
 const HOUR = 3600 * 1000;
@@ -103,8 +104,23 @@ describe("counting visitors", () => {
 
   it("stops adding visitors at the cap for a day (made-up browsers), and goes on counting loads", async () => {
     const counter = await open();
-    for (let i = 0; i < MAX_VISITORS_A_DAY + 50; i++) counter.count("198.51.100.1", `bot ${i}`, "en");
+    for (let i = 0; i < MAX_VISITORS_A_DAY + 50; i++) counter.count(`2001:db8:${Math.floor(i / 1000)}:${i % 1000}::`, `bot ${i}`, "en");
     expect(counter.records().days.get("2026-11-01")).toEqual({ visitors: MAX_VISITORS_A_DAY, loads: MAX_VISITORS_A_DAY + 50 });
+  });
+
+  it("counts one address as a few visitors at most, however many names its browser gives itself, and still so after a restart", async () => {
+    const persistence = new MemoryPersistence();
+    const counter = await open(persistence);
+    for (let i = 0; i < 50; i++) counter.count("198.51.100.1", `bot ${i}`, "en");
+    expect(counter.records().days.get("2026-11-01")).toEqual({ visitors: BROWSERS_PER_ADDRESS, loads: 50 });
+    // (another address is not held up by it)
+    counter.count("203.0.113.7", PHONE, "ro");
+    await counter.flush();
+    const again = await open(persistence);
+    for (let i = 50; i < 60; i++) again.count("198.51.100.1", `bot ${i}`, "en");
+    expect(again.records().days.get("2026-11-01")).toEqual({ visitors: BROWSERS_PER_ADDRESS + 1, loads: 61 });
+    // (what is written names no address)
+    expect(JSON.stringify([...persistence.docs.values()])).not.toContain("198.51.100.1");
   });
 
   it("tries again to write after a failure, and loses nothing", async () => {

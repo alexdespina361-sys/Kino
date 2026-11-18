@@ -289,13 +289,16 @@ export class TitleNoticeBook {
 
   /* ------------------------------ who watches what ------------------------------ */
 
-  /** Reads who watches what, makes a place for each title that is new, and lets go of what nobody watches any more. */
-  sweep(): void {
+  /**
+   * Reads who watches what, makes a place for each title that is new, and lets go of what nobody watches any more. A new title is due from now: it
+   * waits behind the ones that were due before it (the review of 18 Nov: started at 0, the titles of one profile that kept changing what it watches
+   * would go before every show that is due, every time, and the real ones would never be asked about).
+   */
+  sweep(now = this.now()): void {
     const followers = this.options.followers();
     const watchers = new Map<string, Follower[]>();
     const seriesWatchers = new Map<string, Array<{ follower: Follower; like: string }>>();
     const alive = new Set<string>();
-    const now = this.now();
 
     for (const follower of followers) {
       alive.add(follower.profile);
@@ -307,7 +310,7 @@ export class TitleNoticeBook {
         if (!kind || !Number.isInteger(numberOf(key))) continue;
         let doc = this.titles.get(key);
         if (!doc) {
-          doc = kind === "tv" ? { v: 1, kind, key, checkedAt: 0, nextAt: 0, name: title, last: null } : { v: 1, kind, key, checkedAt: 0, nextAt: 0, collection: null };
+          doc = kind === "tv" ? { v: 1, kind, key, checkedAt: 0, nextAt: now, name: title, last: null } : { v: 1, kind, key, checkedAt: 0, nextAt: now, collection: null };
           this.titles.set(key, doc);
           this.touchTitle(doc);
         }
@@ -321,7 +324,7 @@ export class TitleNoticeBook {
           }
           let whole = this.titles.get(seriesKey);
           if (!whole) {
-            whole = { v: 1, kind: "col", key: seriesKey, checkedAt: 0, nextAt: 0, parts: [], out: [] };
+            whole = { v: 1, kind: "col", key: seriesKey, checkedAt: 0, nextAt: now, parts: [], out: [] };
             this.titles.set(seriesKey, whole);
             this.touchTitle(whole);
           }
@@ -390,7 +393,8 @@ export class TitleNoticeBook {
     const now = this.now();
     if (this.stale || now - this.sweptAt >= SWEEP_MS) {
       const first = this.sweptAt === -Infinity;
-      this.sweep();
+      // (With this look's own time: a title that is new now is due in it.)
+      this.sweep(now);
       // (One line when it starts, so the journal shows it running and how much there is to ask.)
       if (first) this.options.log?.warn(`New episodes: ${this.titles.size} titles watched by ${this.watchers.size > 0 ? this.profiles.size : 0} profiles with something kept, ${[...this.titles.values()].filter((doc) => doc.nextAt <= now).length} to ask about now (${TITLES_PER_LOOK} a minute).`);
     }

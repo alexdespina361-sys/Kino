@@ -33,6 +33,27 @@ describe("what may be written", () => {
   it("is left as text: a link is only letters, and is not made into anything", () => {
     expect(checkChatText('<b>look</b> https://example.com/?a=1&b="2"')).toEqual({ ok: true, text: '<b>look</b> https://example.com/?a=1&b="2"' });
   });
+
+  it("is not an address of KLIPY's that a page would not draw as the GIF it says it is; a real one, and any other address, are taken", () => {
+    const gif = "https://static1.klipy.com/ii/abc/12/34/xyz.webp";
+    expect(checkChatText(` ${gif} `)).toEqual({ ok: true, text: gif });
+    expect(checkChatText(`${gif}?w=220`)).toEqual({ ok: true, text: `${gif}?w=220` });
+    for (const fake of [
+      "https://static1.klipy.com:8443/ii/abc/x.webp", // (a port)
+      "https://someone:pw@static.klipy.com/x.gif", // (a name and password)
+      "http://static.klipy.com/x.gif", // (not https)
+      "https://static.klipy.com/x.svg", // (not a picture KLIPY gives)
+      "https://static.klipy.com.evil.example/x.gif", // (another host)
+      "https://evil.example/static.klipy.com/x.gif",
+      "javascript:static.klipy.com",
+    ]) {
+      expect(checkChatText(fake), fake).toEqual({ ok: false, error: "not_a_picture" });
+    }
+    // (words with an address among them, and an address of somewhere else, stay words)
+    expect(checkChatText("look at https://static.klipy.com:8443/x.gif")).toMatchObject({ ok: true });
+    expect(checkChatText("https://www.youtube.com/watch?v=x")).toMatchObject({ ok: true });
+    expect(checkChatText("klipy.com is where the GIFs come from")).toMatchObject({ ok: true });
+  });
 });
 
 describe("what travels", () => {

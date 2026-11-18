@@ -334,6 +334,20 @@ describe("the routes of the app", () => {
     expect((await app.inject({ method: "GET", url: "/api/features" })).json().push).toBe(true);
   });
 
+  it("lets an account say where its phones are reached only so many times in ten minutes (each saying walks every sign-in of the site)", async () => {
+    const { app } = await site({ push: new KeptSender() });
+    const signedUp = await app.inject({ method: "POST", url: "/api/auth/register", payload: { email: "bo", password: "correct horse", device: "remote" } });
+    const cookie = String(signedUp.headers["set-cookie"]).split(";")[0]!;
+    const profile = signedUp.json().profiles[0].id;
+    const codes: number[] = [];
+    for (let n = 0; n < 32; n++) {
+      const asked = n % 2 === 0 ? { method: "PUT" as const, payload: { token: "bo-phone-token-00000000000", profileId: profile } } : { method: "DELETE" as const };
+      codes.push((await app.inject({ ...asked, url: "/api/push", headers: { cookie } })).statusCode);
+    }
+    expect(codes.filter((code) => code === 204)).toHaveLength(30);
+    expect(codes.slice(30)).toEqual([429, 429]);
+  });
+
   it("offers the newest build from the folder, tells the apps of it once (also after a restart), and serves the APK", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "kino-app-"));
     try {
