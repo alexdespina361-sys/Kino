@@ -1,25 +1,66 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ShownTitle } from "../shared/Shown";
 import { forChildren, isWanted, LibraryItemsSchema, LibrarySchema, sectionOf, wantedSections, type Library as LibraryData, type LibraryItem, type LibraryRow, type LibrarySection, type PlayHint } from "../../shared";
-import { listEntryOf } from "../account/cards";
+import { listEntryOf, hintOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
 import { useProfileData } from "../account/store";
 import { rowTitle, useT } from "../i18n";
 import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
-import { hueOf, Poster, posterSizes } from "../shared/Poster";
+import { hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { titleOfPersonal, useLikes } from "../shared/recommend";
 import { personalAfter, personalSlots, seenKeys, withoutSeen, type PersonalRow } from "../shared/taste";
 import { useWatching, WATCHING_AFTER, watchingRow } from "../shared/watching";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { landscapeRows } from "../shared/shapes";
 import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
-import { CATEGORIES_AFTER, CATEGORY_TILES, entryOfItem, type Entry } from "../tv/pages";
+import { CATEGORIES_AFTER, CATEGORY_TILES, entryOfItem, type Entry, resumable } from "../tv/pages";
 import { useHold } from "./hold";
 import { RowHead } from "./Rows";
 import { SavedMark, useListToggle, type ListToggle } from "./Round";
-import { Hero } from "./shell/Hero";
+import { CheckIcon, InfoIcon, PlayIcon, PlusIcon } from "../shared/icons";
+
+function Hero({
+  item,
+  toggle,
+  onOpen,
+  onPlay,
+}: {
+  item: LibraryItem;
+  toggle: ListToggle;
+  onOpen: (entry: Entry) => void;
+  onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
+}) {
+  const t = useT();
+  const { progress, lists } = useProfileData();
+  const entry = resumable(entryOfItem(item), progress);
+  const kind = item.kind === "movie" ? t("library.kindMovie") : item.kind === "series" ? t("library.kindSeries") : undefined;
+  const meta = [item.year, kind].filter(Boolean).join(" · ");
+  const plays = onPlay !== undefined && item.kind === "movie" && entry.url !== "";
+  const label = plays ? t(entry.startAt !== undefined ? "rows.resume" : "rows.play") : item.kind === "series" ? t("player.episodes") : t("rows.open");
+  const open = () => onOpen(entryOfItem(item));
+  const play = () => onPlay?.(new URL(entry.resumeUrl ?? entry.url, location.href).href, entry.startAt, hintOf(entry));
+  return (
+    <section className="hero" data-testid="home-hero" aria-label={item.title}>
+      <button type="button" className="hero-open" onClick={open} aria-label={`${t("rows.open")} ${item.title}`} data-testid="hero-open">
+        <Poster className="lib-art hero-art" title={item.title} image={sharper(item.image) ?? item.backdrop} seed={item.id} />
+      </button>
+      <div className="hero-text">
+        <h2 className="hero-title">{item.title}</h2>
+        {meta && <p className="hero-meta">{meta}</p>}
+        <div className="hero-actions">
+          <button type="button" className="btn btn-red hero-play" onClick={plays ? play : open} data-testid="hero-play">
+            {plays ? <PlayIcon /> : <InfoIcon />} {label}
+          </button>
+          <button type="button" className="btn hero-list" onClick={toggle.onClick} aria-pressed={toggle.inList} aria-haspopup={toggle.asks ? "dialog" : undefined} aria-label={`${toggle.label}: ${item.title}`} data-testid="hero-list">
+            {toggle.inList ? <CheckIcon /> : <PlusIcon />} {toggle.asks ? t("rows.myList") : listName(lists[0]!)}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 let remembered: LibraryData | null = null;
 let rememberedAt = 0;

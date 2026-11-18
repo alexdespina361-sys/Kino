@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { feedbackTitle, type FeedbackArea, type FeedbackKind } from "../../shared";
+import { feedbackTitle, type FeedbackArea, type FeedbackKind, FEEDBACK_AREA_GROUPS, FEEDBACK_KINDS } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { useT, type Key } from "../i18n";
 import { roleOfThisPage, thisIsHandHeld } from "../role";
 import { useBackToClose } from "../shared/backButton";
-import { ChevronIcon, CloseIcon } from "../shared/icons";
+import { ChevronIcon, CloseIcon, ScreenshotIcon, CheckIcon, MessageIcon, ShieldIcon, TrashIcon } from "../shared/icons";
 import { moveFocus, navItems, type Direction } from "../tv/dpad";
 import { actionForKey, isEditable } from "../tv/keys";
-import { keepReceipt, refreshUnread, sendReport, type Who } from "./api";
+import { keepReceipt, refreshUnread, sendReport, type Who, useUnreadFeedback } from "./api";
 import { Annotator } from "./Annotator";
 import { captureScreen } from "./capture";
-import { CaptureBar, Shutter } from "./CaptureBar";
 import { collectContext, guessArea } from "./diagnostics";
 import "./feedback.css";
 import { FormScreen, type SendState } from "./Form";
@@ -18,11 +17,172 @@ import { buildPayload, fromDraft, hasWords, newForm, toDraft, writtenByThePerson
 import { pieceFromFile, pieceFromFitted, release, toAttachments, withMarks, type Piece } from "./images";
 import { MineScreen, ThreadScreen } from "./Mine";
 import type { AddRole } from "./Pictures";
-import { clearDraft, newKey, readDraft, readReceipts, saveDraft } from "./receipts";
-import { SentScreen } from "./Sent";
-import { StartScreen } from "./Start";
+import { clearDraft, newKey, readDraft, readReceipts, saveDraft, type Draft } from "./receipts";
 import type { FeedbackOptions } from "./store";
-import { WhereScreen } from "./Where";
+import { Chip, KindIcon } from "./ui";
+
+interface StartProps {
+  onKind: (kind: FeedbackKind) => void;
+  draft: Draft | undefined;
+  onContinue: () => void;
+  onDiscard: () => void;
+  hasMessages: boolean;
+  onMine: () => void;
+}
+function StartScreen({ onKind, draft, onContinue, onDiscard, hasMessages, onMine }: StartProps) {
+  const t = useT();
+  const unread = useUnreadFeedback();
+  return (
+    <div className="fb-body" data-testid="fb-start">
+      <p className="fb-lead">{t("feedback.lead")}</p>
+      {draft ? (
+        <div className="fb-draft" data-testid="fb-draft">
+          <button type="button" className="fb-draft-open" data-nav data-testid="fb-draft-continue" onClick={onContinue}>
+            <span className="fb-draft-text">
+              <strong>{t("feedback.draft.continue")}</strong>
+              <small>{feedbackTitle({ message: draft.text || Object.values(draft.details).find((value) => value?.trim()) || "" }, "…")}</small>
+            </span>
+            <ChevronIcon />
+          </button>
+          <button type="button" className="fb-icon-button" data-nav data-testid="fb-draft-discard" aria-label={t("feedback.draft.discard")} onClick={onDiscard}>
+            <TrashIcon />
+          </button>
+        </div>
+      ) : null}
+      <div className="fb-kinds" role="group" aria-label={t("feedback.title")}>
+        {FEEDBACK_KINDS.map((kind) => (
+          <button key={kind} type="button" className={`fb-kind fb-kind-${kind}`} data-nav data-testid={`fb-kind-${kind}`} data-autofocus={kind === "bug" ? "" : undefined} onClick={() => onKind(kind)}>
+            <span className="fb-kind-icon">
+              <KindIcon kind={kind} />
+            </span>
+            <span className="fb-kind-text">
+              <strong>{t(`feedback.kind.${kind}` as Key)}</strong>
+              <small>{t(`feedback.kind.${kind}.hint` as Key)}</small>
+            </span>
+            <ChevronIcon />
+          </button>
+        ))}
+      </div>
+      {hasMessages ? (
+        <button type="button" className="fb-mine-link" data-nav data-testid="fb-mine" onClick={onMine}>
+          <MessageIcon />
+          <span className="fb-mine-text">{t("feedback.mine")}</span>
+          {unread > 0 ? (
+            <span className="fb-badge" data-testid="fb-unread" aria-label={t("feedback.unread", { count: unread })}>
+              {unread}
+            </span>
+          ) : null}
+          <ChevronIcon />
+        </button>
+      ) : null}
+      <p className="fb-privacy">
+        <ShieldIcon />
+        <span>{t("feedback.privacy")}</span>
+      </p>
+    </div>
+  );
+}
+
+interface SentProps {
+  answerable: boolean;
+  rejected: number;
+  dropped: number;
+  onMine: () => void;
+  onAnother: () => void;
+  onClose: () => void;
+}
+function SentScreen({ answerable, rejected, dropped, onMine, onAnother, onClose }: SentProps) {
+  const t = useT();
+  return (
+    <div className="fb-body fb-sent" data-testid="fb-sent">
+      <span className="fb-sent-mark" aria-hidden="true">
+        <CheckIcon />
+      </span>
+      <h3 className="fb-sent-title" data-autofocus tabIndex={-1}>
+        {t("feedback.sent.title")}
+      </h3>
+      <p className="fb-lead">{answerable ? t("feedback.sent.answerable") : t("feedback.sent.plain")}</p>
+      {rejected > 0 ? <p className="fb-note">{t("feedback.sent.rejected", { count: rejected })}</p> : null}
+      {dropped > 0 ? <p className="fb-note">{t("feedback.sent.dropped", { count: dropped })}</p> : null}
+      <div className="fb-sent-actions">
+        {answerable ? (
+          <button type="button" className="fb-primary" data-nav data-testid="fb-sent-mine" onClick={onMine}>
+            <MessageIcon />
+            <span>{t("feedback.mine")}</span>
+          </button>
+        ) : null}
+        <button type="button" className="fb-secondary" data-nav data-testid="fb-sent-another" onClick={onAnother}>
+          {t("feedback.another")}
+        </button>
+        <button type="button" className="fb-secondary" data-nav data-testid="fb-sent-close" onClick={onClose}>
+          {t("common.close")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface CaptureBarProps {
+  counting: number | null;
+  onNow: () => void;
+  onLater: () => void;
+  onCancel: () => void;
+}
+function CaptureBar({ counting, onNow, onLater, onCancel }: CaptureBarProps) {
+  const t = useT();
+  return (
+    <div className="fb-capture-bar" data-feedback-skip role="group" aria-label={t("feedback.capture.title")} data-testid="fb-capture-bar">
+      <p className="fb-capture-text" role="status" aria-live="polite">
+        <ScreenshotIcon />
+        <span>{counting !== null ? t("feedback.capture.counting", { seconds: counting }) : t("feedback.capture.lead")}</span>
+      </p>
+      <div className="fb-capture-actions">
+        <button type="button" className="fb-primary" data-nav data-testid="fb-capture-now" onClick={onNow}>
+          {t("feedback.capture.now")}
+        </button>
+        {counting === null ? (
+          <button type="button" className="fb-secondary" data-nav data-testid="fb-capture-later" onClick={onLater}>
+            {t("feedback.capture.later")}
+          </button>
+        ) : null}
+        <button type="button" className="fb-secondary" data-nav data-testid="fb-capture-cancel" onClick={onCancel}>
+          {t("common.cancel")}
+        </button>
+      </div>
+    </div>
+  );
+}
+function Shutter() {
+  const t = useT();
+  return (
+    <div className="fb-shutter" data-feedback-skip role="status" data-testid="fb-shutter">
+      <span className="spinner" />
+      <span>{t("feedback.capture.taking")}</span>
+    </div>
+  );
+}
+
+function WhereScreen({ value, guessed, onPick }: { value: FeedbackArea; guessed: boolean; onPick: (area: FeedbackArea) => void }) {
+  const t = useT();
+  return (
+    <div className="fb-body" data-testid="fb-where-screen">
+      <p className="fb-lead">{t("feedback.whereLead")}</p>
+      {guessed ? <p className="fb-note">{t("feedback.whereGuessNote", { place: t(`feedback.area.${value}` as Key) })}</p> : null}
+      {FEEDBACK_AREA_GROUPS.map((group) => (
+        <section key={group.id} className="fb-section" aria-labelledby={`fb-group-${group.id}`}>
+          <h3 id={`fb-group-${group.id}`}>{t(`feedback.group.${group.id}` as Key)}</h3>
+          <div className="fb-choice" role="radiogroup" aria-labelledby={`fb-group-${group.id}`}>
+            {group.areas.map((area) => (
+              <Chip key={area} selected={value === area} testId={`fb-area-${area}`} onClick={() => onPick(area)}>
+                {t(`feedback.area.${area}` as Key)}
+              </Chip>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
 
 type Screen =
   | { name: "start" }

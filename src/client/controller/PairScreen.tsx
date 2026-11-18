@@ -1,12 +1,26 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { LanguageSwitch } from "../account/LanguageSwitch";
-import { t, useT } from "../i18n";
+import { t, useT, LANGUAGE_NAMES, useLanguage } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { switchRole } from "../role";
 import type { SocketStatus } from "../shared/socket";
 import { PlayIcon, ScanIcon, TvIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
 import { cameraAvailable, Scanner } from "./Scanner";
+import { UI_LANGUAGES } from "../../shared";
+import { chooseLanguage } from "../account/settings";
+
+function LanguageSwitch() {
+  const language = useLanguage();
+  return (
+    <div className="segmented compact" role="radiogroup" aria-label={t("settings.language")} data-testid="language-switch">
+      {UI_LANGUAGES.map((code) => (
+        <button key={code} type="button" role="radio" lang={code} aria-checked={language === code} onClick={() => chooseLanguage(code)} data-testid={`switch-lang-${code}`}>
+          {LANGUAGE_NAMES[code]}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface PairScreenProps {
   code: string;

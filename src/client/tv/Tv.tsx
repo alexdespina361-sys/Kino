@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useLayoutEffect, type CSSProperties, type RefObject } from "react";
 import {
   describeChange,
   episodeLabel,
@@ -41,10 +41,8 @@ import { readPartyCode } from "../shared/launch";
 import { useProfileHold } from "../shared/profileHold";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
-import { useSlow } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
-import { Captions } from "./Captions";
 import { EdgeScrollHint } from "./EdgeScrollHint";
 import { PlayerEngine, PlayerError } from "./engine";
 import { useEnhance } from "../enhance/useEnhance";
@@ -57,8 +55,6 @@ import { STARTING_FADE_MS, StartingFilm, startingFrom, UNHEARD_MS, type Starting
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, pageBefore, TvMenu, type MenuKind } from "./Menu";
-import { keepNativePlayerOut } from "./nativePlayer";
-import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
 import { nearTheEnd } from "./preloadNext";
 import { AUTO_SKIP_SECONDS, FRESH_MS, nextButtonFrom, useSkipSegment, useSkipTimes, type SkipControl } from "./skip";
@@ -75,11 +71,173 @@ import {
   thisDevice,
   type Prefs,
 } from "./prefs";
-import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
 import "../polish/tv.css";
 import "../polish/tv-posters.css";
 import "../polish/tv-phone.css";
+import { captionBottom, captionTextStyle } from "../shared/captionCss";
+import { isHeld } from "../subsync/hold";
+
+function CueText({ cue }: { cue: TextTrackCue }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const vtt = cue as Partial<VTTCue>;
+    node.replaceChildren(vtt.getCueAsHTML ? vtt.getCueAsHTML() : document.createTextNode(vtt.text ?? ""));
+  }, [cue]);
+  return <span ref={ref} className="tv-caption-text" />;
+}
+const isCaptionTrack = (track: TextTrack) => track.kind === "subtitles";
+const sameCues = (a: TextTrackCue[], b: TextTrackCue[]) => a.length === b.length && a.every((cue, i) => cue === b[i]);
+function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<HTMLVideoElement | null>; style: CaptionStyle; delay?: number }) {
+  const [cues, setCues] = useState<TextTrackCue[]>([]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const refresh = () => {
+      const now = video.currentTime;
+      const matchTime = now - delay;
+      const active: TextTrackCue[] = [];
+      for (const track of Array.from(video.textTracks)) {
+        if (track.mode === "disabled" || !isCaptionTrack(track) || isHeld(track)) continue;
+        for (const cue of Array.from(track.cues ?? [])) if (cue.startTime <= matchTime && matchTime < cue.endTime) active.push(cue);
+      }
+      setCues((current) => (sameCues(current, active) ? current : active));
+    };
+
+    const events = ["timeupdate", "seeked", "play", "pause"] as const;
+    events.forEach((name) => video.addEventListener(name, refresh));
+    video.textTracks.addEventListener("change", refresh);
+    video.textTracks.addEventListener("addtrack", refresh);
+    video.textTracks.addEventListener("removetrack", refresh);
+    const timer = setInterval(refresh, 250);
+    refresh();
+    return () => {
+      events.forEach((name) => video.removeEventListener(name, refresh));
+      video.textTracks.removeEventListener("change", refresh);
+      video.textTracks.removeEventListener("addtrack", refresh);
+      video.textTracks.removeEventListener("removetrack", refresh);
+      clearInterval(timer);
+    };
+  }, [videoRef, delay]);
+
+  return (
+    <div className="tv-captions" data-testid="captions" style={{ "--caption-bottom": captionBottom(style) } as CSSProperties}>
+      {cues.map((cue) => (
+        <div className="tv-caption" data-testid="caption" key={`${cue.startTime}-${cue.id}`} style={captionTextStyle(style)}>
+          <CueText cue={cue} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const KEEP_IN_THE_PAGE: Record<string, string> = {
+  controlslist: "nodownload nofullscreen noremoteplayback",
+  "webkit-playsinline": "",
+  "x5-playsinline": "",
+  "x5-video-player-type": "h5-page",
+  "t7-video-player-type": "inline",
+  "x-webkit-airplay": "deny",
+};
+type WebKitVideo = HTMLVideoElement & { webkitDisplayingFullscreen?: boolean; webkitExitFullscreen?: () => void };
+function keepNativePlayerOut(video: HTMLVideoElement): () => void {
+  for (const [name, value] of Object.entries(KEEP_IN_THE_PAGE)) video.setAttribute(name, value);
+  video.playsInline = true;
+  video.disablePictureInPicture = true;
+  video.disableRemotePlayback = true;
+  video.controls = false;
+
+  const noControls = new MutationObserver(() => {
+    if (video.controls) video.controls = false;
+  });
+  noControls.observe(video, { attributes: true, attributeFilter: ["controls"] });
+  const leaveVideoFullscreen = () => {
+    if (document.fullscreenElement === video) document.exitFullscreen().catch(() => {});
+    const legacy = video as WebKitVideo;
+    if (legacy.webkitDisplayingFullscreen) legacy.webkitExitFullscreen?.();
+  };
+  const noMenu = (event: Event) => event.preventDefault();
+  video.addEventListener("webkitbeginfullscreen", leaveVideoFullscreen);
+  video.addEventListener("contextmenu", noMenu);
+  document.addEventListener("fullscreenchange", leaveVideoFullscreen);
+
+  return () => {
+    noControls.disconnect();
+    video.removeEventListener("webkitbeginfullscreen", leaveVideoFullscreen);
+    video.removeEventListener("contextmenu", noMenu);
+    document.removeEventListener("fullscreenchange", leaveVideoFullscreen);
+  };
+}
+
+function pressWhatOkPresses(): () => void {
+  let down: KeyboardEvent | null = null;
+  const onDown = (event: KeyboardEvent) => {
+    const target = event.target;
+    down = !event.repeat && actionForKey(event) === "select" && target instanceof HTMLElement && target.matches("button, a[href]") ? event : null;
+  };
+  const onTyped = () => {
+    down = null;
+  };
+  const onUp = () => {
+    const pressed = down;
+    down = null;
+    const target = pressed?.target;
+    if (!pressed || pressed.defaultPrevented || !(target instanceof HTMLElement)) return;
+    if (target.isConnected && document.activeElement === target) target.click();
+  };
+  window.addEventListener("keydown", onDown, true);
+  window.addEventListener("keypress", onTyped, true);
+  window.addEventListener("keyup", onUp, true);
+  return () => {
+    window.removeEventListener("keydown", onDown, true);
+    window.removeEventListener("keypress", onTyped, true);
+    window.removeEventListener("keyup", onUp, true);
+  };
+}
+
+function useWakeLock(active: boolean): void {
+  useEffect(() => {
+    if (!active || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+
+    const acquire = async () => {
+      try {
+        const granted = await navigator.wakeLock.request("screen");
+        if (cancelled) void granted.release();
+        else lock = granted;
+      } catch {
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && (!lock || lock.released)) void acquire();
+    };
+
+    void acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      void lock?.release().catch(() => {});
+    };
+  }, [active]);
+}
+
+const SLOW_AFTER_MS = 10_000;
+function useSlow(waiting: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!waiting) return;
+    const timer = setTimeout(() => setSlow(true), SLOW_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [waiting]);
+  return slow;
+}
 
 const DEVICE_KEY = "tv.deviceId";
 const HUD_HIDE_MS = 2500;

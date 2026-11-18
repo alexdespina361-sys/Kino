@@ -30,14 +30,38 @@ import {
   type LiveProgress,
   type Person,
   type Sent,
-  type TagView,
+  type TagView, ONLINE_MS
 } from "../../shared";
 import { normalise } from "./links";
-import { Presence } from "./presence";
 import { RateLimiter } from "./rateLimit";
 import type { ScreenProofs } from "./screens";
 import type { FriendError, StoredItem } from "./friends";
 import type { StoreError, AccountStore } from "./store";
+
+class Presence {
+  private readonly seen = new Map<string, number>();
+
+  constructor(private readonly now: () => number) {}
+
+  heartbeat(profileId: string): void {
+    const at = this.now();
+    this.seen.set(profileId, at);
+    if (this.seen.size > 2000) this.prune(at);
+  }
+
+  online(profileId: string): boolean {
+    const at = this.seen.get(profileId);
+    return at !== undefined && this.now() - at < ONLINE_MS;
+  }
+
+  forget(profileId: string): void {
+    this.seen.delete(profileId);
+  }
+
+  private prune(now: number): void {
+    for (const [id, at] of this.seen) if (now - at >= ONLINE_MS) this.seen.delete(id);
+  }
+}
 
 export interface PartyLookup {
   partyOf(code: string): { host: string; party: string } | undefined;

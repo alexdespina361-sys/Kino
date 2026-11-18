@@ -1,4 +1,4 @@
-import { Fragment, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { Fragment, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode, useCallback } from "react";
 import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, sectionOf, tagLabel, titleLink, wantedSections, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -13,8 +13,7 @@ import { useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
 import { GetTheAppStrip } from "../app/GetTheApp";
 import { waitingFrom } from "../chat/notices";
-import { TvChat } from "../chat/TvChat";
-import { nameOf, recommendationOf } from "../friends/entries";
+import { nameOf, recommendationOf, presenceInChat } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows, friendsSummary } from "../friends/pages";
@@ -33,7 +32,6 @@ import { useWatching } from "../shared/watching";
 import { personalSlots } from "../shared/taste";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
-import { AboutText } from "./AboutText";
 import { shownTitle, useShown } from "../shared/names";
 import { aboutRows, useAbout } from "../shared/about";
 import { takeStrayAddress } from "../shared/strayAddress";
@@ -45,7 +43,6 @@ import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, t
 import { isCompact, useCompact, useFlatHand } from "./compact";
 import { episodeRows, SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
-import { NewsTv } from "./News";
 import { dayOf, LATEST, useNews } from "../changelog/news";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
@@ -58,8 +55,171 @@ import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
-import { RowTiles } from "./RowTiles";
 import { SearchField } from "./SearchField";
+import { ChatTv } from "../chat/ChatTv";
+import type { OpenTitle } from "../chat/titles";
+import { useHost } from "../chat/useHost";
+import { NewsList } from "../changelog/NewsList";
+
+const STEP = 0.8;
+const NEAR_END = 1.5;
+const WAITING_TILES = 3;
+function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ before: false, after: false });
+  const wantsMore = useRef(onNearEnd);
+  wantsMore.current = onNearEnd;
+  const onScreen = useRef(typeof IntersectionObserver === "undefined");
+
+  const measure = useCallback(() => {
+    const row = scroller.current;
+    if (!row) return;
+    const before = row.scrollLeft > 2;
+    const after = row.scrollLeft < row.scrollWidth - row.clientWidth - 2;
+    setMore((was) => (was.before === before && was.after === after ? was : { before, after }));
+    if (onScreen.current && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * NEAR_END) wantsMore.current?.();
+  }, []);
+
+  useEffect(measure);
+  useEffect(() => {
+    const row = scroller.current;
+    if (!row || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(row);
+    return () => watch.disconnect();
+  }, [measure]);
+  useEffect(() => {
+    const row = scroller.current;
+    if (!row || typeof IntersectionObserver === "undefined") return;
+    const watch = new IntersectionObserver((seen) => {
+      onScreen.current = seen.some((one) => one.isIntersecting);
+      if (onScreen.current) measure();
+    });
+    watch.observe(row);
+    return () => watch.disconnect();
+  }, [measure]);
+
+  const go = (direction: -1 | 1) => scroller.current?.scrollBy({ left: direction * scroller.current.clientWidth * STEP, behavior: "smooth" });
+  const arrow = (side: "before" | "after") => (
+    <button
+      type="button"
+      className="tv-row-more"
+      data-side={side}
+      data-testid={side === "before" ? "tv-row-back" : "tv-row-next"}
+      tabIndex={-1}
+      aria-hidden="true"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => go(side === "before" ? -1 : 1)}
+    >
+      {side === "before" ? <ChevronLeftIcon /> : <ChevronIcon />}
+    </button>
+  );
+  return (
+    <div className="tv-row-box">
+      <div className="tv-row-tiles" ref={scroller} onScroll={measure}>
+        {children}
+        {loading && Array.from({ length: WAITING_TILES }, (_, at) => <div className="tv-tile tv-skeleton" data-testid="tv-row-waiting" aria-hidden="true" key={`waiting-${at}`} />)}
+      </div>
+      {more.before && arrow("before")}
+      {more.after && arrow("after")}
+    </div>
+  );
+}
+
+function AboutText({ text, className }: { text: string; className: string }) {
+  const t = useT();
+  const box = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+
+  useEffect(() => setOpen(false), [text]);
+  useEffect(() => {
+    const element = box.current;
+    if (!element || open) return;
+    const measure = () => setCut(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(element);
+    return () => watch.disconnect();
+  }, [text, open]);
+
+  return (
+    <>
+      <p ref={box} className={`${className}${open ? " is-open" : ""}`} data-testid="about-text">
+        {text}
+      </p>
+      {(cut || open) && (
+        <button
+          type="button"
+          className="about-more"
+          aria-expanded={open}
+          data-testid="about-more"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((was) => !was);
+          }}
+        >
+          {t(open ? "library.aboutLess" : "library.aboutMore")}
+        </button>
+      )}
+    </>
+  );
+}
+
+function NewsTv({ onClose, onSeen }: { onClose: () => void; onSeen: () => void }) {
+  const t = useT();
+  const page = useRef<HTMLDivElement>(null);
+  useEffect(onSeen, [onSeen]);
+  useEffect(() => {
+    const root = page.current;
+    if (!root) return;
+    const watch = new MutationObserver(() => {
+      const first = root.querySelector<HTMLElement>(".news-lines li");
+      if (!first) return;
+      watch.disconnect();
+      const now = document.activeElement;
+      if (!now || now === document.body || now.classList.contains("tv-back")) first.focus();
+    });
+    watch.observe(root, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <Screen testId="tv-news" compact focus onBack={onClose} className="tv-news-screen">
+      <BackButton onClick={onClose} testId="tv-news-back" />
+      <h1 className="tv-headline tv-headline-small">{t("news.title")}</h1>
+      <div ref={page} className="tv-news-body">
+        <NewsList remote className="tv-news-list" />
+      </div>
+    </Screen>
+  );
+}
+
+function TvChat({ friendId, narrow, onClose, onOpenTitle }: { friendId: string; narrow: boolean; onClose: () => void; onOpenTitle?: ((entry: Entry) => void) | undefined }) {
+  const host = useHost(friendId, onClose);
+  if (!host.friend) return null;
+  const open: OpenTitle | undefined = onOpenTitle
+    ? (item, opening) => {
+        host.close();
+        onOpenTitle(openedAt(entryOfItem(item), opening));
+      }
+    : undefined;
+  return (
+    <ChatTv
+      name={host.friend.name}
+      avatar={host.friend.avatar}
+      online={host.friend.on && host.friend.online}
+      presence={presenceInChat(host.friend, Date.now())}
+      session={host.session}
+      report={host.report}
+      receiving={host.receiving}
+      narrow={narrow}
+      desk={typeof document !== "undefined" && document.documentElement.dataset.fit === "desk"}
+      onClose={host.close}
+      onOpenTitle={open}
+    />
+  );
+}
 
 export interface PlayOptions {
   startAt?: number;

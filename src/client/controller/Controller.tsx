@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, useMemo } from "react";
 import {
   IDLE_STATE,
   MAX_LINK_LENGTH,
@@ -14,7 +14,7 @@ import {
   type PlayHint,
   type PlayerState,
   type ResolveStatus,
-  type TvInfo,
+  type TvInfo, type ListInfo, type LiveListItem, type LiveRating, forChildren
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
@@ -24,13 +24,13 @@ import { GetTheAppStrip } from "../app/GetTheApp";
 import { PhoneChat } from "../chat/PhoneChat";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
-import { useT } from "../i18n";
+import { useT, rowTitle } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { useBackWhile } from "../shared/backButton";
 import { CONTROLLER_KEY } from "../role";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
-import { ChevronLeftIcon } from "../shared/icons";
+import { ChevronLeftIcon, HomeIcon, ListIcon, SearchIcon, UserIcon, ChevronIcon, TvIcon, PauseIcon, PlayIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
 import { forgetStrayAddress, strayAddress } from "../shared/strayAddress";
@@ -41,21 +41,16 @@ import { BellButton, NotificationsSheet } from "./Bell";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
 import { FriendInvite, FriendsHome } from "./Friends";
-import { Library } from "./Library";
+import { Library, Tile } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink, ResolveLine } from "./PlayLink";
-import { Remote, type SheetKind } from "./Remote";
-import { LINE_EVENT } from "./Round";
+import { Remote, type SheetKind, mediaTitle, stateLabel } from "./Remote";
+import { LINE_EVENT, useListToggle } from "./Round";
 import { RatingsSheet } from "./RatingsSheet";
 import { useChildCards } from "../shared/childGate";
-import { ContinueRow } from "./Rows";
-import { MiniRemote } from "./shell/MiniRemote";
-import { MyLists } from "./shell/MyLists";
-import { RowPage } from "./shell/RowPage";
-import { TabBar } from "./shell/TabBar";
-import { TvChip } from "./shell/TvChip";
-import { useTabs } from "./shell/useTabs";
+import { ContinueRow, hasListRows, ListRows, RatingsRow } from "./Rows";
+import { useTabs, TABS, type Tab } from "./shell/useTabs";
 import { TitleSheet } from "./TitleSheet";
 import {
   CaptionStyleSheet,
@@ -73,6 +68,182 @@ import {
 import "./controller.css";
 import "../polish/phone.css";
 import "../polish/shell.css";
+import { Poster } from "../shared/Poster";
+import { listEntryOf } from "../account/cards";
+import { scoreOf, useScores } from "../account/ratings";
+import { allRows, failedTitles, feed, GRID_CAP, hasMoreTitles, loadingTitles, nearBottom, useFeed } from "../shared/feed";
+import { entryOfItem } from "../tv/pages";
+
+const WAITING = 6;
+function RowPage({ rowId, onClose, onOpen, onPick }: { rowId: string; onClose: () => void; onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void }) {
+  const t = useT();
+  const toggleFor = useListToggle(onPick);
+  const scores = useScores();
+  const feeding = useFeed();
+  const child = useProfileData().settings.child === true;
+  const row = useMemo(() => {
+    const found = allRows(feeding.data, GRID_CAP).find((one) => one.id === rowId);
+    return found && child ? { ...found, items: found.items.filter((item) => forChildren(item, found)) } : found;
+  }, [feeding.data, rowId, child]);
+  const grid = useRef<HTMLDivElement>(null);
+  const count = row?.items.length ?? 0;
+  const more = row !== undefined && hasMoreTitles(feeding, rowId, count, GRID_CAP);
+  const loading = loadingTitles(feeding, rowId);
+  const failed = failedTitles(feeding, rowId);
+
+  useEffect(() => {
+    const body = grid.current?.closest<HTMLElement>(".page-body");
+    if (!more || !body) return;
+    const look = () => {
+      if (nearBottom(body)) feed.loadMore(rowId, GRID_CAP);
+    };
+    look();
+    body.addEventListener("scroll", look, { passive: true });
+    return () => body.removeEventListener("scroll", look);
+  }, [more, rowId, count, failed]);
+
+  return (
+    <Page title={row ? rowTitle(row) : t("library.title")} onBack={onClose} testId="row-page">
+      <div className="poster-grid" ref={grid} data-testid="row-grid">
+        {row?.items.map((item) => (
+          <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleFor(listEntryOf(item))} onOpen={() => onOpen(entryOfItem(item))} />
+        ))}
+        {loading &&
+          Array.from({ length: WAITING }, (_, at) => (
+            <div className="lib-tile lib-waiting" aria-hidden="true" key={`waiting-${at}`}>
+              <span className="lib-art" />
+            </div>
+          ))}
+      </div>
+      {failed && (
+        <p className="muted small" role="status" data-testid="row-failed">
+          {t("rows.moreFailed")}
+        </p>
+      )}
+    </Page>
+  );
+}
+
+function MyLists({
+  lists,
+  items,
+  ratings,
+  ratingsOn,
+  onOpen,
+  onPick,
+  onRemove,
+  onManage,
+  onAllRatings,
+  onBrowse,
+}: {
+  lists: readonly ListInfo[];
+  items: readonly LiveListItem[];
+  ratings: readonly LiveRating[];
+  ratingsOn: boolean;
+  onOpen: (entry: Entry) => void;
+  onPick: (entry: ListEntry) => void;
+  onRemove: (url: string, list: string) => void;
+  onManage: () => void;
+  onAllRatings: () => void;
+  onBrowse: () => void;
+}) {
+  const t = useT();
+  const empty = !hasListRows(lists, items) && !(ratingsOn && ratings.length > 0);
+  return (
+    <section className="tab-list" data-testid="my-lists" aria-labelledby="my-lists-heading">
+      <h2 className="tab-heading" id="my-lists-heading">
+        {t("tabs.list")}
+      </h2>
+      {empty ? (
+        <div className="empty-state" data-testid="my-lists-empty">
+          <span className="empty-icon" aria-hidden="true">
+            <ListIcon />
+          </span>
+          <h3>{t("lists.emptyTitle")}</h3>
+          <p className="muted">{t("rows.myListEmpty")}</p>
+          <button type="button" className="btn btn-red" data-testid="my-lists-browse" onClick={onBrowse}>
+            {t("lists.browse")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <ListRows lists={lists} items={items} onOpen={onOpen} onPick={onPick} onRemove={onRemove} onManage={onManage} />
+          {ratingsOn && <RatingsRow ratings={ratings} onOpen={onOpen} onAll={onAllRatings} />}
+        </>
+      )}
+    </section>
+  );
+}
+
+function MiniRemote({ media, player, tvName, online, onOpen, onToggle }: { media: NormalizedMedia; player: PlayerState; tvName: string; online: boolean; onOpen: () => void; onToggle: () => void }) {
+  const t = useT();
+  const title = mediaTitle(media);
+  const playing = player.state === "playing";
+  const loading = player.state === "loading";
+  const progress = player.duration > 0 ? Math.min(1, Math.max(0, player.currentTime / player.duration)) : 0;
+  return (
+    <div className="mini-remote" data-testid="mini-remote" data-state={player.state}>
+      <span className="mini-progress" aria-hidden="true">
+        <i style={{ width: `${Math.round(progress * 1000) / 10}%` }} />
+      </span>
+      <button type="button" className="mini-open" data-testid="playing-bar" aria-label={`${t("remote.open")}: ${title}`} onClick={onOpen}>
+        <Poster className="mini-art" title={title} image={media.poster ?? media.backdrop} />
+        <span className="mini-text">
+          <b className="mini-title">{title}</b>
+          <span className="mini-state" data-testid="mini-state">
+            {stateLabel(player, tvName)}
+          </span>
+        </span>
+      </button>
+      <button type="button" className="mini-toggle" data-testid={playing ? "mini-pause" : "mini-play"} aria-label={playing ? t("hud.pause") : t("hud.play")} disabled={!online || loading} onClick={onToggle}>
+        {loading ? <span className="spinner" /> : playing ? <PauseIcon /> : <PlayIcon />}
+      </button>
+    </div>
+  );
+}
+
+function TvChip({ name, party, ok, status, onClick }: { name: string; party: number; ok: boolean; status: string; onClick: () => void }) {
+  const t = useT();
+  return (
+    <button type="button" className="top-tv tv-chip" aria-label={`${name}${party > 0 ? ` +${party}` : ""} ${status}, ${t("phone.tvMenu")}`} data-testid="menu" onClick={onClick}>
+      <TvIcon />
+      <span className="top-name">
+        <span className="top-line">
+          <span className="tv-name" data-testid="tv-name">
+            {name}
+          </span>
+          {party > 0 && (
+            <>
+              {" "}
+              <span className="party-count" data-testid="party-count">
+                +{party}
+              </span>
+            </>
+          )}
+        </span>{" "}
+        <span className={`tv-status ${ok ? "ok" : "bad"}`} data-testid="tv-online">
+          {status}
+        </span>
+      </span>
+      <ChevronIcon className="tv-chip-more" />
+    </button>
+  );
+}
+
+const ICONS: Record<Tab, ReactNode> = { home: <HomeIcon />, search: <SearchIcon />, list: <ListIcon />, you: <UserIcon /> };
+function TabBar({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
+  const t = useT();
+  return (
+    <nav className="tabbar" aria-label={t("tabs.label")} data-testid="tabbar">
+      {TABS.map((each) => (
+        <button key={each} type="button" className="tab" aria-current={each === tab ? "page" : undefined} data-testid={`tab-${each}`} onClick={() => onSelect(each)}>
+          <span className="tab-icon">{ICONS[each]}</span>
+          <span className="tab-label">{t(`tabs.${each}`)}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 const RESOLVE_TIMEOUT_MS = 40_000;
 
