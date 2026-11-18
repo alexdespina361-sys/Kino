@@ -575,6 +575,8 @@ test.describe("with Google sign-in on", () => {
     // Mia's profile is made a child's, a grown-up's is added, and a PIN set (on another screen, as far as this one knows).
     const request = phone.context().request;
     const mia = ((await (await request.get(`${site.origin}/api/me`)).json()) as { me: { profiles: Array<{ id: string }> } }).me.profiles[0]!.id;
+    // (This screen is on Mia's profile, the only one there is, before another is added: else, opened again, it would ask who is watching.)
+    await expect.poll(() => phone.evaluate(() => localStorage.getItem("kino.profile"))).toBe(mia);
     expect((await request.post(`${site.origin}/api/profiles`, { data: { name: "Grown" } })).ok()).toBe(true);
     expect((await request.post(`${site.origin}/api/profiles/${mia}/sync`, { data: { since: 0, settings: [{ key: "child", at: Date.now(), value: true }] } })).ok()).toBe(true);
     expect((await request.post(`${site.origin}/api/me/child-pin`, { data: { next: "1234" } })).ok()).toBe(true);
