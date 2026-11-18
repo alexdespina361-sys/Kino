@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { keepLimitsIn, LimitKeeper, RateLimiter, WorkBudget } from "./rateLimit";
+import { DayCount, keepLimitsIn, LimitKeeper, RateLimiter, WorkBudget } from "./rateLimit";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -162,5 +162,63 @@ describe("limits kept over a restart", () => {
     const limiter = new RateLimiter(1, HOUR, Date.now, "login.failedByName");
     limiter.hit("a");
     expect(limiter.wait("a")).toBeGreaterThan(0);
+  });
+});
+
+describe("a day's count", () => {
+  it("counts per key up to its most a day, and begins again at midnight UTC for every key", () => {
+    const clock = { now: Date.parse("2026-11-18T22:00:00Z") };
+    const day = new DayCount(3, () => clock.now);
+    for (let n = 0; n < 3; n++) {
+      expect(day.wait("a")).toBe(0);
+      day.hit("a");
+    }
+    expect(day.wait("a")).toBe(2 * HOUR);
+    expect(day.wait("b")).toBe(0);
+    // (several at once: they fit or they wait)
+    expect(day.wait("b", 4)).toBeGreaterThan(0);
+    day.hit("b", 3);
+    expect(day.count("b")).toBe(3);
+    day.undo("b");
+    expect(day.count("b")).toBe(2);
+    clock.now = Date.parse("2026-11-19T00:00:00Z");
+    expect([day.wait("a"), day.count("a"), day.count("b")]).toEqual([0, 0, 0]);
+  });
+
+  it("holds so many keys at most, letting go of the one counted first", () => {
+    const day = new DayCount(5, () => Date.parse("2026-11-18T10:00:00Z"), undefined, 3);
+    for (const key of ["a", "b", "c", "d"]) day.hit(key);
+    expect(["a", "b", "c", "d"].map((key) => day.count(key))).toEqual([0, 1, 1, 1]);
+  });
+
+  it("is kept over a restart as one number a key, written as codes, and only for the day it was counted", async () => {
+    const file = await fileIn();
+    const clock = { now: Date.parse("2026-11-18T10:00:00Z") };
+    const first = LimitKeeper.open(file);
+    keepLimitsIn(first);
+    const before = new DayCount(1000, () => clock.now, "search.perDay");
+    keepLimitsIn(undefined);
+    before.hit("203.0.113.7", 999);
+    first.save();
+    const written = await readFile(file, "utf8");
+    expect(written).not.toContain("203.0.113.7");
+    expect(written.length).toBeLessThan(200);
+
+    const second = LimitKeeper.open(file);
+    keepLimitsIn(second);
+    const after = new DayCount(1000, () => clock.now, "search.perDay");
+    keepLimitsIn(undefined);
+    expect(after.wait("203.0.113.7")).toBe(0);
+    after.hit("203.0.113.7");
+    expect(after.wait("203.0.113.7")).toBeGreaterThan(0);
+    expect(after.count("203.0.113.8")).toBe(0);
+    // (written again before the key was asked about, it is still there)
+    second.save();
+    const third = LimitKeeper.open(file);
+    clock.now = Date.parse("2026-11-19T00:00:01Z");
+    keepLimitsIn(third);
+    const nextDay = new DayCount(1000, () => clock.now, "search.perDay");
+    keepLimitsIn(undefined);
+    expect(nextDay.count("203.0.113.7")).toBe(0);
   });
 });

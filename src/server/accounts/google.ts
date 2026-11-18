@@ -6,6 +6,7 @@ import { DeviceKindSchema, PROFILE_NAME_MAX, type DeviceKind, type GoogleOutcome
 import { remember } from "../boundedMap";
 import { hashPassword, type PasswordCost } from "./password";
 import { RateLimiter } from "./rateLimit";
+import type { SignUpLimits } from "./routes";
 import type { AccountStore } from "./store";
 
 /**
@@ -281,8 +282,8 @@ export interface GoogleHelpers {
   signIn(request: FastifyRequest, reply: FastifyReply, accountId: string, kind: DeviceKind): void;
   readCookie(header: string | undefined, name: string): string | undefined;
   registrationNow(): Registration;
-  /** The sign-ups of an address, counted with the ones made with a password. */
-  signUpByIp: RateLimiter;
+  /** The sign-ups of an address and of the site, counted with the ones made with a password. */
+  signUps: SignUpLimits;
   passwordCost?: PasswordCost | undefined;
 }
 
@@ -453,10 +454,18 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     // (The app's trip makes the account only when the app claims it, with the secret only it knows: a page of another site that sent someone through Google's chooser
     // with a hash of its own - which the gate lets in, as the app's browser says it comes from another site - makes nothing. The judge, 17 Nov.)
     if (flow.app) return toApp({ then: { kind: "signUp", sub: claims.sub, name: profileNameOf(claims.givenName) } });
-    if (helpers.signUpByIp.wait(request.ip) > 0) return back("busy");
-    helpers.signUpByIp.hit(request.ip);
-    const made = store.createGoogleAccount(claims.sub, profileNameOf(claims.givenName), await hashPassword(secret(), helpers.passwordCost));
-    if (!made.ok) return refuse("the account was made a moment ago");
+    if (helpers.signUps.wait(request.ip) > 0) return back("busy");
+    helpers.signUps.hit(request.ip);
+    const hash = await hashPassword(secret(), helpers.passwordCost);
+    if (helpers.registrationNow() === "closed") {
+      helpers.signUps.notMade();
+      return back("closed");
+    }
+    const made = store.createGoogleAccount(claims.sub, profileNameOf(claims.givenName), hash);
+    if (!made.ok) {
+      helpers.signUps.notMade();
+      return refuse("the account was made a moment ago");
+    }
     if (flow.app) return toApp({ then: { kind: "signIn", accountId: made.value.id } });
     helpers.signIn(request, reply, made.value.id, flow.device);
     return back();
@@ -495,10 +504,18 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
         return reply.redirect(next);
       }
       if (helpers.registrationNow() === "closed") return reply.redirect(`${next}?google=closed`);
-      if (helpers.signUpByIp.wait(request.ip) > 0) return reply.redirect(`${next}?google=busy`);
-      helpers.signUpByIp.hit(request.ip);
-      const made = store.createGoogleAccount(then.sub, then.name, await hashPassword(secret(), helpers.passwordCost));
-      if (!made.ok) return failed("the account was made a moment ago");
+      if (helpers.signUps.wait(request.ip) > 0) return reply.redirect(`${next}?google=busy`);
+      helpers.signUps.hit(request.ip);
+      const hash = await hashPassword(secret(), helpers.passwordCost);
+      if (helpers.registrationNow() === "closed") {
+        helpers.signUps.notMade();
+        return reply.redirect(`${next}?google=closed`);
+      }
+      const made = store.createGoogleAccount(then.sub, then.name, hash);
+      if (!made.ok) {
+        helpers.signUps.notMade();
+        return failed("the account was made a moment ago");
+      }
       helpers.signIn(request, reply, made.value.id, handoff.device);
       return reply.redirect(next);
     }

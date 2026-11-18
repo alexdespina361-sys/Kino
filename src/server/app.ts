@@ -16,7 +16,7 @@ import { chatReporter } from "./feedback/chatReport";
 import { stickerAdminRoutes } from "./accounts/stickerRoutes";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN, teamGuard } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
-import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
+import { answerUnroutable, FETCHES_PER_DAY, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerDay, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import type { NameBook } from "./library/names";
 import { keepOverRestart, RateLimiter } from "./accounts/rateLimit";
@@ -75,6 +75,10 @@ export interface AppOptions {
   maxAccounts?: number;
   /** How many accounts one address may make in an hour (10 unless set). */
   signUpsPerHour?: number;
+  /** How many accounts the whole site may make in a day (accounts/routes.ts `DEFAULT_SIGNUPS_PER_DAY`). */
+  signUpsPerDay?: number;
+  /** How many times in a UTC day an account's screens may send what changed (accounts/routes.ts `SYNC_WRITES_A_DAY`). */
+  syncWritesPerDay?: number;
   /** How many slow checks (a password, a PIN, the hash of a new one) an address may cause in a quarter of an hour; 150 unless set (accounts/routes.ts). */
   slowChecksPer15Min?: number;
   /** How many proxies sit in front of the server (a host like Render has one), so a visitor's address and https are read from the right place (Cloudflare's addresses are passed over on the way: `trust.ts`). */
@@ -112,6 +116,8 @@ export interface AppOptions {
   proxyExemptHosts?: readonly string[];
   /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 60 for its search, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
   fetchesPerMinute?: FetchesPerMinute;
+  /** ...and in a UTC day, for the search, the questions about a title and the rows (`FETCHES_PER_DAY` unless set). Tests use small ones. */
+  fetchesPerDay?: Partial<FetchesPerDay>;
   /** How many of the library's searches may be under way at once, for one address and in all (3 and 32 unless set; see the search's route). */
   searchesAtOnce?: { perAddress?: number; inAll?: number };
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
@@ -195,6 +201,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.registration ? { registration: options.registration } : {}),
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
+      ...(options.signUpsPerDay ? { signUpsPerDay: options.signUpsPerDay } : {}),
+      ...(options.syncWritesPerDay ? { syncWritesPerDay: options.syncWritesPerDay } : {}),
     ...(options.slowChecksPer15Min ? { slowChecksPer15Min: options.slowChecksPer15Min } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
       ...(options.google ? { google: options.google } : {}),
@@ -325,7 +333,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxyExemptHosts = options.proxyExemptHosts ?? exemptHostsFrom(process.env.PROXY_EXEMPT_HOSTS);
   if (!proxyVideo && proxyExemptHosts.length > 0) app.log.info(`The proxy carries no film, except from: ${proxyExemptHosts.join(", ")}.`);
   // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
-  fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo });
+  fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo, perDay: { ...FETCHES_PER_DAY, ...options.fetchesPerDay } });
   const nameLookups = new RateLimiter(options.nameLookupsPer10Min ?? 2400, 10 * 60 * 1000); // (not kept over a restart: thousands of moments an address, for ten minutes)
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.

@@ -1,6 +1,6 @@
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isAppStart } from "./accounts/google";
-import { RateLimiter } from "./accounts/rateLimit";
+import { DayCount, RateLimiter } from "./accounts/rateLimit";
 
 const MINUTE = 60_000;
 
@@ -143,12 +143,37 @@ export interface FetchesPerMinute {
 }
 
 /**
+ * ...and in a day (UTC), for the ones that are not the playing of a film (the look-up of a link and `/api/proxy` are left to their minute). A minute's
+ * allowance all day long is tens of thousands of fetches from other sites by one address, under the site's one key of the movie database (the review
+ * of 18 Nov). Far above what a household asks in a day; kept over a restart.
+ */
+export interface FetchesPerDay {
+  /** The library's search. */
+  search: number;
+  /** The questions about a title and what is like a title, counted together. */
+  titles: number;
+  /** The rows and the next titles of a row. */
+  browse: number;
+}
+export const FETCHES_PER_DAY: Readonly<FetchesPerDay> = { search: 3000, titles: 30_000, browse: 30_000 };
+
+/**
  * Anyone may ask this server to go and fetch a page (`/api/resolve`, the library's questions about a title, the library's search, its rows and the titles of a row) or a text (`/api/proxy` without film, which is subtitles),
  * and each ask costs a fetch from another site and some of this host's bandwidth, so an address may make only so many of them in a minute: past it the answer is a 429
  * with `Retry-After`, as everywhere else, and nothing is fetched. The count is of the route that answers (a path written another way reaches the same route and the
  * same count), and a request that the gate above turned away is not counted: it must not use up the allowance of the visitor whose browser it was sent from. A restart forgives everyone.
  */
-export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120, similar = 120, search = 60, proxy = 300, browse = 300 }: FetchesPerMinute, { video }: { video: boolean }): void {
+export function fetchLimits(
+  app: FastifyInstance,
+  { resolve = 60, library = 120, similar = 120, search = 60, proxy = 300, browse = 300 }: FetchesPerMinute,
+  { video, perDay = FETCHES_PER_DAY }: { video: boolean; perDay?: FetchesPerDay },
+): void {
+  const days = new Map<string, DayCount>();
+  days.set("/api/library/search", new DayCount(perDay.search, undefined, "fetch.searchPerDay"));
+  const titlesToday = new DayCount(perDay.titles, undefined, "fetch.titlesPerDay");
+  for (const route of [...TITLE_ASKS, ...LIKE_ASKS]) days.set(route, titlesToday);
+  const browsedToday = new DayCount(perDay.browse, undefined, "fetch.browsePerDay");
+  for (const route of BROWSE_ASKS) days.set(route, browsedToday);
   const limiters = new Map<string, RateLimiter>();
   limiters.set("/api/resolve", new RateLimiter(resolve, MINUTE));
   limiters.set("/api/library/search", new RateLimiter(search, MINUTE));
@@ -160,13 +185,16 @@ export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120,
   for (const route of BROWSE_ASKS) limiters.set(route, shelves);
   if (!video) limiters.set("/api/proxy", new RateLimiter(proxy, MINUTE));
   app.addHook("onRequest", async (request, reply) => {
-    const limiter = limiters.get(request.routeOptions.url ?? "");
+    const route = request.routeOptions.url ?? "";
+    const limiter = limiters.get(route);
     if (!limiter) return;
-    const wait = limiter.wait(request.ip);
+    const day = days.get(route);
+    const wait = Math.max(limiter.wait(request.ip), day?.wait(request.ip) ?? 0);
     if (wait > 0) {
       const seconds = Math.ceil(wait / 1000);
       return reply.header("Retry-After", seconds).code(429).send({ error: "rate_limited", retryAfter: seconds });
     }
     limiter.hit(request.ip);
+    day?.hit(request.ip);
   });
 }

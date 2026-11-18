@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ChatMuteSchema, ChatReactSchema, ChatReportSchema, ChatSendSchema, friendChoices, isStickerId, StickerSendSchema, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
 import type { ChatBook, ChatError, ChatOutcome } from "./chat";
 import type { FriendRouteHelpers } from "./friendRoutes";
-import { RateLimiter } from "./rateLimit";
+import { DayCount, RateLimiter } from "./rateLimit";
 import { sendStickerPicture, stickerRefusal } from "./stickerRoutes";
 import type { StickerBook } from "./stickers";
 
@@ -37,6 +37,12 @@ export const REPORT_STICKER_BYTES = 1_500_000;
  * so a restart forgives them: this one is kept over a restart, and bounds what an account can put in the team's room whatever happens in between.
  */
 export const CHAT_REPORTS_A_DAY = 6;
+/**
+ * How many messages (words and personal stickers together) an account may send in an hour and in a UTC day, on top of the book's twenty a minute per sender:
+ * twenty a minute all day long would be tens of thousands of lines in the books of the people one is friends with. Far above a busy evening of talk; kept over a restart.
+ */
+export const CHAT_SENDS_AN_HOUR = 600;
+export const CHAT_SENDS_A_DAY = 3000;
 /**
  * Hands a report to the team (see `chatReporter` in feedback/chatReport.ts). Nothing was kept when it answers `"full"` (the team's side cannot take it now) or
  * `"too_many_open"` (the account has as many reports open as it may: the team has not dealt with them yet).
@@ -98,6 +104,17 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
   const reportsByAccountDay = new RateLimiter(CHAT_REPORTS_A_DAY, 24 * 60 * MINUTE, undefined, "chat.reportsByAccountDay");
   // (The pictures of a chat's personal stickers come many at once when it opens: they have their own allowance, and take nothing of the reads'.)
   const picturesByAccount = new RateLimiter(600, MINUTE);
+  const sendsByAccountHour = new RateLimiter(CHAT_SENDS_AN_HOUR, 60 * MINUTE, undefined, "chat.sendsByAccountHour");
+  const sendsByAccountDay = new DayCount(CHAT_SENDS_A_DAY, undefined, "chat.sendsByAccountDay");
+  /** Whether the account may send one more message now: otherwise the answer is a 429 that says how long to wait. */
+  const maySend = (accountId: string, reply: FastifyReply): boolean => {
+    const wait = Math.max(sendsByAccountHour.wait(accountId), sendsByAccountDay.wait(accountId));
+    if (wait <= 0) return true;
+    helpers.tooMany(reply, wait);
+    return false;
+  };
+  /** ...and one that went is counted (one that was refused, for whatever reason, is not). */
+  const counted = (accountId: string) => (sendsByAccountHour.hit(accountId), sendsByAccountDay.hit(accountId));
 
   const base = "/api/profiles/:id/friends/:fid/chat";
 
@@ -136,7 +153,9 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (!me) return reply;
     const parsed = ChatSendSchema.safeParse(request.body);
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
+    if (!maySend(me.accountId, reply)) return reply;
     const sent = chat.send(me.profileId, me.friendId, parsed.data.text, parsed.data.replyTo);
+    if (sent.ok) counted(me.accountId);
     return sent.ok ? reply.code(201).send(sent.value) : fail(reply, sent);
   });
 
@@ -248,7 +267,9 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
     // (Only one of one's own: a name typed by hand, or one of somebody else's, is not a sticker one has.)
     if (!book.holds(me.profileId, parsed.data.id)) return refuse(reply, "gone");
+    if (!maySend(me.accountId, reply)) return reply;
     const sent = chat.sendSticker(me.profileId, me.friendId, parsed.data.id, parsed.data.replyTo);
+    if (sent.ok) counted(me.accountId);
     return sent.ok ? reply.code(201).send(sent.value) : fail(reply, sent);
   });
 

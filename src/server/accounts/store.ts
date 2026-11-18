@@ -94,7 +94,18 @@ export const PUSH_TOKEN_PATTERN = /^[A-Za-z0-9:_-]{20,4096}$/;
 interface ProfileData {
   rev: number;
   collections: Record<CollectionName, Map<string, Stamped>>;
+  /** What its live items weigh (bytes of JSON), as last weighed: see `SYNC_ACCOUNT_BYTES`. */
+  weight?: number;
 }
+
+/**
+ * What all the profiles of one account may keep together, and every account of the site, before a new item is not kept (what is kept stays, and changes
+ * to it are taken). Each profile's own budgets (`BYTE_BUDGET`) come to about 1.9 MB, five profiles to 9.2 MB, and 500 accounts to some gigabytes, held
+ * in memory by a server that may use one (the review of 18 Nov: nothing said how much the whole site keeps). On 18 Nov the largest profile weighed 42 KB
+ * and all of them together 67 KB, so these are hundreds of times what anybody keeps. The site's is env SYNC_SITE_MB.
+ */
+export const SYNC_ACCOUNT_BYTES = 2 * 1024 * 1024;
+export const SYNC_SITE_BYTES = 64 * 1024 * 1024;
 
 /** A sign-in lasts this long after the device was last used (a browser will not keep a cookie longer than about 400 days). Signing out, or clearing the browser's cookies, is what ends it sooner. */
 export const SESSION_TTL_MS = 400 * 24 * 3600 * 1000;
@@ -163,6 +174,9 @@ export interface StoreOptions {
    * the site turns it on (index.ts; env PROFILE_SETUP=off turns it off again), and what only makes accounts to try something else is asked nothing.
    */
   askSetup?: boolean;
+  /** What one account's profiles and the whole site's may keep (`SYNC_ACCOUNT_BYTES`, `SYNC_SITE_BYTES` unless set). */
+  syncAccountBytes?: number;
+  syncSiteBytes?: number;
 }
 
 /**
@@ -233,8 +247,9 @@ export class AccountStore {
   }
 
   static async open(options: StoreOptions): Promise<AccountStore> {
-    const store = new AccountStore({ now: Date.now, flushMs: 1500, askSetup: false, ...options });
+    const store = new AccountStore({ now: Date.now, flushMs: 1500, askSetup: false, syncAccountBytes: SYNC_ACCOUNT_BYTES, syncSiteBytes: SYNC_SITE_BYTES, ...options });
     await store.load();
+    for (const profile of store.data.values()) store.weigh(profile);
     // (A picture whose record was never written, or a record whose picture is not there, is let go: the two are kept in different places. Only where they are
     // on: a host that has them off is not asked anything about them, its database not even given their table; nothing can be made there to tidy.)
     if (store.stickerBook.on) await store.stickerBook.reconcile();
@@ -523,6 +538,7 @@ export class AccountStore {
     this.revokeAll(accountId);
     for (const profile of account.profiles) {
       this.freeTag(profile);
+      this.unweigh(profile.id);
       this.data.delete(profile.id);
       this.profileOwner.delete(profile.id);
       this.drop(`pdata:${profile.id}`);
@@ -588,6 +604,7 @@ export class AccountStore {
     if (account.profiles.length <= 1) return fail("last_profile");
     for (const profile of account.profiles) if (profile.id === profileId) this.freeTag(profile);
     account.profiles = account.profiles.filter((profile) => profile.id !== profileId);
+    this.unweigh(profileId);
     this.data.delete(profileId);
     this.profileOwner.delete(profileId);
     this.touch(`account:${accountId}`);
@@ -832,6 +849,9 @@ export class AccountStore {
     // What the screen sent and the server kept exactly as it was sent: the screen has it already, so it is not sent back.
     const echo = new Set<string>();
     let played = 0;
+    // (At what the account or the site may keep, a new item is not kept: what is kept stays, and changes to it are taken. See SYNC_ACCOUNT_BYTES.)
+    const full = this.syncFull(profileId);
+    let weight = 0;
 
     for (const name of COLLECTIONS) {
       const map = profile.collections[name];
@@ -841,6 +861,7 @@ export class AccountStore {
         if (name === "settings" && !candidate.deleted && !validSetting(candidate)) continue;
         if (name === "saved" && !candidate.deleted && !validSaved(candidate)) continue;
         const have = map.get(candidate.key)?.item;
+        if (full && !have && !candidate.deleted) continue;
         if (name === "progress" && this.watchedTell && have) played += playedBetween(have, candidate);
         let winner = have ? newerOf(have, candidate) : candidate;
         if (have && !have.deleted && !candidate.deleted) winner = borrow(name, winner, winner === have ? candidate : have);
@@ -849,8 +870,12 @@ export class AccountStore {
         stamped = true;
         if (sameJson(winner, sent)) echo.add(`${name}:${winner.key}`);
       }
-      pruned = this.prune(map, name, now) || pruned;
+      const pruning = this.prune(map, name, now);
+      pruned = pruning.changed || pruned;
+      weight += pruning.weight;
     }
+    this.siteWeight += weight - (profile.weight ?? 0);
+    profile.weight = weight;
     if (played > 0 && this.watchedTell) {
       // (No more than the time that went by on this server's clock since the profile's watching was last counted, and a quarter of an hour at most at once:
       // what a screen says of its own clock cannot make the number grow faster than a film plays.)
@@ -878,24 +903,55 @@ export class AccountStore {
 
   /**
    * Keep the newest items up to the limit and up to the budget (the first that does not fit goes, and every older one with it), and forget removals once everyone
-   * has had time to hear of them (they weigh nothing: their count is bounded already). Whether anything went.
+   * has had time to hear of them (they weigh nothing: their count is bounded already). Whether anything went, and what is kept weighs.
    */
-  private prune(map: Map<string, Stamped>, name: CollectionName, now: number): boolean {
+  private prune(map: Map<string, Stamped>, name: CollectionName, now: number): { changed: boolean; weight: number } {
     let weight = 0;
     let over = false;
     const kept = mergeCollection([...map.values()].map((entry) => entry.item), [], { limit: LIMITS[name], now }).filter((item) => {
       if (item.deleted) return true;
       // (What is past the budget is not weighed: it goes whatever it weighs.)
       if (!over) {
-        weight += Buffer.byteLength(JSON.stringify(item));
-        over = weight > BYTE_BUDGET[name];
+        const size = Buffer.byteLength(JSON.stringify(item));
+        over = weight + size > BYTE_BUDGET[name];
+        if (!over) weight += size;
       }
       return !over;
     });
-    if (kept.length === map.size) return false;
+    if (kept.length === map.size) return { changed: false, weight };
     const keep = new Set(kept.map((item) => item.key));
     for (const key of [...map.keys()]) if (!keep.has(key)) map.delete(key);
-    return true;
+    return { changed: true, weight };
+  }
+
+  /** What all the live items of every profile weigh, as last weighed. */
+  private siteWeight = 0;
+
+  /** Weighs a profile's live items (as it is loaded: a sync weighs them as it prunes). */
+  private weigh(profile: ProfileData): void {
+    let weight = 0;
+    for (const name of COLLECTIONS) for (const { item } of profile.collections[name].values()) if (!item.deleted) weight += Buffer.byteLength(JSON.stringify(item));
+    this.siteWeight += weight - (profile.weight ?? 0);
+    profile.weight = weight;
+  }
+
+  private unweigh(profileId: string): void {
+    this.siteWeight -= this.data.get(profileId)?.weight ?? 0;
+  }
+
+  /** Whether this profile's account, or the whole site, keeps as much as it may (`SYNC_ACCOUNT_BYTES`). */
+  private syncFull(profileId: string): boolean {
+    if (this.siteWeight >= this.options.syncSiteBytes) return true;
+    const accountId = this.profileOwner.get(profileId);
+    let account = 0;
+    for (const profile of accountId ? (this.accounts.get(accountId)?.profiles ?? []) : []) account += this.data.get(profile.id)?.weight ?? 0;
+    return account >= this.options.syncAccountBytes;
+  }
+
+  /** What the profiles keep, in bytes (the owner's numbers, and tests). */
+  syncWeight(accountId?: string): number {
+    if (!accountId) return this.siteWeight;
+    return (this.accounts.get(accountId)?.profiles ?? []).reduce((all, profile) => all + (this.data.get(profile.id)?.weight ?? 0), 0);
   }
 
   /** One part of what a profile keeps, as the server has it, removals included (what a friend is shown is picked from this). */

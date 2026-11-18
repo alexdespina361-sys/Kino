@@ -81,6 +81,16 @@ function groupsOf(address: string): number[] | undefined {
  * (`::ffff:203.0.113.9`) is read as the IPv4 one. IPv4 addresses, and whatever is not an address, are left as they are.
  * What this does not stop: someone who is given several networks has an allowance for each of them, as someone who has several IPv4 addresses does.
  */
+/**
+ * The wider network a visitor (`visitorOf`) is part of, for the few limits that need one: for IPv6 its /48, which is what one customer or one server may be
+ * given whole (65,536 of the /64s a limit counts by), for IPv4 the address itself.
+ */
+export function networkOf(visitor: string): string {
+  if (!visitor.includes(":")) return visitor;
+  const groups = visitor.split(":");
+  return groups.length >= 3 && groups.slice(0, 3).every((group) => /^[0-9a-f]{1,4}$/.test(group)) ? `${groups.slice(0, 3).join(":")}::/48` : visitor;
+}
+
 export function visitorOf(address: string): string {
   const groups = groupsOf(address);
   if (!groups || groups.length !== 8) return address;
