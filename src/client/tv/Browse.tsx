@@ -474,7 +474,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     () => (pageSection ? (item) => sectionOf(item) === pageSection : wanted ? (item) => isWanted(wanted, item) : undefined),
     [pageSection, wanted],
   );
-  const personal = useLikes({ want: child ? 0 : personalSlots(pageLibraryRows.length), keep: keepLike, showing: isRowsPage(view) });
+  const placesFor = useMemo(() => personalSlots(keepLike ? pageLibraryRows.filter((row) => (pageSection ? sectionOf(row) === pageSection : isWanted(wanted, row))).length : pageLibraryRows.length), [pageLibraryRows, keepLike, pageSection, wanted]);
+  const personal = useLikes({ want: child ? 0 : placesFor, keep: keepLike, showing: isRowsPage(view), page: pageSection ?? "home" });
   /** The rows of this page that the library can add titles to as they are scrolled (the ranking of ten, which is not scrolled, is not one). */
   const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
   // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
@@ -912,6 +913,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   }, [feeding, status, view, feedSection, homeRows.length, grid?.entries.length, allRowsDrawn]);
   const askShelves = () => {
     if (status === "ready" && allRowsDrawn && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(feedSection);
+    // (The page is no longer on its way to the row the remote moved to once it is there, or once something else - a finger, a wheel - takes it further off.)
+    const to = heading.current;
+    if (to && rowsRef.current) {
+      const left = Math.abs(rowsRef.current.scrollTop - to.top);
+      if (left <= 1 || left > to.left + 1 || performance.now() > to.until) heading.current = null;
+      else to.left = left;
+    }
     noteAnchor();
   };
   // A row that comes in over the one the screen is on (one of the profile's own, whose answer came late) must not push it down the screen: the page is
@@ -919,6 +927,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // the row the remote was on went off the bottom of a 720p screen - and an older TV's has none, so it is turned off in tv.css and done here for all.)
   // Not at the very top of the page, where what comes in is what the page begins with.
   const anchor = useRef<{ page: string; id: string; gap: number } | null>(null);
+  /** The row the page is sliding to since the remote moved to it, until it is there: where the row was then (`top`), and how far the page still has to go. */
+  const heading = useRef<{ box: HTMLElement; top: number; left: number; until: number } | null>(null);
   const rowBoxes = () => (rowsRef.current ? (Array.from(rowsRef.current.children) as HTMLElement[]).filter((each) => each.classList.contains("tv-row")) : []);
   const noteAnchor = () => {
     const top = rowsRef.current?.scrollTop ?? 0;
@@ -931,10 +941,24 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const was = anchor.current;
     // (Only on the page it was noted on: another page has rows of the same names, and begins where the remote is put.)
     const box = was && was.page === rowsKey ? rowBoxes().find((each) => each.dataset.rowId === was.id) : undefined;
+    let putBack = false;
     if (rows && was && box) {
       const moved = box.offsetTop - rows.scrollTop - was.gap;
-      if (Math.abs(moved) > 1) rows.scrollTop += moved;
+      if (Math.abs(moved) > 1) {
+        rows.scrollTop += moved;
+        putBack = true;
+      }
     }
+    // A page that was on its way to the row the remote has just moved to goes on to where that row is now (it was heading for where the row was, and
+    // putting the page back stops it on the way).
+    const to = heading.current;
+    if (rows && to && to.box.isConnected && performance.now() < to.until) {
+      const top = to.box.offsetTop;
+      if (Math.abs(top - to.top) > 1 || putBack) {
+        heading.current = { ...to, top, left: Math.abs(rows.scrollTop - top) };
+        rows.scrollTo({ top, behavior: "smooth" });
+      }
+    } else heading.current = null;
     noteAnchor();
   }, [drawnIds]); // eslint-disable-line react-hooks/exhaustive-deps
   const askTitles = () => {
@@ -1180,7 +1204,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       // (On a phone held upright, a row taller than the page that shows it - the places of the profile, two across under its head, or the friends' - is kept in view
       // a line at a time: its top would leave the place the remote is on below the screen.)
       if (rows && latest.current.compact && rowBox.offsetHeight > rows.clientHeight) keepInView(rows, element);
-      else rows?.scrollTo({ top: rowBox.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
+      else if (rows) {
+        const top = rowBox.offsetTop;
+        const left = Math.abs(rows.scrollTop - top);
+        heading.current = left > 1 ? { box: rowBox, top, left, until: performance.now() + 1500 } : null;
+        rows.scrollTo({ top, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
+      }
       // The remote moves a title at a time and a script scrolls: nothing here is a scroll the page could notice from far off, so the library is asked for more as the remote nears the end,
       // of the page (the rows that come next) and of the row (more of its titles).
       const { homeRows: laid, view: page, feedSection: section, growing: more } = latest.current;

@@ -159,7 +159,7 @@ export function Library({
     () => (child ? (item) => forChildren(item) : pageSection ? (item) => sectionOf(item) === pageSection : mine ? (item) => isWanted(mine, item) : undefined),
     [child, pageSection, mine],
   );
-  const personal = useLikes({ want: searchPage ? 0 : personalSlots(displayedRows.length), keep: keepLike, picks: !child });
+  const personal = useLikes({ want: searchPage ? 0 : personalSlots(displayedRows.length), keep: keepLike, picks: !child, page: pageSection ?? "home" });
   // (What the profile has seen is left out of the library's rows after the first; not for a child's profile.)
   const seen = useMemo(() => (child ? new Set<string>() : seenKeys(watchedCards, givenScores)), [child, watchedCards, givenScores]);
   const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);

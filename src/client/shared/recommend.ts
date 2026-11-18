@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { LibraryItemsSchema, ratingsShown, type LibraryItem, type LiveRating } from "../../shared";
-import { useProfileData } from "../account/store";
+import { profileStore, useProfileData } from "../account/store";
 import { t } from "../i18n";
 import { feed } from "./feed";
-import { knownOf, planRows, rootSeeds, type PersonalRow, type Seed } from "./taste";
+import { FIRST_ASKS, knownOf, planRows, rootSeeds, type PersonalRow, type Seed } from "./taste";
 
 /**
  * The rows of a profile's own: "Because you watched ...", "Because you loved ...", "Because you saved ...", "More like ..." and "You might like".
@@ -14,8 +14,11 @@ import { knownOf, planRows, rootSeeds, type PersonalRow, type Seed } from "./tas
 export { LOVED_FROM } from "./taste";
 export type { PersonalRow, Seed } from "./taste";
 
-/** How many titles the library is asked about while the site is open, whatever the pages want: past it, what is not known is not asked. */
+/** How many titles the library is asked about in an hour, whatever the pages want: past it, what is not known is not asked. */
 export const ASKS_IN_ALL = 150;
+const HOUR_MS = 60 * 60_000;
+/** A question that failed is asked again when a page of rows is next opened this long after it, not before (and never under a page that is open). */
+export const ASK_AGAIN_MS = 60_000;
 
 /** The name of a row over its titles. */
 export function titleOfPersonal(row: Pick<PersonalRow, "why" | "title">): string {
@@ -31,20 +34,25 @@ export interface LikeThisOptions {
   learn?: (items: readonly LibraryItem[]) => void;
   /** See `ASKS_IN_ALL`. */
   max?: number;
+  now?: () => number;
 }
 
 /**
- * What the library said was like each title, kept for as long as the site is open: nothing found is kept too. A question that failed is not asked
- * again before the site is opened again: the rows after it are laid out without it, and a row that came late would push them down the page.
+ * What the library said was like each title, kept for as long as the site is open: nothing found is kept too. A question that failed (the TV had
+ * just woken, the library was busy) has no answer while the page is open: the rows after it are laid out without it, and a row that came late would
+ * push them down the page. It is asked again when a page of rows is next opened (`refresh`).
  */
 export function createLikeThis(options: LikeThisOptions = {}) {
   const ask = options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
   const max = options.max ?? ASKS_IN_ALL;
+  const now = options.now ?? (() => Date.now());
   const answers = new Map<string, readonly LibraryItem[]>();
   const asking = new Set<string>();
-  const failed = new Set<string>();
+  const failed = new Map<string, number>();
+  const kept = new Map<string, PersonalRow[]>();
   const listeners = new Set<() => void>();
   let asked = 0;
+  let since = now();
   let version = 0;
   const tell = () => {
     version++;
@@ -52,7 +60,7 @@ export function createLikeThis(options: LikeThisOptions = {}) {
   };
   const giveUp = (key: string) => {
     asking.delete(key);
-    failed.add(key);
+    failed.set(key, now());
     tell();
   };
   return {
@@ -88,11 +96,35 @@ export function createLikeThis(options: LikeThisOptions = {}) {
         })
         .catch(() => giveUp(seed.key));
     },
+    /**
+     * A page of rows was opened: what failed a while ago may be asked again, and an hour that has passed since the count began begins it again.
+     * (Not under a page that is open: see above.)
+     */
+    refresh() {
+      const at = now();
+      let changed = false;
+      for (const [key, when] of [...failed]) {
+        if (at - when >= ASK_AGAIN_MS) {
+          failed.delete(key);
+          changed = true;
+        }
+      }
+      if (at - since >= HOUR_MS) {
+        since = at;
+        asked = 0;
+      }
+      if (changed) tell();
+    },
+    /** The rows a page was last given in full (see `useLikes`), by a name for the profile and the page. */
+    kept: (page: string) => kept.get(page),
+    keep: (page: string, rows: PersonalRow[]) => void kept.set(page, rows),
     reset() {
       answers.clear();
       asking.clear();
       failed.clear();
+      kept.clear();
       asked = 0;
+      since = now();
       tell();
     },
   };
@@ -103,6 +135,28 @@ export type LikeThis = ReturnType<typeof createLikeThis>;
 /** What the TV and the phone ask the library. */
 export const likeThis: LikeThis = createLikeThis({ learn: (items) => feed.learn(items) });
 
+/**
+ * The first of the profile's titles are asked about as soon as they are its titles, whatever page is open: a film that has just begun is one, and
+ * by the time the library is back on the screen the rows it is in are known (a page that had to wait for them would be without its rows meanwhile).
+ */
+export function warm(store: LikeThis, data: Pick<ReturnType<typeof profileStore.getSnapshot>, "progress" | "list" | "ratings" | "settings" | "waiting">): void {
+  if (data.waiting) return;
+  for (const seed of rootSeeds(data.progress, ratingsShown(data.settings) ? data.ratings : [], data.list, FIRST_ASKS)) store.ask(seed);
+}
+if (typeof window !== "undefined") {
+  let last = "";
+  const look = () => {
+    const data = profileStore.getSnapshot();
+    // (Only when the titles change: the store tells of every few seconds of a film that is playing.)
+    const names = `${data.scope}\n${data.waiting}\n${rootSeeds(data.progress, ratingsShown(data.settings) ? data.ratings : [], data.list, FIRST_ASKS).map((seed) => seed.key).join("\n")}`;
+    if (names === last) return;
+    last = names;
+    warm(likeThis, data);
+  };
+  profileStore.subscribe(look);
+  look();
+}
+
 /** What a page wants of the profile's rows. */
 export interface LikesOptions {
   /** How many rows it has a place for (`personalSlots`): the library is asked for no more than these need, so a page asks as it is scrolled. */
@@ -111,6 +165,8 @@ export interface LikesOptions {
   keep?: ((item: LibraryItem) => boolean) | undefined;
   /** Without the row of what the profile might like (a child's profile). */
   picks?: boolean;
+  /** A name for the page (Home, a section): the rows it was last given are kept under it, for a page that opens again before the library has answered. */
+  page?: string;
   /**
    * Whether the page is on the screen (it is, unless told). While it is, the rows are made from what the profile had watched, saved and scored when it
    * came to the screen: a title saved from a row stays in its row, and no row moves under the finger. Away from it they follow the profile.
@@ -141,5 +197,16 @@ export function useLikes(options: LikesOptions, store: LikeThis = likeThis): Per
   useEffect(() => {
     for (const seed of plan.ask) store.ask(seed);
   }, [plan, store]);
-  return plan.rows;
+  // A page that comes to the screen may ask again what failed a while ago.
+  useEffect(() => {
+    if (showing) store.refresh();
+  }, [showing, store]);
+  // A page that opens again while the first answers are on their way (the library after a film that was just begun: its title is one of the first now)
+  // has the rows it had, until the new ones are whole: without them the remote, which is put back on the row it left, would have no such row.
+  const name = `${scope}\n${options.page ?? ""}\n${options.picks !== false}`;
+  const waitingFirst = plan.rows.length === 0 && plan.ask.length > 0;
+  useEffect(() => {
+    if (!waitingFirst) store.keep(name, plan.rows);
+  }, [waitingFirst, name, plan, store]);
+  return waitingFirst ? (store.kept(name) ?? plan.rows) : plan.rows;
 }
