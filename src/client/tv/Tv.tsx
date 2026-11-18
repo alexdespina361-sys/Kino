@@ -274,7 +274,9 @@ export function Tv() {
   const [accountView, setAccountView] = useState<AccountView | null>(null);
   /** Signed in, and nobody has been picked on this TV yet: that question comes first. */
   const choosing = account.status === "ready" && account.choosing;
-  const accountPage: AccountView | null = player.state === "idle" ? (choosing ? "profiles" : accountView) : null;
+  // (A profile that is still to be set up - the first of a new account, or one just added - has its pages before anything else: account/ProfileSetup.tsx.)
+  const settingUp = account.status === "ready" && !choosing && Boolean(account.profile?.setup);
+  const accountPage: AccountView | null = player.state === "idle" ? (choosing ? "profiles" : settingUp ? "setup" : accountView) : null;
 
   // What the profile in use has watched: it marks the episode list, and every few seconds of playback is added to it.
   const { watched, settings } = useProfileData();

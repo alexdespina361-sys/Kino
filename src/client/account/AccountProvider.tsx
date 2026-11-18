@@ -109,7 +109,7 @@ export interface AccountContextValue {
   signedInAs(me: Me): void;
   choose(profileId: string | null): void;
   addProfile(name: string, avatar?: AvatarId): Promise<Profile | undefined>;
-  updateProfile(id: string, patch: { name?: string; avatar?: AvatarId }): Promise<void>;
+  updateProfile(id: string, patch: { name?: string; avatar?: AvatarId; setup?: "done" }): Promise<void>;
   deleteProfile(id: string): Promise<void>;
   /** Start an exchange with the server now (the screen is about to stop, or has just paused). */
   syncNow(): void;

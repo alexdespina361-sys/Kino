@@ -7,6 +7,7 @@ import { describeError, describePasswordError } from "../account/errors";
 import { GoogleMark } from "../account/GoogleButton";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
+import { SectionPicker, sectionsKept, sectionsShown } from "../account/ProfileSetup";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
 import { COMMON_LANGUAGES, keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, moveLanguage } from "../account/subtitleLanguages";
@@ -324,6 +325,12 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
         </div>
       </Group>
       <SubtitleLanguages />
+      {/* What the profile watches (the owner, 18 Nov): the sections it has; the others are not shown on it. Not on a child's profile, which has the Cartoons. */}
+      {!child && (
+        <Group title={t("settings.sections")} help={t("setup.sectionsHelp")}>
+          <SectionPicker value={sectionsShown(settings.sections)} onChange={(next) => set("sections", sectionsKept(next))} />
+        </Group>
+      )}
       {/* A child's profile: only cartoons for children, no friends and no watch party, wherever the profile is used (see the TV's Browse). Sent at once: the server turns the friends off. */}
       <Group title={t("settings.childGroup")} help={t("settings.childHelp")}>
         <Rows>

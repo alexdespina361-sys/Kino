@@ -70,7 +70,10 @@ interface EditorProps {
   /** The pictures already taken by the account's other profiles (a new profile starts on the first free one). */
   taken?: readonly AvatarId[];
   onSave: (name: string, avatar: AvatarId) => Promise<void>;
-  onCancel: () => void;
+  /** Absent where there is nothing to go back to (a profile being set up for the first time: see ProfileSetup.tsx): no Cancel button. */
+  onCancel?: (() => void) | undefined;
+  /** What the button that saves says, when that is not "Save". */
+  saveLabel?: string | undefined;
   /** Absent for the only profile an account has: it can't be removed. */
   onDelete?: (() => Promise<void>) | undefined;
   /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and the buttons look like the TV's. */
@@ -80,7 +83,7 @@ interface EditorProps {
 }
 
 /** The name and picture of one profile. */
-export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete, tv = false, heading }: EditorProps) {
+export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete, tv = false, heading, saveLabel }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(profile?.name ?? "");
   const [avatar, setAvatar] = useState<AvatarId>(profile?.avatar ?? AVATAR_IDS.find((id) => !taken.includes(id)) ?? AVATAR_IDS[0]);
@@ -155,11 +158,13 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete,
 
       <div className="editor-actions">
         <button type="submit" className={buttonClass("main")} disabled={busy || !name.trim()} data-testid="profile-save" {...nav}>
-          {t("common.save")}
+          {saveLabel ?? t("common.save")}
         </button>
-        <button type="button" className={buttonClass("plain")} onClick={onCancel} disabled={busy} data-testid="profile-cancel" {...nav}>
-          {t("common.cancel")}
-        </button>
+        {onCancel && (
+          <button type="button" className={buttonClass("plain")} onClick={onCancel} disabled={busy} data-testid="profile-cancel" {...nav}>
+            {t("common.cancel")}
+          </button>
+        )}
       </div>
 
       {onDelete &&

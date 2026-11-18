@@ -72,7 +72,7 @@ export const api = {
   logout: async (): Promise<void> => void (await request("POST", "/api/auth/logout", {})),
 
   addProfile: (name: string, avatar?: AvatarId): Promise<Me> => ask(MeSchema, "POST", "/api/profiles", { name, ...(avatar ? { avatar } : {}) }),
-  updateProfile: (id: string, patch: { name?: string; avatar?: AvatarId }): Promise<Me> => ask(MeSchema, "PATCH", `/api/profiles/${encodeURIComponent(id)}`, patch),
+  updateProfile: (id: string, patch: { name?: string; avatar?: AvatarId; setup?: "done" }): Promise<Me> => ask(MeSchema, "PATCH", `/api/profiles/${encodeURIComponent(id)}`, patch),
   deleteProfile: (id: string): Promise<Me> => ask(MeSchema, "DELETE", `/api/profiles/${encodeURIComponent(id)}`),
 
   changePassword: async (current: string, next: string): Promise<void> => void (await request("POST", "/api/me/password", { current, next })),

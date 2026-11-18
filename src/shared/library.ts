@@ -19,6 +19,20 @@ export const LibrarySectionSchema = z.enum(["movie", "series", "cartoon", "anime
 export type LibrarySection = z.infer<typeof LibrarySectionSchema>;
 export const LIBRARY_SECTIONS: readonly LibrarySection[] = LibrarySectionSchema.options;
 
+/**
+ * The sections a profile watches, from its `sections` setting (account.ts): null for all of them (not set, or all four chosen), else the ones it
+ * chose. A section a profile does not watch has no page, no line in the menu and no rows; a title or a row that says no section is always shown.
+ */
+export function wantedSections(settings: { sections?: readonly LibrarySection[] | undefined }): ReadonlySet<LibrarySection> | null {
+  const chosen = new Set((settings.sections ?? []).filter((section) => LIBRARY_SECTIONS.includes(section)));
+  return chosen.size === 0 || chosen.size >= LIBRARY_SECTIONS.length ? null : chosen;
+}
+/** Whether a profile that watches `wanted` (see `wantedSections`) is shown a title or a row. */
+export const isWanted = (wanted: ReadonlySet<LibrarySection> | null | undefined, thing: { section?: LibrarySection | undefined; kind?: LibraryKind | undefined }): boolean => {
+  const section = sectionOf(thing);
+  return !wanted || !section || wanted.has(section);
+};
+
 /** The section of a title or a row: the one it says, else the one its kind is (a title that is neither a cartoon nor an anime does not say). Nothing for one that says neither. */
 export const sectionOf = (thing: { section?: LibrarySection | undefined; kind?: LibraryKind | undefined }): LibrarySection | undefined => thing.section ?? thing.kind;
 

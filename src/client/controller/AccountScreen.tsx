@@ -7,6 +7,7 @@ import { GetTheApp, useAppRelease } from "../app/GetTheApp";
 import { signedInLine } from "../account/google";
 import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
+import { ProfileSetup } from "../account/ProfileSetup";
 import { useProfileData } from "../account/store";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useFriends } from "../friends/FriendsProvider";
@@ -465,6 +466,26 @@ export function ChooseProfile() {
         {t("auth.signOut")}
       </button>
     </main>
+  );
+}
+
+/** A profile that is still to be set up (account/ProfileSetup.tsx), full screen, as the question before it is: it is answered before anything else. */
+export function SetUpProfile() {
+  const account = useAccount();
+  const profile = account.profile;
+  if (!account.me || !profile?.setup) return null;
+  return (
+    <ProfileSetup
+      profile={profile}
+      frame={(step, children) => (
+        <main key={step} className="phone choose phone-ui setup-page" data-testid="setup-profile">
+          <div className="brand">
+            <Logo />
+          </div>
+          {children}
+        </main>
+      )}
+    />
   );
 }
 

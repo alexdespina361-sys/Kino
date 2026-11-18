@@ -12,12 +12,13 @@ import { signedInLine } from "../account/google";
 import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
+import { ProfileSetup, SectionPicker, sectionsKept, sectionsShown } from "../account/ProfileSetup";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, pickableLanguages, toggleLanguage } from "../account/subtitleLanguages";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
-import { CheckIcon, ChevronIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, FilmIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { handHeld } from "../shared/backButton";
@@ -29,10 +30,10 @@ import { TvCode } from "./TvCode";
  * The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles,
  * and the pages of the settings that open from a row of it (the subtitle languages, the cat, the PIN of a child's profile).
  */
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat" | "pin";
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat" | "pin" | "sections" | "setup";
 
 /** A page of the settings that Back comes from to the panel: the remote lands on its row again. */
-type SettingsPage = "subtitles" | "cat" | "pin";
+type SettingsPage = "subtitles" | "cat" | "pin" | "sections";
 
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
@@ -495,6 +496,7 @@ export function TvAccountPanel({
   onSubtitles,
   onCat,
   onPin,
+  onSections,
   cameFrom,
 }: {
   onClose: () => void;
@@ -505,6 +507,7 @@ export function TvAccountPanel({
   onSubtitles: () => void;
   onCat: () => void;
   onPin: () => void;
+  onSections: () => void;
   /** The page of the settings Back came from: the remote lands on its row again, not at the top. */
   cameFrom?: SettingsPage | undefined;
 }) {
@@ -662,6 +665,19 @@ export function TvAccountPanel({
           <div className="tv-set-col" data-nav-column>
             {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen.
                 In the column with the most room, with a short line under it: the settings still fit a 720p screen in every language. */}
+            {/* What the profile watches (the owner, 18 Nov): a line that opens its page, as the subtitle languages have. Not on a child's profile, which has the Cartoons. */}
+            {!child && (
+              <SettingsGroup testId="tv-group-sections">
+                <SettingsLine
+                  icon={<FilmIcon />}
+                  label={t("settings.sections")}
+                  value={settings.sections ? sectionsShown(settings.sections).map((section) => t(SECTION_NAME[section])).join(", ") : t("settings.sectionsAll")}
+                  onPress={onSections}
+                  testId="tv-sections-setting"
+                  autoFocus={cameFrom === "sections"}
+                />
+              </SettingsGroup>
+            )}
             <SettingsGroup title={t("settings.childGroup")} testId="tv-group-child">
               <SettingsSwitch
                 label={t("settings.child")}
@@ -865,6 +881,50 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
   );
 }
 
+/** What a profile watches: its page of the settings (the same four buttons as when the profile was set up). */
+const SECTION_NAME = { movie: "tv.movies", series: "tv.series", cartoon: "tv.cartoons", anime: "tv.anime" } as const;
+function TvSections({ onBack }: { onBack: () => void }) {
+  const t = useT();
+  const { settings, set } = useSettings();
+  return (
+    <Screen testId="tv-sections-settings" focus onBack={onBack}>
+      <div className="tv-set tv-set-sections">
+        <header className="tv-set-head" data-nav-column>
+          <h1 className="tv-set-title">{t("settings.sections")}</h1>
+          <BackButton onClick={onBack} testId="tv-sections-back" />
+        </header>
+        <div className="tv-set-col" data-nav-column>
+          <p className="tv-hint tv-set-hint">
+            <InfoIcon /> <span>{t("setup.sectionsHelp")}</span>
+          </p>
+          <SectionPicker tv value={sectionsShown(settings.sections)} onChange={(next) => set("sections", sectionsKept(next))} />
+        </div>
+      </div>
+    </Screen>
+  );
+}
+
+/**
+ * A profile that is still to be set up (see account/ProfileSetup.tsx): its pages, which the remote's Back does not leave. Shown by itself once the
+ * profile is chosen on this screen, as `Who's watching?` is before it.
+ */
+function TvSetup({ onDone }: { onDone: () => void }) {
+  const { profile } = useAccount();
+  if (!profile?.setup) return null;
+  return (
+    <ProfileSetup
+      tv
+      profile={profile}
+      onDone={onDone}
+      frame={(step, children) => (
+        <Screen key={step} testId="tv-setup" compact={step === "who"} focus>
+          {children}
+        </Screen>
+      )}
+    />
+  );
+}
+
 /** Whichever page of the account is open. `forced`: signed in with nobody chosen yet, which can't be skipped. */
 export function TvAccount({ view, onView, forced }: { view: AccountView; onView: (view: AccountView | null) => void; forced: boolean }) {
   const account = useAccount();
@@ -895,6 +955,8 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
   if (view === "subtitles") return <TvSubtitleLanguages onBack={backFrom("subtitles")} />;
   if (view === "cat") return <TvCatSettings onBack={backFrom("cat")} />;
   if (view === "pin") return <TvPinSetup onBack={backFrom("pin")} />;
+  if (view === "sections") return <TvSections onBack={backFrom("sections")} />;
+  if (view === "setup") return <TvSetup onDone={() => onView(null)} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
   return (
     <TvAccountPanel
@@ -909,6 +971,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
       onSubtitles={open("subtitles")}
       onCat={open("cat")}
       onPin={open("pin")}
+      onSections={open("sections")}
       cameFrom={cameFrom}
     />
   );

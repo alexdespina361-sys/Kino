@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 import { FEEDBACK_TOKEN } from "./e2e/feedbackToken";
 
 const PORT = Number(process.env.E2E_PORT) || 8788; // not the dev port, so `pnpm dev` and e2e can run side by side
+/** A second server, as the site is: a new profile is set up by whoever uses it (e2e/profile-setup.spec.ts). The others make accounts to try something else, and are asked nothing. */
+const SETUP_PORT = PORT + 50;
+const ENV = { HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", PAIRINGS_PER_HOUR: "100000", FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000", PERSONAL_STICKERS: "on", MOVING_STICKERS: "on" };
 
 export default defineConfig({
   testDir: "e2e",
@@ -32,7 +35,8 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   // The real thing: production build, one Fastify process serving UI + /ws + local fixtures.
-  webServer: {
+  webServer: [
+   {
     // (E2E_NO_BUILD=1: the build is already made, by a run that goes on beside this one on another port.)
     command: process.env.E2E_NO_BUILD ? "pnpm start" : "pnpm build && pnpm start",
     url: `http://127.0.0.1:${PORT}/api/health`,
@@ -42,8 +46,18 @@ export default defineConfig({
     // FEEDBACK_ADMIN_TOKEN and FEEDBACK_SENDS_PER_10_MIN: the same for the feedback (6 reports in ten minutes), and the feedback specs read what was sent with the token.
     // PERSONAL_STICKERS=on: the chat specs try them (a host has them off until its owner turns them on, see src/server/accounts/stickers.ts). MOVING_STICKERS=on
     // too: stickers that move (the specs that need them off say so to their pages).
-    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", PAIRINGS_PER_HOUR: "100000", FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000", PERSONAL_STICKERS: "on", MOVING_STICKERS: "on" },
+    // PROFILE_SETUP=off: a new profile is asked nothing (the second server below is the one that asks).
+    env: { ...ENV, PORT: String(PORT), PROFILE_SETUP: "off" },
     reuseExistingServer: false,
     timeout: 120_000,
-  },
+   },
+   {
+    // (Started once the first is up, which has made the build.)
+    command: "pnpm start",
+    url: `http://127.0.0.1:${SETUP_PORT}/api/health`,
+    env: { ...ENV, PORT: String(SETUP_PORT) },
+    reuseExistingServer: false,
+    timeout: 120_000,
+   },
+  ],
 });
