@@ -118,6 +118,36 @@ describe("a personal sticker's picture", () => {
     for (const [name, sent, error] of cases) expect(makeSticker(sent), name).toEqual({ ok: false, error });
   });
 
+  it("turns away a file with a second header, or with anything after its end, without handing it to the reader that unpacks pictures", () => {
+    const rows = (width: number, height: number) => {
+      const data = Buffer.alloc((width * 4 + 1) * height, 0xff);
+      for (let row = 0; row < height; row++) data[row * (width * 4 + 1)] = 0;
+      return deflateSync(data);
+    };
+    // (The header in front is a sticker's and the data is exactly what it says; the header behind it says a picture of a hundred million pixels, and
+    // the reader goes by the last one it meets.)
+    const huge = Buffer.alloc(13);
+    huge.writeUInt32BE(10_000, 0);
+    huge.writeUInt32BE(11_300, 4);
+    huge[8] = 8;
+    huge[9] = 6;
+    const twoHeaders = handMade({ width: 32, height: 32 }, rows(32, 32), [chunk("IHDR", huge)]);
+    const afterTheData = Buffer.concat([handMade({ width: 32, height: 32 }, rows(32, 32)).subarray(0, -12), chunk("IHDR", huge), chunk("IEND", Buffer.alloc(0))]);
+    const pastTheEnd = Buffer.concat([picture(32), chunk("IHDR", huge), chunk("IEND", Buffer.alloc(0))]);
+    const read = vi.spyOn(PNG.sync, "read");
+    try {
+      for (const [name, sent] of [["a second header before the data", twoHeaders], ["a second header after the data", afterTheData], ["more of a file after the end", pastTheEnd], ["two bytes after the end", Buffer.concat([picture(32), Buffer.from("xx")])]] as const) {
+        expect(makeSticker(sent), name).toEqual({ ok: false, error: "not_a_picture" });
+      }
+      expect(read).not.toHaveBeenCalled();
+      // (a good one is still read)
+      expect(makeSticker(picture(32)).ok).toBe(true);
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it("takes the other kinds of PNG a browser's canvas may write (grey, 16 bits, grey and alpha), and keeps each as this server writes one", () => {
     for (const [colour, depth, bytesPerPixel] of [
       [0, 8, 1],

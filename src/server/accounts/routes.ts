@@ -37,6 +37,8 @@ export interface AccountRoutesOptions {
   maxAccounts?: number;
   /** How many accounts one address may make in an hour (10 unless set). A household or a school behind one address may want more. */
   signUpsPerHour?: number;
+  /** How many slow checks or hashes (a password, a PIN, the hash of a new one) an address may cause in a quarter of an hour; 150 unless set. */
+  slowChecksPer15Min?: number;
   /** Tests use a cheaper password hash. */
   passwordCost?: PasswordCost;
   /** The watch parties that are on, for the invitations of friends to them. */
@@ -109,6 +111,16 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const syncByAccount = new RateLimiter(600, MINUTE);
   // Four digits are 10,000 tries: a few wrong ones per account, then a wait (the visitor's wrong ones count where its wrong passwords do).
   const wrongPinByAccount = new RateLimiter(5, 15 * MINUTE, undefined, "childPin.wrongByAccount");
+  // Checking a password or a PIN, and making the hash of a new one, is slow on purpose (scrypt, on a few threads everybody shares). An address may
+  // cause only so many of them in a quarter of an hour, right or wrong, and each is counted BEFORE it is done: a burst of sign-ins with made-up
+  // names, or a signed-in loop of right passwords or new PINs, would otherwise all reach the hash and hold everybody else's sign-in up.
+  const slowChecksByIp = new RateLimiter(options.slowChecksPer15Min ?? 150, 15 * MINUTE, undefined, "password.slowChecksByIp");
+  /** May this address cause one more slow check or hash? Counts it when it may; else how long to wait. */
+  const slowCheck = (ip: string): number => {
+    const wait = slowChecksByIp.wait(ip);
+    if (wait === 0) slowChecksByIp.hit(ip);
+    return wait;
+  };
 
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -156,7 +168,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   /** Check somebody's password, counting a wrong one against the account and the visitor. */
   async function passwordIsRight(email: string, ip: string, password: string): Promise<{ right: boolean; wait: number }> {
-    const wait = Math.max(failedByEmail.wait(email), failedByIp.wait(ip));
+    const wait = Math.max(failedByEmail.wait(email), failedByIp.wait(ip)) || slowCheck(ip);
     if (wait > 0) return { right: false, wait };
     failedByEmail.hit(email);
     const account = store.findByEmail(email);
@@ -174,7 +186,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   async function pinIsRight(accountId: string, ip: string, pin: string): Promise<{ right: boolean; wait: number; none?: true }> {
     const hash = store.getAccount(accountId)?.childPin;
     if (!hash) return { right: true, wait: 0, none: true };
-    const wait = Math.max(wrongPinByAccount.wait(accountId), failedByIp.wait(ip));
+    const wait = Math.max(wrongPinByAccount.wait(accountId), failedByIp.wait(ip)) || slowCheck(ip);
     if (wait > 0) return { right: false, wait };
     wrongPinByAccount.hit(accountId);
     if (await verifyPassword(pin, hash)) {
@@ -258,6 +270,8 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     const { right, wait } = await passwordIsRight(account.email, request.ip, parsed.data.current);
     if (wait > 0) return tooMany(reply, wait);
     if (!right) return reply.code(401).send({ error: "invalid_credentials" });
+    const slow = slowCheck(request.ip); // (the hash of the new one)
+    if (slow > 0) return tooMany(reply, slow);
     store.setPasswordHash(account.id, await hashPassword(parsed.data.next, options.passwordCost));
     // Everywhere else has to sign in again with the new one: that is half of why people change a password.
     store.revokeAll(account.id, auth.sessionId);
@@ -324,6 +338,9 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
         return reply.code(403).send({ error: account.google?.only ? "reauth_required" : "pin_required" });
       }
     }
+    // (The hash of a new PIN is counted too: an account with no PIN yet is asked for nothing above.)
+    const slow = next === null ? 0 : slowCheck(request.ip);
+    if (slow > 0) return tooMany(reply, slow);
     store.setChildPin(account.id, next === null ? undefined : await hashPassword(next, options.passwordCost));
     return reply.send(meOf(account.id));
   });

@@ -40,7 +40,12 @@ export function pngHeader(data: Buffer): PngHeader | undefined {
   };
 }
 
-/** The picture's packed data (its IDAT chunks, one after another), or nothing for a file whose chunks do not add up to the file or that has no end. */
+/**
+ * The picture's packed data (its IDAT chunks, one after another), or nothing for a file whose chunks do not add up to the file, that has no end, that
+ * goes on after its end, or that has a second header. The header that is checked here is the file's first chunk; the reader that unpacks the picture
+ * further down goes by the LAST header it meets, so a file with a small header in front and a huge one behind it would be measured by the one and
+ * unpacked by the other. A page makes neither: one header, and nothing after the end.
+ */
 function dataOf(png: Buffer): Buffer | undefined {
   const parts: Buffer[] = [];
   let at = 8;
@@ -49,8 +54,9 @@ function dataOf(png: Buffer): Buffer | undefined {
     const type = png.toString("latin1", at + 4, at + 8);
     const end = at + 12 + length;
     if (end > png.length) return undefined;
+    if (type === "IHDR" && at !== 8) return undefined;
     if (type === "IDAT") parts.push(png.subarray(at + 8, at + 8 + length));
-    if (type === "IEND") return parts.length > 0 ? Buffer.concat(parts) : undefined;
+    if (type === "IEND") return parts.length > 0 && end === png.length ? Buffer.concat(parts) : undefined;
     at = end;
   }
   return undefined;

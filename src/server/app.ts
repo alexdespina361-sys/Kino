@@ -75,6 +75,8 @@ export interface AppOptions {
   maxAccounts?: number;
   /** How many accounts one address may make in an hour (10 unless set). */
   signUpsPerHour?: number;
+  /** How many slow checks (a password, a PIN, the hash of a new one) an address may cause in a quarter of an hour; 150 unless set (accounts/routes.ts). */
+  slowChecksPer15Min?: number;
   /** How many proxies sit in front of the server (a host like Render has one), so a visitor's address and https are read from the right place (Cloudflare's addresses are passed over on the way: `trust.ts`). */
   trustProxy?: boolean | number;
   /** Tests use a cheaper password hash. */
@@ -193,6 +195,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.registration ? { registration: options.registration } : {}),
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
+    ...(options.slowChecksPer15Min ? { slowChecksPer15Min: options.slowChecksPer15Min } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
       ...(options.google ? { google: options.google } : {}),
       ...(screens ? { screens } : {}),
