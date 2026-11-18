@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { plainText } from "./friends";
+import { looksLikeGifButIsNot } from "./gifs";
 
 /**
  * A small chat between two friends: text, and a reaction from each of the two on a message (no groups, files, typing marks or read receipts; a GIF, a
@@ -54,13 +55,15 @@ export type ChatReaction = (typeof CHAT_ALL_REACTIONS)[number];
 export const CHAT_REACTS_PER_MINUTE = 40;
 export const isChatReaction = (value: unknown): value is ChatReaction => typeof value === "string" && (CHAT_ALL_REACTIONS as readonly string[]).includes(value);
 
-export type ChatTextProblem = "empty" | "too_long";
+export type ChatTextProblem = "empty" | "too_long" | "not_a_picture";
 
 /** What somebody wrote, made fit to show: one paragraph without control or direction characters, trimmed. Or what is wrong with it. */
 export function checkChatText(raw: string): { ok: true; text: string } | { ok: false; error: ChatTextProblem } {
   const text = plainText(raw);
   if (!text) return { ok: false, error: "empty" };
-  return text.length > CHAT_TEXT_MAX ? { ok: false, error: "too_long" } : { ok: true, text };
+  if (text.length > CHAT_TEXT_MAX) return { ok: false, error: "too_long" };
+  // (An address of KLIPY's that a page would not draw as the GIF it says it is: no page sends one. See shared/gifs.ts.)
+  return looksLikeGifButIsNot(text) ? { ok: false, error: "not_a_picture" } : { ok: true, text };
 }
 
 /** One message as the one who looks at the chat sees it. */

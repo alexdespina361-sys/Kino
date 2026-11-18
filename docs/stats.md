@@ -65,7 +65,9 @@ when the accounts are nowhere):
 The counter never stores the address, the browser's name or the language (they are only hashed), sets no cookie, puts nothing on the visitor's device and sends
 nothing to another service. **Outside the counter, and not touched by it:** the server's ordinary request log (Fastify's, which has each request's address; the host
 keeps it for a short while) and the records of Render and Cloudflare, which any site behind them has. A day stops adding new visitors at 20,000 (the loads go on
-being counted), so a flood of made-up browsers cannot grow what is kept.
+being counted), so a flood of made-up browsers cannot grow what is kept. **One address is 8 visitors at most a day** (`BROWSERS_PER_ADDRESS`, since 18 Nov): a
+home is a few people with a few screens each, and a program that gives its browser a new name at every load is still one of them. To count that, the day's
+record also holds how many each address was counted as, by a hash of the address alone with the same salt, deleted with it.
 
 **Not counted:** a page that was fetched and never ran (a scanner, a link preview, a prefetch), the files of the site and the rest of the API, the
 question asked any other way than by the site's own page (from another site, typed as an address), robots that say what they are (search engines,
@@ -96,7 +98,8 @@ created, movies/content watched (minutes), feedback received", and "the base for
 
 - **Here now**: browsers that asked the site something in the last five minutes, how many of them brought a session (signed in) and how many did not
   (guests), and how many screens and phones are connected. Kept in memory only (`stats/live.ts`): a restart begins again (the hours further down are written down over a restart, with the limits: `accounts/rateLimit.ts`, the file `limits.json` next to the rest of what is kept). A browser is told from another
-  by a hash of its address and its name with a secret made at the start of the server; nothing but the hash is held, for a quarter of an hour.
+  by a hash of its address and its name with a secret made at the start of the server; nothing but the hash is held, for a quarter of an hour. One
+  address is 8 people at most (as with the visitors of a day).
   Programs that say what they are, and browsers that send "Do Not Track" or "Global Privacy Control", are not among the people.
 - **Accounts** and **Visitors**: the numbers of the command above.
 - **Watched**: minutes of film played by signed-in profiles, all together, one number a day (kept with the visitors'). It is counted as a profile's

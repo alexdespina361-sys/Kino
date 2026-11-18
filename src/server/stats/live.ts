@@ -20,6 +20,14 @@ const KEEP_MS = 15 * MINUTE;
 export const MAX_HERE = 50_000;
 /** How many hours of answers are kept. */
 export const HOURS_KEPT = 48;
+/**
+ * How many browsers one address counts as, at most: a home is a few people with a few screens each, and one visitor that gives its browser a new name at
+ * every question is still one of them (the review of 18 Nov: it could be any number of people up to `MAX_HERE`, and crowd the real ones out). The count
+ * of visitors by day has the same rule (visits.ts).
+ */
+export const BROWSERS_PER_ADDRESS = 8;
+/** The sweep that makes room when `MAX_HERE` are kept runs no more often than this. */
+const HARD_SWEEP_MS = 1000;
 
 export interface HereNow {
   /** Browsers that asked the site something in the last five minutes. */
@@ -45,20 +53,39 @@ export interface HourAnswers {
 
 export class LiveCount implements Keepable {
   private readonly salt = randomBytes(18).toString("base64url");
-  private readonly here = new Map<string, { at: number; signedIn: boolean }>();
+  private readonly here = new Map<string, { at: number; signedIn: boolean; from: string }>();
+  /** How many of those that are kept came from each address (by a hash of it alone). */
+  private readonly fromAddress = new Map<string, number>();
   private readonly hours = new Map<number, HourAnswers>();
   private swept = 0;
+  private sweptHard = -Infinity;
 
   constructor(private readonly clock: () => number = Date.now) {}
 
   /** A browser asked the site something. (The address and the browser's name are only ever seen here, to be hashed.) */
   seen(address: string, agent: string, signedIn: boolean): void {
     const now = this.clock();
-    const hash = createHash("sha256").update([this.salt, address, agent.slice(0, 300)].join("\0")).digest("base64url").slice(0, 16);
+    const hash = this.hashOf(address, agent.slice(0, 300));
     const had = this.here.get(hash);
-    if (!had && this.here.size >= MAX_HERE) this.sweep(now, true);
-    if (had || this.here.size < MAX_HERE) this.here.set(hash, { at: now, signedIn: signedIn || (had?.signedIn === true && now - had.at < HERE_MS) });
+    if (!had) {
+      const from = this.hashOf(address);
+      if (this.here.size >= MAX_HERE && now - this.sweptHard >= HARD_SWEEP_MS) {
+        this.sweptHard = now;
+        this.sweep(now, true);
+      }
+      // (Past the address's few, a new browser is one of those already counted; past the most that are kept, it is not counted.)
+      if (this.here.size < MAX_HERE && (this.fromAddress.get(from) ?? 0) < BROWSERS_PER_ADDRESS) {
+        this.here.set(hash, { at: now, signedIn, from });
+        this.fromAddress.set(from, (this.fromAddress.get(from) ?? 0) + 1);
+      }
+    } else {
+      this.here.set(hash, { at: now, signedIn: signedIn || (had.signedIn && now - had.at < HERE_MS), from: had.from });
+    }
     if (now - this.swept > MINUTE) this.sweep(now);
+  }
+
+  private hashOf(...parts: string[]): string {
+    return createHash("sha256").update([this.salt, ...parts].join("\0")).digest("base64url").slice(0, 16);
   }
 
   /** One answer went out. */
@@ -79,7 +106,13 @@ export class LiveCount implements Keepable {
 
   private sweep(now: number, hard = false): void {
     this.swept = now;
-    for (const [hash, each] of this.here) if (now - each.at > (hard ? HERE_MS : KEEP_MS)) this.here.delete(hash);
+    for (const [hash, each] of this.here) {
+      if (now - each.at <= (hard ? HERE_MS : KEEP_MS)) continue;
+      this.here.delete(hash);
+      const left = (this.fromAddress.get(each.from) ?? 1) - 1;
+      if (left > 0) this.fromAddress.set(each.from, left);
+      else this.fromAddress.delete(each.from);
+    }
   }
 
   now(): HereNow {

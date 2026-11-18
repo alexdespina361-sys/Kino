@@ -268,6 +268,26 @@ describe("new episodes of what a profile watches", () => {
     expect(book.usage()).toMatchObject({ titles: keys.length, due: 0, asked: keys.length, failed: 0 });
   });
 
+  it("asks about a show that is due before the titles that are new: a profile that keeps changing what it watches cannot keep it waiting", async () => {
+    const { tmdb, clock, book, watch } = await setup();
+    tmdb.shows.set(7, show(1, 5, "2026-11-01"));
+    watch([watcher("ana", ["tv-7"])]);
+    await book.look();
+    expect(tmdb.asked).toEqual(["tv-7"]);
+    // (A day later it is due again; meanwhile another profile "watches" 80 titles nobody heard of, new ones every five minutes.)
+    clock.now += DAY;
+    for (let round = 0; round < 3; round++) {
+      const made = Array.from({ length: 80 }, (_, index) => `tv-${1000 + round * 80 + index}`);
+      watch([watcher("ana", ["tv-7"]), watcher("mal", made)]);
+      for (let minute = 0; minute < 5; minute++) {
+        clock.now += 60_000;
+        await book.look();
+      }
+    }
+    expect(tmdb.asked.filter((what) => what === "tv-7")).toHaveLength(2);
+    expect(tmdb.asked.indexOf("tv-7", 1)).toBe(1);
+  });
+
   it("keeps what it knew when the movie database cannot be asked, and asks again in a while", async () => {
     const { tmdb, clock, book, watch } = await setup();
     tmdb.shows.set(7, show(1, 5, "2026-11-01"));

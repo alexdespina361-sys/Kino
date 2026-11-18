@@ -41,6 +41,11 @@ export interface GoogleConfig {
 const FLOW_COOKIE = "kino_oauth";
 const FLOW_MS = 10 * 60_000;
 const MAX_FLOWS = 2000;
+/**
+ * How many sign-ins one address may have under way at once (a sixth lets go of its own oldest). With the most there can be under way, the rule that keeps
+ * one address from pushing out everybody else's (the review of 18 Nov: first in, first out, about 70 addresses could fail every sign-in that was under way).
+ */
+export const FLOWS_PER_ADDRESS = 5;
 /** How long a proof given by `reauth` lasts: the account has to be deleted in that time. */
 export const REAUTH_MS = 5 * 60_000;
 const TOKEN_TIMEOUT_MS = 10_000;
@@ -200,6 +205,8 @@ interface Flow {
   /** `link` and `reauth`: the account that asked, which has to be the one signed in when the browser comes back. */
   accountId?: string;
   startedAt: number;
+  /** The address it was started from (in memory only, as the limits have it: see `FLOWS_PER_ADDRESS`). */
+  from: string;
   /** A round trip for the Android app (see `AppTrip`). */
   app?: AppTrip;
 }
@@ -341,13 +348,27 @@ export function googleRoutes(app: FastifyInstance, helpers: GoogleHelpers, confi
     // (The app's browser has no session: a ticket says whose account it is.)
     const auth = mode === "signin" || fresh ? undefined : helpers.authenticate(request);
     if (mode !== "signin" && !auth && !fresh) return back("failed");
+    // (Room for this one: what ran out goes first, then this address's own oldest past its few. When there is no room still, this one waits: a sign-in
+    // that is under way is never pushed out for it.)
+    const now = store.clock();
+    let oldestOfMine: string | undefined;
+    let mine = 0;
+    for (const [key, each] of flows) {
+      if (now - each.startedAt > FLOW_MS) flows.delete(key);
+      else if (each.from === request.ip) {
+        mine++;
+        oldestOfMine ??= key;
+      }
+    }
+    if (mine >= FLOWS_PER_ADDRESS && oldestOfMine) flows.delete(oldestOfMine);
+    if (flows.size >= MAX_FLOWS) return back("busy");
     startsByIp.hit(request.ip);
 
     const state = secret();
     const nonce = secret();
     const verifier = secret();
     const accountId = fresh?.accountId ?? auth?.accountId;
-    remember(flows, state, { nonce, verifier, redirectUri, mode, device, next, ...(accountId ? { accountId } : {}), ...(trip ? { app: trip } : {}), startedAt: store.clock() }, MAX_FLOWS);
+    flows.set(state, { nonce, verifier, redirectUri, mode, device, next, ...(accountId ? { accountId } : {}), ...(trip ? { app: trip } : {}), startedAt: now, from: request.ip });
     reply.header("Set-Cookie", flowCookie(state, request.protocol === "https", FLOW_MS / 1000));
     const target = new URL(config.authorizeUrl ?? GOOGLE_AUTHORIZE_URL);
     target.search = new URLSearchParams({

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { FilePersistence, MemoryPersistence, PostgresPersistence, type Persistence } from "../accounts/persistence";
+import { BROWSERS_PER_ADDRESS } from "./live";
 
 /**
  * How many people come to the site, a number for each day and nothing more. A page load is turned into a hash of the visitor's address, browser and
@@ -23,6 +24,8 @@ interface SeenDoc {
   day: string;
   salt: string;
   hashes: string[];
+  /** How many visitors each address was counted as today, by a hash of the address alone (see `BROWSERS_PER_ADDRESS`). None in a day written before 18 Nov. */
+  addresses?: Array<[string, number]>;
 }
 
 /** A day with more different visitors than this stops adding them (a flood of made-up browsers must not grow what is kept without end); the loads go on being counted. */
@@ -56,7 +59,7 @@ export interface DayVisits {
 
 export class VisitCounter {
   private readonly days = new Map<string, DayVisits>();
-  private seen: { day: string; salt: string; hashes: Set<string> } | undefined;
+  private seen: { day: string; salt: string; hashes: Set<string>; addresses: Map<string, number> } | undefined;
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +89,10 @@ export class VisitCounter {
         } else if (key.startsWith("seen:")) {
           // Today's carries on (a restart must not count the same people twice); any other is a day that is over, and goes.
           const doc = value as SeenDoc;
-          if (doc.day === today && typeof doc.salt === "string") this.seen = { day: doc.day, salt: doc.salt, hashes: new Set(doc.hashes.filter((hash) => typeof hash === "string")) };
+          if (doc.day === today && typeof doc.salt === "string") {
+            const addresses = (Array.isArray(doc.addresses) ? doc.addresses : []).filter((each): each is [string, number] => Array.isArray(each) && typeof each[0] === "string" && Number.isSafeInteger(each[1]) && each[1] > 0);
+            this.seen = { day: doc.day, salt: doc.salt, hashes: new Set(doc.hashes.filter((hash) => typeof hash === "string")), addresses: new Map(addresses) };
+          }
           else this.forget(key);
         }
       } catch {
@@ -119,7 +125,7 @@ export class VisitCounter {
       const visits = this.days.get(day);
       return visits && { v: 1, day, ...visits };
     }
-    return this.seen && key === `seen:${this.seen.day}` ? { v: 1, day: this.seen.day, salt: this.seen.salt, hashes: [...this.seen.hashes] } : undefined;
+    return this.seen && key === `seen:${this.seen.day}` ? { v: 1, day: this.seen.day, salt: this.seen.salt, hashes: [...this.seen.hashes], addresses: [...this.seen.addresses] } : undefined;
   }
 
   /** Write what changed. Resolves when it is written; a failure is kept to try again. */
@@ -179,13 +185,17 @@ export class VisitCounter {
     const day = dayOf(this.now());
     this.rollOver(day);
     // A new day starts with a new salt, so today's visitors cannot be told from yesterday's.
-    this.seen ??= { day, salt: randomBytes(18).toString("base64url"), hashes: new Set() };
+    this.seen ??= { day, salt: randomBytes(18).toString("base64url"), hashes: new Set(), addresses: new Map() };
     const visits = this.days.get(day) ?? { visitors: 0, loads: 0 };
     this.days.set(day, visits);
     visits.loads++;
     const hash = hashOf(this.seen.salt, address, agent, language);
-    if (!this.seen.hashes.has(hash) && this.seen.hashes.size < MAX_VISITORS_A_DAY) {
+    // (An address is a few visitors at most: one that gives its browser a new name at each load is still one of them. The review of 18 Nov.)
+    const from = hashOf(this.seen.salt, address, "", "");
+    const counted = this.seen.addresses.get(from) ?? 0;
+    if (!this.seen.hashes.has(hash) && this.seen.hashes.size < MAX_VISITORS_A_DAY && counted < BROWSERS_PER_ADDRESS) {
       this.seen.hashes.add(hash);
+      this.seen.addresses.set(from, counted + 1);
       visits.visitors++;
       this.touch(`seen:${day}`);
     }
