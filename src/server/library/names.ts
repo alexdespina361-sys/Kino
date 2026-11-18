@@ -17,6 +17,12 @@ export const NAMES_KEPT = 20_000;
 /** How many questions are at the movie database at once, and how long one may take. */
 const AT_ONCE = 8;
 const ASK_TIMEOUT_MS = 6_000;
+/**
+ * How many questions may wait for their turn, everybody's together. Past it a title that is not kept is left out of the answer (the page asks again
+ * later) and nothing is queued: each address has an allowance of its own, but many addresses together would otherwise put every viewer's names
+ * behind a queue without end, and send the movie database a flood under the site's one key.
+ */
+export const NAMES_QUEUE_MAX = 400;
 /** How long a page's question waits for what is not kept yet. */
 export const NAMES_WAIT_MS = 5_000;
 
@@ -120,10 +126,11 @@ export function createNameBook(options: NameBookOptions = {}): NameBook {
       const names: Record<string, LocalName> = {};
       const asked: Array<Promise<void>> = [];
       for (const id of new Set(ids)) {
-        if (!NAME_ID.test(id)) continue;
+        // ("movie-0603" is the movie database's 603 written another way: a second question and a second name kept for one title. No page writes it so.)
+        if (!NAME_ID.test(id) || /-0\d/.test(id)) continue;
         const known = fresh(`${lang}|${id}`);
         if (known) names[id] = known;
-        else if (asking.has(`${lang}|${id}`) || mayAsk(id)) {
+        else if (asking.has(`${lang}|${id}`) || (waiting.length < NAMES_QUEUE_MAX && mayAsk(id))) {
           asked.push(
             ask(lang, id).then((name) => {
               if (name) names[id] = name;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nameIdOf } from "../../shared";
 import { buildApp } from "../app";
-import { createNameBook, localNameOf, NAME_TTL_MS } from "./names";
+import { createNameBook, localNameOf, NAME_TTL_MS, NAMES_QUEUE_MAX } from "./names";
 
 /** The movie database, as far as a name is asked of it: what it says of each title in each language, and how many times it was asked. */
 function tmdb(docs: Record<string, unknown>, { fail = new Set<string>(), slow = new Set<string>() } = {}) {
@@ -108,10 +108,43 @@ describe("the names kept for everyone", () => {
     expect(asked).toHaveLength(2);
   });
 
-  it("ignores what is not a title's id", async () => {
+  it("ignores what is not a title's id, and an id written with noughts in front (the same title under another name)", async () => {
     const { get, asked } = tmdb(docs);
-    expect(await createNameBook({ fetch: get, apiKey: "k" }).of("ro", ["person-1", "movie-", "../etc", "movie-27205"])).toEqual({ "movie-27205": { title: "Începutul", description: "Un hoț." } });
+    expect(await createNameBook({ fetch: get, apiKey: "k" }).of("ro", ["person-1", "movie-", "../etc", "movie-027205", "tv-00114410", "movie-27205"])).toEqual({ "movie-27205": { title: "Începutul", description: "Un hoț." } });
     expect(asked).toHaveLength(1);
+  });
+
+  it("lets only so many questions wait for their turn, everybody's together: past it a title is left out and nothing is queued or counted for it", async () => {
+    // (a movie database that answers nothing until it is let: every question stays where it is)
+    const open: Array<() => void> = [];
+    const asked: string[] = [];
+    const get = (async (input: string | URL) => {
+      asked.push(String(input));
+      await new Promise<void>((go) => open.push(go));
+      return { ok: false, status: 404, json: async () => ({}) };
+    }) as unknown as typeof fetch;
+    const book = createNameBook({ fetch: get, apiKey: "k", waitMs: 20 });
+    const counted: string[] = [];
+    const mayAsk = (id: string) => (counted.push(id), true);
+    const ids = (from: number, count: number) => Array.from({ length: count }, (_, n) => `movie-${from + n}`);
+    // Eight are at the movie database at once; the queue behind them takes NAMES_QUEUE_MAX and no more.
+    for (let from = 1; from < 1001; from += 40) await book.of("ro", ids(from, 40), mayAsk);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(asked).toHaveLength(8);
+    expect(counted).toHaveLength(8 + NAMES_QUEUE_MAX);
+    // (one that is already waiting is waited for by another page too, and is not counted twice)
+    await book.of("ro", ["movie-1", "movie-9"], mayAsk);
+    expect(counted).toHaveLength(8 + NAMES_QUEUE_MAX);
+    // When the queue has gone down there is room again.
+    while (open.length > 0 || asked.length < 8 + NAMES_QUEUE_MAX) {
+      open.splice(0).forEach((go) => go());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(asked).toHaveLength(8 + NAMES_QUEUE_MAX);
+    const later = book.of("ro", ["movie-5000"], mayAsk);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    open.splice(0).forEach((go) => go());
+    expect(await later).toEqual({ "movie-5000": {} });
   });
 });
 
