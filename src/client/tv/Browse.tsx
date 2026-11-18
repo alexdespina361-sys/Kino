@@ -1,4 +1,4 @@
-import { Fragment, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode, useCallback } from "react";
+import { Children, Fragment, memo, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode, type RefObject, useCallback } from "react";
 import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, sectionOf, tagLabel, titleLink, wantedSections, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -26,7 +26,7 @@ import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, 
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
+import { comesIn, hueOf, Poster, posterSizes, sharper, TILE_FIT } from "../shared/Poster";
 import { useLikes } from "../shared/recommend";
 import { useWatching } from "../shared/watching";
 import { personalSlots } from "../shared/taste";
@@ -52,6 +52,7 @@ import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter 
 import { useCardSections } from "./cardSections";
 import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, openedAt, overviewActions, playLabel, ratingSectionIn, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type RowsPage, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
+import { warmPlayer } from "./engine";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
@@ -80,7 +81,7 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
     if (onScreen.current && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * NEAR_END) wantsMore.current?.();
   }, []);
 
-  useEffect(measure);
+  useEffect(measure, [Children.count(children), loading, Boolean(onNearEnd)]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const row = scroller.current;
     if (!row || typeof ResizeObserver === "undefined") return;
@@ -476,6 +477,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const [railOpen, setRailOpen] = useState(false);
   const [phone] = useState(thisIsPhone);
   const [focused, setFocused] = useState<Focused | null>(null);
+  const act = useRef<TileActs>(null!);
+  const tilesOfRows = useRef(new Map<string, { deps: unknown[]; tiles: ReactNode[] }>());
   const [detail, setDetail] = useState<Focused | null>(() => {
     const kept = remembered.detail;
     return kept && { ...kept.page, entry: resumable(asOpened(kept.page.entry), progress) };
@@ -674,6 +677,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
   const leaveEdit = () => (overlay?.kind === "edit" && overlay.from ? setOverlay(overlay.from) : closeOverlay());
   const openDetail = (title: Focused) => {
+    warmPlayer();
     dropLink();
     setDetail(title);
     setPending(DETAIL);
@@ -1128,6 +1132,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       }
       const { homeRows: laid, view: page, feedSection: section, growing: more } = latest.current;
       const row = laid[pos.row];
+      if (row?.layout === "continue") warmPlayer();
       if (status === "ready" && isRowsPage(page) && pos.row >= laid.length - ROWS_AHEAD) feed.loadShelves(section);
       if (row && row.layout === "wide" && more.has(row.id) && pos.col >= row.entries.length - TITLES_AHEAD) feed.loadMore(row.id, ROW_CAP);
     } else {
@@ -1214,10 +1219,19 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     return { kind: kept ? "kept" : "add", label: t(kept ? "rows.removeFromList" : "library.addToList", { list: listName(info) }), run: () => profileStore.setInList(listEntryOf(entry), !kept, info.id) };
   };
 
+  act.current = { arrived, press, cornerOf };
   const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string, listId?: string, shape?: HomeRow["shape"]) => {
-    const title: Focused = { entry: resumable(entry, progress), label, ...(source ? { source } : {}) };
     const score = view.kind !== "ratings" && view.kind !== "friend" ? scoreOf(scores, entry.url) : undefined;
-    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} landscape={shape === "landscape"} compact={compact} rank={pos.col + 1} pos={pos} corner={cornerOf(entry, listId)} score={score} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title, pos)} />;
+    const corner = cornerOf(entry, listId);
+    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} resumed={resumable(entry, progress)} label={label} source={source} listId={listId} layout={layout} landscape={shape === "landscape"} compact={compact} rank={pos.col + 1} pos={pos} corner={corner && { kind: corner.kind, label: corner.label }} score={score} act={act} />;
+  };
+  const rowTiles = (row: HomeRow, r: number) => {
+    const deps = [row, r, compact, progress, scores, saved, lists, view.kind, t];
+    const kept = tilesOfRows.current.get(row.id);
+    if (kept && kept.deps.every((dep, at) => dep === deps[at])) return kept.tiles;
+    const tiles = row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id), row.shape));
+    tilesOfRows.current.set(row.id, { deps, tiles });
+    return tiles;
   };
 
   const playEpisode = (episode: PageEpisode) => detail && playEntry(detail.entry, episode);
@@ -1796,7 +1810,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                     )}
                     {!(friendsHead && row === peopleRow) && <h2 className="tv-row-title">{row.title}</h2>}
                     <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
-                      {row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id), row.shape))}
+                      {rowTiles(row, r)}
                     </RowTiles>
                   </section>
                 ))
@@ -2270,7 +2284,47 @@ function DetailAbout({ entry }: { entry: Entry }) {
   return description ? <AboutText text={description} className="tv-detail-about" /> : null;
 }
 
-function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, score, onArrive, onPress }: { entry: Entry; layout: Layout; landscape: boolean; compact: boolean; rank: number; pos: Pos; corner: Corner | undefined; score: number | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
+interface TileActs {
+  arrived: (element: HTMLElement, pos: Pos, now: Focused) => void;
+  press: (title: Focused, from: Pos) => void;
+  cornerOf: (entry: Entry, listId: string | undefined) => Corner | undefined;
+}
+interface TileProps {
+  entry: Entry;
+  resumed: Entry;
+  label: string;
+  source: string | undefined;
+  listId: string | undefined;
+  layout: Layout;
+  landscape: boolean;
+  compact: boolean;
+  rank: number;
+  pos: Pos;
+  corner: Pick<Corner, "kind" | "label"> | undefined;
+  score: number | undefined;
+  act: RefObject<TileActs>;
+}
+const sameTile = (a: TileProps, b: TileProps) =>
+  a.entry === b.entry &&
+  (a.resumed === b.resumed || (a.resumed.resumeUrl === b.resumed.resumeUrl && a.resumed.startAt === b.resumed.startAt)) &&
+  a.label === b.label &&
+  a.source === b.source &&
+  a.listId === b.listId &&
+  a.layout === b.layout &&
+  a.landscape === b.landscape &&
+  a.compact === b.compact &&
+  a.rank === b.rank &&
+  a.pos.zone === b.pos.zone &&
+  a.pos.row === b.pos.row &&
+  a.pos.col === b.pos.col &&
+  a.corner?.kind === b.corner?.kind &&
+  a.corner?.label === b.corner?.label &&
+  a.score === b.score &&
+  a.act === b.act;
+const Tile = memo(function Tile({ entry, resumed, label, source, listId, layout: asked, landscape, compact, rank, pos, corner, score, act }: TileProps) {
+  const title = (): Focused => ({ entry: resumed, label, ...(source ? { source } : {}) });
+  const onArrive = (element: HTMLElement) => act.current.arrived(element, pos, title());
+  const onPress = () => act.current.press(title(), pos);
   const [broken, setBroken] = useState(false);
   const name = useShown(isTitle(entry) ? entry : null).title || entry.title;
   const hue = hueOf(entry.id);
@@ -2286,7 +2340,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
     "data-entry": entry.id,
     onMouseDown: (event: MouseEvent<HTMLElement>) => event.preventDefault(),
     onClick: (event: MouseEvent<HTMLElement>) => {
-      if (corner && (event.target as Element).closest("[data-corner]")) return corner.run();
+      if (corner && (event.target as Element).closest("[data-corner]")) return act.current.cornerOf(entry, listId)?.run();
       event.currentTarget.focus({ preventScroll: true });
       onPress();
     },
@@ -2355,7 +2409,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
       )}
       <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
         {showPicture ? (
-          <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
+          <img loading="lazy" {...posterSizes(picture, TILE_FIT)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
         ) : (
           <span className="tv-tile-initial" aria-hidden="true">
             {name.trim().charAt(0).toUpperCase()}
@@ -2378,7 +2432,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
       {layout !== "ranked" && under && <span className={entry.note ? "tv-tile-year" : "tv-tile-year is-year"}>{under}</span>}
     </button>
   );
-}
+}, sameTile);
 
 function Feature({ entry, play, list, kept, onOpen, onPlay, onList }: { entry: Entry; play: ReactNode; list: ReactNode; kept: boolean; onOpen: () => void; onPlay: () => void; onList: () => void }) {
   const t = useT();

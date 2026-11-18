@@ -310,7 +310,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());
     const tag = `W/"${createHash("sha1").update(body).digest("base64url")}"`;
-    reply.header("Cache-Control", "public, max-age=300").header("ETag", tag);
+    reply.header("Cache-Control", "public, max-age=300, stale-while-revalidate=3600").header("ETag", tag);
     if (hasTag(request.headers["if-none-match"], tag)) return reply.code(304).send();
     return reply.type("application/json; charset=utf-8").send(body);
   });
