@@ -993,6 +993,8 @@ export const it: Dictionary = {
   "rows.because": "Perché hai guardato {title}",
   "rows.loved": "Perché ti è piaciuto {title}",
   "rows.picks": "Potrebbe piacerti",
+  "rows.saved": "Perché hai salvato {title}",
+  "rows.moreLike": "Altri titoli come {title}",
   "rows.moreFailed": "Impossibile caricare altri titoli. Riprovo…",
 
   /* ratings: a score out of ten, why, and what was watched */

@@ -4,6 +4,28 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.20",
+    date: "2026-11-18",
+    en: [
+      "Your own rows are now mixed in among the library's all the way down the page, not stacked on top: one under the top ten, then one after every two rows.",
+      "There are many more of them: a row for every title you watched, loved or saved, and “More like …” rows that go on from the titles of those rows.",
+      "Movies, Series, Cartoons and Anime have them too, made of that section's titles. A title is in one such row only.",
+      "A row that arrives late no longer pushes the row you are on down the TV screen.",
+    ],
+    ro: [
+      "Rândurile tale sunt acum amestecate printre cele ale bibliotecii pe toată pagina, nu puse toate sus: unul sub top, apoi unul la fiecare două rânduri.",
+      "Sunt mult mai multe: un rând pentru fiecare titlu urmărit, apreciat sau salvat și rânduri „Mai multe ca …” care pornesc de la titlurile acelor rânduri.",
+      "Filme, Seriale, Desene animate și Anime le au și ele, cu titlurile secțiunii. Un titlu apare într-un singur rând de acest fel.",
+      "Un rând care sosește târziu nu mai împinge în jos, pe ecranul televizorului, rândul pe care te afli.",
+    ],
+    it: [
+      "Le tue righe ora sono mescolate a quelle della libreria per tutta la pagina, non tutte in alto: una sotto la top ten, poi una ogni due righe.",
+      "Sono molte di più: una riga per ogni titolo guardato, amato o salvato e righe «Altri titoli come …» che partono dai titoli di quelle righe.",
+      "Film, Serie TV, Cartoni e Anime le hanno anch'esse, con i titoli della sezione. Un titolo compare in una sola di queste righe.",
+      "Una riga che arriva tardi non spinge più in basso, sullo schermo della TV, la riga su cui ti trovi.",
+    ],
+  },
+  {
     version: "0.4.19",
     date: "2026-11-18",
     en: [

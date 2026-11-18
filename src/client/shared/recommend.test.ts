@@ -1,92 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
-import type { LibraryItem, LiveListItem, LiveProgress, LiveRating } from "../../shared";
-import { becauseRows, createLikeThis, LOVED_FROM, MIN_NEXT, seedsOf, type Seed } from "./recommend";
+import type { LibraryItem } from "../../shared";
+import { t } from "../i18n";
+import { ASK_AGAIN_MS, createLikeThis, titleOfPersonal, warm, type Seed } from "./recommend";
+import { FIRST_ASKS } from "./taste";
 
-const card = (name: string, extra: Partial<LiveProgress> = {}): LiveProgress => ({ key: `url:https://x.example/${name}`, at: 1, title: `Card ${name}`, url: `https://x.example/${name}`, position: 100, duration: 6000, ...extra });
-const rated = (name: string, score: number, ratedAt: number, extra: Partial<LiveRating> = {}): LiveRating => ({ key: `rate:${name}`, at: ratedAt, title: `Rated ${name}`, url: `https://x.example/${name}`, score, ratedAt, ...extra });
-const saved = (title: string): LiveListItem => ({ key: `url:${title}`, at: 1, id: title, title, url: `https://x.example/${title}` });
 const item = (id: string, title = `Title ${id}`): LibraryItem => ({ id, title, url: `/fixtures/${id}.mp4` });
-const ids = (n: number, prefix: string) => Array.from({ length: n }, (_, at) => `${prefix}${at}`);
 
-describe("seedsOf", () => {
-  it("is the titles watched last, newest first", () => {
-    expect(seedsOf([card("a"), card("b"), card("c"), card("d")], []).map((s) => [s.title, s.why])).toEqual([
-      ["Card a", "watched"],
-      ["Card b", "watched"],
-      ["Card c", "watched"],
-    ]);
-  });
-
-  it("counts every episode of a show as the show", () => {
-    const episode = (n: number) => card("show", { url: `https://x.example/show?s=1&e=${n}`, key: `show:Show`, title: "Show", episode: n, season: 1 });
-    const seeds = seedsOf([episode(3), card("b"), episode(1)], []);
-    expect(seeds.map((s) => s.title)).toEqual(["Show", "Card b"]);
-  });
-
-  it("brings in a title that was scored high, in turn with those watched, and says it was loved", () => {
-    const seeds = seedsOf([card("a"), card("b"), card("c")], [rated("x", LOVED_FROM, 5), rated("y", LOVED_FROM + 1, 9), rated("z", LOVED_FROM - 1, 10)]);
-    // watched a, loved y (the newest score), watched b -- not z (its score is not high), not x (no room)
-    expect(seeds.map((s) => [s.title, s.why])).toEqual([
-      ["Card a", "watched"],
-      ["Rated y", "loved"],
-      ["Card b", "watched"],
-    ]);
-  });
-
-  it("says a title both watched and scored high is loved, and asks about it once", () => {
-    const seeds = seedsOf([card("a")], [rated("a", 10, 1, { title: "Card a" })]);
-    expect(seeds).toEqual([{ key: "https://x.example/a", title: "Card a", url: "https://x.example/a", why: "loved" }]);
-  });
-
-  it("leaves out a score for one season, and has none for a profile that has watched and scored nothing", () => {
-    expect(seedsOf([], [rated("x", 10, 1, { season: 2 })])).toEqual([]);
-    expect(seedsOf([], [])).toEqual([]);
-  });
-
-  it("stops at the most it was asked for", () => {
-    expect(seedsOf([card("a"), card("b"), card("c")], [], 1)).toHaveLength(1);
-    expect(seedsOf([card("a")], [rated("x", 10, 1), rated("y", 10, 2)], 3).map((s) => s.title)).toEqual(["Card a", "Rated y", "Rated x"]);
+describe("the name of a row of the profile's own", () => {
+  it("says why the row is there", () => {
+    expect(titleOfPersonal({ why: "watched", title: "Up" })).toBe(t("rows.because", { title: "Up" }));
+    expect(titleOfPersonal({ why: "loved", title: "Up" })).toBe(t("rows.loved", { title: "Up" }));
+    expect(titleOfPersonal({ why: "saved", title: "Up" })).toBe(t("rows.saved", { title: "Up" }));
+    expect(titleOfPersonal({ why: "like", title: "Up" })).toBe(t("rows.moreLike", { title: "Up" }));
+    expect(titleOfPersonal({ why: "picks", title: "" })).toBe(t("rows.picks"));
+    expect(new Set(["watched", "loved", "saved", "like", "picks"].map((why) => titleOfPersonal({ why: why as Seed["why"], title: "Up" }))).size).toBe(5);
   });
 });
-
-describe("becauseRows", () => {
-  const seed = (name: string, why: Seed["why"] = "watched"): Seed => ({ key: `https://x.example/${name}`, title: `Card ${name}`, url: `https://x.example/${name}`, why });
-  const answers = (table: Record<string, LibraryItem[]>) => (key: string) => table[key];
-
-  it("is the titles like each, without anything started, saved, or the title itself", () => {
-    const rows = becauseRows(
-      [seed("a")],
-      answers({ "https://x.example/a": [item("1", "Fresh"), item("2", "Saved One"), item("3", "Card b"), item("4", "Card a")] }),
-      [card("b")],
-      [saved("Saved One")],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.items.map((i) => i.title)).toEqual(["Fresh"]);
-    expect(rows[0]).toMatchObject({ key: "https://x.example/a", title: "Card a", why: "watched" });
-  });
-
-  it("shows a title in one row only, and a row after the first only when it has enough that are new", () => {
-    const first = ids(10, "a").map((id) => item(id));
-    const second = [...ids(5, "a").map((id) => item(id)), ...ids(MIN_NEXT, "b").map((id) => item(id))];
-    const third = [...ids(10, "a").map((id) => item(id)), ...ids(MIN_NEXT - 1, "c").map((id) => item(id))];
-    const rows = becauseRows([seed("a"), seed("b", "loved"), seed("c")], answers({ "https://x.example/a": first, "https://x.example/b": second, "https://x.example/c": third }), [], []);
-    expect(rows.map((r) => r.title)).toEqual(["Card a", "Card b"]);
-    expect(rows[1]!.items.map((i) => i.id)).toEqual(ids(MIN_NEXT, "b"));
-    expect(rows[1]!.why).toBe("loved");
-  });
-
-  it("shows the first row however few titles it has, and none for a title nothing is known of", () => {
-    expect(becauseRows([seed("a")], answers({ "https://x.example/a": [item("1")] }), [], [])).toHaveLength(1);
-    expect(becauseRows([seed("a")], answers({}), [], [])).toEqual([]);
-    expect(becauseRows([seed("a")], answers({ "https://x.example/a": [] }), [], [])).toEqual([]);
-  });
-
-  it("is a row for the next title when the first has nothing", () => {
-    const rows = becauseRows([seed("a"), seed("b")], answers({ "https://x.example/b": [item("1")] }), [], []);
-    expect(rows.map((r) => r.title)).toEqual(["Card b"]);
-  });
-});
-
 describe("createLikeThis", () => {
   const seed: Seed = { key: "k", title: "T", url: "https://x.example/t?s=1&e=2", why: "watched" };
   const settle = async () => {
@@ -114,12 +43,13 @@ describe("createLikeThis", () => {
     expect(fetchFake).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps that nothing was found, and asks again after a question that failed", async () => {
+  it("keeps that nothing was found; a question that failed or was refused has no answer, says so, and is not asked again", async () => {
     const nothing = answering({ nonsense: true });
     const store = createLikeThis({ fetch: nothing as unknown as typeof fetch });
+    expect(store.look("k")).toBeUndefined();
     store.ask(seed);
     await settle();
-    expect(store.get("k")).toEqual([]);
+    expect(store.look("k")).toEqual([]);
     store.ask(seed);
     await settle();
     expect(nothing).toHaveBeenCalledTimes(1);
@@ -128,18 +58,105 @@ describe("createLikeThis", () => {
       throw new Error("down");
     });
     const again = createLikeThis({ fetch: down as unknown as typeof fetch });
+    const heard = vi.fn();
+    again.subscribe(heard);
     again.ask(seed);
     await settle();
     expect(again.get("k")).toBeUndefined();
+    expect(again.look("k")).toBeNull(); // (the rows after it are laid out without it)
+    expect(heard).toHaveBeenCalledTimes(1);
     again.ask(seed);
     await settle();
-    expect(down).toHaveBeenCalledTimes(2);
+    expect(down).toHaveBeenCalledTimes(1);
+
+    const refused = createLikeThis({ fetch: answering({}, false) as unknown as typeof fetch });
+    refused.ask(seed);
+    await settle();
+    expect(refused.look("k")).toBeNull();
+    // (a site opened again asks again)
+    again.reset();
+    expect(again.look("k")).toBeUndefined();
   });
 
-  it("treats a refusal as an empty answer", async () => {
-    const store = createLikeThis({ fetch: answering({}, false) as unknown as typeof fetch });
+  it("asks again what failed a while ago when a page of rows is next opened, and not before that long has passed", async () => {
+    let up = false;
+    let clock = 1_000_000;
+    const fetchFake = vi.fn(async () => {
+      if (!up) throw new Error("down");
+      return { ok: true, status: 200, json: async () => ({ items: [item("1")] }) } as Response;
+    });
+    const store = createLikeThis({ fetch: fetchFake as unknown as typeof fetch, now: () => clock });
+    const heard = vi.fn();
+    store.subscribe(heard);
     store.ask(seed);
     await settle();
-    expect(store.get("k")).toEqual([]);
+    expect(store.look("k")).toBeNull();
+    up = true;
+    clock += ASK_AGAIN_MS - 1;
+    store.refresh();
+    expect(store.look("k")).toBeNull(); // (too soon: the page has what it had)
+    expect(heard).toHaveBeenCalledTimes(1);
+    clock += 1;
+    store.refresh();
+    expect(store.look("k")).toBeUndefined();
+    expect(heard).toHaveBeenCalledTimes(2); // (the page lays its rows out again, and asks)
+    store.ask(seed);
+    await settle();
+    expect(store.look("k")).toEqual([item("1")]);
+    expect(fetchFake).toHaveBeenCalledTimes(2);
+    store.refresh(); // (nothing to forget: nobody is told)
+    expect(heard).toHaveBeenCalledTimes(3);
+  });
+
+  it("counts the titles asked about by the hour: a screen that is never shut is not left without rows for good", async () => {
+    let clock = 5_000_000;
+    const fetchFake = answering({ items: [item("1")] });
+    const store = createLikeThis({ fetch: fetchFake as unknown as typeof fetch, max: 1, now: () => clock });
+    store.ask({ ...seed, key: "a" });
+    store.ask({ ...seed, key: "b" });
+    await settle();
+    expect(store.look("b")).toBeNull();
+    clock += 60 * 60_000;
+    store.refresh();
+    expect(store.look("b")).toBeUndefined();
+    store.ask({ ...seed, key: "b" });
+    await settle();
+    expect(store.look("b")).toEqual([item("1")]);
+  });
+
+  it("keeps the rows a page was last given, by the page's name", () => {
+    const store = createLikeThis({ fetch: answering({}) as unknown as typeof fetch });
+    const rows = [{ id: "because:k", key: "k", title: "T", why: "watched" as const, items: [item("1")] }];
+    expect(store.kept("p\nhome")).toBeUndefined();
+    store.keep("p\nhome", rows);
+    expect(store.kept("p\nhome")).toBe(rows);
+    expect(store.kept("p\nmovie")).toBeUndefined();
+    store.reset();
+    expect(store.kept("p\nhome")).toBeUndefined();
+  });
+
+  it("asks about the first of a profile's titles as soon as they are its titles, and nothing of a profile that is still being read", async () => {
+    const fetchFake = answering({ items: [] });
+    const store = createLikeThis({ fetch: fetchFake as unknown as typeof fetch });
+    const card = (name: string) => ({ key: `url:${name}`, at: 1, title: name, url: `https://x.example/${name}`, position: 10, duration: 100 });
+    const data = { progress: Array.from({ length: FIRST_ASKS + 3 }, (_, at) => card(`p${at}`)), list: [], ratings: [], settings: {} as never, waiting: false };
+    warm(store, { ...data, waiting: true });
+    await settle();
+    expect(fetchFake).toHaveBeenCalledTimes(0);
+    warm(store, data);
+    warm(store, data);
+    await settle();
+    expect(fetchFake).toHaveBeenCalledTimes(FIRST_ASKS);
+  });
+
+  it("asks about so many titles and no more, whatever the pages want: the ones past it have no answer", async () => {
+    const fetchFake = answering({ items: [item("1")] });
+    const store = createLikeThis({ fetch: fetchFake as unknown as typeof fetch, max: 2 });
+    for (const key of ["a", "b", "c"]) store.ask({ ...seed, key, url: `https://x.example/${key}` });
+    expect(store.look("c")).toBeUndefined(); // (told a moment later, not while a page is being drawn)
+    await settle();
+    expect(fetchFake).toHaveBeenCalledTimes(2);
+    expect(store.look("a")).toEqual([item("1")]);
+    expect(store.look("c")).toBeNull();
   });
 });

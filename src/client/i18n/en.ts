@@ -996,6 +996,8 @@ export const en = {
   "rows.because": "Because you watched {title}",
   "rows.loved": "Because you loved {title}",
   "rows.picks": "You might like",
+  "rows.saved": "Because you saved {title}",
+  "rows.moreLike": "More like {title}",
   "rows.moreFailed": "Couldn't load more titles. Trying again…",
 
   /* ratings: a score out of ten, why, and what was watched */

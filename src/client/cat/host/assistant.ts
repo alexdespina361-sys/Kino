@@ -62,7 +62,7 @@ export function reasonFor(found: Candidate, mood: Mood): string | undefined {
 
 /** The start of the names of the rows that are about the viewer, not about a kind of film ("Because you watched Up": whatever "Up" is, the row is not its kind). */
 const SENTINEL = "\u0001";
-const personalRows = (): string[] => (["rows.because", "rows.loved"] as const).map((key) => t(key, { title: SENTINEL }).split(SENTINEL)[0] ?? "").filter((prefix) => prefix.length > 3);
+const personalRows = (): string[] => (["rows.because", "rows.loved", "rows.saved", "rows.moreLike"] as const).map((key) => t(key, { title: SENTINEL }).split(SENTINEL)[0] ?? "").filter((prefix) => prefix.length > 3);
 
 /** The titles the page shows now, as the library's cards say them: each once, with every shelf it is on. */
 export function poolOfPage(root: ParentNode = document): Candidate[] {
