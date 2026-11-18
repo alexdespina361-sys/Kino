@@ -33,6 +33,8 @@ import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
 import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
+import { LiveCount } from "./stats/live";
+import { countLive, ownerStatsRoutes } from "./stats/owner";
 import { countVisits, statsRoutes } from "./stats/routes";
 import type { VisitCounter } from "./stats/visits";
 import { subsyncRoutes, type SubsyncStats } from "./subsync/routes";
@@ -62,6 +64,10 @@ export interface AppOptions {
   feedbackSendsPer10Min?: number;
   /** Counts the people who open the site, a number for each day (see `stats/visits.ts`); the owner reads it at `/api/admin/stats`. Without it nobody is counted. The app writes what is left of it when it stops. */
   visits?: VisitCounter;
+  /** The key of the owner's page (env OWNER_STATS_TOKEN, at least 24 characters): it reads `GET /api/owner/stats` and nothing else. Without it there is no such route, and nothing is counted for it. */
+  ownerStatsToken?: string | undefined;
+  /** The one page of another site whose script a browser lets read that answer (env OWNER_STATS_ORIGIN, an origin). */
+  ownerStatsOrigin?: string | undefined;
   /** What nobody could play (see `library/unavailable.ts`): the screens mark it, the team reads it at `/api/admin/unavailable`. Memory, gone with the server, unless set. The app writes what is left of it when it stops. */
   unavailable?: UnavailableStore;
   /** `closed` stops new accounts being made. */
@@ -292,6 +298,24 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     registration: options.registration,
     maxAccounts: options.maxAccounts,
   });
+  // The owner's page (stats/owner.ts): its own key, its own answer. Who is here now and how the server answers are counted only while there is a key to read them with.
+  if (options.ownerStatsToken && options.ownerStatsToken.length >= FEEDBACK_TOKEN_MIN) {
+    const live = new LiveCount();
+    countLive(app, live);
+    // (Seconds of film, as the profiles' progress comes in: one number a day, kept with the visitors'.)
+    if (accounts && options.visits) accounts.onWatched((seconds) => options.visits?.watched(seconds));
+    await app.register(ownerStatsRoutes, {
+      token: options.ownerStatsToken,
+      origin: options.ownerStatsOrigin,
+      accounts,
+      visits: options.visits,
+      feedback,
+      live,
+      connected: () => hub.connected(),
+      registration: options.registration,
+      maxAccounts: options.maxAccounts,
+    });
+  }
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
   const proxyExemptHosts = options.proxyExemptHosts ?? exemptHostsFrom(process.env.PROXY_EXEMPT_HOSTS);

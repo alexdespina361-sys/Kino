@@ -806,6 +806,17 @@ export class AccountStore {
 
   /* ------------------------------ what a profile keeps ------------------------------ */
 
+  private watchedTell: ((seconds: number) => void) | undefined;
+  /** When each profile's watching was last counted, by this server's clock: it is counted no faster than time goes. */
+  private readonly watchedAt = new Map<string, number>();
+  /**
+   * Who is told how many seconds of film a profile played, as its progress comes in (the owner's stats add them up by day: stats/visits.ts). Only the
+   * number is told: not the profile, not the film.
+   */
+  onWatched(tell: (seconds: number) => void): void {
+    this.watchedTell = tell;
+  }
+
   /** Bring a profile's data up to date with what a screen sends, and answer with what that screen has missed. */
   sync(profileId: string, request: SyncRequest): SyncResponse | undefined {
     const profile = this.data.get(profileId);
@@ -819,6 +830,7 @@ export class AccountStore {
     let pruned = false;
     // What the screen sent and the server kept exactly as it was sent: the screen has it already, so it is not sent back.
     const echo = new Set<string>();
+    let played = 0;
 
     for (const name of COLLECTIONS) {
       const map = profile.collections[name];
@@ -827,6 +839,7 @@ export class AccountStore {
         const candidate: SyncItem = { ...sent, at: Math.min(sent.at, now + FUTURE_SLACK_MS) };
         if (name === "settings" && !candidate.deleted && !validSetting(candidate)) continue;
         const have = map.get(candidate.key)?.item;
+        if (name === "progress" && this.watchedTell && have) played += playedBetween(have, candidate);
         let winner = have ? newerOf(have, candidate) : candidate;
         if (have && !have.deleted && !candidate.deleted) winner = borrow(name, winner, winner === have ? candidate : have);
         if (have && sameJson(winner, have)) continue;
@@ -835,6 +848,14 @@ export class AccountStore {
         if (sameJson(winner, sent)) echo.add(`${name}:${winner.key}`);
       }
       pruned = this.prune(map, name, now) || pruned;
+    }
+    if (played > 0 && this.watchedTell) {
+      // (No more than the time that went by on this server's clock since the profile's watching was last counted, and a quarter of an hour at most at once:
+      // what a screen says of its own clock cannot make the number grow faster than a film plays.)
+      const last = this.watchedAt.get(profileId);
+      const most = last === undefined ? WATCHED_AT_ONCE_S : Math.min(WATCHED_AT_ONCE_S, (now - last) / 1000 + 60);
+      this.watchedAt.set(profileId, now);
+      if (most > 0) this.watchedTell(Math.min(played, most));
     }
     if (stamped) profile.rev = rev;
     if (stamped || pruned) this.touch(`pdata:${profileId}`);
@@ -890,6 +911,23 @@ export class AccountStore {
   snapshot(profileId: string) {
     return this.sync(profileId, { since: 0 });
   }
+}
+
+/** The most seconds of film one sync may add to what was watched. */
+const WATCHED_AT_ONCE_S = 15 * 60;
+
+/**
+ * How many seconds of a film were played between two states of its card: the same film or episode, further on, written later, and no further on than
+ * the time between the two writings allows (a jump ahead is no watching). Nothing for anything else.
+ */
+export function playedBetween(before: SyncItem, after: SyncItem): number {
+  if (before.deleted || after.deleted) return 0;
+  const a = before as SyncItem & { url?: unknown; position?: unknown };
+  const b = after as SyncItem & { url?: unknown; position?: unknown };
+  if (typeof a.url !== "string" || a.url !== b.url || typeof a.position !== "number" || typeof b.position !== "number") return 0;
+  const played = b.position - a.position;
+  const went = (b.at - a.at) / 1000;
+  return played > 0 && went > 0 && played <= went + 30 ? played : 0;
 }
 
 const emptyProfileData = (): ProfileData => ({ rev: 0, collections: Object.fromEntries(COLLECTIONS.map((name) => [name, new Map()])) as ProfileData["collections"] });

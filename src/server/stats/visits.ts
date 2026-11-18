@@ -15,6 +15,7 @@ interface DayDoc {
   day: string;
   visitors: number;
   loads: number;
+  watched?: number;
 }
 /** Who has been counted today (see `hashOf`), and the salt they were hashed with. Only ever one of these, today's. */
 interface SeenDoc {
@@ -49,6 +50,8 @@ export interface VisitCounterOptions {
 export interface DayVisits {
   visitors: number;
   loads: number;
+  /** Seconds of film the signed-in profiles played that day, all of them together (see `watched`). None on a day before it was counted. */
+  watched?: number;
 }
 
 export class VisitCounter {
@@ -79,7 +82,7 @@ export class VisitCounter {
       try {
         if (key.startsWith("visits:")) {
           const doc = value as DayDoc;
-          if (typeof doc.day === "string" && Number.isFinite(doc.visitors) && Number.isFinite(doc.loads)) this.days.set(doc.day, { visitors: doc.visitors, loads: doc.loads });
+          if (typeof doc.day === "string" && Number.isFinite(doc.visitors) && Number.isFinite(doc.loads)) this.days.set(doc.day, { visitors: doc.visitors, loads: doc.loads, ...(typeof doc.watched === "number" && Number.isFinite(doc.watched) && doc.watched > 0 ? { watched: doc.watched } : {}) });
         } else if (key.startsWith("seen:")) {
           // Today's carries on (a restart must not count the same people twice); any other is a day that is over, and goes.
           const doc = value as SeenDoc;
@@ -186,6 +189,19 @@ export class VisitCounter {
       visits.visitors++;
       this.touch(`seen:${day}`);
     }
+    this.touch(`visits:${day}`);
+  }
+
+  /**
+   * Some seconds of film were played by a signed-in profile (the accounts say so as its progress comes in: `AccountStore.onWatched`). One number for the
+   * day, of everybody together: not who, not what. A guest's watching is kept on the guest's own device and never comes here.
+   */
+  watched(seconds: number): void {
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    const day = dayOf(this.now());
+    const visits = this.days.get(day) ?? { visitors: 0, loads: 0 };
+    this.days.set(day, visits);
+    visits.watched = Math.round((visits.watched ?? 0) + seconds);
     this.touch(`visits:${day}`);
   }
 
