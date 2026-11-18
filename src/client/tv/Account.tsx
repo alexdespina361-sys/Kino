@@ -4,9 +4,6 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
-import { emitCat } from "../cat/bus";
-import { CatIcon } from "../cat/Chip";
-import { CAT_LOOKS, CAT_SIZES, useCatAsleep, useCatSettings, useCatShown } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { signedInLine } from "../account/google";
 import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
@@ -28,12 +25,12 @@ import { TvCode } from "./TvCode";
 
 /**
  * The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles,
- * and the pages of the settings that open from a row of it (the subtitle languages, the cat, the PIN of a child's profile).
+ * and the pages of the settings that open from a row of it (the subtitle languages, the PIN of a child's profile).
  */
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "cat" | "pin" | "sections" | "setup";
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "pin" | "sections" | "setup";
 
 /** A page of the settings that Back comes from to the panel: the remote lands on its row again. */
-type SettingsPage = "subtitles" | "cat" | "pin" | "sections";
+type SettingsPage = "subtitles" | "pin" | "sections";
 
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
@@ -494,7 +491,6 @@ export function TvAccountPanel({
   onSwitch,
   onManage,
   onSubtitles,
-  onCat,
   onPin,
   onSections,
   cameFrom,
@@ -505,7 +501,6 @@ export function TvAccountPanel({
   onSwitch: () => void;
   onManage: () => void;
   onSubtitles: () => void;
-  onCat: () => void;
   onPin: () => void;
   onSections: () => void;
   /** The page of the settings Back came from: the remote lands on its row again, not at the top. */
@@ -523,7 +518,6 @@ export function TvAccountPanel({
   const child = settings.child === true;
   const several = Boolean(me && me.profiles.length > 1);
   const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
-  const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
   const subtitleName = useMemo(() => languageNamer(language), [language]);
   const chosenSubtitles = settings.subtitleLanguages ?? [];
   // (how the row stands, short: the first language chosen and how many more; nothing while the defaults apply)
@@ -718,12 +712,10 @@ export function TvAccountPanel({
                 {t("settings.childNote")}
               </p>
             </SettingsGroup>
-            {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). The cat is one row, and its switches are on a page
-                of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen. */}
+            {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
             <SettingsGroup title={t("settings.labs")} testId="tv-group-labs">
               <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
               <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
-              {cat.offered && <SettingsLine icon={<CatIcon />} label={t("cat.settings.title")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" autoFocus={cameFrom === "cat"} />}
             </SettingsGroup>
           </div>
         </div>
@@ -794,109 +786,6 @@ export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
             </div>
             <SettingsSwitch label={t("settings.onlySubtitleLanguages")} on={only} onToggle={() => set("onlySubtitleLanguages", only ? undefined : true)} testId="tv-only-languages" />
           </SettingsGroup>
-        </div>
-      </div>
-    </Screen>
-  );
-}
-
-/**
- * The cat's page of the settings: whether there is a cat on this screen, whether it keeps still, whether it keeps the viewer company in films, whether it is the
- * detailed one, what coat it wears and how big it is. A page of its own, two columns (what it does, and what it looks like), so that the settings page is no taller
- * on a host that offers a cat than on one that does not.
- */
-export function TvCatSettings({ onBack }: { onBack: () => void }) {
-  const t = useT();
-  const cat = useCatSettings();
-  const shown = useCatShown();
-  const asleep = useCatAsleep(); // (the viewer sent the cat to sleep from its menu or its panel: this is where it is woken, as well)
-  // (what is really drawn, when the white and grey cat was chosen: said, so that a screen that gives the simple version is not left to look like a choice that did nothing)
-  const said = cat.settings.look === "ragdoll" && shown.art === "solid" ? t("cat.shown.solid") : cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why ? t(`cat.shown.${shown.why}`) : "";
-  return (
-    <Screen testId="tv-cat-settings" focus onBack={onBack}>
-      <div className="tv-set tv-set-cat">
-        <header className="tv-set-head" data-nav-column>
-          <h1 className="tv-set-title" data-testid="tv-cat-title">
-            {t("cat.settings.title")}
-          </h1>
-          <BackButton onClick={onBack} testId="tv-cat-back" />
-        </header>
-        <div className="tv-set-grid tv-set-grid-2">
-          <div className="tv-set-col" data-nav-column>
-            {/* (why the cat is off: the owner turned it off on every screen, see cat/settings.ts CAT_SWITCH) */}
-            <p className="tv-hint tv-set-hint" data-testid="tv-cat-notice" role="note">
-              <InfoIcon /> <span>{t("cat.settings.notice")}</span>
-            </p>
-            <SettingsGroup title={t("cat.settings.behaviour")} testId="tv-group-cat-behaviour">
-              <SettingsSwitch label={t("cat.settings.on")} on={cat.settings.on} onToggle={() => cat.set({ on: !cat.settings.on })} testId="tv-cat-switch" />
-              {cat.settings.on && (
-                <>
-                  <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
-                  <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
-                  {asleep && (
-                    <SettingsLine
-                      icon={<CatIcon />}
-                      label={t("cat.wake")}
-                      onPress={() => {
-                        emitCat({ type: "wake" });
-                        // (the row goes with the sleep: the remote is put on the switch above it, not left on a button that is gone)
-                        document.querySelector<HTMLElement>('[data-testid="tv-cat-films"]')?.focus({ preventScroll: true });
-                      }}
-                      testId="tv-cat-wake"
-                    />
-                  )}
-                </>
-              )}
-            </SettingsGroup>
-            <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
-              <InfoIcon /> <span>{t("cat.settings.help")}</span>
-            </p>
-          </div>
-          <div className="tv-set-col" data-nav-column>
-            {cat.settings.on && (
-              <SettingsGroup title={t("cat.settings.look")} testId="tv-group-cat-look">
-                <div className="tv-field">
-                  <span className="tv-field-label" aria-hidden="true">
-                    {t("cat.settings.cat")}
-                  </span>
-                  <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.cat")}>
-                    {CAT_LOOKS.map((look) => (
-                      <button key={look} className="tv-choice" role="radio" aria-checked={cat.settings.look === look} onClick={() => cat.set({ look })} data-nav data-testid={`tv-cat-look-${look}`}>
-                        {t(`cat.look.${look}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="tv-hint tv-set-hint" data-testid="tv-cat-look-help">
-                  <span>{t(`cat.look.${cat.settings.look}.help`)}</span>
-                </p>
-                {said && (
-                  <p className="tv-hint tv-set-hint" role="status" data-testid="tv-cat-shown" data-art={shown.art} data-why={shown.why}>
-                    <InfoIcon /> <span>{said}</span>
-                  </p>
-                )}
-                {cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why && (
-                  <SettingsLine icon={<CatIcon />} label={t("cat.shown.retry")} onPress={() => emitCat({ type: "retry" })} testId="tv-cat-retry" />
-                )}
-                <div className="tv-field">
-                  <span className="tv-field-label" aria-hidden="true">
-                    {t("cat.settings.size")}
-                  </span>
-                  <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.size")}>
-                    {CAT_SIZES.map((size) => (
-                      <button key={size} className="tv-choice" role="radio" aria-checked={cat.settings.size === size} onClick={() => cat.set({ size })} data-nav data-testid={`tv-cat-size-${size}`}>
-                        {t(`cat.size.${size}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </SettingsGroup>
-            )}
-            {/* (the detailed cat is drawn from models licensed CC BY 4.0, which ask for the makers to be named and the changes to be said: said under the look it is the credit of, in the column with the room, where it made the left one taller than a TV's screen in Italian) */}
-            <p className="tv-hint tv-set-hint tv-set-credit" data-testid="tv-cat-credit">
-              <span>{t("cat.settings.credit")}</span>
-            </p>
-          </div>
         </div>
       </div>
     </Screen>
@@ -975,7 +864,6 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
   if (view === "signin") return <TvSignIn onClose={() => onView(null)} onBack={() => onView(fromPanel ? "panel" : null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
   if (view === "subtitles") return <TvSubtitleLanguages onBack={backFrom("subtitles")} />;
-  if (view === "cat") return <TvCatSettings onBack={backFrom("cat")} />;
   if (view === "pin") return <TvPinSetup onBack={backFrom("pin")} />;
   if (view === "sections") return <TvSections onBack={backFrom("sections")} />;
   if (view === "setup") return <TvSetup onDone={() => onView(null)} />;
@@ -991,7 +879,6 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
       onSwitch={guarded("profiles")}
       onManage={guarded("manage")}
       onSubtitles={open("subtitles")}
-      onCat={open("cat")}
       onPin={open("pin")}
       onSections={open("sections")}
       cameFrom={cameFrom}

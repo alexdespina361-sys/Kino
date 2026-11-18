@@ -11,9 +11,8 @@
  */
 
 import type { EnhanceProblem, EnhanceTier } from "../../shared";
-import { GlUpscaler } from "../../labs/upscale/glUpscaler";
-import { GpuUpscaler, webgpuAdapter } from "../../labs/upscale/gpuUpscaler";
 import { firstTier, readTiers, sizeClass, TIERS_KEY, twoKSize, Watch, type Size } from "./offers";
+import { GlUpscaler, GpuUpscaler, webgpuAdapter } from "./upscalers";
 
 export interface EnhanceStatus {
   /** How it is drawn now; absent once it has ended. */
@@ -144,7 +143,7 @@ export class Enhancer {
         return this.use("sharp");
       }
       if (this.stopped) return void gpu.dispose();
-      drawer = { tier, canvas, draw: (video, out) => gpu.draw(video, "anime-best", out), caughtUp: () => gpu.caughtUp(), mark: () => gpu.mark(), lost: () => gpu.lost, dispose: () => gpu.dispose() };
+      drawer = { tier, canvas, draw: (video, out) => gpu.draw(video, out), caughtUp: () => gpu.caughtUp(), mark: () => gpu.mark(), lost: () => gpu.lost, dispose: () => gpu.dispose() };
     } else {
       let gl: GlUpscaler;
       try {
@@ -152,7 +151,7 @@ export class Enhancer {
       } catch {
         return this.end("failed");
       }
-      drawer = { tier, canvas, draw: (video, out) => gl.draw(video, "sharp", out), caughtUp: () => gl.caughtUp(), mark: () => gl.mark(), lost: () => gl.lost(), dispose: () => gl.dispose() };
+      drawer = { tier, canvas, draw: (video, out) => gl.draw(video, out), caughtUp: () => gl.caughtUp(), mark: () => gl.mark(), lost: () => gl.lost(), dispose: () => gl.dispose() };
     }
     this.drawer = drawer;
     this.host.appendChild(canvas);

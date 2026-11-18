@@ -49,7 +49,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .screen-failed button { padding: 14px 28px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-size: 1.1rem; font-weight: 600; }
 .screen-failed button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
 
-/* The logo (Logo.tsx): two pictures of the same size, one over the other (the second has the cat's ears and fades in while the cat is on). Sized by the font-size of
+/* The logo (Logo.tsx). Sized by the font-size of
    whatever holds it, 4em wide (its "o" is about as big as the old play button was); a screen that wants it bigger sets the width. The height is the pictures' own (269 by 115). */
 .logo {
   position: relative;
@@ -58,12 +58,9 @@ button:disabled { opacity: 0.4; cursor: default; }
   width: 4em;
 }
 .logo img { display: block; width: 100%; height: auto; pointer-events: none; } /* (nothing to drag, and no menu for a long press) */
-.logo-ears { position: absolute; top: 0; left: 0; opacity: 0; transition: opacity 0.2s ease; }
-.logo[data-cat="on"] .logo-ears { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 2.4s; }
-  .logo-ears { transition: none; }
 }
 
 /* A link to paste into a chat (CopyLink.tsx): the whole of it, a click on it selects it whole, and a button beside it copies it. Each screen sizes it. */

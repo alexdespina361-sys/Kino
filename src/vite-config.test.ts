@@ -20,13 +20,6 @@ describe("vite.config.ts (as Vite resolves it)", async () => {
     expect(config.build?.outDir).toBe("dist/client");
   });
 
-  it("builds the app's page and the upscaler test page of Kino Labs", () => {
-    const input = config.build?.rolldownOptions?.input as Record<string, string>;
-    expect(Object.keys(input).sort()).toEqual(["index", "upscale"]);
-    expect(path.relative(path.resolve(import.meta.dirname, ".."), input.index!)).toBe("index.html");
-    expect(path.relative(path.resolve(import.meta.dirname, ".."), input.upscale!).replaceAll("\\", "/")).toBe("labs/upscale/index.html");
-  });
-
   it("proxies /ws as a WebSocket to Fastify on 127.0.0.1", () => {
     const ws = proxy["/ws"] as ProxyOptions;
     expect(ws.ws).toBe(true);

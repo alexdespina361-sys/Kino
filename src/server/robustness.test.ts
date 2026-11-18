@@ -334,7 +334,6 @@ beforeAll(async () => {
       trustProxy: 1,
       librarySources: [library],
       allowPrivateNetwork: true,
-      cat: true,
       // (AniSkip's times: a fake that knows one episode, so that the sweep asks no site of the internet.)
       animeSkip: { find: async (hint) => (hint.title === "Frieren" ? { intro: { start: 116.75, end: 206.75 } } : null) },
       // (Google sign-in on, at the address the sweep's requests come to; its token endpoint is the sweep's own server, which has none: a code is never taken.)

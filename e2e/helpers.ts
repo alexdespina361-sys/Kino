@@ -238,12 +238,6 @@ export const heldUpright = (page: Page): boolean => {
   return size !== null && size.width <= COMPACT_MAX_WIDTH && size.height >= COMPACT_MIN_HEIGHT;
 };
 
-/**
- * The cat is off for everyone (the owner, 15 Nov 2026: it has not been brought up to date and may not work as intended), and its tests are kept out of our
- * runs: they run only when CAT_TESTS=1 is set. A seed that turns the cat on carries `switched: 2` (cat/settings.ts CAT_SWITCH), as a switch turned on now does.
- */
-export const CAT_TESTS = Boolean(process.env.CAT_TESTS);
-export const CAT_TESTS_OFF = "the cat is off for everyone and its tests are kept out of our runs: set CAT_TESTS=1 to run them";
 
 /** Whether the page is on a phone held on its side: its menu says so. */
 export const onItsSide = async (page: Page): Promise<boolean> => (await page.getByTestId("tv-rail").getAttribute("data-flat")) === "true";

@@ -139,7 +139,7 @@ describe("serving the built page", () => {
     await cp(new URL("../../public/branding", import.meta.url), path.join(dir, "branding"), { recursive: true }); // (public/ is copied as it is into the built page)
     const app = await buildApp({ clientDir: dir });
     try {
-      for (const name of ["kino-cat-off.svg", "kino-cat-on.svg"]) {
+      for (const name of ["kino-cat-off.svg"]) {
         const picture = await app.inject({ url: `/branding/${name}` });
         expect(picture.statusCode).toBe(200);
         expect(picture.headers["content-type"]).toMatch(/^image\/svg\+xml/);
@@ -178,27 +178,6 @@ describe("serving the built page", () => {
       // (...and the files that are served still are.)
       expect((await app.inject({ url: "/sample.txt" })).body).toBe("film");
       expect((await app.inject({ url: "/fixtures/sample.txt" })).body).toBe("film");
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("serves the upscaler test page of Kino Labs as a page of its own, checked again every time, and sends its address without the last slash to it", async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
-    await mkdir(path.join(dir, "labs", "upscale"), { recursive: true });
-    await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
-    await writeFile(path.join(dir, "labs", "upscale", "index.html"), "<!doctype html><title>Kino Labs: upscaler test</title>");
-    const app = await buildApp({ clientDir: dir });
-    try {
-      const page = await app.inject({ url: "/labs/upscale/", headers: { accept: "text/html" } });
-      expect(page.statusCode).toBe(200);
-      expect(page.body).toContain("upscaler test");
-      expect(page.headers["cache-control"]).toMatch(/no-cache/);
-      const bare = await app.inject({ url: "/labs/upscale", headers: { accept: "text/html" } });
-      expect(bare.statusCode).toBe(301);
-      expect(bare.headers.location).toBe("/labs/upscale/");
-      // (The app's own addresses are the app's still.)
-      expect((await app.inject({ url: "/tv", headers: { accept: "text/html" } })).body).toBe("<!doctype html><title>Kino</title>");
     } finally {
       await app.close();
     }

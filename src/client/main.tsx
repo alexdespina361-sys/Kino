@@ -3,7 +3,6 @@ import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountProvider } from "./account/AccountProvider";
 import { askEarly } from "./app/GetTheApp";
-import { bootCat } from "./cat/boot";
 import { installDiagnostics } from "./feedback/diagnostics";
 import { FeedbackGate } from "./feedback/FeedbackGate";
 import { FriendsProvider } from "./friends/FriendsProvider";
@@ -52,8 +51,6 @@ installDiagnostics();
 watchForUpdates();
 // On a phone's browser with Android, the Android app is asked about now, so that the page's first drawing has the line that offers it (see app/GetTheApp.tsx).
 askEarly();
-// A cat on the TV's screen, for a device that asked for one and a host that offers it (nothing of it is downloaded otherwise: see cat/boot.ts).
-bootCat(role);
 // (Drawn once the words of this screen's language are here: English is in the page already, Romanian and Italian are a small file each.)
 void languageReady.then(() =>
   createRoot(document.getElementById("root")!).render(

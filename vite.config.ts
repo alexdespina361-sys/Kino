@@ -1,4 +1,3 @@
-import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -15,12 +14,7 @@ export default defineConfig({
     outDir: "dist/client",
     emptyOutDir: true,
     target: ["chrome94", "edge107", "firefox104", "safari16"],
-    // Two pages: the app, and the upscaler test of Kino Labs (labs/upscale/, a page of its own: it uses no code of the app, only the bundler's loading helper).
     rolldownOptions: {
-      input: {
-        index: fileURLToPath(new URL("index.html", import.meta.url)),
-        upscale: fileURLToPath(new URL("labs/upscale/index.html", import.meta.url)),
-      },
       // React and zod, which every page needs and which change only when a dependency is updated, in a file of their own: its name (a hash of what is in
       // it) stays the same from one deploy to the next, so a TV that has it keeps it, already compiled, instead of downloading ~300 KB again with the app.
       output: {

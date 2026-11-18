@@ -950,9 +950,6 @@
 :root[data-ui="polish"] .tv-flip { transform: scaleX(-1); }
 :root[data-ui="polish"] .tv-set-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(var(--em) * 2.4); align-items: start; }
 :root[data-ui="polish"] .tv-set-col { display: flex; flex-direction: column; gap: calc(var(--em) * 2); min-width: 0; }
-/* The cat's page of the settings: two columns, on a page only as wide as the two of them (what it does, what it looks like) */
-:root[data-ui="polish"] .tv-set-cat { max-width: calc(var(--em) * 62); }
-:root[data-ui="polish"] .tv-set-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* The settings' own page: its columns end on one line, whatever the language and whoever is watching (the owner: "it's not aesthetic how the cat square is slightly lower
    than it should be"). Each column is as tall as the tallest and its cards spread down it, so the last card of each ends where the others' do; a column of one card
    (a guest's) has that card reach down, the way to sign in at its foot. One column (a narrow screen) is only as tall as what it holds. */
@@ -1071,9 +1068,6 @@
 :root[data-ui="polish"] .tv-segmented .tv-choice:focus-visible,
 :root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"]:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; }
 :root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"]:focus-visible { box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
-/* (a field with more or longer names than the languages have, such as the cat's coats: two by two, so that no name is cut in another language) */
-:root[data-ui="polish"] .tv-segmented-grid { flex-wrap: wrap; }
-:root[data-ui="polish"] .tv-segmented-grid .tv-choice { flex: 1 1 calc(50% - var(--em) * 0.2); }
 :root[data-ui="polish"] .tv-set .tv-swatches { gap: calc(var(--em) * 1); padding: calc(var(--em) * 0.4) calc(var(--em) * 0.3); }
 :root[data-ui="polish"] .tv-set .tv-swatch { width: calc(var(--em) * 3.5); height: calc(var(--em) * 3.5); font-size: calc(var(--em) * 1.6); }
 
@@ -1085,8 +1079,6 @@
 :root[data-ui="polish"] .tv-group-body .tv-switch-row:focus-visible { z-index: 2; background: #fff; }
 :root[data-ui="polish"] .tv-set-hint { display: flex; align-items: flex-start; gap: calc(var(--em) * 0.8); margin: 0; padding: 0 calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-1); line-height: 1.4; }
 :root[data-ui="polish"] .tv-set-hint svg { flex: none; margin-top: 0.15em; }
-/* The credit of the cat's models: the licence asks for it to be said, so it is said in full, as fine print a step under the hints round it (in a language with long words it is the longest text of the page). */
-:root[data-ui="polish"] .tv-set-credit { font-size: calc(var(--fs-1) * 0.85); line-height: 1.35; }
 
 /* ------------------------------ what the classic sheet sized by itself ------------------------------ */
 

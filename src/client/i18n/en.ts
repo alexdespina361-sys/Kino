@@ -3,7 +3,6 @@
  * count has one form per plural category the language uses (`_one`, `_few`, `_other`): English needs two, Romanian three.
  */
 import { chatEn } from "./chat.en";
-import { catEn } from "./cat.en";
 import { shellEn } from "./shell.en";
 
 export const en = {
@@ -1464,9 +1463,6 @@ export const en = {
 
   /* the phone's shell, its bar of destinations and the screens in it (client/controller/shell): kept in a file of its own, spread in here */
   ...shellEn,
-
-  /* the cat companion (client/cat): kept in a file of its own, spread in here */
-  ...catEn,
 } as const;
 
 export type Dictionary = Record<keyof typeof en, string> & Record<string, string>;

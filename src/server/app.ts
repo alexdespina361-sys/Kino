@@ -121,8 +121,6 @@ export interface AppOptions {
   fetchesPerDay?: Partial<FetchesPerDay>;
   /** How many of the library's searches may be under way at once, for one address and in all (3 and 32 unless set; see the search's route). */
   searchesAtOnce?: { perAddress?: number; inAll?: number };
-  /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
-  cat?: boolean;
   /**
    * The site's KLIPY key, for GIFs in the chats (client/chat/gifs.ts): env KLIPY_KEY. Without one there is no GIF button anywhere. It is handed to every page
    * (`/api/features`), because each visitor's browser asks KLIPY itself with it in the address, as KLIPY's rules ask (nothing of KLIPY's goes through this server).
@@ -338,9 +336,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
   fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo, perDay: { ...FETCHES_PER_DAY, ...options.fetchesPerDay } });
   const nameLookups = new RateLimiter(options.nameLookupsPer10Min ?? 2400, 10 * 60 * 1000); // (not kept over a restart: thousands of moments an address, for ten minutes)
-  // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
-  // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
-  const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
   // GIFs in the chats: the KLIPY key, when the host has one (and one that looks like a key: anything else is said in the log and left out).
   const animeSkip = options.animeSkip !== undefined ? options.animeSkip : /^(0|off|false|no)$/i.test(process.env.ANIME_SKIP ?? "") ? null : createAnimeSkipLookup();
   const klipyWritten = (options.klipyKey ?? process.env.KLIPY_KEY ?? "").trim();
@@ -369,7 +364,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // (Stickers that move: only while personal stickers are on, and the host turned them on as well: MOVING_STICKERS=on.)
   const movingOn = accounts?.stickers.moving === true;
   const features = {
-    cat: catOn,
     ...(klipyKey ? { gifs: klipyKey } : {}),
     ...(stickersOn ? { stickers: true } : {}),
     ...(movingOn ? { movingStickers: true } : {}),
@@ -407,7 +401,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
-    features: { cat: catOn, ...(klipyKey ? { gifs: true } : {}), ...(stickersOn ? { stickers: true } : {}), ...(pushOn ? { push: true } : {}) },
+    features: { ...(klipyKey ? { gifs: true } : {}), ...(stickersOn ? { stickers: true } : {}), ...(pushOn ? { push: true } : {}) },
     // (`stickers`: how many personal stickers the site keeps, and how many bytes of pictures.)
     ...(accounts ? { stickers: accounts.stickers.size } : {}),
     // (`push`: the devices with the app's notifications on, what became of the notifications since the start, and the newest version of the app offered.)
@@ -673,10 +667,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       }
     };
     app.get("/api/build", async (_request, reply) => reply.header("Cache-Control", "no-store").send({ build: buildNow() }));
-    // Kino Labs' upscaler test is a page of its own (labs/upscale/index.html): without the last slash its address would be taken for one of the app's.
-    if (existsSync(path.join(clientDir, "labs", "upscale", "index.html"))) {
-      app.get("/labs/upscale", (_request, reply) => reply.redirect("/labs/upscale/", 301));
-    }
     // One SPA: "/" is the phone, "/tv" is the receiver. Both are index.html.
     app.setNotFoundHandler((request, reply) => {
       // (HEAD too: a check that the page is there, as an uptime monitor makes, got a 404 for "/tv" while "/" answered. Node sends no body for it.)

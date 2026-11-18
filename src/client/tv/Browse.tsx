@@ -3,8 +3,6 @@ import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, Lib
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
-import { CatChip } from "../cat/Chip";
-import { useCatWanted } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { signedInLine } from "../account/google";
 import { useCanConnectGoogle } from "../account/GoogleButton";
@@ -357,7 +355,6 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const canConnectGoogle = useCanConnectGoogle();
   const friends = useFriends();
   const bell = useBell();
-  const showCat = useCatWanted(); // (the cat's button in the corner: only on a screen that has a cat)
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   /** The library is shown (and a title's link opened) once the profile's settings are known, a child's profile's in particular (see `useProfileHold`). */
   const holding = useProfileHold();
@@ -789,7 +786,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // finger have no key for it. (A friend's page has its own, the first button of its row.)
   const wayBack = view.kind !== "friend" && isProfilePage(view) ? backOf(view) : null;
   const lead = wayBack ? 1 : 0;
-  const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (showCat ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, the cat's, then the full screen one
+  const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, then the full screen one
   const signedIn = Boolean(me && profile);
   /** What a phone's bar has no room for, as buttons after Feedback (none on a screen whose menu has a line for each). */
   const places = few ? (child ? [phonePlace] : [partyPlace, phonePlace]) : [];
@@ -1807,8 +1804,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           {wayBack && <BackButton onClick={() => choose(wayBack)} testId="tv-page-back" col={0} />}
           {showBell && <BellChip onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: lead } })} col={lead} />}
           {showAccount && <AccountChip onOpen={() => choose({ kind: "profile" })} current={isProfilePage(view)} zone col={lead + (showBell ? 1 : 0)} />}
-          {showCat && <CatChip col={lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0)} />}
-          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (showCat ? 1 : 0) }} />
+          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) }} />
         </div>
       </header>
 

@@ -3244,32 +3244,26 @@ test.describe("ratings on the TV", () => {
     });
   }
 
-  // (The owner, 15 Nov 2026: "it's not aesthetic how the cat square is slightly lower than it should be": the last card of every column ends on one line.)
+  // (The owner, 15 Nov 2026: the last card of every column ends on one line.)
   // (Signed in, a profile has the lines that only an account has: "Count what I watch on Kino", 18 Nov, made a 720p screen's columns too tall where it was first put.)
-  for (const { name, width, height, cat, signedIn } of [
-    { name: "720p, with the cat's row", width: 1280, height: 720, cat: true, signedIn: false },
-    { name: "1080p, with the cat's row", width: 1920, height: 1080, cat: true, signedIn: false },
-    { name: "1080p, without it", width: 1920, height: 1080, cat: false, signedIn: false },
-    { name: "720p, signed in, with the cat's row", width: 1280, height: 720, cat: true, signedIn: true },
-    { name: "720p, signed in, without it", width: 1280, height: 720, cat: false, signedIn: true },
+  for (const { name, width, height, signedIn } of [
+    { name: "720p", width: 1280, height: 720, signedIn: false },
+    { name: "1080p", width: 1920, height: 1080, signedIn: false },
+    { name: "720p, signed in", width: 1280, height: 720, signedIn: true },
   ]) {
     test(`the settings' columns end on one line: ${name}`, async ({ browser }) => {
-      const tv = await openLibrary(browser, async (context) => {
-        await withLibrary(library)(context);
-        await context.route("**/api/features", (route) => route.fulfill({ json: { cat } }));
-      }, { width, height });
+      const tv = await openLibrary(browser, withLibrary(library), { width, height });
       if (signedIn) {
         await openTvSignIn(tv);
         await tv.getByTestId("tv-signin-email").click();
         await tv.getByTestId("auth-switch").click();
         await expect(tv.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
-        await tv.getByTestId("auth-email").fill(`columns${Date.now().toString(36)}${width}${cat ? "c" : ""}`);
+        await tv.getByTestId("auth-email").fill(`columns${Date.now().toString(36)}${width}`);
         await tv.getByTestId("auth-password").fill("kino-test-pass-1");
         await tv.getByTestId("auth-submit").click();
         await expect(tv.getByTestId("tv-account-chip")).toBeVisible();
       }
       await openProfilePlace(tv, "settings");
-      await expect(tv.getByTestId("tv-cat-open")).toHaveCount(cat ? 1 : 0);
       await expect(tv.getByTestId("tv-public-watching")).toHaveCount(signedIn ? 1 : 0);
       const bottoms = await tv.locator(".tv-set-grid-panel > .tv-set-col").evaluateAll((columns) =>
         columns.map((column) => {

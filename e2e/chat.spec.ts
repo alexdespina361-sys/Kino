@@ -3135,7 +3135,7 @@ const klipyEntry = (id: string) => ({
  */
 async function fakeKlipy(page: Page, { key = true } = {}): Promise<URL[]> {
   const asked: URL[] = [];
-  if (key) await page.route("**/api/features", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ cat: false, gifs: KLIPY_TEST_KEY }) }));
+  if (key) await page.route("**/api/features", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ gifs: KLIPY_TEST_KEY }) }));
   await page.route(/^https:\/\/api\.klipy\.com\//, async (route) => {
     const address = new URL(route.request().url());
     asked.push(address);

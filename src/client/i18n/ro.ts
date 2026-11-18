@@ -1,5 +1,4 @@
 import { chatRo } from "./chat.ro";
-import { catRo } from "./cat.ro";
 import { shellRo } from "./shell.ro";
 import type { Dictionary } from "./en";
 
@@ -1482,7 +1481,4 @@ export const ro: Dictionary = {
 
   /* shell-ul telefonului, bara de jos și ecranele din ea (client/controller/shell): într-un fișier separat, adăugat aici */
   ...shellRo,
-
-  /* the cat companion (client/cat): kept in a file of its own, spread in here */
-  ...catRo,
 };

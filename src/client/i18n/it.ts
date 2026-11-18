@@ -1,5 +1,4 @@
 import { chatIt } from "./chat.it";
-import { catIt } from "./cat.it";
 import { shellIt } from "./shell.it";
 import type { Dictionary } from "./en";
 
@@ -1461,7 +1460,4 @@ export const it: Dictionary = {
 
   /* la shell del telefono, la barra in basso e le schermate al suo interno (client/controller/shell): in un file a parte, aggiunto qui */
   ...shellIt,
-
-  /* the cat companion (client/cat): kept in a file of its own, spread in here */
-  ...catIt,
 };

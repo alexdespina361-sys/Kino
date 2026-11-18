@@ -195,7 +195,7 @@ describe("the owner's stats", () => {
       subsync: { found: 9, missed: 4, stored: 2 },
       official: { kept: 6, offers: {} },
       feedback: { reports: 11, full: true, team: true },
-      features: { cat: false },
+      features: {},
     };
     const { env } = await statsSite(200, view, health);
     const { code, said } = await reader(SCRIPT, env, ["stats"]);
