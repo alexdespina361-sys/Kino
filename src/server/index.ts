@@ -142,6 +142,8 @@ const app = await buildApp({
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
   ...(Number(process.env.SIGNUPS_PER_HOUR) > 0 ? { signUpsPerHour: Number(process.env.SIGNUPS_PER_HOUR) } : {}),
+  // (Password and PIN checks an address may cause in a quarter of an hour: 150 unless set. The click-through tests sign in hundreds of times from this machine.)
+  ...(Number(process.env.SLOW_CHECKS_PER_15_MIN) > 0 ? { slowChecksPer15Min: Number(process.env.SLOW_CHECKS_PER_15_MIN) } : {}),
   // (Phones paired with a TV from one address in an hour: 30 unless set, see MAX_NEW_PAIRS. The click-through tests pair hundreds from this machine.)
   ...(Number(process.env.PAIRINGS_PER_HOUR) > 0 ? { hub: { maxNewPairs: Number(process.env.PAIRINGS_PER_HOUR) } } : {}),
   ...(google ? { google } : {}),

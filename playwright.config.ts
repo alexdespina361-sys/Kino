@@ -4,7 +4,7 @@ import { FEEDBACK_TOKEN } from "./e2e/feedbackToken";
 const PORT = Number(process.env.E2E_PORT) || 8788; // not the dev port, so `pnpm dev` and e2e can run side by side
 /** A second server, as the site is: a new profile is set up by whoever uses it (e2e/profile-setup.spec.ts). The others make accounts to try something else, and are asked nothing. */
 const SETUP_PORT = PORT + 50;
-const ENV = { HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", PAIRINGS_PER_HOUR: "100000", FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000", PERSONAL_STICKERS: "on", MOVING_STICKERS: "on" };
+const ENV = { HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", ANIME_SKIP: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000", SLOW_CHECKS_PER_15_MIN: "100000", PAIRINGS_PER_HOUR: "100000", FEEDBACK_ADMIN_TOKEN: FEEDBACK_TOKEN, FEEDBACK_SENDS_PER_10_MIN: "1000", PERSONAL_STICKERS: "on", MOVING_STICKERS: "on" };
 
 export default defineConfig({
   testDir: "e2e",
