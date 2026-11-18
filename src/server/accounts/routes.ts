@@ -72,11 +72,12 @@ export const DEFAULT_MAX_ACCOUNTS = 500;
  */
 export const DEFAULT_SIGNUPS_PER_DAY = 100;
 /**
- * How many times in a UTC day an account's screens may send what changed (env SYNC_WRITES_PER_DAY): a screen sends what changed some seconds after it changed,
- * and at most every 45 seconds while it is open, so a household watching all day on a few screens sends some thousands. The 600 a minute all day would be
- * most of a million writes by one account. A sync that only asks what is new is not counted, and one turned away keeps its changes on the screen for the next day.
+ * How many times in a UTC day an account's screens may send what changed (env SYNC_WRITES_PER_DAY). A film that plays is saved every 5 seconds and sent
+ * 8 seconds after it changed, by the TV and by the phone that is its remote: some 900 an hour, so this is a hundred hours of watching in a day. The 600 a
+ * minute all day would be most of a million writes by one account. A sync that only asks what is new is not counted, and one turned away keeps its changes
+ * on the screen for the next day (while it has changes to send it asks nothing new either: the number is far above what people do for that reason).
  */
-export const SYNC_WRITES_A_DAY = 20_000;
+export const SYNC_WRITES_A_DAY = 100_000;
 /** Whether a sync carries anything the screen changed (a sync with none only asks what is new). */
 const carriesChanges = (sync: SyncRequestParsed): boolean =>
   sync.progress.length + sync.watched.length + sync.list.length + sync.listNames.length + sync.ratings.length + sync.settings.length + sync.saved.length > 0;
