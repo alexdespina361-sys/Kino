@@ -76,7 +76,7 @@ import "../polish/tv.css";
 import "../polish/tv-posters.css";
 import "../polish/tv-phone.css";
 import { captionBottom, captionTextStyle } from "../shared/captionCss";
-import { isHeld } from "../subsync/hold";
+import { cuesAt, isHeld } from "../subsync/hold";
 
 function CueText({ cue }: { cue: TextTrackCue }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -90,6 +90,13 @@ function CueText({ cue }: { cue: TextTrackCue }) {
 }
 const isCaptionTrack = (track: TextTrack) => track.kind === "subtitles";
 const sameCues = (a: TextTrackCue[], b: TextTrackCue[]) => a.length === b.length && a.every((cue, i) => cue === b[i]);
+const cueKeys = new WeakMap<TextTrackCue, number>();
+let cueKeyNext = 0;
+const cueKey = (cue: TextTrackCue) => {
+  let key = cueKeys.get(cue);
+  if (key === undefined) cueKeys.set(cue, (key = ++cueKeyNext));
+  return key;
+};
 function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<HTMLVideoElement | null>; style: CaptionStyle; delay?: number }) {
   const [cues, setCues] = useState<TextTrackCue[]>([]);
 
@@ -102,8 +109,8 @@ function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<HTMLVide
       const matchTime = now - delay;
       const active: TextTrackCue[] = [];
       for (const track of Array.from(video.textTracks)) {
-        if (track.mode === "disabled" || !isCaptionTrack(track) || isHeld(track)) continue;
-        for (const cue of Array.from(track.cues ?? [])) if (cue.startTime <= matchTime && matchTime < cue.endTime) active.push(cue);
+        if (track.mode === "disabled" || !isCaptionTrack(track) || isHeld(track) || !track.cues) continue;
+        cuesAt(track, track.cues, matchTime, active);
       }
       setCues((current) => (sameCues(current, active) ? current : active));
     };
@@ -127,7 +134,7 @@ function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<HTMLVide
   return (
     <div className="tv-captions" data-testid="captions" style={{ "--caption-bottom": captionBottom(style) } as CSSProperties}>
       {cues.map((cue) => (
-        <div className="tv-caption" data-testid="caption" key={`${cue.startTime}-${cue.id}`} style={captionTextStyle(style)}>
+        <div className="tv-caption" data-testid="caption" key={cueKey(cue)} style={captionTextStyle(style)}>
           <CueText cue={cue} />
         </div>
       ))}
