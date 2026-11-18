@@ -213,6 +213,29 @@ describe("withoutNoise", () => {
 
 describe("TitleIndex", () => {
   const index = () => new TitleIndex(items);
+
+  it("finds the same whether titles came, went and were cut back before the first search (its words made then) or after it", () => {
+    const queries = ["dune", "avatr", "night", "things fire", "teh lord rings", "2024", "iron"];
+    const steps = (into: TitleIndex) => {
+      into.add([{ id: "x1", title: "Dune Messiah", url: "/x1" }]);
+      into.remove("t3");
+      into.discardWhere((item) => item.title.startsWith("Harry"));
+      into.add([{ id: "x2", title: "Night Moves", url: "/x2" }]);
+    };
+    const late = new TitleIndex(items); // (nothing looked for yet: its words are made at the first search, from what is in then)
+    steps(late);
+    const early = new TitleIndex(items);
+    early.find("warm up"); // (its words made now, and kept up to date by each step)
+    steps(early);
+    for (const query of queries) {
+      expect(late.find(query, "loose").map((item) => item.id).sort(), query).toEqual(early.find(query, "loose").map((item) => item.id).sort());
+      expect(late.search(query).items.map((item) => item.id), query).toEqual(early.search(query).items.map((item) => item.id));
+    }
+    expect(late.find("avatar").map((item) => item.title)).toEqual(["Avatar: The Way of Water"]);
+    expect(late.find("dune messiah").map((item) => item.id)).toEqual(["x1"]);
+    expect(late.find("harry")).toEqual([]);
+    expect(late.size).toBe(early.size);
+  });
   const names = (found: LibraryItem[]) => found.map((item) => item.title);
 
   it("is what searchItems looks in, a title once", () => {

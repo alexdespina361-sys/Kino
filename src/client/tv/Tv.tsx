@@ -33,7 +33,7 @@ import { useFriends } from "../friends/FriendsProvider";
 import { t, useT } from "../i18n";
 import { browserBack, pressAgain, useBackWhile } from "../shared/backButton";
 import { useEpisodeDetails } from "../shared/episodeDetails";
-import { formatClock, readStorage, writeStorage } from "../shared/format";
+import { readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
 import { FullscreenIcon, UsersIcon } from "../shared/icons";
@@ -304,13 +304,6 @@ export function Tv() {
   const skipRunRef = useRef({ total: 0, at: 0 });
 
   useWakeLock(unlocked);
-
-  // Clock
-  const [clock, setClock] = useState(() => formatClock(new Date()));
-  useEffect(() => {
-    const timer = setInterval(() => setClock(formatClock(new Date())), 10_000);
-    return () => clearInterval(timer);
-  }, []);
 
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
@@ -1972,7 +1965,6 @@ export function Tv() {
           subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
           badge={series ? `S${series.season}:E${series.episode}` : ""}
           episodeName={episodeTitle}
-          clock={clock}
           nextLabel={next ? episodeLabel(next) : null}
           prevLabel={previous ? episodeLabel(previous) : null}
           sourceLabel={player.sources ? (player.sources.labels[player.sources.current] ?? null) : null}

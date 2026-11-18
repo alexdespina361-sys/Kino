@@ -23,6 +23,7 @@ import { friendGrid, friendRows, friendsSummary } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { browserBack, handHeld, useBackWhile } from "../shared/backButton";
+import { libraryAnswer } from "../shared/earlyLibrary";
 import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, EyeIcon, FilmIcon, GearIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, SparkleIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
@@ -440,7 +441,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   useEffect(() => {
     let live = true;
     // (Asked again, as after a try at a video that failed or a press on Retry, it is asked past the browser's memory of the last answer.)
-    fetch("/api/library", attempt > 0 ? { cache: "reload" } : undefined)
+    libraryAnswer(attempt > 0 ? { cache: "reload" } : undefined)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data: unknown) => {
         const parsed = LibrarySchema.parse(data);

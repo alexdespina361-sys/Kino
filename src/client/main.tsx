@@ -10,6 +10,7 @@ import { FriendsProvider } from "./friends/FriendsProvider";
 import { languageReady } from "./i18n";
 import { roleOfThisPage, thisIsDesk, thisIsHandHeld } from "./role";
 import { installExitGuard } from "./shared/backButton";
+import { askLibraryEarly } from "./shared/earlyLibrary";
 import { ExitHint } from "./shared/ExitHint";
 import { setUpFullscreen } from "./shared/fullscreen";
 import { ScreenGate } from "./shared/ScreenGate";
@@ -37,6 +38,8 @@ noteStrayAddress();
 if (thisIsDesk()) document.documentElement.dataset.fit = "desk";
 // Its chunk is asked for now, not when the page is first drawn: it comes down beside the words of the language (see `languageReady`), not after them.
 void (role === "tv" ? loadTv() : loadController()).catch(() => undefined);
+// And a TV's library with it, not after it (see shared/earlyLibrary.ts).
+if (role === "tv") askLibraryEarly();
 // A TV goes full screen at its first press (its welcome asks for that press). The remote leaves that to its button (it is where a code gets typed), and so does
 // a computer's or a phone's screen: there the welcome only greets, and the corner's button goes full screen (the judge, 16 Nov: a gate on every visit, and a
 // PC or a phone pulled into full screen by its first click).

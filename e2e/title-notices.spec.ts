@@ -1,6 +1,6 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { openDevice, openLibrary, openTvSignIn, PHONE, test } from "./helpers";
+import { openDevice, openLibrary, openTvSignIn, PHONE, PICTURE_NAMED, test } from "./helpers";
 import { TEST_ACCOUNT } from "./testAccount";
 
 /**
@@ -37,7 +37,7 @@ async function signUpOnTv(tv: Page) {
   await tv.getByTestId("auth-email").fill(account.email);
   await tv.getByTestId("auth-password").fill(account.password);
   await tv.getByTestId("auth-submit").click();
-  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/);
+  await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED); // (a new profile is named after its picture)
 }
 
 test.describe("what is new of the titles a profile watches", () => {

@@ -1805,6 +1805,9 @@
 /* ------------------------------ library: the rows of the home page ------------------------------ */
 
 .tv-row { animation: tv-rise 0.45s ease both; }
+/* Only the rows a first look can see rise in. The rest, below the screen, are there at once: 30-odd rows moving together, out of sight, were work for a slow TV
+   while it was showing its first posters (18 Nov; with no row rising at all the first posters came 0.6-0.7 s sooner, but the first rows keep their entrance). */
+.tv-rows > .tv-row:nth-child(n + 4) { animation: none; }
 
 /* A ranking: big outlined numbers tucked behind tall posters. */
 .tv-tile-ranked { width: auto; flex-direction: row; align-items: flex-start; }
