@@ -355,6 +355,11 @@ export const SETTING_SCHEMAS = {
    * and what it searches for by name are shown whatever their section. A child's profile has the Cartoons whatever is set here.
    */
   sections: z.array(z.enum(["movie", "series", "cartoon", "anime"])).min(1).max(4),
+  /**
+   * Whether the profile is told when something new of what it watches comes out (shared/titleNotices.ts): on unless turned off. The server reads it:
+   * a profile that turned it off is told nothing, in the bell or on its phone.
+   */
+  titleNotices: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];

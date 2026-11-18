@@ -76,6 +76,24 @@ export class PushHub {
     );
   }
 
+  /**
+   * Something new came out of what a profile watches (titleNotices/book.ts, which decides how often): its phones are told that there is, and nothing of
+   * what or of which title. (An app older than 0.3.2 does not know the kind, and shows nothing.)
+   */
+  async titleNotice(profile: string): Promise<void> {
+    if (!this.sender) return;
+    const tokens = this.store.pushTokensOf(profile);
+    const data = { kind: "title", name: "", friend: "", profile };
+    await Promise.all(
+      tokens.map((token) =>
+        this.track(this.sender!.send({ token, data, collapseKey: "title", ttlSeconds: DAY_S })).then((result) => {
+          this.counts[result]++;
+          if (result === "gone") this.store.dropPushToken(token);
+        }),
+      ),
+    );
+  }
+
   /** Every copy of the app hears that version `versionCode` is out (it checks, downloads it and asks to be updated). */
   async appUpdate(versionCode: number): Promise<boolean> {
     if (!this.sender) return false;

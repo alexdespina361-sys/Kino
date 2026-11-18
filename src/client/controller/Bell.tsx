@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { activityVerb, type ActivityItem, type ChatNotice, type Friend } from "../../shared";
+import { activityVerb, type ActivityItem, type ChatNotice, type Friend, type TitleNotice } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { ago } from "../account/time";
 import { bellView } from "../friends/bell";
@@ -13,9 +13,14 @@ import { BellIcon, CloseIcon } from "../shared/icons";
 import type { Entry } from "../tv/pages";
 import { InboxRow, RequestRow } from "./Friends";
 import { Sheet } from "./Sheet";
+import { ShownTitle } from "../shared/Shown";
 import { useSwipeAway } from "../shared/swipe";
+import { BELL_TITLES, entryOfNotice, noticeLine, useTitleNotices } from "../titleNotices/notices";
 
-/** The bell beside the profile's picture: how many things wait for an answer, or a quiet dot when friends only watched something. Not there while friends are off. */
+/**
+ * The bell beside the profile's picture: how many things wait for an answer or a look, or a quiet dot when friends only watched something. Not there
+ * while friends are off, unless there is something new of what the profile watches.
+ */
 export function BellButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const bell = useBell();
@@ -95,8 +100,31 @@ function ChatRow({ notice, friend, onOpen, onClear }: { notice: ChatNotice; frie
   );
 }
 
+/** Something new of a title the profile watches (titleNotices/notices.ts), as a row that opens the title. The cross, or a swipe to the side, clears it. */
+function TitleNoticeRow({ notice, onOpen, onClear }: { notice: TitleNotice; onOpen: (entry: Entry) => void; onClear: () => void }) {
+  const t = useT();
+  const swipe = useSwipeAway(onClear);
+  const entry = entryOfNotice(notice);
+  return (
+    <li className="inbox-item" data-testid="bell-title-item" data-title={notice.id} {...swipe}>
+      <button className="bell-lately" onClick={() => onOpen(entry)} data-testid="bell-title-open">
+        {notice.image ? <img className="bell-title-poster" src={notice.image} alt="" loading="lazy" /> : <span className="bell-title-poster" aria-hidden="true" />}
+        <span className="inbox-text">
+          <b>
+            <ShownTitle of={entry} />
+          </b>
+          <small>{noticeLine(notice)}</small>
+        </span>
+      </button>
+      <button className="mini" onClick={onClear} aria-label={t("friends.dismiss")} data-testid="bell-title-clear">
+        <CloseIcon />
+      </button>
+    </li>
+  );
+}
+
 /**
- * What the bell opens: what waits for an answer from this profile (requests to be friends, invitations, requests to watch together, titles
+ * What the bell opens: what is new of the titles the profile watches (a profile with friends off has only that); what waits for an answer from this profile (requests to be friends, invitations, requests to watch together, titles
  * friends sent, each with its buttons), the friends who wrote (a row each, that opens the chat) and what friends watch lately, with a way on to
  * the Friends page for the rest. Opening it is looking.
  */
@@ -131,12 +159,19 @@ export function NotificationsSheet({
   useEffect(() => {
     if (friends.unread > 0) void friends.markRead().catch(() => undefined);
   }, [friends.unread]);
+  const titles = useTitleNotices();
+  const fresh = titles.items.slice(0, BELL_TITLES);
+  useEffect(() => {
+    if (titles.unread > 0) titles.seen();
+  }, [titles.unread]);
 
-  const view = state ? bellView(state, Date.now(), cleared, seenBefore) : null;
+  // (With friends off there is nothing of theirs to wait for: the list is what is new of the profile's titles.)
+  const view = state ? bellView(state, Date.now(), cleared, seenBefore) : friends.on ? null : { requests: [], inbox: [], chat: [], lately: [], joined: [], more: 0 };
+  const people = state?.friends ?? [];
   const waiting = view !== null && view.requests.length + view.inbox.length + view.chat.length > 0;
   return (
     <Sheet title={t("bell.title")} onClose={onClose} testId="bell-sheet">
-      {!state || !view ? (
+      {!view ? (
         friends.status === "offline" ? (
           <p className="auth-error" role="alert">
             {t("friends.offline")}
@@ -148,7 +183,7 @@ export function NotificationsSheet({
         )
       ) : (
         <>
-          {!waiting && view.joined.length === 0 && view.lately.length === 0 && (
+          {!waiting && fresh.length === 0 && view.joined.length === 0 && view.lately.length === 0 && (
             // (A quiet picture of the bell and two lines, with room round them, as on the TV.)
             <div className="bell-empty" data-testid="bell-empty">
               <span className="bell-empty-icon" aria-hidden="true">
@@ -157,6 +192,24 @@ export function NotificationsSheet({
               <b>{t("bell.emptyTitle")}</b>
               <p className="muted">{t("bell.empty")}</p>
             </div>
+          )}
+          {fresh.length > 0 && (
+            <>
+              <h3 className="sheet-section">{t("bell.newTitles")}</h3>
+              <ul className="inbox-list" data-testid="bell-titles">
+                {fresh.map((notice) => (
+                  <TitleNoticeRow
+                    key={notice.id}
+                    notice={notice}
+                    onOpen={(entry) => {
+                      onClose();
+                      onOpenTitle(entry);
+                    }}
+                    onClear={() => titles.dismiss(notice.id)}
+                  />
+                ))}
+              </ul>
+            </>
           )}
           {waiting && (
             <>
@@ -169,7 +222,7 @@ export function NotificationsSheet({
                   <InboxRow
                     key={item.id}
                     item={item}
-                    friend={state.friends.find((each) => each.id === item.from)}
+                    friend={people.find((each) => each.id === item.from)}
                     onOpenTitle={(entry) => {
                       onClose();
                       onOpenTitle(entry);
@@ -189,7 +242,7 @@ export function NotificationsSheet({
                   <ChatRow
                     key={`chat:${notice.friend}`}
                     notice={notice}
-                    friend={state.friends.find((each) => each.id === notice.friend)!}
+                    friend={people.find((each) => each.id === notice.friend)!}
                     onOpen={() => {
                       onClose();
                       onOpenChat(notice.friend);
@@ -235,7 +288,7 @@ export function NotificationsSheet({
                   <LatelyRow
                     key={`${item.friend}:${item.key}`}
                     item={item}
-                    friend={state.friends.find((each) => each.id === item.friend)!}
+                    friend={people.find((each) => each.id === item.friend)!}
                     onOpen={(entry) => {
                       onClose();
                       onOpenTitle(entry);
@@ -248,16 +301,18 @@ export function NotificationsSheet({
           )}
         </>
       )}
-      <button
-        className="btn btn-block"
-        onClick={() => {
-          onClose();
-          onOpenFriends();
-        }}
-        data-testid="bell-open-friends"
-      >
-        {t("bell.openFriends")}
-      </button>
+      {friends.on && (
+        <button
+          className="btn btn-block"
+          onClick={() => {
+            onClose();
+            onOpenFriends();
+          }}
+          data-testid="bell-open-friends"
+        >
+          {t("bell.openFriends")}
+        </button>
+      )}
     </Sheet>
   );
 }

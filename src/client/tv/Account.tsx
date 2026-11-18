@@ -676,6 +676,16 @@ export function TvAccountPanel({
                   testId="tv-sections-setting"
                   autoFocus={cameFrom === "sections"}
                 />
+                {/* Told when a new episode, season or film of what it watches comes out (shared/titleNotices.ts): on unless turned off. Sent at once: the server reads it. */}
+                <SettingsSwitch
+                  label={t("settings.titleNotices")}
+                  on={settings.titleNotices !== false}
+                  onToggle={() => {
+                    set("titleNotices", settings.titleNotices !== false ? false : undefined);
+                    account.syncNow();
+                  }}
+                  testId="tv-title-notices"
+                />
               </SettingsGroup>
             )}
             <SettingsGroup title={t("settings.childGroup")} testId="tv-group-child">

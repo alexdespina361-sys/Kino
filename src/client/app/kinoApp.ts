@@ -194,6 +194,8 @@ const PUSH_WORDS = {
   plan: "app.push.plan",
   planYes: "app.push.planYes",
   planNo: "app.push.planNo",
+  // (Something new of a title the profile watches: an app from 0.3.2 on shows it; an older one does not know the kind and shows nothing.)
+  title: "app.push.title",
   channel: "app.push.channel",
   updateReady: "app.update.ready",
   updateInstall: "app.update.install",

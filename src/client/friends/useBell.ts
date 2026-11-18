@@ -2,6 +2,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useAccount } from "../account/AccountProvider";
 import { hasNewActivity } from "./bell";
 import { useFriends } from "./FriendsProvider";
+import { useTitleNotices } from "../titleNotices/notices";
 
 /** When the bell was last opened on this device, for this profile: what friends watched after that is new to it. (A device's own fact, so it is kept here, not on the server.) */
 const key = (profileId: string) => `kino.bellSeen.${profileId}`;
@@ -36,7 +37,7 @@ const remember = (profileId: string, at: number) => {
 };
 
 /**
- * What the bell in the corner says: whether it is there at all (a profile that is signed in and has friends on), how many things wait for an answer
+ * What the bell in the corner says: whether it is there at all (a profile that is signed in and has friends on, or something new of what it watches), how many things wait for an answer or a look
  * (the badge), and whether friends watched something since it was last opened (a dot, when nothing waits). `markSeen` is called when it is opened.
  */
 export function useBell() {
@@ -62,7 +63,9 @@ export function useBell() {
     remember(profileId, now);
   }, [profileId]);
 
-  const on = friends.on && profileId !== undefined;
+  // (A profile with friends off, or a child's, has the bell while there is something new of what it watches: titleNotices/notices.ts.)
+  const titles = useTitleNotices();
+  const on = (friends.on || titles.items.length > 0) && profileId !== undefined;
   /** (`seen`: when it was opened before; the list takes it as it opens, before `markSeen` moves it, to tell which friends are new.) */
-  return { on, badge: on ? friends.attention : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen, seen };
+  return { on, badge: on ? friends.attention + titles.unread : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen, seen };
 }

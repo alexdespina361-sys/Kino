@@ -331,6 +331,12 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           <SectionPicker value={sectionsShown(settings.sections)} onChange={(next) => set("sections", sectionsKept(next))} />
         </Group>
       )}
+      {/* Told when a new episode, season or film of what it watches comes out (shared/titleNotices.ts): on unless turned off. */}
+      <Group>
+        <Rows>
+          <Switch label={t("settings.titleNotices")} hint={t("settings.titleNoticesHelp")} checked={settings.titleNotices !== false} onChange={(on) => set("titleNotices", on ? undefined : false)} testId="title-notices-switch" />
+        </Rows>
+      </Group>
       {/* A child's profile: only cartoons for children, no friends and no watch party, wherever the profile is used (see the TV's Browse). Sent at once: the server turns the friends off. */}
       <Group title={t("settings.childGroup")} help={t("settings.childHelp")}>
         <Rows>

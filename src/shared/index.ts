@@ -7,6 +7,7 @@ export * from "./lang";
 export * from "./library";
 export * from "./media";
 export * from "./names";
+export * from "./titleNotices";
 export * from "./official";
 export * from "./progress";
 export * from "./protocol";

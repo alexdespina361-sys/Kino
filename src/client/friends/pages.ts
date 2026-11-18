@@ -199,6 +199,8 @@ export interface BellRow {
   avatar?: Entry["avatar"];
   /** What a friend watched, for a line that says so: clearing the line is remembered by it (friends/cleared.ts). */
   activity?: ActivityItem;
+  /** Something new of a title the profile watches (titleNotices/notices.ts): the notice that clearing the line takes away. Its heading is the title's name, shown in the viewer's language. */
+  notice?: string;
 }
 
 /**
