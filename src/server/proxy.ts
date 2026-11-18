@@ -434,6 +434,11 @@ async function proxyRequest(
   if (referer === "none" || (referer === targetUrl.origin && targetUrl.hostname.includes("hakunaymatata.com"))) {
     delete headers.referer;
     delete headers.origin;
+    // bcdn.hakunaymatata.com (referer=none) rejects Mozilla/5.0 UAs with 428 Forbidden, whereas
+    // bcdnxw.hakunaymatata.com (explicit referer like filmboom.top) requires both Referer and Mozilla/5.0 UA.
+    if (targetUrl.hostname.includes("hakunaymatata.com")) {
+      delete headers["user-agent"];
+    }
   }
 
   if (request.headers.range) {

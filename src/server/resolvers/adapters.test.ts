@@ -1357,5 +1357,67 @@ https://vixsrc.to/720p.m3u8`;
     const res = await adapter.resolve(new URL("https://filmpire.sc/watch/999999"));
     expect(res.status).toBe("temporary_failure");
   });
+
+  it("attaches VixSrc as a backup server when VidLink returns a hotlink-sensitive bcdnxw or h265 stream (The Boondocks S1 E1)", async () => {
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/tv/2604")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 2604,
+            name: "The Boondocks",
+            original_language: "en",
+            genres: [{ id: 16 }, { id: 35 }],
+            seasons: [{ season_number: 1, name: "Season 1", episode_count: 15 }],
+          }),
+        };
+      }
+      if (u.includes("vidlink.pro/api/b/tv/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            stream: {
+              qualities: {
+                "480": {
+                  url: "https://bcdnxw.hakunaymatata.com/resource/ep1.mp4?sign=abc",
+                  type: "mp4",
+                  headers: { referer: "https://filmboom.top/" },
+                },
+              },
+            },
+          }),
+        };
+      }
+      if (u.includes("vixsrc.to/api/tv/2604/1/1")) {
+        return { ok: true, status: 200, json: async () => ({ src: "/embed/294042" }) };
+      }
+      if (u.includes("vixsrc.to/embed/294042")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => `<html><script>window.masterPlaylist = { url: "https://vixsrc.to/playlist/294042", token: "tok1", expires: "999999" };</script></html>`,
+        };
+      }
+      if (u.includes("vixsrc.to/playlist/294042")) {
+        return { ok: true, status: 200, text: async () => `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=720000\nhttps://vixsrc.to/360.m3u8` };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/2604?s=1&e=1"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.directUrl).toContain("bcdnxw.hakunaymatata.com");
+      expect(res.media.stream.url).toContain(encodeURIComponent("https://filmboom.top/"));
+      const vixAlt = res.media.alternates?.find((a) => a.label === "Server 2 (VixSrc)");
+      expect(vixAlt).toBeDefined();
+      expect(vixAlt?.stream.directUrl).toContain("vixsrc.to/playlist/294042");
+      expect(vixAlt?.stream.type).toBe("hls");
+    }
+  });
 });
 
