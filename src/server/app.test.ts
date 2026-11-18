@@ -424,11 +424,14 @@ describe("how often an address may ask for what makes the server fetch from anot
 
   it("counts the library's four questions about a title together, and the rest of what the library answers not at all", async () => {
     const { resolve } = resolver();
-    const site = await buildApp({ resolve, fetchesPerMinute: { library: 4, resolve: 1, proxy: 1, browse: 100 }, proxyVideo: false });
+    const site = await buildApp({ resolve, fetchesPerMinute: { library: 4, similar: 2, resolve: 1, proxy: 1, browse: 100 }, proxyVideo: false });
     app = site;
     const title = `url=${encodeURIComponent(PAGE)}`;
-    const questions = [`/api/library/similar?${title}`, `/api/library/about?${title}`, `/api/library/episodes?${title}&season=1`, `/api/library/seasons?${title}`];
-    expect(await codes(site, questions.map((url) => ({ url })))).toEqual([200, 200, 200, 200]);
+    const like = `/api/library/similar?${title}`;
+    // What is like a title is counted by itself: the rows a profile is given of its own ask it many times, and must not use up what a title's page needs.
+    expect(await codes(site, [{ url: like }, { url: like }, { url: like }])).toEqual([200, 200, 429]);
+    const questions = [`/api/library/about?${title}`, `/api/library/title?id=filmpire-movie-603`, `/api/library/episodes?${title}&season=1`, `/api/library/seasons?${title}`];
+    for (const each of await codes(site, questions.map((url) => ({ url })))) expect(each).not.toBe(429);
     // Whichever of them is asked next is the fifth.
     for (const url of questions) expect((await site.inject(url)).statusCode, url).toBe(429);
     // What takes no address of a title is not counted, nor is the rest of the api (the rows have an allowance of their own, below).

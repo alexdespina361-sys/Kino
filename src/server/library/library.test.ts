@@ -149,6 +149,41 @@ describe("createLibrary similar", () => {
     expect(source.asked).toHaveLength(2);
   });
 
+  it("asks a source once for the same link while the answer is on its way, however many ask, and again after one that failed", async () => {
+    const waiting: Array<{ link: string; open: (items: ReturnType<typeof item>[]) => void; fail: (error: Error) => void }> = [];
+    const source: LibrarySource = {
+      id: "a",
+      name: "a",
+      load: gives(row("R")),
+      similar: (link: string) => new Promise<ReturnType<typeof item>[]>((open, fail) => waiting.push({ link, open, fail })),
+    };
+    const { library } = setup([source]);
+    const three = [library.similar("https://x.example/watch/1"), library.similar("https://x.example/watch/1"), library.similar("https://x.example/watch/1")];
+    const other = library.similar("https://x.example/watch/2");
+    await Promise.resolve();
+    expect(waiting.map((each) => each.link)).toEqual(["https://x.example/watch/1", "https://x.example/watch/2"]);
+    // A place that could not be reached is no answer: the next one who asks, asks the place again.
+    waiting[1]!.fail(new Error("down"));
+    expect(await other).toEqual([]);
+    const again = library.similar("https://x.example/watch/2");
+    await Promise.resolve();
+    expect(waiting).toHaveLength(3);
+    waiting[2]!.open([item("late")]);
+    expect((await again).map((found) => found.id)).toEqual(["late"]);
+    // The three who asked about the first link all get the one answer.
+    waiting[0]!.open([item("one")]);
+    expect((await Promise.all(three)).map((found) => found.map((each) => each.id))).toEqual([["one"], ["one"], ["one"]]);
+    expect(waiting).toHaveLength(3);
+  });
+
+  it("remembers what is like many more titles than it remembers of the other questions", async () => {
+    const source = knowing("a", () => Promise.resolve([item("one")]));
+    const { library } = setup([source]);
+    for (let n = 0; n < 1000; n++) await library.similar(`https://x.example/watch/${n}`);
+    await library.similar("https://x.example/watch/0");
+    expect(source.asked).toHaveLength(1000);
+  });
+
   it("is empty when a source fails or none knows how", async () => {
     const broken = knowing("a", () => Promise.reject(new Error("down")));
     expect(await setup([broken]).library.similar("https://x.example/watch/1")).toEqual([]);

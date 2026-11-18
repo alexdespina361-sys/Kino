@@ -72,6 +72,8 @@ export const LIBRARY_TTL_MS = 6 * 60 * 60 * 1000;
 export const LIBRARY_RETRY_MS = 2 * 60 * 1000;
 /** What is asked about a link ("titles like this one", "this show's episodes") is remembered for this many links, for as long as the library is. */
 const ANSWERS_REMEMBERED = 200;
+/** ...and "titles like this one" for many more: the rows a profile is given of its own ask it for every title it watched, loved or saved (150 an hour a browser), and an answer is a few thousand characters. */
+const LIKES_REMEMBERED = 2000;
 /** A search that found this many titles is not asked again in other words. */
 const ENOUGH_ANSWERS = 3;
 /** ...and one that found fewer than this many looks further, among titles that have only some of the words. */
@@ -179,11 +181,11 @@ export function createLibrary(options: LibraryOptions): LibraryService {
    * remembered too, so a link nobody knows is not asked about again and again (but not when a place could not be reached, which
    * is not an answer: it is asked again); when the memory is full the oldest goes.
    */
-  const answers = <T>() => {
+  const answers = <T>(remembered = ANSWERS_REMEMBERED) => {
     const known = new Map<string, { at: number; items: T[] }>();
-    return async (key: string, ask: (source: LibrarySource) => Promise<T[]> | undefined): Promise<T[]> => {
-      const before = known.get(key);
-      if (before && now() - before.at < ttlMs) return before.items;
+    /** The questions that are on their way: whoever asks the same one meanwhile waits for that answer, and the place is asked once. */
+    const asking = new Map<string, Promise<T[]>>();
+    const find = async (key: string, ask: (source: LibrarySource) => Promise<T[]> | undefined): Promise<T[]> => {
       let items: T[] = [];
       let unreachable = false;
       for (const { source } of entries) {
@@ -198,8 +200,17 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       if (items.length === 0 && unreachable) return items;
       known.delete(key);
       known.set(key, { at: now(), items });
-      if (known.size > ANSWERS_REMEMBERED) known.delete(known.keys().next().value!);
+      if (known.size > remembered) known.delete(known.keys().next().value!);
       return items;
+    };
+    return async (key: string, ask: (source: LibrarySource) => Promise<T[]> | undefined): Promise<T[]> => {
+      const before = known.get(key);
+      if (before && now() - before.at < ttlMs) return before.items;
+      const going = asking.get(key);
+      if (going) return going;
+      const mine = find(key, ask).finally(() => asking.delete(key));
+      asking.set(key, mine);
+      return mine;
     };
   };
   /** Every title the places have listed, to look for a title among (it grows as pages are scrolled and searches are made). */
@@ -228,7 +239,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     }
     return pending;
   };
-  const similarTo = answers<LibraryItem>();
+  const similarTo = answers<LibraryItem>(LIKES_REMEMBERED);
   const aboutTitle = answers<TitleAbout>(); // (an answer is one thing: it is kept as a list of one, and a title nobody knows as a list of none)
   const titleById = answers<LibraryItem>();
   const episodesOf = answers<EpisodeDetail>();
