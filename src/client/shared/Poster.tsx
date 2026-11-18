@@ -16,6 +16,8 @@ export const comesIn = {
 export const sharper = (picture: string | undefined) => picture?.replace(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500\//, "$1w780/");
 
 export const TILE_FIT = { poster: "(max-width: 599px) 120px, 9.4vw", still: "(max-width: 599px) 216px, 21vw" } as const;
+export const CARD_FIT = { poster: TILE_FIT.still, still: TILE_FIT.still } as const;
+export const FAN_FIT = { poster: "(max-width: 599px) 64px, 4.5vw", still: "(max-width: 599px) 64px, 4.5vw" } as const;
 
 export function posterSizes(picture: string | undefined, fit?: { poster: string; still: string }): { srcSet: string; sizes: string } | undefined {
   const match = picture?.match(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500(\/[^\s,]+)$/);

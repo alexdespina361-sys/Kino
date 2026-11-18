@@ -26,7 +26,7 @@ import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, 
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { comesIn, hueOf, Poster, posterSizes, sharper, TILE_FIT } from "../shared/Poster";
+import { CARD_FIT, comesIn, FAN_FIT, hueOf, Poster, posterSizes, sharper, TILE_FIT } from "../shared/Poster";
 import { useLikes } from "../shared/recommend";
 import { useWatching } from "../shared/watching";
 import { personalSlots } from "../shared/taste";
@@ -2333,6 +2333,7 @@ const Tile = memo(function Tile({ entry, resumed, label, source, listId, layout:
   const poster = layout === "wide" && isTitle(entry) && !wideCard;
   const picture = layout === "ranked" || poster ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
   const showPicture = picture && !broken;
+  const fit = pos.zone !== "rows" && pos.zone !== "related" ? undefined : layout === "ranked" || poster ? TILE_FIT : wideCard || layout === "categories" ? CARD_FIT : undefined;
   const common = {
     "data-zone": pos.zone,
     "data-row": pos.row,
@@ -2360,11 +2361,11 @@ const Tile = memo(function Tile({ entry, resumed, label, source, listId, layout:
         {...common}
         style={{ "--hue": hue } as CSSProperties}
       >
-        {showPicture && <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
+        {showPicture && <img loading="lazy" {...posterSizes(picture, fit)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
         {fan && (
           <span className="tv-category-fan" aria-hidden="true">
             {entry.posters!.map((poster, at) => (
-              <img key={poster} loading="lazy" {...posterSizes(poster)} src={poster} alt="" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
+              <img key={poster} loading="lazy" {...posterSizes(poster, fit && FAN_FIT)} src={poster} alt="" decoding="async" referrerPolicy="no-referrer" style={{ "--at": at } as CSSProperties} {...comesIn} />
             ))}
           </span>
         )}
@@ -2409,7 +2410,7 @@ const Tile = memo(function Tile({ entry, resumed, label, source, listId, layout:
       )}
       <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
         {showPicture ? (
-          <img loading="lazy" {...posterSizes(picture, TILE_FIT)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
+          <img loading="lazy" {...posterSizes(picture, fit)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
         ) : (
           <span className="tv-tile-initial" aria-hidden="true">
             {name.trim().charAt(0).toUpperCase()}
