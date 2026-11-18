@@ -63,11 +63,14 @@ import { titleNoticeRoutes } from "../titleNotices/routes";
 export const COOKIE = "kino_session";
 const MINUTE = 60_000;
 
-/** How many accounts there can be unless the host says otherwise (env MAX_ACCOUNTS). */
-export const DEFAULT_MAX_ACCOUNTS = 500;
 /**
- * How many accounts the whole site makes in a day unless the host says otherwise (env SIGNUPS_PER_DAY). An address may make 10 an hour, so fifty
- * addresses together could take all of `DEFAULT_MAX_ACCOUNTS` in an hour, and the places would be gone for good (the review of 18 Nov). Past this the
+ * How many accounts there can be unless the host says otherwise (env MAX_ACCOUNTS). 500 until 18 Nov, when the owner raised it: nothing frees a place,
+ * and what the accounts keep is small and bounded for the whole site anyway (`SYNC_SITE_BYTES`; all of them together weighed 67 KB that day).
+ */
+export const DEFAULT_MAX_ACCOUNTS = 2000;
+/**
+ * How many accounts the whole site makes in a day unless the host says otherwise (env SIGNUPS_PER_DAY). An address may make 10 an hour, so some hundreds
+ * of addresses together could take all of `DEFAULT_MAX_ACCOUNTS` in an hour, and the places would be gone for good (the review of 18 Nov). Past this the
  * next sign-up waits for the next day (midnight UTC): a flood costs a day's sign-ups, not the site's places.
  */
 export const DEFAULT_SIGNUPS_PER_DAY = 100;

@@ -41,6 +41,7 @@ describe("how a watch party shows the profile of a screen", () => {
     const store = await AccountStore.open({ persistence: new MemoryPersistence(), now: () => clock.now, flushMs: 0 });
     const created = store.createAccount("sam", "hash");
     if (!created.ok) throw new Error("could not create");
+    store.updateProfile(created.value.id, created.value.profiles[0]!.id, { name: "Sam" }); // (as its owner calls it at setup)
     const profile = store.profilesOf(created.value.id)[0]!;
     const proofs = new ScreenProofs(() => clock.now);
     const choose = (friends: boolean) => store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: (clock.now += 1000), value: !friends }] }); // (only `friendsOff` turns friends off now)

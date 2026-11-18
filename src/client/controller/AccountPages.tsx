@@ -335,6 +335,10 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
       <Group>
         <Rows>
           <Switch label={t("settings.titleNotices")} hint={t("settings.titleNoticesHelp")} checked={settings.titleNotices !== false} onChange={(on) => set("titleNotices", on ? undefined : false)} testId="title-notices-switch" />
+          {/* Whether what it watches is counted, with no name, in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off. */}
+          {!child && (
+            <Switch label={t("settings.publicWatching")} hint={t("settings.publicWatchingHelp")} checked={settings.publicWatching !== false} onChange={(on) => set("publicWatching", on ? undefined : false)} testId="public-watching-switch" />
+          )}
         </Rows>
       </Group>
       {/* A child's profile: only cartoons for children, no friends and no watch party, wherever the profile is used (see the TV's Browse). Sent at once: the server turns the friends off. */}

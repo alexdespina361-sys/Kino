@@ -25,6 +25,8 @@ const loadController = () => import("./controller/Controller").then((module) => 
 const Tv = lazy(loadTv);
 const Controller = lazy(loadController);
 
+// This browser could read the app: public/old-browser.js, which otherwise says that Kino could not start, keeps quiet.
+document.documentElement.setAttribute("data-kino-started", "1");
 // The keys that answer "A new Kino is out" on a TV are heard before any other key listener of the page's (see shared/UpdateHint.tsx): first of all.
 installUpdateKeys();
 // One app, two screens, chosen for this device: the TV player or the phone's remote (see role.ts). "/tv" is always the player.

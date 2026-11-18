@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   AVATAR_IDS,
+  avatarName,
   COLLECTIONS,
   fillListItem,
   fillProgress,
@@ -8,7 +9,6 @@ import {
   LIMITS,
   MAX_PROFILES,
   mergeCollection,
-  nameFromEmail,
   nameKey,
   newerOf,
   nextAvatar,
@@ -100,7 +100,7 @@ interface ProfileData {
 
 /**
  * What all the profiles of one account may keep together, and every account of the site, before a new item is not kept (what is kept stays, and changes
- * to it are taken). Each profile's own budgets (`BYTE_BUDGET`) come to about 1.9 MB, five profiles to 9.2 MB, and 500 accounts to some gigabytes, held
+ * to it are taken). Each profile's own budgets (`BYTE_BUDGET`) come to about 1.9 MB, five profiles to 9.2 MB, and 2,000 accounts to some gigabytes, held
  * in memory by a server that may use one (the review of 18 Nov: nothing said how much the whole site keeps). On 18 Nov the largest profile weighed 42 KB
  * and all of them together 67 KB, so these are hundreds of times what anybody keeps. The site's is env SYNC_SITE_MB.
  */
@@ -426,6 +426,10 @@ export class AccountStore {
   profileIds(): string[] {
     return [...this.profileOwner.keys()];
   }
+  /** The account a profile is of (for counting people, not profiles: accounts/watching.ts). */
+  accountOfProfile(profileId: string): string | undefined {
+    return this.profileOwner.get(profileId);
+  }
   usage(): AccountUsage {
     const now = this.now();
     const lastUsed = new Map<string, number>();
@@ -451,10 +455,13 @@ export class AccountStore {
     return this.accounts.get(id);
   }
 
-  /** A new account with its first profile, named after the address. */
+  /**
+   * A new account with its first profile, named after its picture ("Fox") until whoever uses it chooses a name (`Profile.setup`). Not after the login:
+   * whoever knows somebody's login would find their profile by its name in the lists of friends and parties (the audit of 3 Nov; the owner, 18 Nov).
+   */
   createAccount(email: string, hash: string): Result<AccountDoc> {
     if (this.emails.has(email)) return fail("email_taken");
-    return ok(this.make(email, hash, nameFromEmail(email)));
+    return ok(this.make(email, hash));
   }
 
   /**
@@ -468,11 +475,12 @@ export class AccountStore {
     return ok(this.make(login, hash, name, { sub, only: true }));
   }
 
-  private make(email: string, hash: string, name: string, google?: AccountDoc["google"]): AccountDoc {
+  private make(email: string, hash: string, name?: string, google?: AccountDoc["google"]): AccountDoc {
     // The first profile's picture goes round the twelve, one account after another: every new account was a fox, so friends looked the same in the
     // friends' list, the chat and the bell (the judge, 16 Nov). Its owner can change it as before.
-    // (The first profile of a new account is still to be set up: its name was made from the e-mail, or is Google's, and nobody chose its picture.)
-    const first = this.newProfile(name, AVATAR_IDS[this.accounts.size % AVATAR_IDS.length]!, "all");
+    // (The first profile of a new account is still to be set up: its name is its picture's, or Google's, and nobody chose either.)
+    const avatar = AVATAR_IDS[this.accounts.size % AVATAR_IDS.length]!;
+    const first = this.newProfile(name ?? avatarName(avatar), avatar, "all");
     this.takeTag(first);
     const account: AccountDoc = { v: 1, id: newId("acc"), email, hash, createdAt: this.now(), profiles: [first], ...(google ? { google } : {}) };
     this.accounts.set(account.id, account);

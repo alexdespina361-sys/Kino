@@ -4,7 +4,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, describe, expect, it } from "vitest";
 import { AVATAR_IDS, LIMITS, ListItemSchema, MAX_PROFILES, ProgressItemSchema, RatingItemSchema, WatchedItemSchema, type CollectionName, type SyncRequest } from "../../shared";
-import { FilePersistence, MemoryPersistence, PostgresPersistence, persistenceFromEnv } from "./persistence";
+import { databaseTls, FilePersistence, MemoryPersistence, PostgresPersistence, persistenceFromEnv } from "./persistence";
 import { AccountStore, SESSION_TTL_MS } from "./store";
 
 const DAY = 24 * 3600 * 1000;
@@ -44,9 +44,9 @@ async function withAccount(persistence?: MemoryPersistence) {
 }
 
 describe("accounts", () => {
-  it("makes an account with one profile named after the address, and refuses the same address twice", async () => {
+  it("makes an account with one profile named after its picture, not the address (others could find it by that), and refuses the same address twice", async () => {
     const { store, account, profile } = await withAccount();
-    expect(profile).toMatchObject({ name: "Alex", avatar: "fox" });
+    expect(profile).toMatchObject({ name: "Fox", avatar: "fox" });
     expect(store.findByEmail("alex.popescu@example.com")?.id).toBe(account.id);
     expect(store.createAccount("alex.popescu@example.com", "other")).toEqual({ ok: false, error: "email_taken" });
     expect(store.countAccounts()).toBe(1);
@@ -165,9 +165,12 @@ describe("profiles", () => {
 });
 
 describe("tags", () => {
+  /** An account whose first profile its owner named as the login goes ("sam.smith@x" -> "Sam", "SAM@x" -> "SAM"), as people do at setup. */
   const made = (store: AccountStore, login: string) => {
     const created = store.createAccount(login, "hash");
     if (!created.ok) throw new Error("no account");
+    const own = login.split("@")[0]!.split(/[._+-]/)[0]!;
+    store.updateProfile(created.value.id, created.value.profiles[0]!.id, { name: own.charAt(0).toUpperCase() + own.slice(1) });
     return created.value;
   };
   const tagOf = (store: AccountStore, accountId: string, index = 0) => store.profilesOf(accountId)[index]!.tag;
@@ -739,7 +742,7 @@ describe("keeping it between runs", () => {
     const account = store.findByEmail("alex.popescu@example.com")!;
     expect(account).toBeDefined();
     const profiles = store.profilesOf(account.id);
-    expect(profiles.map((p) => p.name)).toEqual(["Alex", "Second"]);
+    expect(profiles.map((p) => p.name)).toEqual(["Fox", "Second"]);
     expect(store.snapshot(profiles[0]!.id)).toMatchObject({ rev: 1, progress: [{ key: "film" }], settings: [{ key: "lang", value: "it" }] });
     expect(store.listSessions(account.id)).toHaveLength(1);
   };
@@ -876,6 +879,25 @@ describe("persistenceFromEnv", () => {
     await persistenceFromEnv({ RENDER: "true", DATA_DIR: "/var/data" }, log);
     await persistenceFromEnv({}, log);
     expect(warnings).toHaveLength(1);
+  });
+
+  it("checks a hosted database's certificate against the root it is given, and says so when it has none", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "kino-ca-"));
+    const ca = path.join(dir, "root.crt");
+    await writeFile(ca, "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n");
+    const hosted = "postgres://user:pass@db.example.com:5432/postgres";
+    expect(databaseTls({ DATABASE_URL: hosted, DATABASE_CA_FILE: ca })).toEqual({ ca: "-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n", rejectUnauthorized: true });
+    expect(databaseTls({ DATABASE_URL: hosted })).toEqual({ rejectUnauthorized: false });
+    // (A local database, or one told not to, has no TLS at all; a root that was named but cannot be read stops the start.)
+    expect(databaseTls({ DATABASE_URL: "postgres://user:pass@localhost:1/db", DATABASE_CA_FILE: ca })).toBeUndefined();
+    expect(databaseTls({ DATABASE_URL: `${hosted}?sslmode=disable` })).toBeUndefined();
+    expect(() => databaseTls({ DATABASE_URL: hosted, DATABASE_CA_FILE: path.join(dir, "missing.crt") })).toThrow();
+    const warnings: string[] = [];
+    const log = { warn: (message: string) => void warnings.push(message) };
+    await (await persistenceFromEnv({ DATABASE_URL: hosted }, log)).persistence.close?.();
+    await (await persistenceFromEnv({ DATABASE_URL: hosted, DATABASE_CA_FILE: ca }, log)).persistence.close?.();
+    expect(warnings).toEqual([expect.stringMatching(/DATABASE_CA_FILE/)]);
+    await rm(dir, { recursive: true, force: true });
   });
 });
 

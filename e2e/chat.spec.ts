@@ -6,7 +6,7 @@ import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { CHAT_REPORT_LINES, CHAT_TEXT_MAX, ratingKey } from "../src/shared";
 import { FEEDBACK_TOKEN } from "./feedbackToken";
-import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, seeded, test, showProfilePage } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, seeded, test, showProfilePage, nameFirstProfile, PICTURE_NAMED } from "./helpers";
 
 /**
  * The chat between two friends, on the phone and on the TV: writing and reading it, how what waits is told (a line, a number, a row in the bell, never a
@@ -90,6 +90,9 @@ async function signUp(page: Page, account: Account) {
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("account-card")).toBeVisible();
+  await nameFirstProfile(page, nameOf(account));
+  await page.getByTestId("account-button").click();
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
@@ -614,6 +617,8 @@ async function screenWithFriends(browser: Browser, name: string, options: { view
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
+  await nameFirstProfile(page, nameOf(account));
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
   await showProfilePage(page); // (friends are on for everybody: the profile's page has them at once)
   await expect(page.locator('[data-entry="profile:friends"]')).toBeVisible();

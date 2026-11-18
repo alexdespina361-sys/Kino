@@ -2,7 +2,7 @@ import { expect, type Browser, type Locator, type Page } from "@playwright/test"
 import { en } from "../src/client/i18n/en";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openDevice, openTv, PHONE, place, readPairingCode, test, withLibrary } from "./helpers";
+import { openDevice, openTv, PHONE, place, readPairingCode, test, withLibrary, nameFirstProfile } from "./helpers";
 
 /**
  * Friends, on the phone: switched on in the settings, made with a code that one profile gives and another types (or a link), and then
@@ -26,6 +26,9 @@ async function signUp(page: Page, account: Account) {
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("account-card")).toBeVisible();
+  await nameFirstProfile(page, nameOf(account));
+  await page.getByTestId("account-button").click();
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 

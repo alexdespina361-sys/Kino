@@ -1,7 +1,7 @@
 # Separate video relay for Kino
 
-**Alternative for desktop viewers:** [Kino Direct Playback](extensions/kino-direct/README.md) now provides a verified extension route with
-no relay hosting. The relay in this guide remains useful for browsers that cannot install the extension.
+**Since 18 November 2026 this relay is the only route:** the Kino Direct Playback browser extension was removed (the owner: deprecated), and
+with it the player's support for it. The relay runs on the Oracle box as `kino-relay.24-7.ro` (see `deploy/oracle/README.md`).
 
 Kino serves the page, HUD and controls. A separate Node service serves video. Viewers need only a browser.
 
@@ -35,16 +35,9 @@ Set these environment variables on the relay host:
 
 Generate a secret once with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Keep it in the hosts' environment settings, not source control or browser code.
 
-A container definition is included:
-
-```text
-docker build -f Dockerfile.stream-relay -t kino-stream-relay .
-docker run --env-file .env.stream-relay -p 8789:8789 kino-stream-relay
-```
+It runs as a plain Node service (the container definition that was here, never built, was removed on 18 November 2026).
 
 Put the service behind HTTPS. The public streaming endpoint is `https://YOUR-RELAY-HOST/api/proxy`; `/health` identifies it as `stream-relay` and reports requests and bytes. A naked, unsigned request to `/api/proxy` returning `403 INVALID_RELAY_LINK` is expected.
-
-The Node service was tested directly. The container image has not been built in this workspace because Docker is unavailable.
 
 ## Connect Kino
 
@@ -65,7 +58,7 @@ Signed links expire after 12 hours. The relay checks signatures and expiry, and 
 ## Verify after deployment
 
 1. Open a movie in Kino. Confirm that video plays and Kino's pause, seek, quality and subtitle controls appear.
-2. In browser Network, film playlists and segments must use the separate relay host. No video request should use `kino.24-7.ro/api/proxy`.
+2. In browser Network, film playlists and segments must use the separate relay host. No video request should use the website's own `/api/proxy`.
 3. On the website's `/api/health`, asked with the team's token (`curl -H "Authorization: Bearer $FEEDBACK_ADMIN_TOKEN" https://<site>/api/health`; without it the answer is only `ok`, `uptime` and `storage`), `proxy.video` must be `off` and `proxy.bytes` must remain unchanged during playback. Subtitles can still use the website.
 4. Pause, seek forward and resume. Try an alternate source and a TV episode too.
 

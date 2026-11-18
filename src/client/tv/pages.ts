@@ -9,6 +9,7 @@ import { titleOfPersonal } from "../shared/recommend";
 import { personalAfter, seenKeys, withoutSeen, type PersonalRow } from "../shared/taste";
 import { landscapeRows } from "../shared/shapes";
 import { addressOf, type TitleOpening } from "../shared/titleAddress";
+import { WATCHING_AFTER, watchingRow } from "../shared/watching";
 import type { GridSection } from "./browseNav";
 
 /**
@@ -219,6 +220,8 @@ export interface PageData {
    * A child's profile has the Cartoons whatever this says.
    */
   wanted?: ReadonlySet<LibrarySection> | null | undefined;
+  /** What people watch on Kino (shared/watching.ts): a row of Home only, and not for a child's profile. */
+  watching?: readonly LibraryItem[] | undefined;
 }
 
 /** A title of this profile's own (a card, a saved title, a rating) as the child gate names it. */
@@ -482,6 +485,8 @@ export const listOfRow = (rowId: string): string | undefined => (rowId.startsWit
 const BECAUSE_ROW = "because:";
 /** ...and the one of what the profile might like. */
 export const PICKS_ROW = "picks";
+/** The row of what people watch on Kino (shared/watching.ts). */
+export const WATCHING_ROW = "watching";
 
 /** The first row of a page is shown as a ranking of this many. */
 const RANKED = 10;
@@ -649,6 +654,8 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   // (What the profile has seen - played to the end, or scored - is left out of the rows after the first, while a row has enough without it: see `withoutSeen`.
   // The first is a ranking, and a ranking with gaps is not one. Not for a child's profile, which watches the same cartoons again.)
   const seen = child ? new Set<string>() : seenKeys(data.progress, data.ratings);
+  // (What people watch on Kino: on Home, after the second row, for a profile that is not a child's. See shared/watching.ts.)
+  const watching = section || child ? [] : watchingRow(data.watching, wanted);
   library.forEach((row, index) => {
     out.push({
       id: row.id,
@@ -660,6 +667,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
     });
     const next = personalAfter(index);
     if (next !== undefined && personal[next]) out.push(own(personal[next]));
+    if (index === WATCHING_AFTER && watching.length > 0) out.push({ id: WATCHING_ROW, layout: "wide", title: t("rows.watching"), entries: watching.map(entryOfItem) });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, section));
   });
   return out;

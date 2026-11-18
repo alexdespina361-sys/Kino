@@ -1,5 +1,6 @@
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import { avatarName } from "../../shared";
 import { buildApp } from "../app";
 import { describeDevice } from "./device";
 import { LinkRegistry } from "./links";
@@ -80,7 +81,7 @@ describe("signing up and in", () => {
     const registered = await client.post("/api/auth/register", { email: " Alex@Example.com ", password: credentials.password });
     expect(registered.statusCode).toBe(201);
     expect(registered.data.account.email).toBe("alex@example.com");
-    expect(registered.data.profiles).toMatchObject([{ name: "Alex", avatar: "fox" }]);
+    expect(registered.data.profiles).toMatchObject([{ name: "Fox", avatar: "fox" }]); // (named after its picture until it is set up: never after the login, which others could look it up by)
     const cookie = String(registered.headers["set-cookie"]);
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/SameSite=Lax/);
@@ -138,7 +139,7 @@ describe("signing up and in", () => {
     const robert = await client.post("/api/auth/register", { email: " Robert ", password: "1" });
     expect(robert.statusCode).toBe(201);
     expect(robert.data.account.email).toBe("robert");
-    expect(robert.data.profiles).toMatchObject([{ name: "Robert" }]);
+    expect(robert.data.profiles[0].name).toBe(avatarName(robert.data.profiles[0].avatar));
     expect((await new Client(app).post("/api/auth/register", { email: "ROBERT", password: "2" })).data).toEqual({ error: "email_taken" });
     expect((await new Client(app).post("/api/auth/login", { email: "ROBERT", password: "1" })).statusCode).toBe(200);
     expect((await new Client(app).post("/api/auth/login", { email: "robert", password: "2" })).statusCode).toBe(401);
@@ -407,7 +408,7 @@ describe("profiles", () => {
 
     const added = await client.post("/api/profiles", { name: "Kids" });
     expect(added.statusCode).toBe(201);
-    expect(added.data.profiles.map((p: { name: string; avatar: string }) => [p.name, p.avatar])).toEqual([["Alex", "fox"], ["Kids", "cat"]]);
+    expect(added.data.profiles.map((p: { name: string; avatar: string }) => [p.name, p.avatar])).toEqual([["Fox", "fox"], ["Kids", "cat"]]);
 
     expect((await client.post("/api/profiles", { name: "kids" })).data).toEqual({ error: "name_taken" });
     expect((await client.post("/api/profiles", { name: "   " })).data).toEqual({ error: "invalid_name" });
@@ -527,7 +528,7 @@ describe("signing a TV in from a phone", () => {
     expect((await phone.post(`/api/link/${code}/approve`)).statusCode).toBe(204);
 
     const done = await tv.post("/api/link/poll", { code, secret });
-    expect(done.data).toMatchObject({ status: "approved", me: { account: { email: credentials.email }, profiles: [{ name: "Alex" }] } });
+    expect(done.data).toMatchObject({ status: "approved", me: { account: { email: credentials.email }, profiles: [{ name: "Fox" }] } });
     expect((await tv.get("/api/me")).data.me.account.email).toBe(credentials.email);
     const devices = (await phone.get("/api/sessions")).data as Array<{ kind: string; label: string }>;
     expect(devices.map((d) => [d.kind, d.label])).toContainEqual(["tv", "Chrome on LG TV"]);

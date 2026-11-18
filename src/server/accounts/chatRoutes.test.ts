@@ -69,6 +69,7 @@ function person(world: World, login: string, { friends = true }: { friends?: boo
   const account = world.store.createAccount(login, "x");
   if (!account.ok) throw new Error("could not make the account");
   const profile = account.value.profiles[0]!;
+  world.store.updateProfile(account.value.id, profile.id, { name: login.charAt(0).toUpperCase() + login.slice(1) }); // (as its owner names it at setup)
   const { token } = world.store.createSession(account.value.id, "browser", "test");
   world.store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: world.clock.now, value: !friends }] }); // (friends are on for everybody: only `friendsOff` turns them off)
   const me: Person = {

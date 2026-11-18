@@ -6,7 +6,7 @@ if (!pages.length) pages.push(
   'https://filmpire.sc/watch/1399?s=1&e=1',
   'https://filmpire.sc/watch/550',
 );
-const site = new URL(process.env.KINO_SITE_URL || 'https://kino.24-7.ro');
+const site = new URL(process.env.KINO_SITE_URL || 'https://kino4tv.com');
 const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
 const checked = new Set();
 let failed = false;

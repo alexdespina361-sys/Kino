@@ -686,6 +686,18 @@ export function TvAccountPanel({
                   testId="tv-title-notices"
                 />
               )}
+              {/* Whether what it watches is counted, with no name, in the row of what people watch on Kino (server/accounts/watching.ts): on unless turned off. The server reads it. */}
+              {!child && (
+                <SettingsSwitch
+                  label={t("settings.publicWatching")}
+                  on={settings.publicWatching !== false}
+                  onToggle={() => {
+                    set("publicWatching", settings.publicWatching !== false ? false : undefined);
+                    account.syncNow();
+                  }}
+                  testId="tv-public-watching"
+                />
+              )}
               {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to
                   every screen; a short line under it says what it does. */}
               <SettingsSwitch

@@ -5,7 +5,7 @@ import { LATEST } from "../src/client/changelog/news";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, place, pressMenuLine, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, place, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, PICTURE_NAME, PICTURE_NAMED, loginName, nameFirstProfile } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
 /**
@@ -18,7 +18,11 @@ const fresh = (base: { email: string; password: string } = TEST_ACCOUNT) => ({ .
 
 const newPhone = (browser: Browser, seed: Record<string, string> = {}, locale = "en-US") => openDevice(browser, { ...PHONE, locale }, seed);
 
-async function signUp(page: Page, account: { email: string; password: string }) {
+/**
+ * Makes the account on the phone, which leaves its page open. Its first profile is then named after the login, as Kino did before 18 Nov 2026, for the
+ * tests that are about something else (`asMade`: left as it is made, named after its picture).
+ */
+async function signUp(page: Page, account: { email: string; password: string }, options: { asMade?: boolean } = {}) {
   await page.getByTestId("account-button").click();
   await page.getByTestId("auth-switch").click();
   await expect(page.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
@@ -26,6 +30,12 @@ async function signUp(page: Page, account: { email: string; password: string }) 
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
   if (weakness(account.email, account.password)) await page.getByTestId("auth-agree").click(); // (a poor password is asked about first: this person agrees)
+  await expect(page.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
+  if (options.asMade) return;
+  await nameFirstProfile(page, loginName(account.email));
+  await page.getByTestId("account-button").click();
+  await expect(page.getByTestId("account-profile-name")).toHaveText(loginName(account.email));
+  await expect(page.getByTestId("account-button")).toHaveAttribute("aria-label", new RegExp(loginName(account.email)));
 }
 
 async function signIn(page: Page, account: { email: string; password: string }) {
@@ -108,10 +118,10 @@ test.describe("accounts and profiles", () => {
     const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
     const phone = await newPhone(browser);
     await phone.goto("/");
-    await signUp(phone, account);
+    await signUp(phone, account, { asMade: true });
 
-    // The first profile is named after the name; a single profile is simply used.
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Robert/);
+    // The first profile is named after its picture (never after the login, which others could find it by); a single profile is simply used.
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
     const first = (await phone.getByTestId("account-profile-name").innerText()).trim();
 
     await phone.getByTestId("menu-profiles").click();
@@ -205,8 +215,8 @@ test.describe("accounts and profiles", () => {
     const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
     const phone = await newPhone(browser);
     await phone.goto("/");
-    await signUp(phone, account);
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Robert/); // (the account's page stays open after signing up)
+    await signUp(phone, account, { asMade: true });
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME); // (the account's page stays open after signing up)
     const turnedAway: string[] = [];
     phone.on("response", (response) => {
       if (response.status() === 401) turnedAway.push(new URL(response.url()).pathname);
@@ -246,12 +256,13 @@ test.describe("accounts and profiles", () => {
     await expect(asking).toContainText(en["auth.warnNone"]);
     await expect(asking).toContainText(en["auth.warnAsk"]);
     await phone.getByTestId("auth-agree").click();
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Guest/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
+    const named = (await phone.getByTestId("account-profile-name").innerText()).trim();
 
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
     await signIn(phone, account);
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Guest/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(named);
   });
 
   test("a poor password is asked about before the account is made: changing it goes back to the form as it was, a good one needs no question", async ({ browser }) => {
@@ -283,7 +294,7 @@ test.describe("accounts and profiles", () => {
     // One that is not quick to guess goes straight through.
     await phone.getByTestId("auth-password").fill("kino-test-pass-1");
     await phone.getByTestId("auth-submit").click();
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Weak/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
     await expect(phone.getByTestId("auth-warning")).toHaveCount(0);
   });
 
@@ -311,8 +322,9 @@ test.describe("what was watched follows the person", () => {
     // Device A has been used without an account.
     const first = await newPhone(browser, guestStorage({ progress: [night], list: [saved, picked], listNames: [weekend] }));
     await first.goto("/");
-    await signUp(first, account);
-    await expect(first.getByTestId("account-toast")).toContainText("Viewer");
+    await signUp(first, account, { asMade: true }); // (the line that says so is shown once: the page is not opened again)
+    const named = (await first.getByTestId("account-profile-name").innerText()).trim();
+    await expect(first.getByTestId("account-toast")).toContainText(named);
     await savedToTheAccount(first);
     // It is the profile's now, not counted twice: the guest copy is empty.
     const left = await guestCopy(first);
@@ -325,7 +337,7 @@ test.describe("what was watched follows the person", () => {
     const second = await newPhone(browser);
     await second.goto("/");
     await signIn(second, account);
-    await expect(second.getByTestId("account-profile-name")).toHaveText("Viewer");
+    await expect(second.getByTestId("account-profile-name")).toHaveText(named);
     await second.getByTestId("page-back").click();
     await second.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(second.getByTestId("tv-online")).toHaveText("TV connected");
@@ -563,7 +575,9 @@ async function signedInScreen(browser: Browser, account = fresh()) {
   await screen.getByTestId("auth-email").fill(account.email);
   await screen.getByTestId("auth-password").fill(account.password);
   await screen.getByTestId("auth-submit").click();
-  await expect(screen.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/);
+  await expect(screen.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
+  await nameFirstProfile(screen, loginName(account.email));
+  await expect(screen.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", new RegExp(loginName(account.email)));
   return screen;
 }
 
@@ -652,7 +666,7 @@ test.describe("a poor password on the TV's own form", () => {
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("auth-agree")).toBeFocused();
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Tvguest/);
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
   });
 });
 

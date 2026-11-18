@@ -11,6 +11,7 @@ import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loa
 import { hueOf, Poster, posterSizes } from "../shared/Poster";
 import { titleOfPersonal, useLikes } from "../shared/recommend";
 import { personalAfter, personalSlots, seenKeys, withoutSeen, type PersonalRow } from "../shared/taste";
+import { useWatching, WATCHING_AFTER, watchingRow } from "../shared/watching";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { landscapeRows } from "../shared/shapes";
 import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
@@ -160,6 +161,10 @@ export function Library({
     [child, pageSection, mine],
   );
   const personal = useLikes({ want: searchPage ? 0 : personalSlots(displayedRows.length), keep: keepLike, picks: !child, page: pageSection ?? "home" });
+  // What people watch on Kino: a row of Home (All), not of the search, a section nor a child's profile, as on the TV (shared/watching.ts).
+  const homeOnly = !child && !searchPage && pageSection === undefined;
+  const watchedHere = useWatching(homeOnly);
+  const watching = useMemo(() => (homeOnly ? watchingRow(watchedHere, mine) : []), [homeOnly, watchedHere, mine]);
   // (What the profile has seen is left out of the library's rows after the first; not for a child's profile.)
   const seen = useMemo(() => (child ? new Set<string>() : seenKeys(watchedCards, givenScores)), [child, watchedCards, givenScores]);
   const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);
@@ -435,6 +440,16 @@ export function Library({
               </div>
               {/* (Under the first row and every second one after it, as on the TV: the next of the profile's own rows.) */}
               {own(personal[personalAfter(index) ?? -1])}
+              {index === WATCHING_AFTER && watching.length > 0 && (
+                <div className="lib-row" data-testid="library-watching">
+                  <h3>{t("rows.watching")}</h3>
+                  <Scroller>
+                    {watching.map((item) => (
+                      <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+                    ))}
+                  </Scroller>
+                </div>
+              )}
               {/* (After the third row, as on the TV: a row of the page's categories, each a card that opens the whole row.) */}
               {onSeeAll && index === CATEGORIES_AFTER - 1 && displayedRows.length > CATEGORIES_AFTER + 1 && <CategoryRow rows={displayedRows} onOpen={onSeeAll} />}
             </Fragment>

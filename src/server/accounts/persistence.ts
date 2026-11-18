@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -110,6 +111,19 @@ export class PostgresPersistence implements Persistence {
 }
 
 /**
+ * How the connection to a database is encrypted. Hosted databases (Neon, Supabase, Render) want TLS; a local one usually does not (`sslmode` in the URL,
+ * or a local address, decides). With `DATABASE_CA_FILE` (the provider's root certificate: Supabase's is `prod-ca-2021.crt`) whoever answers has to show a
+ * certificate of that root for the database's own name, or nothing is sent; without it the connection is encrypted but whoever answers is believed.
+ * A file that cannot be read stops the server: it was asked for, and going on unchecked would hide that.
+ */
+export function databaseTls(env: NodeJS.ProcessEnv): { ca?: string; rejectUnauthorized: boolean } | undefined {
+  const url = env.DATABASE_URL ?? "";
+  if (/sslmode=(disable|allow)|localhost|127\.0\.0\.1/.test(url)) return undefined;
+  if (!env.DATABASE_CA_FILE) return { rejectUnauthorized: false };
+  return { ca: readFileSync(env.DATABASE_CA_FILE, "utf8"), rejectUnauthorized: true };
+}
+
+/**
  * Pick the home from the environment: `DATABASE_URL` (Postgres), else `DATA_DIR` (a folder; `memory` means nowhere), else a
  * `data` folder next to where the server was started.
  */
@@ -119,8 +133,9 @@ export async function persistenceFromEnv(
 ): Promise<{ persistence: Persistence; describe: string; kind: "postgres" | "file" | "memory" }> {
   if (env.DATABASE_URL) {
     const { default: pg } = await import("pg");
-    // Hosted databases (Neon, Supabase, Render) want TLS; a local one usually does not. `sslmode` in the URL decides.
-    const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 4, ssl: /sslmode=(disable|allow)|localhost|127\.0\.0\.1/.test(env.DATABASE_URL) ? undefined : { rejectUnauthorized: false } });
+    const ssl = databaseTls(env);
+    if (ssl && !ssl.rejectUnauthorized) log.warn("Postgres: the connection is encrypted but the database's certificate is not checked: set DATABASE_CA_FILE to the provider's root certificate.");
+    const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 4, ssl });
     // A database that sleeps (Neon's free one does after a few quiet minutes) drops idle connections; without this that would crash the server.
     pool.on("error", (error) => log.warn(`Postgres: ${error.message}`));
     return { persistence: new PostgresPersistence(pool), describe: "Postgres (DATABASE_URL)", kind: "postgres" };

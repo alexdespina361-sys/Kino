@@ -1,0 +1,15 @@
+[Unit]
+Description=Copy the Kino website's database to /var/backups/kino-db
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/kino-web.env
+ExecStart=/opt/kino-node/bin/node /opt/kino-tools/kino-db-backup.mjs
+# (Root, to keep the copies out of the website's own reach; nothing else on the box is written.)
+ProtectSystem=strict
+ReadWritePaths=/var/backups
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

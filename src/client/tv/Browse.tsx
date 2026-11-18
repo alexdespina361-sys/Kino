@@ -30,6 +30,7 @@ import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
 import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
 import { useLikes } from "../shared/recommend";
+import { useWatching } from "../shared/watching";
 import { personalSlots } from "../shared/taste";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
@@ -476,6 +477,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   );
   const placesFor = useMemo(() => personalSlots(keepLike ? pageLibraryRows.filter((row) => (pageSection ? sectionOf(row) === pageSection : isWanted(wanted, row))).length : pageLibraryRows.length), [pageLibraryRows, keepLike, pageSection, wanted]);
   const personal = useLikes({ want: child ? 0 : placesFor, keep: keepLike, showing: isRowsPage(view), page: pageSection ?? "home" });
+  // What people watch on Kino: a row of Home, not of a section's page nor of a child's profile (shared/watching.ts).
+  const watching = useWatching(!child && !pageSection && isRowsPage(view));
   /** The rows of this page that the library can add titles to as they are scrolled (the ranking of ten, which is not scrolled, is not one). */
   const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
   // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
@@ -488,8 +491,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const shownRatings = useMemo(() => (childGate ? ratings.filter((rating) => childGate.allows({ id: rating.key, url: rating.url, kind: rating.kind })) : ratings), [childGate, ratings]);
   const shownProgress = useMemo(() => (childGate ? progress.filter((card) => childGate.allows({ id: card.key, url: card.url })) : progress), [childGate, progress]);
   const data = useMemo<PageData>(
-    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], personal, looked, child: childGate, wanted }),
-    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, personal, looked, childGate, wanted],
+    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], personal, looked, child: childGate, wanted, watching }),
+    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, personal, looked, childGate, wanted, watching],
   );
 
   const rowsPage = hasRows(view);

@@ -3,7 +3,7 @@ import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openLibrary, openProfilePage, openProfilePlace, openTvSignIn, pressProfilePlace, test, tvRoot, withLibrary, type ProfilePlace, showProfilePage } from "./helpers";
+import { openLibrary, openProfilePage, openProfilePlace, openTvSignIn, pressProfilePlace, test, tvRoot, withLibrary, type ProfilePlace, showProfilePage, nameFirstProfile, PICTURE_NAMED } from "./helpers";
 
 /**
  * Friends, on the TV: switched on in the settings of the account, then a place on the profile's page for them: the friends' page (invitations to
@@ -47,6 +47,8 @@ async function signedInScreen(browser: Browser, name: string, options: { viewpor
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
+  await expect(page.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
+  await nameFirstProfile(page, nameOf(account));
   await expect(page.getByTestId("tv-account-chip")).toContainText(nameOf(account));
   return { page, name: nameOf(account) };
 }

@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { weakness } from "../src/client/account/password";
 import { en } from "../src/client/i18n/en";
-import { openDevice, openLibrary, openProfilePage, openTvSettings, openTvSignIn, PHONE, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePage, openTvSettings, openTvSignIn, PHONE, test, PICTURE_NAME, PICTURE_NAMED } from "./helpers";
 import { TEST_ACCOUNT } from "./testAccount";
 
 /**
@@ -357,7 +357,7 @@ test.describe("with Google sign-in on", () => {
     await phone.getByTestId("account-button").click();
     const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password };
     await signUpWithPassword(phone, account);
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Robert/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
   });
 
   test("a computer used as the TV signs in with Google from its own form, with the remote, and comes back to the TV's page signed in as a TV", async ({ browser }) => {
@@ -401,7 +401,8 @@ test.describe("with Google sign-in on", () => {
     await phone.goto(`${site.origin}/`);
     await phone.getByTestId("account-button").click();
     await signUpWithPassword(phone, { email: `Linda ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Linda/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
+    const linda = (await phone.getByTestId("account-profile-name").innerText()).trim();
     const id = (await sessionOf(phone)).me!.account.id;
 
     await phone.getByTestId("menu-security").click();
@@ -422,7 +423,7 @@ test.describe("with Google sign-in on", () => {
     await phone.waitForURL(`${site.origin}/`);
     expect((await sessionOf(phone)).me?.account.id).toBe(id);
     await phone.getByTestId("account-button").click();
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Linda/); // (not a new account named after the person at Google)
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(linda); // (not a new account named after the person at Google)
   });
 
   test("the phone's profile offers an account with a password to connect Google, and the line is gone once it is connected", async ({ browser }) => {
@@ -432,7 +433,8 @@ test.describe("with Google sign-in on", () => {
     await phone.goto(`${site.origin}/`);
     await phone.getByTestId("account-button").click();
     await signUpWithPassword(phone, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Mira/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
+    const mira = (await phone.getByTestId("account-profile-name").innerText()).trim();
     const id = (await sessionOf(phone)).me!.account.id;
 
     // On the profile itself, not behind Password & security: between Devices and that page.
@@ -445,7 +447,7 @@ test.describe("with Google sign-in on", () => {
     await expect(phone.getByTestId("account-toast")).toHaveText(en["google.linked"]);
     await expect(phone).toHaveURL(`${site.origin}/`);
     await phone.getByTestId("account-button").click();
-    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Mira/);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(mira);
     await expect(phone.getByTestId("menu-security")).toBeVisible();
     await expect(phone.getByTestId("menu-google")).toHaveCount(0);
 
@@ -454,7 +456,7 @@ test.describe("with Google sign-in on", () => {
     await other.goto(`${site.origin}/`);
     await other.getByTestId("account-button").click();
     await signUpWithPassword(other, { email: `Nora ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
-    await expect(other.getByTestId("account-profile-name")).toHaveText(/^Nora/);
+    await expect(other.getByTestId("account-profile-name")).toHaveText(PICTURE_NAME);
     await viaGoogle(other, google, other.getByTestId("menu-google"));
     await expect(other.getByTestId("account-toast")).toHaveText(en["google.taken"]);
     await other.getByTestId("account-button").click();
@@ -475,7 +477,7 @@ test.describe("with Google sign-in on", () => {
     await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0);
 
     await signUpOnScreen(tv, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
-    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Mira/);
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
 
     // The Settings' Profile group has the line too, with Manage profiles and signing a TV in.
     await openTvSettings(tv);
@@ -509,7 +511,7 @@ test.describe("with Google sign-in on", () => {
     await fireTv.goto(`${site.origin}/tv`);
     await expect(fireTv.getByTestId("tv-browse")).toBeVisible();
     await signUpOnScreen(fireTv, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
-    await expect(fireTv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Mira/);
+    await expect(fireTv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", PICTURE_NAMED);
     await openProfilePage(fireTv);
     await expect(fireTv.getByTestId("tv-profile-settings")).toBeVisible();
     await expect(fireTv.getByTestId("tv-profile-google")).toHaveCount(0);
