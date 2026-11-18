@@ -1001,6 +1001,7 @@ export const ro: Dictionary = {
   "tv.backToLibrary": "Înapoi la bibliotecă",
   "rows.because": "Pentru că ai urmărit {title}",
   "rows.loved": "Pentru că ți-a plăcut {title}",
+  "rows.picks": "S-ar putea să-ți placă",
   "rows.moreFailed": "Nu s-au putut încărca mai multe titluri. Se încearcă din nou…",
 
   /* ratings: a score out of ten, why, and what was watched */

@@ -992,6 +992,7 @@ export const it: Dictionary = {
   "tv.backToLibrary": "Torna alla libreria",
   "rows.because": "Perché hai guardato {title}",
   "rows.loved": "Perché ti è piaciuto {title}",
+  "rows.picks": "Potrebbe piacerti",
   "rows.moreFailed": "Impossibile caricare altri titoli. Riprovo…",
 
   /* ratings: a score out of ten, why, and what was watched */

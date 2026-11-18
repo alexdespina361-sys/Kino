@@ -4,6 +4,25 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.19",
+    date: "2026-11-18",
+    en: [
+      "A new row, “You might like”: titles like the ones you watched, loved or saved, without anything you have already seen, started or saved.",
+      "The rows of the library leave out what you watched to the end or scored, so more of each row is new to you. The top ten stays whole.",
+      "A film you scored low no longer brings a row of films like it.",
+    ],
+    ro: [
+      "Un rând nou, „S-ar putea să-ți placă”: titluri asemănătoare cu cele urmărite, apreciate sau salvate, fără ce ai văzut, început sau salvat deja.",
+      "Rândurile bibliotecii lasă deoparte ce ai văzut până la capăt sau ai notat, ca să vezi mai multe titluri noi. Topul rămâne întreg.",
+      "Un film notat slab nu mai aduce un rând cu filme asemănătoare.",
+    ],
+    it: [
+      "Una nuova riga, «Potrebbe piacerti»: titoli simili a quelli che hai guardato, amato o salvato, senza ciò che hai già visto, iniziato o salvato.",
+      "Le righe della libreria tralasciano ciò che hai visto fino alla fine o votato, così vedi più titoli nuovi. La top ten resta intera.",
+      "Un film con un voto basso non porta più una riga di film simili.",
+    ],
+  },
+  {
     version: "0.4.18",
     date: "2026-11-18",
     en: [

@@ -6,6 +6,7 @@ import { getLanguage, rowTitle, t } from "../i18n";
 import type { ChildGate } from "../shared/childGate";
 import { formatTime } from "../shared/format";
 import type { Because } from "../shared/recommend";
+import { PICKS_MIN, seenKeys, withoutSeen } from "../shared/taste";
 import { landscapeRows } from "../shared/shapes";
 import { addressOf, type TitleOpening } from "../shared/titleAddress";
 import type { GridSection } from "./browseNav";
@@ -202,6 +203,10 @@ export interface PageData {
   ratings: readonly LiveRating[];
   /** "Because you watched ..." and "Because you loved ...": a title, and the titles like it. */
   because: readonly Because[];
+  /** What the profile might like (shared/taste.ts): without the titles of the rows of "Because you ...", for Home, which has those rows... */
+  picks?: readonly LibraryItem[] | undefined;
+  /** ...and with them, for the page of a section, which has not. */
+  pool?: readonly LibraryItem[] | undefined;
   /** The sections the server gave for titles of "Continue watching" the rows do not list, by the title's address (`tv-46260`; see cardSections.ts). */
   looked?: ReadonlyMap<string, LibrarySection>;
   /**
@@ -476,6 +481,8 @@ const LIST_ROW = "list:";
 export const listOfRow = (rowId: string): string | undefined => (rowId.startsWith(LIST_ROW) ? rowId.slice(LIST_ROW.length) : undefined);
 /** ...and one of titles like a title the profile watched or loved. */
 const BECAUSE_ROW = "because:";
+/** ...and the one of what the profile might like. */
+export const PICKS_ROW = "picks";
 
 /** The first row of a page is shown as a ranking of this many. */
 const RANKED = 10;
@@ -631,6 +638,12 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
       if (items.length > 0) out.push({ id: `${BECAUSE_ROW}${like.key}`, layout: "wide", title: t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title }), entries: items.map(entryOfItem) });
     }
   }
+  // What the profile might like, of what it has not seen: on Home under the rows of titles like one it watched, on the page of a section (which has none of
+  // those) the ones of that section. Not on a child's profile, whose titles are the few for children.
+  if (!child) {
+    const picks = section ? (data.pool ?? []).filter((item) => sectionOf(item) === section) : (data.picks ?? []).filter((item) => isWanted(wanted, item));
+    if (picks.length >= PICKS_MIN) out.push({ id: PICKS_ROW, layout: "wide", title: t("rows.picks"), entries: picks.map(entryOfItem) });
+  }
   if (!section) {
     for (const info of data.lists) {
       const saved = data.list.filter((item) => listOf(item) === info.id);
@@ -641,6 +654,9 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   const library = rowsFor(section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows.filter((row) => isWanted(wanted, row)), child);
   // (Some of them are wide cards, so that a page is not one size of poster from top to bottom: see `landscapeRows`.)
   const wide = landscapeRows(library);
+  // (What the profile has seen - played to the end, or scored - is left out of the rows after the first, while a row has enough without it: see `withoutSeen`.
+  // The first is a ranking, and a ranking with gaps is not one. Not for a child's profile, which watches the same cartoons again.)
+  const seen = child ? new Set<string>() : seenKeys(data.progress, data.ratings);
   library.forEach((row, index) => {
     out.push({
       id: row.id,
@@ -648,7 +664,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
       title: rowTitle(row),
       ...sourceOf(data.rows, row),
       ...(wide.has(row.id) ? { shape: "landscape" as const } : {}),
-      entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem),
+      entries: (index === 0 ? row.items.slice(0, RANKED) : withoutSeen(row.items, seen)).map(entryOfItem),
     });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, section));
   });
