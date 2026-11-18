@@ -8,7 +8,11 @@ import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, 
 
 export type { FilmpireCategory };
 
-export const FILMPIRE_TMDB_API_KEY = process.env.TMDB_API_KEY ?? "90b2cae8d7161e8ba0f3836240d7d352";
+/**
+ * The key the movie database is asked with: the host's setting `TMDB_API_KEY` (the box: `/etc/kino-web.env`; a PC: `.env.local`, see `loadEnv.ts`). None is
+ * written here: the repository is public. Without one the database answers nothing and the library is empty.
+ */
+export const FILMPIRE_TMDB_API_KEY = process.env.TMDB_API_KEY ?? "";
 const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
 const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";

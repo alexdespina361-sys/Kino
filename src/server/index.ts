@@ -1,3 +1,4 @@
+import "./loadEnv"; // (first: the settings a PC keeps in .env.local are read before the modules that look at them)
 import { googleFromEnv } from "./accounts/google";
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
@@ -22,6 +23,8 @@ import { officialStoreFor } from "./subtitles/official";
 import { keepRunning } from "./survive";
 
 const port = Number(process.env.PORT ?? 8787);
+if (process.env.LIBRARY !== "off" && !process.env.TMDB_API_KEY)
+  console.warn("TMDB_API_KEY is not set: the movie database answers nothing without a key, so the library has no titles (the box: /etc/kino-web.env; a PC: .env.local).");
 const host = process.env.HOST ?? "0.0.0.0";
 
 /** How many proxies sit in front of this server. A host like Render has one; on a PC there is none. `TRUST_PROXY` overrides: a number, `true` or `false`. */
