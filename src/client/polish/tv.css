@@ -932,6 +932,19 @@
 /* Three columns of groups. A group has its name over it and one surface under it; rows on that surface have a hairline between them, so a long run of the same kind of thing reads as a few, and the kinds differ: words to choose from in a row (language), dots (colour), switches, and rows that lead on. */
 /* It hangs from the top of the screen, not from its middle: a guest's first column is taller than a member's, and the title must stand where it stands for both. */
 :root[data-ui="polish"] .tv-set { display: flex; flex: 1 0 auto; flex-direction: column; gap: calc(var(--em) * 2.2); width: 100%; max-width: calc(var(--em) * 88); padding-top: calc(var(--em) * 2.4); text-align: left; }
+/* (The settings' own page has the most on it: its heading stands closer to the top and to the columns, so that they end on a 720p screen in every language.) */
+:root[data-ui="polish"] .tv-set-main { gap: calc(var(--em) * 1.4); padding-top: calc(var(--em) * 1); }
+/* On a wide screen that heading is on the wordmark's line, after it, with Back at the line's other end: the page begins at the top bar's line and not under it. A
+   screen's page is in the middle of what is left under the wordmark, and one taller than that went out of it at both ends alike: the heading went up under the
+   wordmark (in Italian, whose words are the longest, by half its height). From the top, what is too long could only go down, and with the line won it is not. */
+@media (min-width: 900px) {
+  /* (An account with several profiles and no Google account yet has two more lines in its first column, and that one can still be a few lines too long in a
+     language of long words: the page then moves under the remote, as a narrow screen's does, and nothing of it is out of reach.) */
+  :root[data-ui="polish"] .tv-screen-settings { justify-content: flex-start; padding-top: var(--top); padding-bottom: calc(var(--em) * 1); overflow-y: auto; scrollbar-width: none; }
+  :root[data-ui="polish"] .tv-screen-settings::-webkit-scrollbar { display: none; }
+  :root[data-ui="polish"] .tv-screen-settings .tv-set-main { padding-top: 0; }
+  :root[data-ui="polish"] .tv-screen-settings .tv-set-main > .tv-set-head { min-height: calc(var(--em) * 3.6); padding-left: calc(var(--logo-w) + var(--em) * 1.8); }
+}
 :root[data-ui="polish"] .tv-set-head { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--em) * 2); }
 :root[data-ui="polish"] .tv-set-title { margin: 0; font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-flip { transform: scaleX(-1); }
@@ -1049,6 +1062,8 @@
 /* a labelled field: language is chosen from words in a row, colour from dots */
 :root[data-ui="polish"] .tv-field { display: flex; flex-direction: column; gap: calc(var(--em) * 0.8); padding: calc(var(--em) * 1.1) calc(var(--em) * 1) calc(var(--em) * 1.2); }
 :root[data-ui="polish"] .tv-field-label { color: var(--text-3); font-size: var(--fs-1); font-weight: 600; }
+/* (On the settings' own page a field is a little closer set: its middle column has three of them, and with the anime's audio it was taller than a 720p screen.) */
+:root[data-ui="polish"] .tv-set-grid-panel .tv-field { gap: calc(var(--em) * 0.6); padding: calc(var(--em) * 0.8) calc(var(--em) * 1) calc(var(--em) * 0.9); }
 :root[data-ui="polish"] .tv-segmented { display: flex; gap: calc(var(--em) * 0.2); padding: calc(var(--em) * 0.3); border-radius: var(--r-2); background: var(--bg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
 :root[data-ui="polish"] .tv-segmented .tv-choice { flex: 1 1 0; justify-content: center; min-width: 0; padding: calc(var(--em) * 0.65) calc(var(--em) * 0.4); border-radius: var(--r-1); background: transparent; color: var(--text-2); font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-segmented .tv-choice:hover { background: var(--fill-1); color: var(--text-1); }

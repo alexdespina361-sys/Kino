@@ -105,6 +105,7 @@ export const it: Dictionary = {
   "setup.continue": "Continua",
   "settings.sections": "Cosa guarda questo profilo",
   "settings.sectionsAll": "Tutto",
+  "settings.sectionsLine": "Sezioni",
   "settings.titleNotices": "Nuovi episodi e film",
   "settings.titleNoticesHelp": "Avvisa questo profilo quando esce un nuovo episodio, una nuova stagione o un nuovo film di ciò che guarda.",
   "profiles.delete": "Elimina profilo",

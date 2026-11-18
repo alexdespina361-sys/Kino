@@ -105,6 +105,7 @@ export const ro: Dictionary = {
   "setup.continue": "Continuă",
   "settings.sections": "Ce urmărește acest profil",
   "settings.sectionsAll": "Tot",
+  "settings.sectionsLine": "Secțiuni",
   "settings.titleNotices": "Episoade și filme noi",
   "settings.titleNoticesHelp": "Anunță acest profil când apare un episod nou, un sezon nou sau un film nou la ce urmărește.",
   "profiles.delete": "Șterge profilul",

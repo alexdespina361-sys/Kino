@@ -159,6 +159,24 @@ describe("new episodes of what a profile watches", () => {
     expect(book.of("ana")).toEqual([]);
   });
 
+  it("does not tell a profile that begins a show of the episode that had aired by then and was not news yet", async () => {
+    const { tmdb, clock, told, book, watch } = await setup(at("2026-11-10", 12));
+    tmdb.shows.set(7, show(1, 5, "2026-11-08"));
+    watch([watcher("ana", ["tv-7"])]);
+    await book.look();
+    clock.now = at("2026-11-11", 12);
+    tmdb.shows.set(7, show(1, 6, "2026-11-11"));
+    await book.look(); // (it aired today: it waits)
+    clock.now += 10 * 60_000;
+    watch([watcher("ana", ["tv-7"]), watcher("bob", ["tv-7"])]); // (Bob begins the show, with that episode on its page)
+    await book.look();
+    clock.now = at("2026-11-11") + HOLD_MS + HOUR;
+    await book.look();
+    expect(book.of("ana")).toMatchObject([{ episode: 6 }]);
+    expect(book.of("bob")).toEqual([]);
+    expect(told).toEqual(["ana"]);
+  });
+
   it("tells of an episode of one long season without its number, as its page numbers it in parts", async () => {
     const { tmdb, clock, book, watch } = await setup();
     tmdb.shows.set(7, show(1, 1122, "2026-11-01"));

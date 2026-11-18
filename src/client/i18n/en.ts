@@ -107,6 +107,7 @@ export const en = {
   "setup.continue": "Continue",
   "settings.sections": "What this profile watches",
   "settings.sectionsAll": "Everything",
+  "settings.sectionsLine": "Sections",
   "settings.titleNotices": "New episodes and films",
   "settings.titleNoticesHelp": "Tells this profile when a new episode, a new season or a new film of what it watches comes out.",
   "profiles.delete": "Delete profile",

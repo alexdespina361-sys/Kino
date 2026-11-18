@@ -10,16 +10,19 @@ export const CHANGELOG: readonly ChangeNote[] = [
       "The bell tells you when a new episode or a new season of a show you watch is out, and when a new film of a series of films you watched can be seen at home.",
       "It starts from now: nothing is said of what was already out. A switch in Settings, “New episodes and films”, turns it off for a profile.",
       "A profile with friends turned off has the bell too, while there is something new of what it watches.",
+      "On the TV, Settings fits the screen again: its last lines were cut off on some screens. What a profile chose for itself is in one group.",
     ],
     ro: [
       "Clopoțelul îți spune când apare un episod sau un sezon nou la un serial urmărit și când un film nou dintr-o serie de filme văzută poate fi văzut acasă.",
       "Pornește de acum: nu se spune nimic despre ce apăruse deja. Un comutator din Setări, „Episoade și filme noi”, îl oprește pentru un profil.",
       "Și un profil cu prietenii opriți are clopoțelul, cât timp e ceva nou la ce urmărește.",
+      "Pe TV, Setările încap din nou pe ecran: ultimele rânduri erau tăiate pe unele ecrane. Ce a ales un profil pentru el e într-un singur grup.",
     ],
     it: [
       "La campanella ti dice quando esce un nuovo episodio o una nuova stagione di una serie che guardi, e quando un nuovo film di una saga vista si può vedere a casa.",
       "Parte da adesso: non dice niente di ciò che era già uscito. Un interruttore nelle Impostazioni, «Nuovi episodi e film», lo spegne per un profilo.",
       "Anche un profilo con gli amici spenti ha la campanella, finché c'è qualcosa di nuovo di ciò che guarda.",
+      "Sulla TV, le Impostazioni stanno di nuovo nello schermo: le ultime righe erano tagliate su alcuni schermi. Le scelte di un profilo sono in un gruppo.",
     ],
   },
   {

@@ -531,8 +531,8 @@ export function TvAccountPanel({
   const top = cameFrom === undefined; // (the first row of the profile lands the remote, unless it came back from a page of the settings)
   const grownUp = account.childLock.grownUp; // (what leaves a child's profile asks for the PIN first: see `ChildLock`)
   return (
-    <Screen testId="tv-account" focus onBack={onClose}>
-      <div className="tv-set">
+    <Screen testId="tv-account" focus onBack={onClose} className="tv-screen-settings">
+      <div className="tv-set tv-set-main">
         <header className="tv-set-head" data-nav-column>
           <h1 className="tv-set-title" data-testid="tv-settings-title">
             {t("settings.title")}
@@ -599,10 +599,8 @@ export function TvAccountPanel({
                   ))}
                 </div>
               </div>
+              {/* (The colours say what they are: no word over them, which the column has no room for on a 720p screen since the anime's audio is in it.) */}
               <div className="tv-field">
-                <span className="tv-field-label" aria-hidden="true">
-                  {t("settings.accent")}
-                </span>
                 <div className="tv-swatches" role="radiogroup" aria-label={t("settings.accent")}>
                   {ACCENTS.map((accent) => (
                     <button
@@ -623,9 +621,8 @@ export function TvAccountPanel({
               </div>
             </SettingsGroup>
 
-            {/* How a film plays, and in what language its subtitles are looked for (17 Nov 2026: the second switch, Skip intros and credits). One group under the look,
-                with the subtitle languages' line in it (they had a group of their own here): in the third column, under the child's profile and Labs, the second
-                switch made the page longer than a 720p screen; here, with one heading less, the middle column is no taller than the first. */}
+            {/* How a film plays (17 Nov 2026: the second switch, Skip intros and credits; then the anime's audio). The subtitle languages' line was here too: with the
+                anime's audio under the two switches this column was taller than a 720p screen (18 Nov), so that line is with what else the profile chose, in the third. */}
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
               <SettingsSwitch label={t("settings.autoSkip")} on={autoSkip} onToggle={() => set("autoSkip", !autoSkip)} testId="tv-autoskip" />
@@ -656,27 +653,29 @@ export function TvAccountPanel({
                   </button>
                 </div>
               </div>
-              <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
             </SettingsGroup>
 
             {/* (Ratings and friends had a group of two switches here: they are on for everybody since 15 Nov 2026, and what a friend may see is chosen on the friends' page.) */}
           </div>
 
           <div className="tv-set-col" data-nav-column>
-            {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to every screen.
-                In the column with the most room, with a short line under it: the settings still fit a 720p screen in every language. */}
-            {/* What the profile watches (the owner, 18 Nov): a line that opens its page, as the subtitle languages have. Not on a child's profile, which has the Cartoons. */}
-            {!child && (
-              <SettingsGroup testId="tv-group-sections">
+            {/* What the profile chose for itself, one group (18 Nov 2026: they were three, with a heading each, and the page was taller than a 720p screen): what it
+                watches and the languages of its subtitles, each a line that opens its page; whether it is told of new episodes; whether it is a child's. */}
+            <SettingsGroup testId="tv-group-sections">
+              {/* What the profile watches (the owner, 18 Nov). Not on a child's profile, which has the Cartoons. */}
+              {!child && (
                 <SettingsLine
                   icon={<FilmIcon />}
-                  label={t("settings.sections")}
+                  label={t("settings.sectionsLine")}
                   value={settings.sections ? sectionsShown(settings.sections).map((section) => t(SECTION_NAME[section])).join(", ") : t("settings.sectionsAll")}
                   onPress={onSections}
                   testId="tv-sections-setting"
                   autoFocus={cameFrom === "sections"}
                 />
-                {/* Told when a new episode, season or film of what it watches comes out (shared/titleNotices.ts): on unless turned off. Sent at once: the server reads it. */}
+              )}
+              <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
+              {/* Told when a new episode, season or film of what it watches comes out (shared/titleNotices.ts): on unless turned off. Sent at once: the server reads it. */}
+              {!child && (
                 <SettingsSwitch
                   label={t("settings.titleNotices")}
                   on={settings.titleNotices !== false}
@@ -686,9 +685,9 @@ export function TvAccountPanel({
                   }}
                   testId="tv-title-notices"
                 />
-              </SettingsGroup>
-            )}
-            <SettingsGroup title={t("settings.childGroup")} testId="tv-group-child">
+              )}
+              {/* A child's profile (the owner, 15 Nov 2026): only cartoons for children, and no friends or watch party. A setting of the profile, so it follows it to
+                  every screen; a short line under it says what it does. */}
               <SettingsSwitch
                 label={t("settings.child")}
                 on={child}

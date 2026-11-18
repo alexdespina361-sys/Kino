@@ -161,6 +161,7 @@ class SiteWithGoogle {
         LIBRARY: "off",
         DATA_DIR: "memory",
         SIGNUPS_PER_HOUR: "1000",
+        PROFILE_SETUP: "off", // (a new profile is asked nothing here: these are about signing in; e2e/profile-setup.spec.ts has the pages that ask)
         GOOGLE_CLIENT_ID: CLIENT_ID,
         GOOGLE_CLIENT_SECRET: CLIENT_SECRET,
         GOOGLE_REDIRECT_URIS: `${this.origin}/api/auth/google/callback`,

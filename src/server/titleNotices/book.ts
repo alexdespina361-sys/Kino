@@ -312,7 +312,7 @@ export class TitleNoticeBook {
           this.touchTitle(doc);
         }
         watchers.set(key, [...(watchers.get(key) ?? []), follower]);
-        if (doc.kind === "tv" && doc.checkedAt > 0) this.firstSight(follower.profile, key, doc.last);
+        if (doc.kind === "tv" && doc.checkedAt > 0) this.firstSight(follower.profile, key, doc.waiting ?? doc.last);
         if (doc.kind === "movie" && doc.collection !== null) {
           const seriesKey = `col-${doc.collection}`;
           if (!series.has(seriesKey)) {
@@ -358,6 +358,7 @@ export class TitleNoticeBook {
     this.stale = false;
   }
 
+  /** (What a show has out when a profile is first seen to watch it: an episode that aired and waits to be news is out too, and is none to who begins now.) */
   private firstSight(profileId: string, key: string, last: Ep | null) {
     const doc = this.profile(profileId);
     if (doc.shows[key]) return;
@@ -466,7 +467,7 @@ export class TitleNoticeBook {
       const kept = this.profile(follower.profile);
       const base = kept.shows[doc.key];
       if (!base) {
-        this.firstSight(follower.profile, doc.key, doc.last);
+        this.firstSight(follower.profile, doc.key, doc.waiting ?? doc.last);
         continue;
       }
       if (!doc.last || !later(doc.last, base)) continue;
