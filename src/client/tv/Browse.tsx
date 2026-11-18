@@ -29,7 +29,7 @@ import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
 import { comesIn, hueOf, Poster, posterSizes, sharper } from "../shared/Poster";
-import { useBecause } from "../shared/recommend";
+import { useLikes } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { AboutText } from "./AboutText";
@@ -462,7 +462,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const rows = feeding.data.base;
   const hasTiles = status === "ready" && rows.length > 0;
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
-  const because = useBecause();
+  const { because, picks, pool } = useLikes();
   /** What section the rows of this page are in: Home has all of them (a child's profile has the Cartoons on every page of rows: see `child`). */
   const pageSection = isRowsPage(view) ? (child ? "cartoon" : sectionOfPage(view.kind)) : undefined;
   // (A profile that watches one section only is brought the rows of that section on Home too: of the rows of all four, most would be left out as they came,
@@ -481,8 +481,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const shownRatings = useMemo(() => (childGate ? ratings.filter((rating) => childGate.allows({ id: rating.key, url: rating.url, kind: rating.kind })) : ratings), [childGate, ratings]);
   const shownProgress = useMemo(() => (childGate ? progress.filter((card) => childGate.allows({ id: card.key, url: card.url })) : progress), [childGate, progress]);
   const data = useMemo<PageData>(
-    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], because, looked, child: childGate, wanted }),
-    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, because, looked, childGate, wanted],
+    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], because, picks, pool, looked, child: childGate, wanted }),
+    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, because, picks, pool, looked, childGate, wanted],
   );
 
   const rowsPage = hasRows(view);

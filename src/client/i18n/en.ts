@@ -995,6 +995,7 @@ export const en = {
   "tv.backToLibrary": "Back to the library",
   "rows.because": "Because you watched {title}",
   "rows.loved": "Because you loved {title}",
+  "rows.picks": "You might like",
   "rows.moreFailed": "Couldn't load more titles. Trying again…",
 
   /* ratings: a score out of ten, why, and what was watched */

@@ -226,6 +226,33 @@ describe("rowsOfPage: movies and series", () => {
     expect(rows.map((r) => r.id).some((id) => id.startsWith("because:"))).toBe(false);
   });
 
+  it("has a row of what the profile might like: on Home what the rows of titles like another do not show, on a section's page that section's", () => {
+    const films = Array.from({ length: 6 }, (_, at) => item(`pf${at}`, "movie"));
+    const shows = Array.from({ length: 5 }, (_, at) => item(`ps${at}`, "series"));
+    const home = rowsOfPage("home", data({ rows: many, progress: [card("going")], because: [{ key: "k", title: "x", why: "watched", items: [item("s")] }], picks: films, pool: [...films, ...shows] }));
+    expect(home.map((r) => r.id).slice(0, 3)).toEqual(["continue", "because:k", "picks"]);
+    expect(home[2]).toMatchObject({ layout: "wide", title: t("rows.picks") });
+    expect(home[2]!.entries.map((entry) => entry.id)).toEqual(films.map((film) => film.id));
+    // The page of a section: after what is part way through, its own titles of them (what a title of no stated kind is, nobody can tell).
+    const series = rowsOfPage("series", data({ rows: many, picks: films, pool: [...films, ...shows, item("unsaid")] }));
+    expect(series[0]!.id).toBe("picks");
+    expect(series[0]!.entries.map((entry) => entry.id)).toEqual(shows.map((show) => show.id));
+    // Too few are no row; a profile that watches only some sections has only those; a child's profile has none.
+    expect(rowsOfPage("home", data({ rows: many, picks: films.slice(0, 4) })).some((r) => r.id === "picks")).toBe(false);
+    expect(rowsOfPage("home", data({ rows: many, picks: films, wanted: new Set<LibrarySection>(["series"]) })).some((r) => r.id === "picks")).toBe(false);
+    expect(rowsOfPage("home", data({ rows: many, picks: films, pool: films, child: { allows: () => true } as unknown as NonNullable<PageData["child"]> })).some((r) => r.id === "picks")).toBe(false);
+  });
+
+  it("leaves what the profile has seen out of the library's rows after the first, while a row has enough without it", () => {
+    const long = [row("top", "movie", 8), row("long", "movie", 8), row("short", "movie", 6)];
+    const progress = [card("top-1", { done: true }), card("long-1", { done: true }), card("long-5"), card("short-0", { done: true })];
+    const rows = rowsOfPage("home", data({ rows: long, progress, ratings: [rated("long-3", 2, 1)] }));
+    const of = (id: string) => rows.find((r) => r.id === id)!.entries.map((entry) => entry.id);
+    expect(of("top")).toContain("top-1"); // (the first row is a ranking: it is whole)
+    expect(of("long")).toEqual(["long-0", "long-2", "long-4", "long-5", "long-6", "long-7"]); // (finished and scored are out; part way through is in)
+    expect(of("short")).toHaveLength(6); // (five would be left: it is as it was)
+  });
+
   it("is empty when the library has nothing of that kind (a source that does not say what its titles are)", () => {
     expect(rowsOfPage("movies", data({ rows: [row("x", undefined)] }))).toEqual([]);
   });

@@ -9,7 +9,8 @@ import { rowTitle, useT } from "../i18n";
 import { useProfileHold } from "../shared/profileHold";
 import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { hueOf, Poster, posterSizes } from "../shared/Poster";
-import { useBecause } from "../shared/recommend";
+import { useLikes } from "../shared/recommend";
+import { PICKS_MIN, seenKeys, withoutSeen } from "../shared/taste";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { landscapeRows } from "../shared/shapes";
 import { keepMatching, matchLocal, mergeAnswers, onlyForChildren, type Answers } from "../tv/librarySearch";
@@ -133,9 +134,9 @@ export function Library({
   // The library as it has grown: its first rows, the ones brought after them as the page is scrolled, and more of each row (see the feed).
   const feeding = useFeed();
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
-  const liked = useBecause();
+  const { because: liked, picks: likedPicks, pool: likedPool } = useLikes();
   /** A child's profile (see the TV's Browse): the Cartoons for children are all it has, on Home and in the search, and it has no filters. */
-  const { settings } = useProfileData();
+  const { settings, progress: watchedCards, ratings: givenScores } = useProfileData();
   const child = settings.child === true;
   const holding = useProfileHold();
   /** The sections the profile watches (its `sections` setting; null: all): the others have no filter and no rows, as on the TV. */
@@ -162,6 +163,13 @@ export function Library({
           : liked,
     [liked, child, mine],
   );
+  // What the profile might like, of what it has not seen (shared/taste.ts): on the page of everything under the rows of "Because you ...", on the page of
+  // a section the ones of that section. And what it has seen is left out of the library's rows after the first. Neither for a child's profile.
+  const mightLike = useMemo(
+    () => (child ? [] : pageSection ? likedPool.filter((item) => sectionOf(item) === pageSection) : likedPicks.filter((item) => isWanted(mine, item))),
+    [child, pageSection, likedPool, likedPicks, mine],
+  );
+  const seen = useMemo(() => (child ? new Set<string>() : seenKeys(watchedCards, givenScores)), [child, watchedCards, givenScores]);
   const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);
 
   useEffect(() => {
@@ -413,6 +421,16 @@ export function Library({
                 </Scroller>
               </div>
             ))}
+          {mightLike.length >= PICKS_MIN && (
+            <div className="lib-row" data-testid="library-picks">
+              <h3>{t("rows.picks")}</h3>
+              <Scroller>
+                {mightLike.map((item) => (
+                  <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+                ))}
+              </Scroller>
+            </div>
+          )}
           {displayedRows.map((row, index) => (
             <Fragment key={row.id}>
               <div className={`lib-row${wideRows.has(row.id) ? " is-wide is-landscape" : ""}`} data-testid="library-row" data-shape={wideRows.has(row.id) ? "landscape" : undefined}>
@@ -427,7 +445,7 @@ export function Library({
                   }
                 />
                 <Scroller {...(hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
-                  {row.items.map((item) => (
+                  {(index === 0 ? row.items : withoutSeen(row.items, seen)).map((item) => (
                     <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} wide={wideRows.has(row.id)} />
                   ))}
                 </Scroller>
