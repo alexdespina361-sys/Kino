@@ -15,6 +15,7 @@ import { followersOf } from "./titleNotices/followers";
 import { tmdbTitleSource } from "./titleNotices/source";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
+import { originOf } from "./stats/owner";
 import { VisitCounter, visitsPersistenceFor } from "./stats/visits";
 import { subsyncStoreFor } from "./subsync/store";
 import { officialStoreFor } from "./subtitles/official";
@@ -53,6 +54,17 @@ const feedback = await FeedbackStore.open({ backend: feedbackBackendFor(persiste
 const feedbackAdminToken = process.env.FEEDBACK_ADMIN_TOKEN?.trim() || undefined;
 if (feedbackAdminToken && feedbackAdminToken.length < FEEDBACK_TOKEN_MIN) {
   console.warn(`FEEDBACK_ADMIN_TOKEN is shorter than ${FEEDBACK_TOKEN_MIN} characters, so it is not used: the team's side of the feedback is off.`);
+}
+
+// OWNER_STATS_TOKEN is the key of the owner's page (docs/stats.md, "The owner's page"): it reads one answer of counts, GET /api/owner/stats, and nothing else.
+// Without it there is no such address and nothing is counted for it. OWNER_STATS_ORIGIN names the one page of another site whose script a browser lets read it.
+const ownerStatsToken = process.env.OWNER_STATS_TOKEN?.trim() || undefined;
+if (ownerStatsToken && ownerStatsToken.length < FEEDBACK_TOKEN_MIN) {
+  console.warn(`OWNER_STATS_TOKEN is shorter than ${FEEDBACK_TOKEN_MIN} characters, so it is not used: the owner's page has nothing to read.`);
+}
+const ownerStatsOrigin = originOf(process.env.OWNER_STATS_ORIGIN);
+if (process.env.OWNER_STATS_ORIGIN?.trim() && !ownerStatsOrigin) {
+  console.warn("OWNER_STATS_ORIGIN is not an origin (https://name.example, nothing after it), so it is not used: no page of another site can read the owner's stats in a browser.");
 }
 
 // How many people open the site is counted, a number for each day and nothing about who (docs/stats.md). VISITOR_COUNT=off is the kill switch: nobody is counted.
@@ -113,6 +125,8 @@ const app = await buildApp({
   ...(unavailable ? { unavailable } : {}),
   ...(titleNotices ? { titleNotices } : {}),
   ...(feedbackAdminToken ? { feedbackAdminToken } : {}),
+  ...(ownerStatsToken ? { ownerStatsToken } : {}),
+  ...(ownerStatsOrigin ? { ownerStatsOrigin } : {}),
   ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
@@ -133,6 +147,7 @@ const app = await buildApp({
 keepRunning(app.log);
 app.log.info(`Accounts and pairings are kept in ${describe}.`);
 app.log.info(visits ? "Visitors are counted, a number for each day (docs/stats.md)." : "Visitors are not counted.");
+app.log.info(ownerStatsToken && ownerStatsToken.length >= FEEDBACK_TOKEN_MIN ? `The owner's page can read its counts${ownerStatsOrigin ? ` from ${new URL(ownerStatsOrigin).host}` : " (from no other site's page: OWNER_STATS_ORIGIN is not set)"}.` : "The owner's page is off.");
 app.log.info(google ? `Google sign-in is on at ${google.redirectUris.map((address) => new URL(address).host).join(", ")}.` : "Google sign-in is off.");
 app.log.info(fcm ? `The app's notifications are on (Firebase project ${fcm.projectId}).` : "The app's notifications are off.");
 

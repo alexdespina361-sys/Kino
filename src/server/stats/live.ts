@@ -110,8 +110,10 @@ export class LiveCount {
  * nothing by itself. (The owner, 18 Nov 2026: the page is "the base for future real time security".)
  */
 export function oddHours(hours: readonly HourAnswers[]): Array<{ hour: number; what: "refused" | "limited" | "failed"; count: number; usual: number }> {
-  if (hours.length < 6) return [];
-  const before = hours.slice(0, -2);
+  // (Only the hours in which the server answered anything are "the ones before": after a restart there are none for a while, and an hour is not odd
+  // for being the first.)
+  const before = hours.slice(0, -2).filter((each) => each.requests > 0);
+  if (before.length < 6) return [];
   const out: Array<{ hour: number; what: "refused" | "limited" | "failed"; count: number; usual: number }> = [];
   for (const what of ["refused", "limited", "failed"] as const) {
     const sorted = before.map((each) => each[what]).sort((a, b) => a - b);

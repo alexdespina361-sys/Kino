@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <!-- Nothing is loaded from anywhere but this folder, and the page talks only to the site it is given (docs/stats.md, "The owner's page"). -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'" />
+    <title>Kino: the owner's page</title>
+    <link rel="stylesheet" href="stats.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Kino <span>the owner's page</span></h1>
+      <p class="state" id="state" role="status"></p>
+      <button type="button" id="forget" hidden>Forget the key on this device</button>
+    </header>
+
+    <form class="door" id="door" autocomplete="off">
+      <p>
+        This page holds no numbers of its own. It asks the site for them with a key that only reads counts, and keeps the key in this browser only.
+      </p>
+      <label>The site <input id="site" type="url" inputmode="url" required value="https://kino4tv.com" spellcheck="false" /></label>
+      <label>The key <input id="key" type="password" required minlength="24" autocomplete="off" spellcheck="false" /></label>
+      <button type="submit">Show the numbers</button>
+      <p class="wrong" id="wrong" role="alert"></p>
+    </form>
+
+    <main id="board" hidden>
+      <section class="alerts" id="alerts" aria-label="Hours that look unlike the others" hidden></section>
+
+      <section class="tiles" aria-label="Now and lately">
+        <article class="tile">
+          <h2>Here now</h2>
+          <p class="big" id="now-people">0</p>
+          <p class="sub" id="now-who"></p>
+          <p class="sub" id="now-screens"></p>
+        </article>
+        <article class="tile">
+          <h2>Accounts</h2>
+          <p class="big" id="acc-total">0</p>
+          <p class="sub" id="acc-made"></p>
+          <p class="sub" id="acc-used"></p>
+          <p class="sub" id="acc-more"></p>
+        </article>
+        <article class="tile">
+          <h2>Visitors</h2>
+          <p class="big" id="vis-today">0</p>
+          <p class="sub" id="vis-more"></p>
+          <p class="sub" id="vis-loads"></p>
+        </article>
+        <article class="tile">
+          <h2>Watched</h2>
+          <p class="big" id="min-today">0</p>
+          <p class="sub" id="min-more"></p>
+          <p class="sub">Signed-in profiles only: a guest's watching never leaves the guest's device.</p>
+        </article>
+        <article class="tile">
+          <h2>Feedback</h2>
+          <p class="big" id="fb-open">0</p>
+          <p class="sub" id="fb-more"></p>
+          <p class="sub" id="fb-received"></p>
+        </article>
+      </section>
+
+      <section class="panel" aria-labelledby="answers-h">
+        <h2 id="answers-h">How the server answered, the last 24 hours</h2>
+        <p class="sub" id="answers-sum"></p>
+        <div class="bars" id="bars" role="img" aria-label="Answers in each of the last 24 hours"></div>
+        <p class="legend"><span><i class="key ok"></i>answers</span><span><i class="key refused"></i>turned away (401, 403)</span><span><i class="key limited"></i>told to wait (429)</span><span><i class="key failed"></i>server failures</span></p>
+      </section>
+
+      <section class="panel" aria-labelledby="reports-h">
+        <h2 id="reports-h">The newest reports</h2>
+        <ul class="reports" id="reports"></ul>
+        <p class="sub">The words of a report, and answering it, are the team's: <code>node scripts/feedback.mjs</code>.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="days-h">
+        <h2 id="days-h">Day by day <span class="sub">(UTC days)</span></h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Day</th>
+                <th scope="col">Visitors</th>
+                <th scope="col">Page loads</th>
+                <th scope="col">New accounts</th>
+                <th scope="col">Accounts used</th>
+                <th scope="col">Minutes watched</th>
+              </tr>
+            </thead>
+            <tbody id="days"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="stats.js"></script>
+  </body>
+</html>
