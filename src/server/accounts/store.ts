@@ -125,6 +125,8 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringif
 const canonicalName = (name: string) => name.normalize("NFC").trim().toLowerCase();
 /** A profile as it is told to others: who it is, and the tag that names it (kept apart from `createdAt`, which is the server's). */
 const publicProfile = ({ id, name, avatar, tag }: ProfileMeta): Profile => ({ id, name, avatar, ...(tag !== undefined ? { tag } : {}) });
+/** A profile as its own account is told of it: also whether it is still to be set up (see `ProfileSchema.setup`), which is nobody else's to know. */
+const ownProfile = (profile: ProfileMeta): Profile => ({ ...publicProfile(profile), ...(profile.setup ? { setup: profile.setup } : {}) });
 /** The part of a session id that is shown and used to ask for it to be ended: enough to tell sessions apart, and no use as a token. */
 const shortId = (id: string) => id.slice(0, 16);
 
@@ -155,6 +157,11 @@ export interface StoreOptions {
    * env PERSONAL_STICKERS) and stickers that move (env MOVING_STICKERS), and how many bytes of pictures the site keeps.
    */
   stickers?: { files?: StickerFiles; on?: boolean; moving?: boolean; maxBytes?: number; uploadMs?: number };
+  /**
+   * A new profile is still to be set up by whoever uses it (`Profile.setup`: its name and picture, its subtitles, what it watches). Off unless set:
+   * the site turns it on (index.ts; env PROFILE_SETUP=off turns it off again), and what only makes accounts to try something else is asked nothing.
+   */
+  askSetup?: boolean;
 }
 
 /**
@@ -225,7 +232,7 @@ export class AccountStore {
   }
 
   static async open(options: StoreOptions): Promise<AccountStore> {
-    const store = new AccountStore({ now: Date.now, flushMs: 1500, ...options });
+    const store = new AccountStore({ now: Date.now, flushMs: 1500, askSetup: false, ...options });
     await store.load();
     // (A picture whose record was never written, or a record whose picture is not there, is let go: the two are kept in different places. Only where they are
     // on: a host that has them off is not asked anything about them, its database not even given their table; nothing can be made there to tidy.)
@@ -444,7 +451,8 @@ export class AccountStore {
   private make(email: string, hash: string, name: string, google?: AccountDoc["google"]): AccountDoc {
     // The first profile's picture goes round the twelve, one account after another: every new account was a fox, so friends looked the same in the
     // friends' list, the chat and the bell (the judge, 16 Nov). Its owner can change it as before.
-    const first = this.newProfile(name, AVATAR_IDS[this.accounts.size % AVATAR_IDS.length]!);
+    // (The first profile of a new account is still to be set up: its name was made from the e-mail, or is Google's, and nobody chose its picture.)
+    const first = this.newProfile(name, AVATAR_IDS[this.accounts.size % AVATAR_IDS.length]!, "all");
     this.takeTag(first);
     const account: AccountDoc = { v: 1, id: newId("acc"), email, hash, createdAt: this.now(), profiles: [first], ...(google ? { google } : {}) };
     this.accounts.set(account.id, account);
@@ -476,8 +484,8 @@ export class AccountStore {
     return ok(null);
   }
 
-  private newProfile(name: string, avatar: AvatarId): ProfileMeta {
-    return { id: newId("pro"), name, avatar, createdAt: this.now() };
+  private newProfile(name: string, avatar: AvatarId, setup: NonNullable<Profile["setup"]>): ProfileMeta {
+    return { id: newId("pro"), name, avatar, createdAt: this.now(), ...(this.options.askSetup ? { setup } : {}) };
   }
 
   setPasswordHash(accountId: string, hash: string) {
@@ -527,7 +535,7 @@ export class AccountStore {
   /* ------------------------------ profiles ------------------------------ */
 
   profilesOf(accountId: string): Profile[] {
-    return (this.accounts.get(accountId)?.profiles ?? []).map(publicProfile);
+    return (this.accounts.get(accountId)?.profiles ?? []).map(ownProfile);
   }
 
   private nameTaken(account: AccountDoc, name: string, exceptId?: string) {
@@ -539,17 +547,18 @@ export class AccountStore {
     if (!account) return fail("not_found");
     if (account.profiles.length >= MAX_PROFILES) return fail("profile_limit");
     if (this.nameTaken(account, name)) return fail("name_taken");
-    const profile = this.newProfile(name.trim(), avatar);
+    // (One that is added was named and given its picture by whoever added it: what is left is what it watches, and its subtitles.)
+    const profile = this.newProfile(name.trim(), avatar, "more");
     this.takeTag(profile);
     account.profiles.push(profile);
     this.profileOwner.set(profile.id, accountId);
     this.data.set(profile.id, emptyProfileData());
     this.touch(`account:${accountId}`);
     this.touch(`pdata:${profile.id}`);
-    return ok(publicProfile(profile));
+    return ok(ownProfile(profile));
   }
 
-  updateProfile(accountId: string, profileId: string, patch: { name?: string | undefined; avatar?: AvatarId | undefined }): Result<Profile> {
+  updateProfile(accountId: string, profileId: string, patch: { name?: string | undefined; avatar?: AvatarId | undefined; setup?: "done" | undefined }): Result<Profile> {
     const account = this.accounts.get(accountId);
     const profile = account?.profiles.find((candidate) => candidate.id === profileId);
     if (!account || !profile) return fail("not_found");
@@ -563,8 +572,9 @@ export class AccountStore {
       this.takeTag(profile, sameName ? profile.tag : undefined);
     }
     if (patch.avatar !== undefined) profile.avatar = patch.avatar;
+    if (patch.setup === "done") delete profile.setup;
     this.touch(`account:${accountId}`);
-    return ok(publicProfile(profile));
+    return ok(ownProfile(profile));
   }
 
   deleteProfile(accountId: string, profileId: string): Result<null> {

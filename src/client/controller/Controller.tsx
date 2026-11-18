@@ -36,7 +36,7 @@ import { useLinkBox } from "../shared/linkBox";
 import { forgetStrayAddress, strayAddress } from "../shared/strayAddress";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
-import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
+import { AccountButton, AccountScreen, ChooseProfile, SetUpProfile, Page } from "./AccountScreen";
 import { BellButton, NotificationsSheet } from "./Bell";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
@@ -151,6 +151,12 @@ export function Controller() {
     setShowAccount(false);
     setAccountAt("main");
   };
+  // A profile that is still to be set up is asked before anything else (account/ProfileSetup.tsx): the account's page, where the sign-up was typed, is
+  // closed for it, so the pages are not under it, and the remote is what is there when they are done.
+  const settingUp = Boolean(account.profile?.setup);
+  useEffect(() => {
+    if (settingUp) closeAccount();
+  }, [settingUp]); // eslint-disable-line react-hooks/exhaustive-deps
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
   /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
   const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
@@ -559,6 +565,9 @@ export function Controller() {
       </>
     );
   }
+  // ...and a profile that is new: its name and picture, its subtitles, what it watches (account/ProfileSetup.tsx).
+  // (Nothing is over it: the account's page, which the sign-up was typed on, is closed by then - see `settingUp` above.)
+  if (settingUp && !approveCode) return <SetUpProfile />;
 
   if (!tv) {
     return (

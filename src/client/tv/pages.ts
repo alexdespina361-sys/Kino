@@ -1,4 +1,4 @@
-import { DEFAULT_LIST, forChildren, fractionOf, listOf, resumeAt, sectionOf, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
+import { DEFAULT_LIST, forChildren, fractionOf, isWanted, listOf, resumeAt, sectionOf, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
 import { filterRatings, ownSection, type SectionOfRating } from "../account/ratingFilter";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
@@ -209,6 +209,12 @@ export interface PageData {
    * with only the titles for children (`forChildren`), and its lists, History, ratings and categories show those only.
    */
   child?: ChildGate | undefined;
+  /**
+   * The sections this profile watches (its `sections` setting; null or none: all of them). The library's rows, its categories and the rows of titles
+   * like another leave the others out; what the profile kept itself (what it is part way through, its lists, its ratings) is shown whatever its section.
+   * A child's profile has the Cartoons whatever this says.
+   */
+  wanted?: ReadonlySet<LibrarySection> | null | undefined;
 }
 
 /** A title of this profile's own (a card, a saved title, a rating) as the child gate names it. */
@@ -609,6 +615,7 @@ export function cardsToLookUp(progress: readonly LiveProgress[], rows: readonly 
  */
 export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   const { child } = data;
+  const wanted = child ? null : data.wanted;
   // (A child's profile has the Cartoons on every page of rows, Home too: it has no other section.)
   const section = child ? "cartoon" : sectionOfPage(page);
   const out: HomeRow[] = [];
@@ -620,7 +627,8 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
   if (!section) {
     for (const like of data.because) {
-      if (like.items.length > 0) out.push({ id: `${BECAUSE_ROW}${like.key}`, layout: "wide", title: t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title }), entries: like.items.map(entryOfItem) });
+      const items = like.items.filter((item) => isWanted(wanted, item));
+      if (items.length > 0) out.push({ id: `${BECAUSE_ROW}${like.key}`, layout: "wide", title: t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title }), entries: items.map(entryOfItem) });
     }
   }
   if (!section) {
@@ -630,7 +638,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
     }
   }
 
-  const library = rowsFor(section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows, child);
+  const library = rowsFor(section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows.filter((row) => isWanted(wanted, row)), child);
   // (Some of them are wide cards, so that a page is not one size of poster from top to bottom: see `landscapeRows`.)
   const wide = landscapeRows(library);
   library.forEach((row, index) => {
@@ -652,7 +660,7 @@ export function gridOf(view: View, data: PageData): GridPage | null {
   const { child } = data;
   // (A child's profile sees only what is for children of what it saved, watched and rated, and of the library only the Cartoons: see `PageData.child`.)
   const progress = child ? data.progress.filter((card) => child.allows(ownTitle(card, isShowCard(card)))) : data.progress;
-  const all = rowsFor(child ? data.all.filter((row) => sectionOf(row) === "cartoon") : data.all, child);
+  const all = rowsFor(child ? data.all.filter((row) => sectionOf(row) === "cartoon") : data.all.filter((row) => isWanted(data.wanted, row)), child);
   switch (view.kind) {
     case "list": {
       const info = shownList(view, data.lists);

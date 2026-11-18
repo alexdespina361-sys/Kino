@@ -4,6 +4,28 @@ import type { ChangeNote } from "./news";
  *  (Each line is one thing, in the same order in the three languages. A version is the day it went live, by UTC.) */
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.17",
+    date: "2026-11-18",
+    en: [
+      "A new account sets up its first profile before anything else: a name and a picture, the subtitle languages in their order, and what it watches.",
+      "A profile added later is asked for its subtitle languages and what it watches the first time it is used.",
+      "Each profile chooses what it watches (Movies, Series, Cartoons, Anime): the rest is not shown on it. It can be changed in Settings.",
+      "Twelve more profile pictures, among them popcorn, a clapperboard, a film reel, a ninja, a wizard, an astronaut, a pirate and a dragon.",
+    ],
+    ro: [
+      "Un cont nou își pregătește primul profil înainte de orice: un nume și o poză, limbile subtitrărilor în ordinea lor și ce urmărește.",
+      "Un profil adăugat mai târziu e întrebat ce limbi de subtitrare vrea și ce urmărește, la prima folosire.",
+      "Fiecare profil alege ce urmărește (Filme, Seriale, Desene animate, Anime): restul nu se mai arată pe el. Se poate schimba din Setări.",
+      "Douăsprezece poze de profil noi, printre care popcorn, o clachetă, o rolă de film, un ninja, un vrăjitor, un astronaut, un pirat și un dragon.",
+    ],
+    it: [
+      "Un nuovo account prepara il suo primo profilo prima di tutto: un nome e un'immagine, le lingue dei sottotitoli nel loro ordine e che cosa guarda.",
+      "A un profilo aggiunto dopo vengono chieste le lingue dei sottotitoli e che cosa guarda, al primo uso.",
+      "Ogni profilo sceglie che cosa guarda (Film, Serie TV, Cartoni animati, Anime): il resto non viene mostrato. Si può cambiare nelle Impostazioni.",
+      "Dodici nuove immagini del profilo, tra cui popcorn, un ciak, una bobina, un ninja, un mago, un astronauta, un pirata e un drago.",
+    ],
+  },
+  {
     version: "0.4.16",
     date: "2026-11-18",
     en: [

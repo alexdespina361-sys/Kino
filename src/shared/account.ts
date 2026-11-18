@@ -15,7 +15,11 @@ export const PROFILE_NAME_MAX = 16;
 export const PASSWORD_MIN = 0;
 
 /** The pictures a profile can have: drawn in client/account/Avatar.tsx. */
-export const AVATAR_IDS = ["fox", "cat", "panda", "owl", "bear", "rabbit", "frog", "penguin", "robot", "alien", "ghost", "monster"] as const;
+/** (The first twelve are faces; the twelve after them are of the cinema and of what is watched there: the owner, 18 Nov, "more in theme".) */
+export const AVATAR_IDS = [
+  ...(["fox", "cat", "panda", "owl", "bear", "rabbit", "frog", "penguin", "robot", "alien", "ghost", "monster"] as const),
+  ...(["popcorn", "clapper", "reel", "ticket", "camera", "star", "ninja", "wizard", "astronaut", "pirate", "vampire", "dragon"] as const),
+] as const;
 export type AvatarId = (typeof AVATAR_IDS)[number];
 export const AvatarIdSchema = z.enum(AVATAR_IDS);
 /**
@@ -59,10 +63,23 @@ export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");
 /** The number that goes with a name, "Sam#2", to tell the profiles of one name apart wherever they are (see `tagLabel`). */
 export const TagNumberSchema = z.number().int().min(1).max(999_999);
-export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarSeenSchema, tag: TagNumberSchema.optional() });
+export const ProfileSchema = z.object({
+  id: z.string().max(60),
+  name: ProfileNameSchema,
+  avatar: AvatarSeenSchema,
+  tag: TagNumberSchema.optional(),
+  /**
+   * The profile is still to be set up by whoever uses it (the owner, 18 Nov: after the first login an account `must pick nickname for their first
+   * profile, subtitle settings, profile image` and what it is interested in): `all` for the first profile of a new account, whose name and picture
+   * nobody chose; `more` for a profile that was added with a name and a picture, and has its subtitles and what it watches left. Only its own
+   * account is told. Profiles from before this have none, and are asked nothing.
+   */
+  setup: z.enum(["all", "more"]).optional().catch(undefined),
+});
 export type Profile = z.infer<typeof ProfileSchema>;
 export const NewProfileSchema = z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema });
-export const ProfilePatchSchema = NewProfileSchema.partial();
+/** (`setup: "done"` says the profile has been set up: see `ProfileSchema.setup`.) */
+export const ProfilePatchSchema = NewProfileSchema.partial().extend({ setup: z.literal("done").optional() });
 
 /**
  * `google`: a Google account signs in to this one. `googleOnly`: the account was made by signing in with Google, so that is the only way in: its name was made up
@@ -331,6 +348,13 @@ export const SETTING_SCHEMAS = {
    * manner, so the server does not read it.
    */
   adaptiveQuality: z.boolean(),
+  /**
+   * What this profile watches (the owner, 18 Nov: `they pick what they are interested in per profile`, and the others are not shown): the sections of
+   * the library it has, of Movies, Series, Cartoons and Anime. Not set: all four. The menu, the pages of rows, the categories and the rows of titles
+   * like another leave the others out; what the profile itself kept or was sent (what it is part way through, its lists and ratings, a friend's card)
+   * and what it searches for by name are shown whatever their section. A child's profile has the Cartoons whatever is set here.
+   */
+  sections: z.array(z.enum(["movie", "series", "cartoon", "anime"])).min(1).max(4),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];

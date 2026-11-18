@@ -1258,3 +1258,41 @@
 :root[data-ui="polish"] .tv .tv-query-clear { position: absolute; top: 0; bottom: 0; right: 0; display: grid; place-items: center; width: 48px; height: 48px; margin: auto 0; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--text-2); cursor: pointer; }
 :root[data-ui="polish"] .tv .tv-query-clear svg { width: 22px; height: 22px; }
 :root[data-ui="polish"] .tv .tv-query-clear:active { color: var(--text-1, #fff); background: var(--surf-3, rgb(255 255 255 / 0.08)); }
+
+/* What a profile watches (account/ProfileSetup.tsx): four buttons that are on or off, on the page of the settings and when a profile is set up. */
+:root[data-ui="polish"] .section-picker-tv { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(var(--em) * 1); max-width: calc(var(--em) * 64); padding: calc(var(--em) * 0.4) 0 calc(var(--em) * 1.2); }
+:root[data-ui="polish"] .section-picker-tv .section-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--em) * 0.5);
+  min-height: calc(var(--em) * 8.5);
+  padding: calc(var(--em) * 1.2) calc(var(--em) * 1);
+  border-radius: var(--r-3, var(--r-2));
+  background: var(--fill-1);
+  color: var(--text-2);
+  font-size: var(--fs-3);
+  font-weight: 700;
+  text-align: center;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+:root[data-ui="polish"] .section-picker-tv .section-choice-icon { display: flex; font-size: 2.2em; }
+:root[data-ui="polish"] .section-picker-tv .section-choice-icon svg { width: 1em; height: 1em; }
+:root[data-ui="polish"] .section-picker-tv .section-choice-tick { position: absolute; top: calc(var(--em) * 0.6); right: calc(var(--em) * 0.6); display: grid; place-items: center; width: 1.5em; height: 1.5em; border-radius: 999px; background: transparent; color: var(--accent-ink); font-size: 0.8em; }
+:root[data-ui="polish"] .section-picker-tv .section-choice-tick svg { width: 1em; height: 1em; }
+:root[data-ui="polish"] .section-picker-tv .section-choice[aria-pressed="true"] { background: rgb(var(--accent-rgb) / 0.22); color: var(--text-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.14) var(--accent); }
+:root[data-ui="polish"] .section-picker-tv .section-choice[aria-pressed="true"] .section-choice-tick { background: var(--accent); }
+:root[data-ui="polish"] .section-picker-tv .section-choice[aria-pressed="false"] .section-choice-icon { opacity: 0.55; }
+:root[data-ui="polish"] .section-picker-tv .section-choice:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.04); }
+:root[data-ui="polish"] .section-picker-tv .section-choice[aria-pressed="true"]:focus-visible { box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .setup-tv { display: flex; flex-direction: column; width: 100%; max-width: calc(var(--em) * 70); margin: 0 auto; }
+:root[data-ui="polish"] .setup-tv .setup-lead { margin: 0 0 calc(var(--em) * 1); color: var(--text-2); font-size: var(--fs-2); }
+:root[data-ui="polish"] .setup-tv .setup-count { color: var(--text-3, var(--text-2)); margin-right: 0.4em; }
+:root[data-ui="polish"] .setup-tv .setup-order { margin: 0 0 calc(var(--em) * 0.4); color: var(--text-1); font-size: var(--fs-2); font-weight: 600; }
+:root[data-ui="polish"] .setup-tv .tv-lang-grid { padding-left: 0; padding-right: 0; }
+@media (max-width: 899px) {
+  :root[data-ui="polish"] .section-picker-tv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :root[data-ui="polish"] .section-picker-tv .section-choice { min-height: calc(var(--em) * 6); }
+}

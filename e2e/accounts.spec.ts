@@ -117,7 +117,7 @@ test.describe("accounts and profiles", () => {
     await phone.getByTestId("menu-profiles").click();
     for (const name of ["Maya", "Sam", "Noa", "Kim"]) {
       await phone.getByTestId("profile-add").click();
-      await expect(phone.locator('[data-testid^="avatar-"]')).toHaveCount(12); // twelve pictures to choose from
+      await expect(phone.locator('[data-testid^="avatar-"]')).toHaveCount(AVATAR_IDS.length); // every picture to choose from (24 since 18 Nov)
       if (name === "Maya") {
         const picture = phone.getByTestId(`avatar-${AVATAR_IDS[7]}`);
         await picture.click();
@@ -706,7 +706,7 @@ test.describe("profiles made and changed on the TV itself", () => {
 
     // Removed: the question lands the remote on the answer that keeps it, and that answer is the way back.
     await tv.getByTestId("profile-Noa").click();
-    await tv.getByTestId(`avatar-${AVATAR_IDS[7]}`).focus();
+    await tv.getByTestId(`avatar-${AVATAR_IDS[AVATAR_IDS.length - 1]}`).focus(); // (a picture of the last row)
     await tv.keyboard.press("ArrowDown"); // from the pictures to Save or Cancel, not past them to the wide Delete
     await expect(tv.locator('[data-testid="profile-save"]:focus, [data-testid="profile-cancel"]:focus')).toHaveCount(1);
     await tv.getByTestId("profile-delete").click();

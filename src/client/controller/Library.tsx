@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ShownTitle } from "../shared/Shown";
-import { forChildren, LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibraryRow, type LibrarySection, type PlayHint } from "../../shared";
+import { forChildren, isWanted, LibraryItemsSchema, LibrarySchema, sectionOf, wantedSections, type Library as LibraryData, type LibraryItem, type LibraryRow, type LibrarySection, type PlayHint } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
@@ -138,17 +138,29 @@ export function Library({
   const { settings } = useProfileData();
   const child = settings.child === true;
   const holding = useProfileHold();
-  const pageSection = child ? "cartoon" : searchPage || filter === "all" ? undefined : FILTER_SECTION[filter];
+  /** The sections the profile watches (its `sections` setting; null: all): the others have no filter and no rows, as on the TV. */
+  const wantedKey = (settings.sections ?? []).join(",");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mine = useMemo(() => (child ? null : wantedSections(settings)), [child, wantedKey]);
+  const filters = useMemo(() => (["all", "movies", "series", "cartoons", "anime"] as const).filter((each) => each === "all" || !mine || mine.has(FILTER_SECTION[each])), [mine]);
+  // (The filter of a section the profile does not watch - kept from another profile - is All.)
+  const shownFilter: Filter = filters.includes(filter) ? filter : "all";
+  const pageSection = child ? "cartoon" : searchPage || shownFilter === "all" ? undefined : FILTER_SECTION[shownFilter];
   const displayedRows = useMemo(() => {
     const rows = pageRows(feeding.data, pageSection);
-    const inSection = pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows;
+    const inSection = pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows.filter((row) => isWanted(mine, row));
     return child ? inSection.map((row) => ({ ...row, items: row.items.filter((item) => forChildren(item, row)) })).filter((row) => row.items.length > 0) : inSection;
-  }, [feeding.data, pageSection, child]);
+  }, [feeding.data, pageSection, child, mine]);
   // (Some rows are wide cards, by the same rule as on the TV: see shared/shapes.ts.)
   const wideRows = useMemo(() => landscapeRows(displayedRows), [displayedRows]);
   const because = useMemo(
-    () => (child ? liked.map((like) => ({ ...like, items: like.items.filter((item) => forChildren(item)) })).filter((like) => like.items.length > 0) : liked),
-    [liked, child],
+    () =>
+      child
+        ? liked.map((like) => ({ ...like, items: like.items.filter((item) => forChildren(item)) })).filter((like) => like.items.length > 0)
+        : mine
+          ? liked.map((like) => ({ ...like, items: like.items.filter((item) => isWanted(mine, item)) })).filter((like) => like.items.length > 0)
+          : liked,
+    [liked, child, mine],
   );
   const shownAnswers = useMemo(() => (answers && child ? onlyForChildren(answers) : answers), [answers, child]);
 
@@ -335,8 +347,8 @@ export function Library({
 
       {!searchPage && !child && answers === null && (
         <div className="lib-pills" role="group" aria-label={t("library.filter")}>
-          {(["all", "movies", "series", "cartoons", "anime"] as const).map((each) => (
-            <button key={each} type="button" className="lib-pill" aria-pressed={filter === each} onClick={() => setFilter(each)} data-testid={`filter-${each}`}>
+          {filters.map((each) => (
+            <button key={each} type="button" className="lib-pill" aria-pressed={shownFilter === each} onClick={() => setFilter(each)} data-testid={`filter-${each}`}>
               {t(`library.${each}`)}
             </button>
           ))}
@@ -390,7 +402,7 @@ export function Library({
       ) : (
         <>
           {heroItem && <Hero item={heroItem} toggle={toggleOf(heroItem)} onOpen={onOpen} {...(onPlay ? { onPlay } : {})} />}
-          {(filter === "all" || child) &&
+          {(shownFilter === "all" || child) &&
             because.map((like) => (
               <div className="lib-row" key={`because:${like.key}`} data-testid="library-because">
                 <h3>{t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title })}</h3>

@@ -329,6 +329,36 @@ describe("rowsOfPage: the four sections", () => {
     expect(rowsOfPage("cartoons", data({ rows: plain }))).toEqual([]);
     expect(rowsOfPage("anime", data({ rows: [...plain, ...cartoons] }))).toEqual([]);
   });
+
+  it("leaves the sections a profile does not watch out of Home: their rows, their categories, and the titles like one it watched", () => {
+    const wanted = new Set<LibrarySection>(["movie", "anime"]);
+    const home = titles("home", { wanted });
+    expect(ids(home)).toEqual(["r0", "r2", "r4", "a0", "a1", "a2", "a3", "a4", "a5"]);
+    const categories = home.find((r) => r.layout === "categories")!;
+    expect(categories.entries.length).toBeGreaterThan(0);
+    expect(categories.entries.map((entry) => entry.id).filter((id) => /^(r[135]|c\d)$/.test(id))).toEqual([]);
+
+    const like = { key: "k", title: "x", why: "watched" as const, items: [item("film", "movie"), item("show", "series"), item("toon", "movie", { section: "cartoon" }), item("ani", "series", { section: "anime" })] };
+    const because = titles("home", { wanted, because: [like] }).find((r) => r.id.startsWith("because:"))!;
+    expect(because.entries.map((entry) => entry.id)).toEqual(["film", "ani"]);
+    // (a row of which nothing is left is no row)
+    expect(titles("home", { wanted: new Set<LibrarySection>(["cartoon"]), because: [{ ...like, items: [item("film", "movie")] }] }).some((r) => r.id.startsWith("because:"))).toBe(false);
+  });
+
+  it("keeps what the profile is part way through and what it saved, whatever section they are in, and shows a child's profile the cartoons whatever it says", () => {
+    const wanted = new Set<LibrarySection>(["movie"]);
+    const home = titles("home", { wanted, progress: [card("https://x.example/a0-0", { season: 1, episode: 2 })], list: [saved("https://x.example/c0-0")] });
+    expect(home[0]!.id).toBe("continue");
+    expect(home.some((r) => r.id.startsWith("list:"))).toBe(true);
+    // (all of them, as before, for a profile that chose nothing)
+    expect(ids(titles("home", { wanted: null }))).toEqual(everything.map((r) => r.id));
+  });
+
+  it("lists only the categories of the sections a profile watches", () => {
+    const wanted = new Set<LibrarySection>(["series", "cartoon"]);
+    const all = gridOf({ kind: "categories" }, data({ rows: everything, wanted }))!;
+    expect(all.entries.map((e) => e.id).sort()).toEqual(["c0", "c1", "c2", "c3", "c4", "c5", "r1", "r3", "r5"]);
+  });
 });
 
 describe("gridOf", () => {
