@@ -107,11 +107,23 @@ function heard(data: unknown): void {
   }
 }
 
+/**
+ * In the app a page is not zoomed with two fingers (the owner, 17 and 18 Nov: a pinch only left it zoomed in by mistake). The app from 0.3.1 turns the
+ * WebView's own zoom off; the page says so too, for the apps before it and whatever a WebView makes of its settings: the viewport does not scale, and a
+ * touch only pans (`touch-action`, which holds for everything in the page).
+ */
+export function noPinchZoom(doc: Document = document): void {
+  const viewport = doc.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  if (viewport && !/user-scalable/.test(viewport.content)) viewport.content = `${viewport.content}, maximum-scale=1, user-scalable=no`;
+  doc.documentElement.style.touchAction = "pan-x pan-y";
+}
+
 let started = false;
 /** The page says hello to the app (once a page; the app answers in a moment). */
 function start(): void {
   if (started) return;
   started = true;
+  if (inKinoApp()) noPinchZoom();
   const app = messages();
   if (app) {
     const listener = (event: { data: unknown }) => heard(event.data);

@@ -18,6 +18,12 @@ export const PASSWORD_MIN = 0;
 export const AVATAR_IDS = ["fox", "cat", "panda", "owl", "bear", "rabbit", "frog", "penguin", "robot", "alien", "ghost", "monster"] as const;
 export type AvatarId = (typeof AVATAR_IDS)[number];
 export const AvatarIdSchema = z.enum(AVATAR_IDS);
+/**
+ * A picture as a screen is *told* of it (its own profiles, a friend, somebody in a party): one it does not know - a picture added after this screen's
+ * page was loaded - is shown as the first, rather than the whole answer being refused (and the screen signed out, or its Friends page empty).
+ * What a screen *asks for* (a new profile, a change) is still one of the pictures there are.
+ */
+export const AvatarSeenSchema = AvatarIdSchema.catch(AVATAR_IDS[0]);
 
 /** The languages of the website itself. */
 export const UI_LANGUAGES = ["en", "ro", "it"] as const;
@@ -53,7 +59,7 @@ export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");
 /** The number that goes with a name, "Sam#2", to tell the profiles of one name apart wherever they are (see `tagLabel`). */
 export const TagNumberSchema = z.number().int().min(1).max(999_999);
-export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarIdSchema, tag: TagNumberSchema.optional() });
+export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarSeenSchema, tag: TagNumberSchema.optional() });
 export type Profile = z.infer<typeof ProfileSchema>;
 export const NewProfileSchema = z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema });
 export const ProfilePatchSchema = NewProfileSchema.partial();

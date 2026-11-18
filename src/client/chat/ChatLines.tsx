@@ -1,4 +1,5 @@
 import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { ShownTitle } from "../shared/Shown";
 import { createPortal } from "react-dom";
 import type { ChatLine, ChatReaction, LibraryItem } from "../../shared";
 import { useProfileData } from "../account/store";
@@ -1007,7 +1008,7 @@ function WithTitle({ line, found, remote, name, onOpenTitle, children }: SaidPro
     <>
       <Poster className="chat-card-art" title={item.title} image={item.image} />
       <span className="chat-card-text" data-full={(where && rated) || undefined}>
-        <b className="chat-card-name">{item.title}</b>
+        <b className="chat-card-name"><ShownTitle of={item} /></b>
         {where ? (
           <small className="chat-card-where" data-testid="chat-card-where">
             {[item.year, where].filter(Boolean).join(" · ")}

@@ -52,7 +52,7 @@ export function answerUnroutable(error: FastifyError, request: FastifyRequest, r
 const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/title", "/api/library/episodes", "/api/library/seasons", "/api/anime/skip"];
 
 /** The library's routes that page through the shelves: more rows are asked for as a page is scrolled, and more titles of one row. Few answers are kept for as many as can be asked. */
-const BROWSE_ASKS = ["/api/library/rows", "/api/library/more"];
+const BROWSE_ASKS = ["/api/library/rows", "/api/library/more", "/api/library/names"];
 
 /**
  * The routes that make this server fetch from another site for whoever asks (the library's, when what it keeps has gone out of date), and Google's way back from a

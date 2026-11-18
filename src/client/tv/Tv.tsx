@@ -62,6 +62,7 @@ import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
 import { nearTheEnd } from "./preloadNext";
 import { AUTO_SKIP_SECONDS, FRESH_MS, nextButtonFrom, useSkipSegment, useSkipTimes, type SkipControl } from "./skip";
+import { useShown } from "../shared/names";
 import { Follower } from "./sync";
 import {
   defaultSyncMode,
@@ -1794,6 +1795,8 @@ export function Tv() {
   const previous = previousEpisode(series);
   const rawTitle = currentMedia?.title || APP_NAME;
   const mainTitle = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
+  // (Named in the viewer's language over the picture, where the movie database has the name: shared/names.ts. What is kept of it stays as it was.)
+  const shownMain = useShown(currentMedia?.page ? { url: currentMedia.page, title: mainTitle } : null).title || mainTitle;
   // What the episode is called, asked of the library the way the Episodes list asks (by the first episode of its season), so the two share one answer.
   const seasonLink = useMemo(
     () => (series ? (groupBySeason(series.episodes ?? []).find((group) => group.season === series.season)?.episodes[0]?.url ?? currentMedia?.page) : undefined),
@@ -1931,7 +1934,7 @@ export function Tv() {
 
       {unlocked && showVideo && finished && (
         <EndCard
-          title={mainTitle}
+          title={shownMain}
           subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
           page={currentMedia?.page}
           hasNext={Boolean(next)}
@@ -1947,7 +1950,7 @@ export function Tv() {
 
       {unlocked && showVideo && failed && (
         <ErrorCard
-          title={mainTitle}
+          title={shownMain}
           message={friendlyError(player.error)}
           onRetry={retryPlayback}
           onLibrary={() => {
@@ -1963,7 +1966,7 @@ export function Tv() {
           visible={controlsVisible && !lookMenu && !startingWaits}
           hideWait={startingWaits}
           player={player}
-          title={mainTitle}
+          title={shownMain}
           subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
           badge={series ? `S${series.season}:E${series.episode}` : ""}
           episodeName={episodeTitle}

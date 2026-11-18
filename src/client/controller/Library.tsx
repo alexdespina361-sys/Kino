@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ShownTitle } from "../shared/Shown";
 import { forChildren, LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibraryRow, type LibrarySection, type PlayHint } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
@@ -520,7 +521,7 @@ export function Tile({ item, score, toggle, onOpen, wide }: { item: LibraryItem;
           {score !== undefined && <ScoreBadge score={score} />}
           {toggle.inList && <SavedMark />}
         </Poster>
-        <span className="lib-title">{item.title}</span>
+        <span className="lib-title"><ShownTitle of={item} /></span>
       </button>
     </div>
   );
@@ -539,7 +540,7 @@ function Result({ item, score, toggle, onOpen }: { item: LibraryItem; score: num
           {score !== undefined && <ScoreBadge score={score} />}
           {toggle.inList && <SavedMark />}
         </Poster>
-        <span className="lib-title">{item.title}</span>
+        <span className="lib-title"><ShownTitle of={item} /></span>
         {meta && <span className="lib-year">{meta}</span>}
       </button>
     </div>

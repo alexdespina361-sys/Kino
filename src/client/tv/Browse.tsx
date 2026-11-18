@@ -33,6 +33,7 @@ import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { AboutText } from "./AboutText";
+import { shownTitle, useShown } from "../shared/names";
 import { aboutRows, useAbout } from "../shared/about";
 import { takeStrayAddress } from "../shared/strayAddress";
 import { ownTitles, useChildGate } from "../shared/childGate";
@@ -1769,15 +1770,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               </div>
             ) : shown && !compact ? (
               <>
-                {heroPoster && <Poster key={`poster-${shown.entry.id}`} className="tv-hero-poster" title={shown.entry.title} image={heroPoster} seed={shown.entry.id} />}
+                {heroPoster && <Poster key={`poster-${shown.entry.id}`} className="tv-hero-poster" title={shownTitle(shown.entry)} image={heroPoster} seed={shown.entry.id} />}
               <div className="tv-hero-text" key={shown.entry.id}>
                 {/* (Not "Browse by category": the row under it says that, one line away - the judge, 16 Nov.) */}
                 <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.categories") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
-                  {shown.entry.title}
+                  <ShownName of={shown.entry} />
                 </h1>
                 <p className="tv-hero-meta">{[shown.entry.year, shown.entry.note, kindWord(shown.entry)].filter(Boolean).join("  ·  ")}</p>
-                {shown.entry.description && <p className="tv-hero-about">{shown.entry.description}</p>}
+                <HeroAbout entry={shown.entry} />
                 <div className="tv-hero-actions">
                   {actions.map((action, col) => (
                     <button
@@ -2063,7 +2064,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {detail && (
         // A click on the empty part of the page closes it, as Back does (but not a touch: see `closeBesideIt`).
-        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detailArt)} onClick={closeBesideIt}>
+        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={shownTitle(detail.entry)} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detailArt)} onClick={closeBesideIt}>
           {!compact && <DetailArt image={detailArt} />}
           {/* The page scrolls (a show's episodes lie under what a film's page is all of); the picture and the Close button stay. (On a phone held upright the picture is the page's own, at its top, and goes up with it.) */}
           <div className="tv-detail-scroll" onClick={closeBesideIt} onFocus={scrollPage}>
@@ -2072,7 +2073,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               <div className="tv-detail-text">
                 <p className="tv-hero-eyebrow">{detail.label}</p>
                 <h1 className="tv-detail-title" data-testid="tv-detail-title">
-                  {detail.entry.title}
+                  <ShownName of={detail.entry} />
                 </h1>
                 <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, kindWord(detail.entry)].filter(Boolean).join("  ·  ")}</p>
                 {/* (Above the buttons, as what the movie database knows is: the page stands on its foot, so what comes after it has opened grows upwards and Play stays where it was.) */}
@@ -2082,7 +2083,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   </p>
                 )}
                 {about && <AboutFacts about={about} hasRoDub={detail.entry.hasRoDub || about.hasRoDub} />}
-                {detail.entry.description && <AboutText text={detail.entry.description} className="tv-detail-about" />}
+                <DetailAbout entry={detail.entry} />
                 {about && <AboutPeople about={about} />}
                 <div className="tv-hero-actions">
                   {overviewActions(detail.entry, ratingsOn, friends.on, handHeld(), several).map((action, col) => (
@@ -2349,12 +2350,29 @@ interface Corner {
   run: () => void;
 }
 
+/** A title's name in the viewer's language (shared/names.ts), where it is the page's heading. */
+function ShownName({ of }: { of: Entry }) {
+  return <>{useShown(of).title}</>;
+}
+
+/** A title's description in the viewer's language, in the banner of the page of rows and on the title's own page. */
+function HeroAbout({ entry }: { entry: Entry }) {
+  const { description } = useShown(entry);
+  return description ? <p className="tv-hero-about">{description}</p> : null;
+}
+function DetailAbout({ entry }: { entry: Entry }) {
+  const { description } = useShown(entry);
+  return description ? <AboutText text={description} className="tv-detail-about" /> : null;
+}
+
 /**
  * One title (or category) of a row, in the shape its row asks for. A phone held upright (`compact`) shows an upright poster for every title but the cards of
  * what is part way through and the rows of wide cards, and has no room for the numbers of a ranking behind them: its titles are named like the others.
  */
 function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, score, onArrive, onPress }: { entry: Entry; layout: Layout; landscape: boolean; compact: boolean; rank: number; pos: Pos; corner: Corner | undefined; score: number | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
   const [broken, setBroken] = useState(false);
+  // (A title is named in the viewer's language where the movie database has its name in it; what is not a title - a category, a person - is as it is.)
+  const name = useShown(isTitle(entry) ? entry : null).title || entry.title;
   const hue = hueOf(entry.id);
   const layout: Layout = compact && asked === "ranked" ? "wide" : asked;
   // A title is shown by its poster, the picture it is known by; only the card of what is part way through is wide (a still of where it was left), and the
@@ -2380,7 +2398,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
       onPress();
     },
     onFocus: (event: FocusEvent<HTMLElement>) => onArrive(event.currentTarget),
-    title: entry.title,
+    title: name,
   };
 
   if (layout === "categories") {
@@ -2437,7 +2455,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
 
   const under = entry.note ?? entry.year;
   return (
-    <button className={`tv-tile tv-tile-${layout}${poster ? " tv-tile-poster" : ""}${wideCard ? " tv-tile-landscape" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? entry.title : undefined} {...common}>
+    <button className={`tv-tile tv-tile-${layout}${poster ? " tv-tile-poster" : ""}${wideCard ? " tv-tile-landscape" : ""}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? name : undefined} {...common}>
       {layout === "ranked" && (
         <span className={`tv-rank${rank > 9 ? " tv-rank-wide" : ""}`} aria-hidden="true">
           <b>{rank}</b>
@@ -2449,7 +2467,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
             <img loading="lazy" {...posterSizes(picture)} src={picture} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
           ) : (
             <span className="tv-tile-initial" aria-hidden="true">
-              {entry.title.trim().charAt(0).toUpperCase()}
+              {name.trim().charAt(0).toUpperCase()}
             </span>
           )}
           {layout === "continue" && (
@@ -2469,7 +2487,7 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
             </span>
           )}
         </span>
-        {layout !== "ranked" && <span className="tv-tile-name">{entry.title}</span>}
+        {layout !== "ranked" && <span className="tv-tile-name">{name}</span>}
         {layout !== "ranked" && under && <span className={entry.note ? "tv-tile-year" : "tv-tile-year is-year"}>{under}</span>}
       </span>
     </button>
@@ -2483,15 +2501,16 @@ function Tile({ entry, layout: asked, landscape, compact, rank, pos, corner, sco
  */
 function Feature({ entry, play, list, kept, onOpen, onPlay, onList }: { entry: Entry; play: ReactNode; list: ReactNode; kept: boolean; onOpen: () => void; onPlay: () => void; onList: () => void }) {
   const t = useT();
+  const name = useShown(entry).title;
   const plays = entry.kind === "movie";
   const meta = [entry.year, entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined].filter(Boolean).join(" · ");
   return (
     <div className="tv-feature" data-testid="tv-feature">
-      <button type="button" className="tv-feature-open" onClick={onOpen} aria-label={`${t("rows.open")} ${entry.title}`} data-testid="tv-feature-open">
-        <Poster className="tv-feature-art" title={entry.title} image={sharper(entry.image) ?? entry.backdrop} seed={entry.id} />
+      <button type="button" className="tv-feature-open" onClick={onOpen} aria-label={`${t("rows.open")} ${name}`} data-testid="tv-feature-open">
+        <Poster className="tv-feature-art" title={name} image={sharper(entry.image) ?? entry.backdrop} seed={entry.id} />
       </button>
       <div className="tv-feature-text">
-        <h2 className="tv-feature-title">{entry.title}</h2>
+        <h2 className="tv-feature-title">{name}</h2>
         {meta && <p className="tv-feature-meta">{meta}</p>}
         <div className="tv-feature-actions">
           <button type="button" className="tv-hero-button is-primary" onClick={plays ? onPlay : onOpen} data-testid="tv-feature-play">

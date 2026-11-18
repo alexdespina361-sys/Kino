@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AvatarIdSchema, ListItemSchema, ListNameItemSchema, ProfileNameSchema, RatingItemSchema, TagNumberSchema, type Settings } from "./account";
+import { AvatarSeenSchema, ListItemSchema, ListNameItemSchema, ProfileNameSchema, RatingItemSchema, TagNumberSchema, type Settings } from "./account";
 import { isHttpUrl } from "./media";
 
 /**
@@ -272,7 +272,7 @@ const shownText = (min: number, max: number) => z.string().max(1000).transform(p
 export const FriendSchema = z.object({
   id: IdSchema,
   name: ProfileNameSchema,
-  avatar: AvatarIdSchema,
+  avatar: AvatarSeenSchema,
   /** The number that goes with the name (see `tagLabel`). */
   tag: TagNumberSchema.optional(),
   since: z.number(),
@@ -392,7 +392,7 @@ export const OpenInviteSchema = z.object({ code: z.string().max(20), expiresAt: 
 export type OpenInvite = z.infer<typeof OpenInviteSchema>;
 
 /** Somebody who is not (yet) a friend, as a profile is shown them: who, with the tag that names them. */
-export const PersonSchema = z.object({ id: IdSchema, name: ProfileNameSchema, avatar: AvatarIdSchema, tag: TagNumberSchema });
+export const PersonSchema = z.object({ id: IdSchema, name: ProfileNameSchema, avatar: AvatarSeenSchema, tag: TagNumberSchema });
 export type Person = z.infer<typeof PersonSchema>;
 /** Somebody asking to be friends, and since when. */
 export const RequestSchema = z.object({ from: PersonSchema, at: z.number() });
@@ -415,7 +415,8 @@ export type ChatNotice = z.infer<typeof ChatNoticeSchema>;
  */
 export const FriendsStateSchema = z.object({
   friends: z.array(FriendSchema),
-  inbox: z.array(InboxItemSchema),
+  // (An item of a kind this screen does not know - one added after its page was loaded - is left out, rather than the whole answer being refused.)
+  inbox: z.array(z.unknown()).transform((items) => items.flatMap((item) => { const known = InboxItemSchema.safeParse(item); return known.success ? [known.data] : []; })),
   activity: z.array(ActivityItemSchema),
   invites: z.array(OpenInviteSchema),
   requests: z.array(RequestSchema),
@@ -432,7 +433,7 @@ export const KeptFriendsSchema = z.object({ friends: z.array(KeptFriendSchema) }
 export type KeptFriends = z.infer<typeof KeptFriendsSchema>;
 
 /** Who is behind a code, before it is used. */
-export const InviteViewSchema = z.object({ code: z.string().max(20), from: z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema }) });
+export const InviteViewSchema = z.object({ code: z.string().max(20), from: z.object({ name: ProfileNameSchema, avatar: AvatarSeenSchema }) });
 export type InviteView = z.infer<typeof InviteViewSchema>;
 export const AcceptSchema = z.object({ code: z.string().min(1).max(40) });
 export const AcceptedSchema = z.object({ friend: FriendSchema });

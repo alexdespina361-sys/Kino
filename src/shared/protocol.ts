@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AvatarIdSchema, TagNumberSchema } from "./account";
+import { AvatarSeenSchema, TagNumberSchema } from "./account";
 import { CaptionStyleSchema } from "./captions";
 import { MAX_ALTERNATES, NormalizedMediaSchema, PlayHintSchema } from "./media";
 
@@ -208,7 +208,7 @@ export const MAX_LINK_LENGTH = 2048;
 export const MAX_LAG_S = 2;
 
 /** Who is signed in on a screen, as the party sees them: the profile's name, picture and tag. Only what the server has checked (see TV_PROFILE), and only for a profile that lets friends find it. */
-export const PartyProfileSchema = z.object({ name: z.string().max(60), avatar: AvatarIdSchema, tag: TagNumberSchema });
+export const PartyProfileSchema = z.object({ name: z.string().max(60), avatar: AvatarSeenSchema, tag: TagNumberSchema });
 export type PartyProfile = z.infer<typeof PartyProfileSchema>;
 
 /**
