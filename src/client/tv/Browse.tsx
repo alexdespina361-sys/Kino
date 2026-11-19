@@ -1,5 +1,5 @@
 import { Fragment, memo, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode, type RefObject, useCallback } from "react";
-import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, sectionOf, tagLabel, titleLink, wantedSections, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, LibraryItemsSchema, LibrarySchema, listKey, listOf, MAX_LISTS, ratingsShown, savedKeys, sectionOf, tagLabel, titleLink, wantedSections, type Library, type LibraryItem, type ListInfo, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -167,8 +167,7 @@ function Thumb({ on }: { on: unknown }) {
 
 const scoreMenuRows = (scores: number, columns: number) => [1, ...Array.from({ length: Math.ceil((scores - 1) / columns) }, (_, at) => Math.min(columns, scores - 1 - at * columns))];
 
-function ScorePick({ scores, chosen, countOf, row, columns, open, onOpen, onPick, onFocusButton }: { scores: ReadonlyArray<number | undefined>; chosen: number | undefined; countOf: (score: number | undefined) => number; row: number; columns: number; open: boolean; onOpen: (open: boolean) => void; onPick: (score: number | undefined) => void; onFocusButton: () => void }) {
-  const t = useT();
+function useDropMenu(open: boolean, onOpen: (open: boolean) => void) {
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const shut = () => {
@@ -184,6 +183,67 @@ function ScorePick({ scores, chosen, countOf, row, columns, open, onOpen, onPick
     document.addEventListener("pointerdown", away, true);
     return () => document.removeEventListener("pointerdown", away, true);
   }, [open, onOpen]);
+  const onBlur = (event: FocusEvent) => {
+    if (open && event.relatedTarget instanceof Node && !box.current?.contains(event.relatedTarget)) onOpen(false);
+  };
+  return { box, button, shut, onBlur };
+}
+
+function ListPick({ lists, chosen, countOf, row, open, onOpen, onPick, onFocusButton }: { lists: readonly ListInfo[]; chosen: string; countOf: (id: string) => number; row: number; open: boolean; onOpen: (open: boolean) => void; onPick: (id: string) => void; onFocusButton: () => void }) {
+  const t = useT();
+  const { box, button, shut, onBlur } = useDropMenu(open, onOpen);
+  const current = lists.find((info) => info.id === chosen) ?? lists[0];
+  const name = current ? listName(current) : "";
+  return (
+    <div ref={box} className="tv-score-pick tv-list-pick" onBlur={onBlur}>
+      <button
+        ref={button}
+        type="button"
+        className="tv-choice tv-score-button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`${t("rows.myList")}: ${name}`}
+        data-testid="list-pick"
+        data-zone="chips"
+        data-row={row}
+        data-col={0}
+        onClick={() => onOpen(!open)}
+        onFocus={onFocusButton}
+      >
+        <span className="tv-list-pick-name">{name}</span>
+        <ChevronIcon className="tv-score-chevron" />
+      </button>
+      {open && (
+        <div className="tv-score-menu" role="listbox" aria-label={t("rows.myList")} data-testid="list-pick-menu">
+          {lists.map((info, index) => (
+            <button
+              key={info.id}
+              type="button"
+              role="option"
+              aria-selected={info.id === chosen}
+              className="tv-score-option"
+              data-testid={`list-chip-${info.id}`}
+              data-zone="chips"
+              data-row={row + 1 + index}
+              data-col={0}
+              onClick={() => {
+                onPick(info.id);
+                shut();
+              }}
+            >
+              <span className="tv-score-name">{listName(info)}</span>
+              <span className="tv-score-count">{countOf(info.id)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScorePick({ scores, chosen, countOf, row, columns, open, onOpen, onPick, onFocusButton }: { scores: ReadonlyArray<number | undefined>; chosen: number | undefined; countOf: (score: number | undefined) => number; row: number; columns: number; open: boolean; onOpen: (open: boolean) => void; onPick: (score: number | undefined) => void; onFocusButton: () => void }) {
+  const t = useT();
+  const { box, button, shut, onBlur } = useDropMenu(open, onOpen);
   const label = (score: number | undefined) =>
     score === undefined ? (
       t("rating.filterAnyScore")
@@ -193,13 +253,7 @@ function ScorePick({ scores, chosen, countOf, row, columns, open, onOpen, onPick
       </>
     );
   return (
-    <div
-      ref={box}
-      className="tv-score-pick"
-      onBlur={(event) => {
-        if (open && event.relatedTarget instanceof Node && !box.current?.contains(event.relatedTarget)) onOpen(false);
-      }}
-    >
+    <div ref={box} className="tv-score-pick" onBlur={onBlur}>
       <button
         ref={button}
         type="button"
@@ -733,7 +787,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const tapOf = (entry: Entry) => listTap(lists, saved, entry.url);
   const canAdd = lists.length < MAX_LISTS;
   const shownId = shownList(view, lists).id;
-  const listChips = several ? lists : [];
+  const listPicking = few && several;
+  const [listOpen, setListOpen] = useState(false);
+  useEffect(() => setListOpen(false), [view.kind, listPicking]);
+  const listChips = several && !listPicking ? lists : [];
+  const listRow = (listPicking ? 1 : listChips.length) + (canAdd ? 1 : 0);
+  const newAt = listPicking ? 1 : listChips.length;
+  const listCount = (id: string) => list.filter((item) => listOf(item) === id).length;
   const editedId = overlay?.kind === "edit" ? overlay.id : null;
   const editedAt = editedId ? lists.findIndex((info) => info.id === editedId) : -1;
 
@@ -902,7 +962,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     ...(sectionButtons ? { chips: [sectionChips.length] } : {}),
     ...(grid ? { grid: grid.sections ? sectionRows(grid.sections, gridColumns) : gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [searchFilters.length], results: resultRowsOf(resultColumns) } : {}),
-    ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
+    ...(view.kind === "list" ? { chips: [1, listRow, ...(listPicking && listOpen ? lists.map(() => 1) : [])] } : {}),
     ...(view.kind === "ratings" && ratingChipRows.length > 0 ? { chips: ratingChipRows } : {}),
     ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 6 : 4], foot: [1] } : {}),
     ...(detail
@@ -932,7 +992,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         : page.kind === "profile" && !latest.current.signedIn
           ? ["hero", ...CONTENT_ZONES]
           : CONTENT_ZONES;
-    const start = (zone: Zone): Pos => ({ zone, row: 0, col: zone === "chips" ? (page.kind === "friend" ? friendChip(page.tab) : Math.max(0, sectionChip(page, sectionChipsRef.current))) : 0 });
+    const start = (zone: Zone): Pos => ({ zone, row: zone === "chips" && page.kind === "list" ? 1 : 0, col: zone === "chips" ? (page.kind === "friend" ? friendChip(page.tab) : Math.max(0, sectionChip(page, sectionChipsRef.current))) : 0 });
     return zones.filter((zone) => zone !== leaving).map(start).find((pos) => find(root, pos)) ?? null;
   };
   const focusAt = (target: Target, leaving?: Zone) => {
@@ -1527,9 +1587,30 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         </div>
       ) : (
         <>
-          <h1 className="tv-view-title" data-testid="tv-view-title">
-            {grid.title}
-          </h1>
+          {view.kind === "list" ? (
+            <div className="tv-view-title-line">
+              <h1 className="tv-view-title" data-testid="tv-view-title">
+                {grid.title}
+              </h1>
+              <button
+                className="tv-choice tv-choice-round tv-title-edit"
+                data-testid="list-edit"
+                aria-label={t("lists.edit")}
+                title={t("lists.edit")}
+                data-zone="chips"
+                data-row={0}
+                data-col={0}
+                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: 0 } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 0 })}
+              >
+                <PencilIcon />
+              </button>
+            </div>
+          ) : (
+            <h1 className="tv-view-title" data-testid="tv-view-title">
+              {grid.title}
+            </h1>
+          )}
           {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
           {grid.hint && (
             <p className="tv-view-hint" data-testid="tv-view-hint">
@@ -1619,7 +1700,19 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         </p>
       )}
       {view.kind === "list" && (
-        <div className="tv-filters tv-filters-wrap" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+        <div className="tv-filters tv-filters-wrap tv-list-filters" data-pick={listPicking || undefined} role={listPicking ? "group" : "radiogroup"} aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+          {listPicking && (
+            <ListPick
+              lists={lists}
+              chosen={shownId}
+              countOf={listCount}
+              row={1}
+              open={listOpen}
+              onOpen={setListOpen}
+              onPick={selectList}
+              onFocusButton={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 1, col: 0 })}
+            />
+          )}
           {listChips.map((info, col) => (
             <button
               key={info.id}
@@ -1628,10 +1721,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               aria-checked={info.id === shownId}
               data-testid={`list-chip-${info.id}`}
               data-zone="chips"
-              data-row={0}
+              data-row={1}
               data-col={col}
               onClick={() => selectList(info.id)}
-              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col })}
+              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 1, col })}
             >
               {listName(info)}
             </button>
@@ -1641,25 +1734,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               className="tv-choice"
               data-testid="list-new"
               data-zone="chips"
-              data-row={0}
-              data-col={listChips.length}
-              onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: listChips.length } })}
-              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length })}
+              data-row={1}
+              data-col={newAt}
+              onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 1, col: newAt } })}
+              onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 1, col: newAt })}
             >
               <PlusIcon /> {t("lists.new")}
             </button>
           )}
-          <button
-            className="tv-choice"
-            data-testid="list-edit"
-            data-zone="chips"
-            data-row={0}
-            data-col={listChips.length + (canAdd ? 1 : 0)}
-            onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) } })}
-            onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: listChips.length + (canAdd ? 1 : 0) })}
-          >
-            <PencilIcon /> {t("lists.edit")}
-          </button>
         </div>
       )}
       {view.kind === "friend" && friend && (
@@ -2300,7 +2382,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               if (!made) return closeOverlay();
               selectList(made);
               setOverlay(null);
-              setPending({ zone: "chips", row: 0, col: lists.length });
+              setPending({ zone: "chips", row: 1, col: few ? 0 : lists.length });
             }}
             onCancel={leaveEdit}
             {...(editedAt > 0 && lists.length > 2
@@ -2312,7 +2394,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                     profileStore.deleteList(overlay.id!);
                     selectList(DEFAULT_LIST);
                     setOverlay(null);
-                    setPending({ zone: "chips", row: 0, col: 0 });
+                    setPending({ zone: "chips", row: 1, col: 0 });
                   }
                 : undefined
             }

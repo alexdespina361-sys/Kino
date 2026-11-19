@@ -77,11 +77,11 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, onMov
       )}
 
       <div className="editor-actions">
-        <button type="submit" className={buttonClass("main")} disabled={!name.trim()} data-testid="list-save" {...nav}>
-          {t("common.save")}
-        </button>
         <button type="button" className={buttonClass("plain")} onClick={onCancel} data-testid="list-cancel" {...nav}>
           {t("common.cancel")}
+        </button>
+        <button type="submit" className={buttonClass("main")} disabled={!name.trim()} data-testid="list-save" {...nav}>
+          {t("common.save")}
         </button>
       </div>
 

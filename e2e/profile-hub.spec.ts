@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { ratingKey } from "../src/shared";
 import { LATEST } from "../src/client/changelog/news";
+import { CHANGELOG } from "../src/client/changelog/notes";
 import { guestStorage, openDevice, openLibrary, openProfilePage, openProfilePlace, pressProfilePlace, test, withLibrary, type ProfilePlace } from "./helpers";
 
 const film = (n: number) => ({ id: `f${n}`, title: `Film number ${n}`, year: 1930 + n, kind: "movie", url: `/fixtures/sample.mp4?n=${n}` });
@@ -140,6 +141,29 @@ test.describe("the profile's page", () => {
     await expect(place(tv, "news")).toContainText(`Kino ${LATEST.version} ·`);
     await expect(place(tv, "news")).not.toContainText("New:");
     expect(await tv.evaluate(() => localStorage.getItem("kino.seenVersion"))).toBe(LATEST.version);
+  });
+
+  test("What's new shows six versions at first, and the button under them brings six more each time, the remote landing on the first new line", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await openProfilePage(tv);
+    await place(tv, "news").focus();
+    await tv.keyboard.press("Enter");
+    const versions = tv.getByTestId("tv-news").locator(".news-version");
+    const total = CHANGELOG.length;
+    expect(total).toBeGreaterThan(12);
+    await expect(versions).toHaveCount(6);
+    const more = tv.getByTestId("news-more");
+    await expect(more).toHaveText("Show older versions");
+    await versions.nth(5).locator("li").last().focus();
+    await tv.keyboard.press("ArrowDown");
+    await expect(more).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(versions).toHaveCount(12);
+    await expect(versions.nth(6).locator("li").first()).toBeFocused();
+    await expect(versions.nth(6)).toHaveAttribute("data-version", CHANGELOG[6]!.version);
+    for (let shown = 12; shown < total; shown += 6) await more.click();
+    await expect(versions).toHaveCount(total);
+    await expect(more).toHaveCount(0);
   });
 
   test("What's new fits a 720p screen in Italian, and a phone's width: nothing wider than the screen, the way back on it", async ({ browser }) => {

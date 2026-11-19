@@ -1291,6 +1291,10 @@
 .tv-friend-tabs { display: flex; gap: 0.2em; padding: 0.25em; border-radius: 0.7em; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
 .tv-friend-tabs > .tv-choice { flex: none; padding-inline: 1em; }
 .tv-filters-friend > .tv-choice-round { padding: 0.6em; border-radius: 50%; }
+.tv-view-title-line { display: flex; flex: none; align-items: center; gap: 0.6em; min-width: 0; }
+.tv-view-title-line > .tv-view-title { min-width: 0; overflow-wrap: anywhere; }
+.tv-title-edit { flex: none; padding: 0.6em; border-radius: 50%; }
+.tv-list-filters[data-pick="true"] { overflow: visible; }
 .tv-choice-primary { background: var(--accent); color: #fff; }
 .tv-choice-primary:hover { background: rgb(var(--accent-rgb) / 0.85); color: #fff; }
 .tv-badge { display: inline-grid; place-items: center; min-width: 1.5em; height: 1.5em; margin-left: 0.15em; padding: 0 0.4em; border-radius: 0.75em; background: var(--accent); color: #fff; font-size: 0.72em; font-weight: 700; line-height: 1; }

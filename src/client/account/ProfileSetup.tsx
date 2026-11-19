@@ -51,7 +51,8 @@ export function SectionPicker({ value, onChange, tv = false }: { value: readonly
 }
 
 export const sectionsShown = (chosen: readonly LibrarySection[] | undefined): LibrarySection[] => (chosen && chosen.length > 0 ? LIBRARY_SECTIONS.filter((section) => chosen.includes(section)) : [...LIBRARY_SECTIONS]);
-export const sectionsKept = (shown: readonly LibrarySection[]): LibrarySection[] | undefined => (shown.length >= LIBRARY_SECTIONS.length ? undefined : [...shown]);
+export const animeShown = (settings: { child?: boolean | undefined; sections?: readonly LibrarySection[] | undefined }): boolean => settings.child !== true && sectionsShown(settings.sections).includes("anime");
+export const sectionsKept =(shown: readonly LibrarySection[]): LibrarySection[] | undefined => (shown.length >= LIBRARY_SECTIONS.length ? undefined : [...shown]);
 
 function LanguagePicker({ chosen, onChange, tv }: { chosen: readonly string[]; onChange: (next: string[]) => void; tv: boolean }) {
   const t = useT();

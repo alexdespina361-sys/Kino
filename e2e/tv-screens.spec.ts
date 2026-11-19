@@ -1019,12 +1019,68 @@ test.describe("the library on the TV", () => {
 
     await tv.getByTestId("list-chip-favourites").focus();
     for (let i = 0; i < 13; i++) await tv.keyboard.press("ArrowRight");
-    await expect(tv.getByTestId("list-edit")).toBeFocused();
+    await expect(tv.getByTestId("list-chip-l010")).toBeFocused();
     const rightEdge = async () => {
-      const edit = (await tv.getByTestId("list-edit").boundingBox())!;
-      return edit.x + edit.width;
+      const last = (await tv.getByTestId("list-chip-l010").boundingBox())!;
+      return last.x + last.width;
     };
     await expect.poll(rightEdge).toBeLessThanOrEqual(1280);
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("list-edit")).toBeFocused();
+    await expect(tv.getByTestId("list-edit")).toHaveAccessibleName("Edit list");
+    expect(await tv.getByTestId("list-edit").textContent()).toBe("");
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.locator('[data-testid^="list-chip-"]:focus')).toHaveCount(1);
+  });
+
+  test("on a phone, several lists are one button that opens them with how many titles each holds; New list comes after it, the pencil by the list's name changes it, and Save is the second button", async ({ browser }) => {
+    const now = Date.now();
+    const seed = guestStorage({
+      listNames: [
+        { key: "la", at: now - 5000, name: "Weekend" },
+        { key: "lb", at: now - 4000, name: "Kids" },
+      ],
+      list: [{ key: "la|url:https://films.example/second", at: now - 3000, list: "la", id: "k2", title: "Kept Second", url: "https://films.example/second" }],
+    });
+    const tv = await openLibrary(browser, withLibrary(library), { width: 390, height: 844 }, seed);
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
+    await expect(tv.locator('[data-testid^="list-chip-"]')).toHaveCount(0);
+    const pick = tv.getByTestId("list-pick");
+    await expect(pick).toHaveText("Favourites");
+    const edit = tv.getByTestId("list-edit");
+    await expect(edit).toHaveAccessibleName("Edit list");
+    const name = (await tv.getByTestId("tv-view-title").boundingBox())!;
+    const pencil = (await edit.boundingBox())!;
+    expect(Math.abs(pencil.y + pencil.height / 2 - (name.y + name.height / 2)), "the pencil is on the name's line").toBeLessThan(14);
+    expect(pencil.x).toBeGreaterThan(name.x);
+    const button = (await pick.boundingBox())!;
+    const make = (await tv.getByTestId("list-new").boundingBox())!;
+    expect(Math.abs(make.y - button.y), "New list is beside the lists' button").toBeLessThan(4);
+    expect(make.x).toBeGreaterThan(button.x);
+
+    await pick.click();
+    const menu = tv.getByTestId("list-pick-menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("option")).toHaveText(["Favourites0", "Weekend1", "Kids0"]);
+    await expect(menu.getByRole("option", { name: /Favourites/ })).toHaveAttribute("aria-selected", "true");
+    await tv.getByTestId("list-chip-la").click();
+    await expect(menu).toHaveCount(0);
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Weekend");
+    await expect(pick).toHaveText("Weekend");
+    await expect(tiles(tv)).toHaveAttribute("title", "Kept Second");
+
+    await edit.click();
+    await expect(tv.getByTestId("list-name-input")).toHaveValue("Weekend");
+    await expect(tv.locator('[data-testid="list-editor"] > .editor-actions').first().locator("button")).toHaveText(["Cancel", "Save"]);
+    await tv.getByTestId("list-name-input").fill("Friday");
+    await tv.getByTestId("list-save").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Friday");
+    await expect(pick).toHaveText("Friday");
+
+    await pick.click();
+    await tv.mouse.click(5, 830);
+    await expect(menu).toHaveCount(0);
   });
 
   test("at twelve lists there is no New list, and the lists page and the question of which list say why", async ({ browser }) => {

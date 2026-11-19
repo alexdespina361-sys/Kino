@@ -1,11 +1,22 @@
+import { useEffect, useRef, useState } from "react";
 import { getLanguage, useT } from "../i18n";
 import { dayOf, linesOf, useNotes } from "./news";
 import "./news.css";
+
+const NEWS_STEP = 6;
 
 export function NewsList({ remote = false, className = "" }: { remote?: boolean; className?: string }) {
   const t = useT();
   const language = getLanguage();
   const notes = useNotes();
+  const [shown, setShown] = useState(NEWS_STEP);
+  const box = useRef<HTMLDivElement>(null);
+  const grown = useRef(false);
+  useEffect(() => {
+    if (!grown.current) return;
+    grown.current = false;
+    if (remote) box.current?.querySelectorAll<HTMLElement>(".news-version")[shown - NEWS_STEP]?.querySelector<HTMLElement>("li")?.focus();
+  }, [shown, remote]);
   const stop = remote ? { tabIndex: -1, "data-nav": true } : {};
   if (notes.status === "loading") {
     return (
@@ -24,9 +35,10 @@ export function NewsList({ remote = false, className = "" }: { remote?: boolean;
       </div>
     );
   }
+  const older = notes.notes.length - shown;
   return (
-    <div className={`news-list ${className}`} data-testid="news-list">
-      {notes.notes.map((note) => (
+    <div ref={box} className={`news-list ${className}`} data-testid="news-list">
+      {notes.notes.slice(0, shown).map((note) => (
         <section key={note.version} className="news-version" aria-labelledby={`news-${note.version}`} data-version={note.version}>
           <h2 id={`news-${note.version}`} className="news-head">
             <b>{t("news.version", { version: note.version })}</b> <span className="news-day">{dayOf(note.date, language)}</span>
@@ -40,6 +52,20 @@ export function NewsList({ remote = false, className = "" }: { remote?: boolean;
           </ul>
         </section>
       ))}
+      {older > 0 && (
+        <button
+          type="button"
+          className={remote ? "tv-action news-more" : "btn btn-block news-more"}
+          onClick={() => {
+            grown.current = true;
+            setShown((count) => count + NEWS_STEP);
+          }}
+          data-testid="news-more"
+          {...(remote ? { "data-nav": true } : {})}
+        >
+          {t("news.more")}
+        </button>
+      )}
     </div>
   );
 }
