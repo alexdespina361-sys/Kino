@@ -3,6 +3,7 @@ import { ACCENTS, DEVICE_NAME_MAX, friendChoices, friendSwitchWrites, preferredL
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { Avatar } from "../account/Avatar";
+import { wordTyped } from "../account/deleteWord";
 import { describeError, describePasswordError } from "../account/errors";
 import { GoogleMark } from "../account/GoogleButton";
 import { PasswordInput } from "../account/PasswordInput";
@@ -15,7 +16,7 @@ import { CHAT_FACTS } from "../chat/state";
 import { friendsApi } from "../friends/api";
 import { useFriends } from "../friends/FriendsProvider";
 import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
-import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { BulbIcon, CheckIcon, ChevronIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
 import { PinSetting } from "./Pin";
@@ -233,12 +234,29 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => void; grownUp: (action: () => void) => void }) {
+export function LabsPage() {
+  const t = useT();
+  const { settings, set } = useSettings();
+  const [linkBox, setLinkBox] = useLinkBox();
+  const child = settings.child === true;
+  return (
+    <div className="page-stack" data-testid="labs-page">
+      <Group help={t("settings.labsHelp")}>
+        <Rows>
+          <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
+          <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
+          {!child && <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />}
+        </Rows>
+      </Group>
+    </div>
+  );
+}
+
+export function SettingsPage({ onOpenFriends, onOpenLabs, grownUp }: { onOpenFriends: () => void; onOpenLabs: () => void; grownUp: (action: () => void) => void }) {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
   const account = useAccount();
-  const [linkBox, setLinkBox] = useLinkBox();
   const child = settings.child === true;
   return (
     <div className="page-stack" data-testid="settings-page">
@@ -274,32 +292,29 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
           <Switch label={t("settings.autoSkip")} checked={settings.autoSkip ?? false} onChange={(on) => set("autoSkip", on)} testId="auto-skip" />
         </Rows>
-        {animeShown(settings) && (
-          <>
-            <p className="group-label">{t("settings.animeAudio")}</p>
-            <div className="segmented pair" role="radiogroup" aria-label={t("settings.animeAudio")}>
-              <button role="radio" aria-checked={(settings.animeAudio ?? "jp") === "jp"} onClick={() => set("animeAudio", "jp")} data-testid="anime-audio-jp">
-                {t("settings.animeAudioJp")}
-              </button>
-              <button role="radio" aria-checked={settings.animeAudio === "eng"} onClick={() => set("animeAudio", "eng")} data-testid="anime-audio-eng">
-                {t("settings.animeAudioEng")}
-              </button>
-            </div>
-          </>
-        )}
       </Group>
       <SubtitleLanguages />
       {!child && (
         <Group title={t("settings.sections")} help={t("setup.sectionsHelp")}>
           <SectionPicker value={sectionsShown(settings.sections)} onChange={(next) => set("sections", sectionsKept(next))} />
+          {animeShown(settings) && (
+            <>
+              <p className="group-label">{t("settings.animeAudio")}</p>
+              <div className="segmented pair" role="radiogroup" aria-label={t("settings.animeAudio")}>
+                <button role="radio" aria-checked={(settings.animeAudio ?? "jp") === "jp"} onClick={() => set("animeAudio", "jp")} data-testid="anime-audio-jp">
+                  {t("settings.animeAudioJp")}
+                </button>
+                <button role="radio" aria-checked={settings.animeAudio === "eng"} onClick={() => set("animeAudio", "eng")} data-testid="anime-audio-eng">
+                  {t("settings.animeAudioEng")}
+                </button>
+              </div>
+            </>
+          )}
         </Group>
       )}
       <Group>
         <Rows>
           <Switch label={t("settings.titleNotices")} hint={t("settings.titleNoticesHelp")} checked={settings.titleNotices !== false} onChange={(on) => set("titleNotices", on ? undefined : false)} testId="title-notices-switch" />
-          {account.me && !child && (
-            <Switch label={t("settings.publicWatching")} hint={t("settings.publicWatchingHelp")} checked={settings.publicWatching !== false} onChange={(on) => set("publicWatching", on ? undefined : false)} testId="public-watching-switch" />
-          )}
         </Rows>
       </Group>
       <Group title={t("settings.childGroup")} help={t("settings.childHelp")}>
@@ -319,15 +334,17 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           />
         </Rows>
       </Group>
-      {account.me && account.profile && (!child || account.me.account.childPin) && <PinSetting />}
+      {account.me && account.profile && child && <PinSetting />}
       <FriendsGroup onOpen={onOpenFriends} />
-      <Group title={t("settings.labs")} help={t("settings.labsHelp")}>
-        <Rows>
-          <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
-          <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
-          {!child && <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />}
-        </Rows>
-      </Group>
+      <nav className="menu">
+        <button className="menu-row" onClick={onOpenLabs} data-testid="labs-open">
+          <span className="menu-icon">
+            <BulbIcon />
+          </span>
+          <span className="menu-label">{t("settings.labs")}</span>
+          <ChevronIcon />
+        </button>
+      </nav>
       {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}
     </div>
   );
@@ -481,7 +498,16 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
   const [changed, setChanged] = useState(false);
   const [changeProblem, setChangeProblem] = useState<string | null>(null);
   const [confirm, setConfirm] = useState("");
+  const [typed, setTyped] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const word = t("account.deleteWord");
+  const ready = wordTyped(typed, word);
+  const stopDeleting = () => {
+    setDeleting(false);
+    setTyped("");
+    setConfirm("");
+    setDeleteProblem(null);
+  };
   const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -503,6 +529,8 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
   };
   const remove = async (event: FormEvent) => {
     event.preventDefault();
+    if (!ready || busy) return;
+    if (googleOnly) return account.withGoogle("delete");
     setBusy(true);
     setDeleteProblem(null);
     try {
@@ -561,43 +589,47 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
         </Group>
       )}
 
-      <Group title={deleting ? t("account.delete") : undefined}>
-        {deleting && googleOnly ? (
-          <div className="auth-form">
-            <p className="muted">{t("account.deleteWarnGoogle")}</p>
-            <div className="editor-actions">
-              <button type="button" className="btn btn-danger" onClick={() => account.withGoogle("delete")} data-testid="delete-google">
-                <TrashIcon /> {t("account.deleteWithGoogle")}
-              </button>
-              <button type="button" className="btn" onClick={() => setDeleting(false)}>
-                {t("common.cancel")}
-              </button>
-            </div>
-          </div>
-        ) : deleting ? (
+      {deleting ? (
+        <Group title={t("account.delete")}>
           <form className="auth-form" onSubmit={remove} noValidate>
-            <p className="muted">{t("account.deleteWarn")}</p>
-            <Password label={t("auth.password")} value={confirm} onChange={setConfirm} autoComplete="current-password" testId="delete-password" />
+            <p className="muted">{t("account.deleteAll")}</p>
+            <label className="auth-field">
+              <span>{t("account.deleteType", { word })}</span>
+              <input
+                value={typed}
+                onChange={(event) => {
+                  setTyped(event.target.value);
+                  setDeleteProblem(null);
+                }}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoFocus
+                data-testid="delete-word"
+              />
+            </label>
+            {ready && !googleOnly && <Password label={t("auth.password")} value={confirm} onChange={setConfirm} autoComplete="current-password" testId="delete-password" />}
             {deleteProblem && (
               <p className="auth-error" role="alert" data-testid="delete-error">
                 {deleteProblem}
               </p>
             )}
             <div className="editor-actions">
-              <button type="submit" className="btn btn-danger" disabled={busy} data-testid="delete-confirm">
-                <TrashIcon /> {t("account.deleteConfirm")}
-              </button>
-              <button type="button" className="btn" onClick={() => setDeleting(false)}>
+              <button type="button" className="btn" onClick={stopDeleting} data-testid="delete-cancel">
                 {t("common.cancel")}
+              </button>
+              <button type="submit" className="btn btn-danger" disabled={busy || !ready} data-testid={googleOnly ? "delete-google" : "delete-confirm"}>
+                {googleOnly ? <GoogleMark /> : <TrashIcon />} {t(googleOnly ? "account.deleteWithGoogle" : "account.deleteConfirm")}
               </button>
             </div>
           </form>
-        ) : (
-          <button className="btn btn-danger btn-block" onClick={() => setDeleting(true)} data-testid="delete-account">
-            <TrashIcon /> {t("account.delete")}
-          </button>
-        )}
-      </Group>
+        </Group>
+      ) : (
+        <button type="button" className="quiet-link" onClick={() => setDeleting(true)} data-testid="delete-account">
+          {t("account.delete")}
+        </button>
+      )}
     </div>
   );
 }

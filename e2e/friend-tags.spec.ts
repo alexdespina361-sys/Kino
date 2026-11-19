@@ -273,7 +273,7 @@ test.describe("finding a friend by tag on the TV", () => {
 });
 
 test.describe("a profile's own tag on its page", () => {
-  test("the TV's profile page says it under the name, and its last button copies it: OK from the remote, or a click", async ({ browser }) => {
+  test("the TV's profile page says it under the name, and the tag itself copies it: the remote's last stop in the head, OK, or a click", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await screenWithFriends(browser, "Ann");
     const page = ann.page;
@@ -283,7 +283,8 @@ test.describe("a profile's own tag on its page", () => {
     await expect(page.getByTestId("tv-profile-tag-text")).toHaveText(tagOf(ann.name));
     await expect(page.getByTestId("tv-profile-tag")).toBeInViewport({ ratio: 1 });
     await expect(copy).toBeInViewport({ ratio: 1 });
-    await expect(copy).toHaveText("Copy tag");
+    await expect(copy).toHaveText(tagOf(ann.name));
+    await expect(copy).toHaveAttribute("title", "Copy tag");
 
     await page.getByTestId("tv-profile-settings").focus();
     for (let step = 0; step < 4 && !(await copy.evaluate((element) => element === document.activeElement)); step++) await page.keyboard.press("ArrowRight");
@@ -292,27 +293,30 @@ test.describe("a profile's own tag on its page", () => {
     await expect(copy).toBeFocused();
     await page.evaluate(() => navigator.clipboard.writeText("something else"));
     await page.keyboard.press("Enter");
-    await expect(copy).toHaveText("Tag copied");
+    await expect(copy).toHaveAttribute("data-state", "copied");
+    await expect(copy).toHaveAttribute("title", "Tag copied");
     expect(await clipboard()).toBe(tagOf(ann.name));
     await expect(copy).toBeFocused();
-    await expect(copy).toHaveText("Copy tag");
+    await expect(copy).toHaveAttribute("title", "Copy tag");
 
     await page.evaluate(() => navigator.clipboard.writeText("something else"));
     await copy.click();
-    await expect(copy).toHaveText("Tag copied");
+    await expect(copy).toHaveAttribute("data-state", "copied");
     expect(await clipboard()).toBe(tagOf(ann.name));
   });
 
-  test("on a phone that is the screen, the tag and its button are on the screen, the button a row of its own", async ({ browser }) => {
+  test("on a phone that is the screen, the tag is a small button under the name, over the other buttons, easy to tap", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await screenWithFriends(browser, "Ann", { viewport: { width: 390, height: 844 } });
     const page = ann.page;
     await expect(page.getByTestId("tv-profile-tag-text")).toHaveText(tagOf(ann.name));
     await expect(page.getByTestId("tv-profile-tag")).toBeInViewport({ ratio: 1 });
     await expect(page.getByTestId("tv-profile-tag-copy")).toBeInViewport({ ratio: 1 });
-    const [copy, settings] = [(await page.getByTestId("tv-profile-tag-copy").boundingBox())!, (await page.getByTestId("tv-profile-settings").boundingBox())!];
-    expect(copy.width).toBeGreaterThan(settings.width * 1.5);
-    expect(copy.height).toBeGreaterThanOrEqual(44);
+    const [copy, settings, name] = [(await page.getByTestId("tv-profile-tag-copy").boundingBox())!, (await page.getByTestId("tv-profile-settings").boundingBox())!, (await page.getByTestId("tv-profile-name").boundingBox())!];
+    expect(copy.y, "under the name").toBeGreaterThan(name.y);
+    expect(copy.y + copy.height, "over the buttons").toBeLessThan(settings.y);
+    const reach = await page.getByTestId("tv-profile-tag-copy").evaluate((element) => -parseFloat(getComputedStyle(element, "::after").top) - parseFloat(getComputedStyle(element, "::after").bottom));
+    expect(copy.height + reach, "with the reach around it, a thumb's size").toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 

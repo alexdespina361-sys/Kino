@@ -231,6 +231,10 @@ test.describe("accounts and profiles", () => {
 
     await phone.getByTestId("menu-security").click();
     await phone.getByTestId("delete-account").click();
+    await expect(phone.getByTestId("delete-password")).toHaveCount(0);
+    await expect(phone.getByTestId("delete-confirm")).toBeDisabled();
+    expect(await phone.locator(".editor-actions button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("data-testid")))).toEqual(["delete-cancel", "delete-confirm"]);
+    await phone.getByTestId("delete-word").fill("understood");
     await phone.getByTestId("delete-password").fill("2");
     await phone.getByTestId("delete-confirm").click();
     await expect(phone.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]);
@@ -675,7 +679,7 @@ test.describe("profiles made and changed on the TV itself", () => {
     for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-delete-account")).toBeFocused();
     await tv.keyboard.press("ArrowUp");
-    await expect(inColumn(1)).toHaveAttribute("data-testid", /^tv-anime-audio-/);
+    await expect(inColumn(1)).toHaveAttribute("data-testid", "tv-autoskip");
     await tv.keyboard.press("ArrowLeft");
     await expect(inColumn(0)).toHaveCount(1);
 

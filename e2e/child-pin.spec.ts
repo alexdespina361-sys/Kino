@@ -93,7 +93,7 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await openTvSettings(tv);
     await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "true");
-    await expect(tv.getByTestId("tv-pin-setting")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-pin-setting")).toContainText(en["common.off"]);
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-account")).toHaveCount(0);
     expect((await tv.context().request.post("/api/me/child-pin", { data: { next: PIN } })).ok()).toBe(true);
@@ -108,12 +108,21 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("tv-pin-page")).toBeVisible();
   });
 
-  test("on the TV, the settings set the PIN (twice the same), change it with the one there is, and take it off", async ({ browser }) => {
+  test("on the TV, the PIN is a line of a child's profile only: there it is set (twice the same), changed with the one there is, and taken off", async ({ browser }) => {
+    test.setTimeout(60_000);
     const tv = await openDevice(browser, { viewport });
-    await family(tv.context(), "tv", { child: false, pin: false });
+    const { first } = await family(tv.context(), "tv", { pin: false });
     await tv.goto("/tv");
+    await tv.getByTestId("profile-Grown").click();
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "false");
+    await expect(tv.getByTestId("tv-pin-setting")).toHaveCount(0);
+    await tv.getByTestId("tv-switch-profile").click();
+    await tv.getByTestId(`profile-${first}`).click();
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-child")).toHaveAttribute("aria-checked", "true");
     await expect(tv.getByTestId("tv-pin-setting")).toContainText(en["common.off"]);
 
     await tv.getByTestId("tv-pin-setting").click();
@@ -215,20 +224,15 @@ test.describe("the PIN of a child's profile", () => {
     await expect(tv.getByTestId("tv-profiles")).toBeVisible({ timeout: 15_000 });
   });
 
-  test("on the phone, the right PIN lets the child's profile go, and the settings set, change and take off the PIN", async ({ browser }) => {
+  test("on the phone, a child's profile's settings change, take off and set the PIN, the right PIN lets the profile go, and a grown-up's settings have no PIN", async ({ browser }) => {
     test.setTimeout(90_000);
     const phone = await openDevice(browser, PHONE);
     const { first } = await family(phone.context(), "remote");
     await phone.goto("/");
     await phone.getByTestId(`profile-${first}`).click();
     await phone.getByTestId("account-button").click();
-    await phone.getByTestId("menu-switch").click();
-    await phone.getByTestId("pin-input").fill(PIN);
-    await phone.getByTestId("profile-Grown").click();
-    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Grown/);
-
-    await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-settings").click();
+    await expect(phone.getByTestId("child-profile")).toHaveAttribute("aria-checked", "true");
     const setting = phone.getByTestId("pin-setting");
     await setting.getByTestId("pin-change").click();
     await phone.getByTestId("pin-setting-input").fill("0000");
@@ -255,5 +259,16 @@ test.describe("the PIN of a child's profile", () => {
     await phone.getByTestId("pin-setting-input").fill("1357");
     await expect(phone.getByTestId("pin-done")).toHaveText(en["pin.set"]);
     expect(await hasPin(phone)).toBe(true);
+
+    await phone.keyboard.press("Escape");
+    await expect(phone.getByTestId("account-screen")).toBeVisible();
+    await phone.getByTestId("menu-switch").click();
+    await phone.getByTestId("pin-input").fill("1357");
+    await phone.getByTestId("profile-Grown").click();
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Grown/);
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("menu-settings").click();
+    await expect(phone.getByTestId("child-profile")).toHaveAttribute("aria-checked", "false");
+    await expect(setting).toHaveCount(0);
   });
 });

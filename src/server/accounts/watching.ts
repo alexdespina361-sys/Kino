@@ -5,8 +5,8 @@ export const WATCHING_DAYS = 7;
 export const WATCHING_MIN_ACCOUNTS = 3;
 export const WATCHING_MAX = 20;
 
-export function counted(settings: { publicWatching?: boolean | undefined; child?: boolean | undefined; friends?: boolean | undefined; friendsOff?: boolean | undefined }): boolean {
-  return settings.publicWatching !== false && settings.child !== true && settings.friends !== false && settings.friendsOff !== true;
+export function counted(settings: { child?: boolean | undefined; friends?: boolean | undefined; friendsOff?: boolean | undefined }): boolean {
+  return settings.child !== true && settings.friends !== false && settings.friendsOff !== true;
 }
 
 export function watchedOnKino(store: AccountStore, now: number = store.clock()): string[] {

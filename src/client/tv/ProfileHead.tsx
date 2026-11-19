@@ -32,6 +32,8 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: (event: FocusEvent<HTMLElement>) => onArrive(col, event.currentTarget) });
   const settingsCol = signedIn || !canSignIn ? 0 : 1;
   const googleCol = settingsCol + 2 + places.length;
+  const tagCol = googleCol + (onConnectGoogle ? 1 : 0);
+  const copyLabel = copying === "copied" ? t("friends.tagCopied") : t("friends.copyTag");
   return (
     <div className={release ? "tv-profile-head with-app" : "tv-profile-head"}>
       {signedIn && avatar ? (
@@ -48,9 +50,12 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
         {tag && (
           <p className="tv-profile-tag" data-testid="tv-profile-tag">
             <span>{t("friends.yourTag")}</span>
-            <b className="copy-code-text" ref={tagShown} data-testid="tv-profile-tag-text">
-              {tag}
-            </b>
+            <button className="tv-profile-tag-copy" onClick={copyTag} data-testid="tv-profile-tag-copy" data-state={copying} aria-label={`${tag}, ${copyLabel}`} title={copyLabel} {...at(tagCol)}>
+              <b className="copy-code-text" ref={tagShown} data-testid="tv-profile-tag-text">
+                {tag}
+              </b>
+              {copying === "copied" ? <CheckIcon /> : <CopyIcon />}
+            </button>
           </p>
         )}
         {line && <p className="tv-profile-line">{line}</p>}
@@ -86,19 +91,6 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
         {onConnectGoogle && (
           <button className="tv-hero-button tv-profile-google" onClick={onConnectGoogle} data-testid="tv-profile-google" {...at(googleCol)}>
             <GoogleMark /> {t("account.googleConnect")}
-          </button>
-        )}
-        {tag && (
-          <button className="tv-hero-button tv-profile-copy-tag" onClick={copyTag} data-testid="tv-profile-tag-copy" data-state={copying} {...at(googleCol + (onConnectGoogle ? 1 : 0))}>
-            {copying === "copied" ? (
-              <>
-                <CheckIcon /> {t("friends.tagCopied")}
-              </>
-            ) : (
-              <>
-                <CopyIcon /> {t("friends.copyTag")}
-              </>
-            )}
           </button>
         )}
       </div>

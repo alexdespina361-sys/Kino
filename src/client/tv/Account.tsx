@@ -4,6 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
+import { wordTyped } from "../account/deleteWord";
 import { describeError, describePasswordError } from "../account/errors";
 import { PasswordInput } from "../account/PasswordInput";
 import { signedInLine } from "../account/google";
@@ -16,7 +17,7 @@ import { keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, pickableLanguages
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
-import { CheckIcon, ChevronIcon, FilmIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TrashIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { BulbIcon, CheckIcon, ChevronIcon, FilmIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TrashIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { handHeld } from "../shared/backButton";
@@ -25,9 +26,9 @@ import { NameKeys } from "./NameKeys";
 import { TvPinAsk, TvPinSetup } from "./Pin";
 import { TvCode } from "./TvCode";
 
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "pin" | "sections" | "setup" | "delete";
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "pin" | "sections" | "labs" | "setup" | "delete";
 
-type SettingsPage = "subtitles" | "pin" | "sections" | "delete";
+type SettingsPage = "subtitles" | "pin" | "sections" | "labs" | "delete";
 
 const POLL_MS = 2000;
 
@@ -435,9 +436,9 @@ function SettingsLine({ icon, label, value, onPress, testId, autoFocus = false, 
   );
 }
 
-function SettingsSwitch({ label, on, onToggle, testId }: { label: string; on: boolean; onToggle: () => void; testId: string }) {
+function SettingsSwitch({ label, on, onToggle, testId, autoFocus = false }: { label: string; on: boolean; onToggle: () => void; testId: string; autoFocus?: boolean }) {
   return (
-    <button className="tv-switch-row" role="switch" aria-checked={on} onClick={onToggle} data-nav data-testid={testId}>
+    <button className="tv-switch-row" role="switch" aria-checked={on} onClick={onToggle} data-nav {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
       <span>{label}</span>
       <span className="tv-switch" aria-hidden="true" />
     </button>
@@ -453,6 +454,7 @@ export function TvAccountPanel({
   onSubtitles,
   onPin,
   onSections,
+  onLabs,
   onDelete,
   cameFrom,
 }: {
@@ -464,6 +466,7 @@ export function TvAccountPanel({
   onSubtitles: () => void;
   onPin: () => void;
   onSections: () => void;
+  onLabs: () => void;
   onDelete: () => void;
   cameFrom?: SettingsPage | undefined;
 }) {
@@ -474,8 +477,6 @@ export function TvAccountPanel({
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
   const autoSkip = settings.autoSkip ?? false;
-  const tapToPause = settings.tapToPause ?? false;
-  const adaptiveQuality = settings.adaptiveQuality ?? true;
   const child = settings.child === true;
   const several = Boolean(me && me.profiles.length > 1);
   const canConnectGoogle = useCanConnectGoogle();
@@ -517,17 +518,7 @@ export function TvAccountPanel({
                   <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={top && !several} />
                   <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
                   {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => grownUp(() => account.withGoogle("link"))} testId="tv-connect-google" />}
-                  {!child && (
-                    <SettingsSwitch
-                      label={t("settings.publicWatching")}
-                      on={settings.publicWatching !== false}
-                      onToggle={() => {
-                        set("publicWatching", settings.publicWatching !== false ? false : undefined);
-                        account.syncNow();
-                      }}
-                      testId="tv-public-watching"
-                    />
-                  )}
+                  <SettingsLine icon={<LogoutIcon />} label={t("auth.signOut")} onPress={() => grownUp(() => void account.signOut().then(onClose))} testId="tv-sign-out" tone="danger" />
                 </>
               ) : (
                 account.status === "ready" && (
@@ -539,14 +530,6 @@ export function TvAccountPanel({
                 )
               )}
             </SettingsGroup>
-            {me && profile && (
-              <SettingsGroup testId="tv-group-account">
-                {(!child || me.account.childPin) && (
-                  <SettingsLine icon={<LockIcon />} label={t("pin.setting")} value={me.account.childPin ? t("common.on") : t("common.off")} onPress={onPin} testId="tv-pin-setting" autoFocus={cameFrom === "pin"} />
-                )}
-                <SettingsLine icon={<LogoutIcon />} label={t("auth.signOut")} onPress={() => grownUp(() => void account.signOut().then(onClose))} testId="tv-sign-out" tone="danger" />
-              </SettingsGroup>
-            )}
           </div>
 
           <div className="tv-set-col" data-nav-column>
@@ -587,21 +570,6 @@ export function TvAccountPanel({
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
               <SettingsSwitch label={t("settings.autoSkip")} on={autoSkip} onToggle={() => set("autoSkip", !autoSkip)} testId="tv-autoskip" />
-              {animeShown(settings) && (
-                <div className="tv-field">
-                  <span className="tv-field-label" aria-hidden="true">
-                    {t("settings.animeAudio")}
-                  </span>
-                  <div className="tv-segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
-                    <button className="tv-choice" role="radio" aria-checked={(settings.animeAudio ?? "jp") === "jp"} onClick={() => set("animeAudio", "jp")} data-nav data-testid="tv-anime-audio-jp">
-                      {t("settings.animeAudioJp")}
-                    </button>
-                    <button className="tv-choice" role="radio" aria-checked={settings.animeAudio === "eng"} onClick={() => set("animeAudio", "eng")} data-nav data-testid="tv-anime-audio-eng">
-                      {t("settings.animeAudioEng")}
-                    </button>
-                  </div>
-                </div>
-              )}
             </SettingsGroup>
 
           </div>
@@ -617,6 +585,21 @@ export function TvAccountPanel({
                   testId="tv-sections-setting"
                   autoFocus={cameFrom === "sections"}
                 />
+              )}
+              {animeShown(settings) && (
+                <div className="tv-field">
+                  <span className="tv-field-label" aria-hidden="true">
+                    {t("settings.animeAudio")}
+                  </span>
+                  <div className="tv-segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
+                    <button className="tv-choice" role="radio" aria-checked={(settings.animeAudio ?? "jp") === "jp"} onClick={() => set("animeAudio", "jp")} data-nav data-testid="tv-anime-audio-jp">
+                      {t("settings.animeAudioJp")}
+                    </button>
+                    <button className="tv-choice" role="radio" aria-checked={settings.animeAudio === "eng"} onClick={() => set("animeAudio", "eng")} data-nav data-testid="tv-anime-audio-eng">
+                      {t("settings.animeAudioEng")}
+                    </button>
+                  </div>
+                </div>
               )}
               <SettingsLine icon={<SubtitlesIcon />} label={t("settings.subtitleLanguages")} {...(subtitlesValue ? { value: subtitlesValue } : {})} onPress={onSubtitles} testId="tv-subtitle-languages" autoFocus={cameFrom === "subtitles"} />
               {!child && (
@@ -646,10 +629,12 @@ export function TvAccountPanel({
               <p className="tv-hint tv-set-note" data-testid="tv-child-help">
                 {t("settings.childNote")}
               </p>
+              {child && me && profile && (
+                <SettingsLine icon={<LockIcon />} label={t("pin.setting")} value={me.account.childPin ? t("common.on") : t("common.off")} onPress={onPin} testId="tv-pin-setting" autoFocus={cameFrom === "pin"} />
+              )}
             </SettingsGroup>
-            <SettingsGroup title={t("settings.labs")} testId="tv-group-labs">
-              <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
-              <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
+            <SettingsGroup testId="tv-group-more">
+              <SettingsLine icon={<BulbIcon />} label={t("settings.labs")} onPress={onLabs} testId="tv-labs" autoFocus={cameFrom === "labs"} />
             </SettingsGroup>
           </div>
         </div>
@@ -727,13 +712,6 @@ export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
   );
 }
 
-const plainWord = (text: string) =>
-  text
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .trim()
-    .toLowerCase();
-
 function TvDeleteAccount({ onBack, onGone }: { onBack: () => void; onGone: () => void }) {
   const t = useT();
   const account = useAccount();
@@ -743,7 +721,7 @@ function TvDeleteAccount({ onBack, onGone }: { onBack: () => void; onGone: () =>
   const [password, setPassword] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const ready = plainWord(typed) === plainWord(word);
+  const ready = wordTyped(typed, word);
   const type = (update: (before: string) => string) => {
     setTyped(update);
     setProblem(null);
@@ -828,6 +806,32 @@ function TvSections({ onBack }: { onBack: () => void }) {
   );
 }
 
+function TvLabs({ onBack }: { onBack: () => void }) {
+  const t = useT();
+  const { settings, set } = useSettings();
+  const tapToPause = settings.tapToPause ?? false;
+  const adaptiveQuality = settings.adaptiveQuality ?? true;
+  return (
+    <Screen testId="tv-labs-settings" focus onBack={onBack}>
+      <div className="tv-set tv-set-sections">
+        <header className="tv-set-head" data-nav-column>
+          <h1 className="tv-set-title">{t("settings.labs")}</h1>
+          <BackButton onClick={onBack} testId="tv-labs-back" />
+        </header>
+        <div className="tv-set-col" data-nav-column>
+          <p className="tv-hint tv-set-hint">
+            <InfoIcon /> <span>{t("settings.labsHelp")}</span>
+          </p>
+          <SettingsGroup testId="tv-group-labs">
+            <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" autoFocus />
+            <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
+          </SettingsGroup>
+        </div>
+      </div>
+    </Screen>
+  );
+}
+
 function TvSetup({ onDone }: { onDone: () => void }) {
   const { profile } = useAccount();
   if (!profile?.setup) return null;
@@ -872,6 +876,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
   if (view === "subtitles") return <TvSubtitleLanguages onBack={backFrom("subtitles")} />;
   if (view === "pin") return <TvPinSetup onBack={backFrom("pin")} />;
   if (view === "sections") return <TvSections onBack={backFrom("sections")} />;
+  if (view === "labs") return <TvLabs onBack={backFrom("labs")} />;
   if (view === "setup") return <TvSetup onDone={() => onView(null)} />;
   if (view === "delete") return <TvDeleteAccount onBack={backFrom("delete")} onGone={() => onView(null)} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
@@ -888,6 +893,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
       onSubtitles={open("subtitles")}
       onPin={open("pin")}
       onSections={open("sections")}
+      onLabs={open("labs")}
       onDelete={guarded("delete")}
       cameFrom={cameFrom}
     />

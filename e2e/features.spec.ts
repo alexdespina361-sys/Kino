@@ -3410,6 +3410,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
   const linkBoxSetting = async (phone: Page) => {
     await place(phone, "you");
     await phone.getByTestId("menu-settings").click();
+    await phone.getByTestId("labs-open").click();
     return phone.getByTestId("link-box-setting");
   };
 
@@ -3444,6 +3445,8 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await box.click();
     await expect(box).toHaveAttribute("aria-checked", "true");
     await phone.getByTestId("page-back").click();
+    await expect(phone.getByTestId("labs-open")).toBeVisible();
+    await phone.getByTestId("page-back").click();
     await place(phone, "home");
     await expect(phone.getByTestId("url-input")).toBeVisible();
     await expect(phone.getByTestId("play-url")).toHaveCount(0);
@@ -3454,6 +3457,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("url-input")).toBeVisible();
 
     await (await linkBoxSetting(phone)).click();
+    await phone.getByTestId("page-back").click();
     await phone.getByTestId("page-back").click();
     await place(phone, "home");
     await expect(phone.getByTestId("url-input")).toHaveCount(0);

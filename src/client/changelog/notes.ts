@@ -2,6 +2,34 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.26",
+    date: "2026-11-19",
+    en: [
+      "Profile and settings are calmer: smaller buttons and tiles, and your tag copies when you press it.",
+      "The six colours stay on one line, even on small phones.",
+      "Labs has its own page; Anime audio now sits with Sections.",
+      "The PIN line shows only on a child profile, right under the Child profile switch.",
+      "The Count what I watch on Kino switch is gone: grown-up profiles count, with no name, towards Watched on Kino this week. Child profiles never do.",
+      "On the phone, deleting the account is a small link at the bottom of Password & security and asks you to type a word first.",
+    ],
+    ro: [
+      "Profilul și setările sunt mai liniștite: butoane și plăci mai mici, iar eticheta se copiază când o apeși.",
+      "Cele șase culori stau pe un singur rând, chiar și pe telefoanele mici.",
+      "Laboratorul are pagina lui; audio pentru anime stă acum lângă Secțiuni.",
+      "Rândul pentru PIN apare doar pe un profil de copil, chiar sub comutatorul Profil de copil.",
+      "Comutatorul Numără ce urmăresc pe Kino a dispărut: profilurile de adulți contează, fără nume, la Se urmărește pe Kino săptămâna asta. Cele de copii, niciodată.",
+      "Pe telefon, ștergerea contului e un link mic în josul paginii Parolă și securitate și îți cere întâi să scrii un cuvânt.",
+    ],
+    it: [
+      "Profilo e impostazioni sono più calmi: pulsanti e riquadri più piccoli, e il tuo tag si copia quando lo premi.",
+      "I sei colori restano su una riga, anche sui telefoni piccoli.",
+      "Laboratorio ha una pagina tutta sua; l'audio degli anime ora sta con Sezioni.",
+      "La riga del PIN appare solo su un profilo per bambini, subito sotto l'interruttore Profilo per bambini.",
+      "L'interruttore Conta ciò che guardo su Kino non c'è più: i profili adulti contano, senza nome, in Visti su Kino questa settimana. Quelli per bambini mai.",
+      "Sul telefono, eliminare l'account è un piccolo link in fondo a Password e sicurezza e chiede prima di scrivere una parola.",
+    ],
+  },
+  {
     version: "0.4.25",
     date: "2026-11-19",
     en: [

@@ -40,6 +40,9 @@
 .btn-red[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
 .btn-red:active:not(:disabled) { background: var(--accent-hover); }
 .btn-danger { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
+.quiet-link { display: block; align-self: center; min-height: 44px; margin: 4px auto 0; padding: 0 16px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.85rem; opacity: 0.6; cursor: pointer; }
+.quiet-link:hover { opacity: 1; text-decoration: underline; }
+.quiet-link:focus-visible { outline: 2px solid #fff; outline-offset: 2px; opacity: 1; }
 .btn-block { width: 100%; }
 .episode-nav { display: flex; gap: 8px; }
 .episode-nav .btn { flex: 1; min-width: 0; }
