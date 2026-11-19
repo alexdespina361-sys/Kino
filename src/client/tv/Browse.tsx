@@ -67,14 +67,18 @@ const STEP = 0.8;
 const NEAR_END = 1.5;
 const WAITING_TILES = 3;
 const NEAR_MARGIN = "1250px 0px";
-function RowTiles({ children, onNearEnd, loading, keep }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean; keep?: boolean }) {
+function RowTiles({ children, onNearEnd, loading, startFar }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean; startFar?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState({ before: false, after: false });
   const wantsMore = useRef(onNearEnd);
   wantsMore.current = onNearEnd;
   const onScreen = useRef(typeof IntersectionObserver === "undefined");
-  const near = useRef(typeof IntersectionObserver === "undefined");
+  const near = useRef(typeof IntersectionObserver === "undefined" || !startFar);
+
+  useLayoutEffect(() => {
+    if (!near.current) box.current?.setAttribute("data-far", "");
+  }, []);
 
   const measure = useCallback(() => {
     const row = scroller.current;
@@ -110,7 +114,7 @@ function RowTiles({ children, onNearEnd, loading, keep }: { children: ReactNode;
     const watch = new IntersectionObserver(
       (seen) => {
         near.current = seen[seen.length - 1]!.isIntersecting;
-        here.toggleAttribute("data-near", near.current);
+        here.toggleAttribute("data-far", !near.current);
         if (near.current) measure();
       },
       { root, rootMargin: NEAR_MARGIN },
@@ -135,7 +139,7 @@ function RowTiles({ children, onNearEnd, loading, keep }: { children: ReactNode;
     </button>
   );
   return (
-    <div className="tv-row-box" ref={box} data-keep={keep ? "true" : undefined}>
+    <div className="tv-row-box" ref={box}>
       <div className="tv-row-tiles" ref={scroller} onScroll={measure}>
         {children}
         {loading && Array.from({ length: WAITING_TILES }, (_, at) => <div className="tv-tile tv-skeleton" data-testid="tv-row-waiting" aria-hidden="true" key={`waiting-${at}`} />)}
@@ -737,9 +741,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (grownFor !== rowsKey) startTransition(() => setGrownFor(rowsKey));
   }, [rowsKey, grownFor]);
   const drawnRows = allRowsDrawn ? homeRows : homeRows.slice(0, startRow + FIRST_ROWS);
-  const keptAbove = useRef<{ key: string; row: number } | null>(null);
-  if (homeRows.length > 0 && keptAbove.current?.key !== rowsKey) keptAbove.current = { key: rowsKey, row: startRow };
-  const keepUpTo = keptAbove.current?.key === rowsKey ? keptAbove.current.row : 0;
+  const farFrom = Math.max(startRow, focused && rowsPage ? homeRows.findIndex((row) => row.title === focused.label) : -1) + FIRST_ROWS;
   const onNow = focused && rowsPage ? homeRows.find((row) => row.title === focused.label)?.entries.find((entry) => entry.id === focused.entry.id) : undefined;
   const shown: Focused | null = focused
     ? onNow
@@ -1966,7 +1968,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       />
                     )}
                     {!(friendsHead && row === peopleRow) && <h2 className="tv-row-title">{row.title}</h2>}
-                    <RowTiles keep={r <= keepUpTo} {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
+                    <RowTiles startFar={r >= farFrom} {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
                       {rowTiles(row, r)}
                     </RowTiles>
                   </section>

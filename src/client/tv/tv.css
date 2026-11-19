@@ -1623,10 +1623,10 @@
 .tv-rows > .tv-row:nth-child(n + 4) { animation: none; }
 
 @supports (contain-intrinsic-size: auto 1px) {
-  .tv-rows[data-skip="true"] > .tv-row[data-layout="ranked"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 14.4984em; }
-  .tv-rows[data-skip="true"] > .tv-row[data-posters="true"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 21.4945em; }
-  .tv-rows[data-skip="true"] > .tv-row[data-shape="landscape"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 17.5172em; }
-  .tv-rows[data-skip="true"] > .tv-row[data-layout="categories"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 10.9984em; }
+  .tv-rows[data-skip="true"] > .tv-row > .tv-row-box[data-far] { content-visibility: auto; contain-intrinsic-size: auto 1px auto 21.5em; }
+  .tv-rows[data-skip="true"] > .tv-row[data-layout="ranked"] > .tv-row-box[data-far] { contain-intrinsic-size: auto 1px auto 14.5em; }
+  .tv-rows[data-skip="true"] > .tv-row[data-shape="landscape"] > .tv-row-box[data-far] { contain-intrinsic-size: auto 1px auto 17.5em; }
+  .tv-rows[data-skip="true"] > .tv-row[data-layout="categories"] > .tv-row-box[data-far] { contain-intrinsic-size: auto 1px auto 11em; }
 }
 
 .tv-tile-ranked { width: auto; flex-direction: row; align-items: flex-start; }
