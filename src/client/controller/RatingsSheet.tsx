@@ -8,6 +8,7 @@ import { useBackWhile } from "../shared/backButton";
 import { ChevronIcon, StarIcon } from "../shared/icons";
 import { allRows, useFeed } from "../shared/feed";
 import { Poster } from "../shared/Poster";
+import { useRatingSections } from "../tv/cardSections";
 import { entryOfRating, ratingSectionIn, type Entry } from "../tv/pages";
 import { Sheet } from "./Sheet";
 
@@ -17,7 +18,9 @@ export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly L
   const { progress, watched } = useProfileData();
   const [order, setOrder] = useState<RatingOrder>("new");
   const feeding = useFeed();
-  const sectionOf = useMemo(() => ratingSectionIn(allRows(feeding.data)), [feeding.data]);
+  const rows = useMemo(() => allRows(feeding.data), [feeding.data]);
+  const looked = useRatingSections(ratings, rows, true);
+  const sectionOf = useMemo(() => ratingSectionIn(rows, looked), [rows, looked]);
   const [wanted, setWanted] = useState<RatingFilter>({});
   const filter = usableFilter(ratings, wanted, sectionOf);
   const options = ratingChoices(ratings, filter, sectionOf);

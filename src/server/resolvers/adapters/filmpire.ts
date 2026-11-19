@@ -601,6 +601,28 @@ export interface ShowShape {
 
 const watchLink = (id: string, season: number, episode: number): NextEpisode => ({ season, episode, url: `https://filmpire.sc/watch/${id}?s=${season}&e=${episode}` });
 
+function earlierEpisodes(seasons: readonly TmdbSeasonCount[], season: number): number | undefined {
+  let total = 0;
+  for (let sn = 1; sn < season; sn++) {
+    const count = seasons.find((one) => one.season_number === sn)?.episode_count;
+    if (typeof count !== "number") return undefined;
+    total += count;
+  }
+  return total;
+}
+
+const numberedFromStart = (seasons: readonly TmdbSeasonCount[], season: number, episode: number, before: number): boolean => {
+  const own = seasons.find((one) => one.season_number === season)?.episode_count ?? 0;
+  return before > 0 && own > 0 && episode > own && episode > before && episode <= before + own;
+};
+
+export function absoluteEpisodeOf(seasons: readonly TmdbSeasonCount[], season: number, episode: number): number | undefined {
+  if (season <= 1) return undefined;
+  const before = earlierEpisodes(seasons, season);
+  if (!before) return undefined;
+  return numberedFromStart(seasons, season, episode, before) ? episode : before + episode;
+}
+
 export function nextEpisodeOf(id: string, season: number, episode: number, show: ShowShape): NextEpisode | undefined {
   const lastSeason = show.lastAired?.season_number ?? 0;
   const lastEpisode = show.lastAired?.episode_number ?? 0;
@@ -613,10 +635,13 @@ export function nextEpisodeOf(id: string, season: number, episode: number, show:
     return episode >= (counts[season] ?? 24) ? watchLink(id, season + 1, 1) : watchLink(id, season, episode + 1);
   }
   if (aired && (season > lastSeason || (season === lastSeason && episode >= lastEpisode))) return undefined;
-  const count = show.seasons?.find((one) => one.season_number === season)?.episode_count ?? 0;
-  if (count <= 0 || episode < count) return watchLink(id, season, episode + 1);
-  const later = (show.seasons ?? []).flatMap((one) => ((one.season_number ?? 0) > season && (one.episode_count ?? 0) > 0 ? [one.season_number!] : []));
-  return later.length > 0 ? watchLink(id, Math.min(...later), 1) : undefined;
+  const seasons = show.seasons ?? [];
+  const count = seasons.find((one) => one.season_number === season)?.episode_count ?? 0;
+  const before = season > 1 ? (earlierEpisodes(seasons, season) ?? 0) : 0;
+  const fromStart = numberedFromStart(seasons, season, episode, before);
+  if (count <= 0 || episode < (fromStart ? before + count : count)) return watchLink(id, season, episode + 1);
+  const later = seasons.flatMap((one) => ((one.season_number ?? 0) > season && (one.episode_count ?? 0) > 0 ? [one.season_number!] : []));
+  return later.length > 0 ? watchLink(id, Math.min(...later), fromStart ? episode + 1 : 1) : undefined;
 }
 
 export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): SiteAdapter {
@@ -802,26 +827,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
           // Calculate absolute episode number:
           // - For single-season TMDB shows cut into parts (e.g. JJK), use the part cut (never TMDB's whole S1 count!).
-          // - For multi-season TMDB shows (e.g. Conan, One Piece, Yu Yu Hakusho), sum earlier seasons' episode counts.
+          // - For multi-season TMDB shows (e.g. Pokémon, Yu Yu Hakusho), sum earlier seasons' episode counts,
+          //   unless TMDB already numbers the season from the show's start (One Piece: S23 is E1156-E1180).
           let absoluteEpisode: number | undefined;
           const partMapping = await getSingleSeasonPartMapping();
           if (partMapping && targetSeason > 1) {
             absoluteEpisode = partMapping.absoluteEpisode;
           } else if (tmdbSeasons && targetSeason > 1 && !isSingleLongTmdbSeason) {
-            let prevCount = 0;
-            let allPrevFound = true;
-            for (let sn = 1; sn < targetSeason; sn++) {
-              const prev = tmdbSeasons.find((item) => item.season_number === sn);
-              if (prev && typeof prev.episode_count === "number") {
-                prevCount += prev.episode_count;
-              } else {
-                allPrevFound = false;
-                break;
-              }
-            }
-            if (allPrevFound && prevCount > 0) {
-              absoluteEpisode = prevCount + targetEpisode;
-            }
+            absoluteEpisode = absoluteEpisodeOf(tmdbSeasons, targetSeason, targetEpisode);
           }
 
           // Build search queries: show title, clean show title, show title + season name

@@ -8,7 +8,7 @@ import { ChevronDownIcon, ChevronUpIcon, ChevronIcon, ChevronLeftIcon } from "..
 import { gridRows } from "./browseNav";
 import { episodeKey, useUnavailable } from "../shared/unavailable";
 import { statusWords } from "../shared/words";
-import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
+import { digitsStyle, EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 import { EPISODES_AT_ONCE, heldStart, listedWindow, showKeyOf, startOf, type Entry, type EpisodeWindow, type Start } from "./pages";
 
 const STEP = 0.8;
@@ -235,7 +235,7 @@ export function SeriesSection({ page, columns = 1, onPlay, onSlide }: { page: Se
           className="tv-detail-list"
           ref={list}
           data-cols={columns}
-          style={columns > 1 ? ({ "--ep-cols": columns } as CSSProperties) : undefined}
+          style={columns > 1 ? ({ "--ep-cols": columns, ...digitsStyle(shown) } as CSSProperties) : digitsStyle(shown)}
           onFocus={(event) => (held.current = event.target as HTMLElement)}
           onBlur={(event) => {
             if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) held.current = null;

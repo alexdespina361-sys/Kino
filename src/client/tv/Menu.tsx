@@ -25,14 +25,14 @@ import {
   versionLabel,
   type WatchedEntry,
 } from "../../shared";
-import { languageNames, useSubtitleLists, type SubtitleLists } from "../account/subtitles";
+import { foldLanguages, languageNames, useSubtitleLists, type SubtitleLists } from "../account/subtitles";
 import { t, useT } from "../i18n";
 import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { useEpisodeDetails, type SeasonDetails } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
 import { CheckIcon, CloseIcon } from "../shared/icons";
 import { captionLabel, captionPresetName, captionTitle, enhanceName, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
-import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
+import { digitsStyle, EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 
 export type MenuKind = "tracks" | "captions" | "captionsMore" | "speed" | "quality" | "sources" | "episodes";
 
@@ -110,11 +110,13 @@ interface Selection {
   language: string | undefined;
   setLanguage: (language: string) => void;
   showAll: () => void;
+  unfolded: boolean;
+  unfold: (land: string | number | undefined) => void;
 }
 
 const NO_TRACKS: PlayerTrack[] = [];
 
-function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, setSetting, language, setLanguage, showAll }: Selection, lists: SubtitleLists<PlayerTrack>): Column[] {
+function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, setSetting, language, setLanguage, showAll, unfolded, unfold }: Selection, lists: SubtitleLists<PlayerTrack>): Column[] {
   const { player, kind } = p;
 
   if (kind === "captions") {
@@ -292,18 +294,30 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
   const subtitles = player.subtitles;
   const { pinned, more } = lists;
   const visible = [...pinned, ...more];
+  const playing = groupOf(visible, subtitles?.current);
+  const { lead, rest } = foldLanguages(pinned, more, [playing?.key]);
+  const folded = !unfolded && rest.length > 0;
+  const flat = visible.every((group) => group.tracks.length === 1);
   const off: Option = { key: -1, label: t("common.off"), active: (subtitles?.current ?? -1) === -1, pick: () => p.onSubtitle(-1) };
   const heading: Heading[] = pinned.length > 0 && more.length > 0 ? [{ key: "more-languages", heading: t("player.moreLanguages") }] : [];
   const reveal: Option[] = lists.hidden > 0 ? [{ key: "show-all", label: t("player.showAll"), active: false, pick: showAll }] : [];
-  if (visible.every((group) => group.tracks.length === 1)) {
+  const unfoldOption: Option = {
+    key: "more-languages-open",
+    label: t("player.moreLanguages"),
+    detail: String(rest.length),
+    active: false,
+    pick: () => unfold(flat ? rest[0]?.tracks[0]?.id : rest[0]?.key),
+  };
+  if (flat) {
     const option = (track: PlayerTrack): Option => ({ key: track.id, label: trackName(track), active: subtitles?.current === track.id, pick: () => p.onSubtitle(track.id) });
     columns.push({
       title: t("player.subtitles"),
       size: "wide",
-      options: [off, ...pinned.flatMap((group) => group.tracks.map(option)), ...heading, ...more.flatMap((group) => group.tracks.map(option)), ...reveal],
+      options: folded
+        ? [off, ...lead.flatMap((group) => group.tracks.map(option)), unfoldOption]
+        : [off, ...pinned.flatMap((group) => group.tracks.map(option)), ...heading, ...more.flatMap((group) => group.tracks.map(option)), ...reveal],
     });
   } else {
-    const playing = groupOf(visible, subtitles?.current);
     const shown = visible.find((group) => group.key === language) ?? playing ?? visible[0]!;
     const option = (group: (typeof visible)[number]): Option => ({
       key: group.key,
@@ -316,7 +330,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
     columns.push({
       title: t("player.subtitleLanguage"),
       size: "narrow",
-      options: [off, ...pinned.map(option), ...heading, ...more.map(option), ...reveal],
+      options: folded ? [off, ...lead.map(option), unfoldOption] : [off, ...pinned.map(option), ...heading, ...more.map(option), ...reveal],
     });
     columns.push({
       title: t("player.versions", { language: shown.name }),
@@ -369,12 +383,28 @@ export function TvMenu(props: MenuProps) {
   const [setting, setSetting] = useState<CaptionSetting>(CAPTION_SETTINGS[0]!);
   const [language, setLanguage] = useState<string | undefined>(undefined);
   const [all, setAll] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
+  const landOn = useRef<string | number | undefined>(undefined);
   const lists = useSubtitleLists(props.player.subtitles?.tracks ?? NO_TRACKS, props.player.subtitles?.current, all);
   const groups = useMemo(() => (props.kind === "episodes" ? groupBySeason(props.series?.episodes ?? []) : []), [props.kind, props.series?.episodes]);
   const shown = groups.find((group) => group.season === season) ?? groups[0];
   const details = useEpisodeDetails(shown?.episodes[0]?.url, shown?.season);
-  const columns = columnsFor(props, { groups, shown, details, setSeason, setting, setSetting, language, setLanguage, showAll: () => setAll(true) }, lists);
+  const unfold = (land: string | number | undefined) => {
+    landOn.current = land;
+    setUnfolded(true);
+  };
+  const showAll = () => {
+    setAll(true);
+    setUnfolded(true);
+  };
+  const columns = columnsFor(props, { groups, shown, details, setSeason, setting, setSetting, language, setLanguage, showAll, unfolded, unfold }, lists);
   const title = titleOf(props.kind, props.player);
+
+  useEffect(() => {
+    if (!unfolded || landOn.current === undefined) return;
+    [...document.querySelectorAll<HTMLElement>(`[data-tv-menu] [data-key='${CSS.escape(String(landOn.current))}']`)].at(-1)?.focus();
+    landOn.current = undefined;
+  }, [unfolded]);
 
   const cameFrom = useRef<MenuKind | null>(null);
   useEffect(() => {
@@ -403,6 +433,7 @@ export function TvMenu(props: MenuProps) {
         data-page={props.kind === "captionsMore" ? "more" : undefined}
         data-cols={columns.length}
         data-rich={props.kind === "episodes" && details !== null}
+        style={props.kind === "episodes" && shown ? digitsStyle(shown.episodes) : undefined}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="tv-menu-top">

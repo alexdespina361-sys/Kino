@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CaptionStyleSchema, defaultTrack, normalizeLang, SubtitleSyncModeSchema, type PlayerTrack } from "../../shared";
+import { CaptionStyleSchema, defaultTrack, languageName, normalizeLang, SubtitleSyncModeSchema, versionLabel, type PlayerTrack } from "../../shared";
 
 const ChosenTrackSchema = z.object({ lang: z.string().max(20).optional(), label: z.string().max(100) });
 export type ChosenTrack = z.infer<typeof ChosenTrackSchema>;
@@ -51,26 +51,37 @@ export function describeTrack(track: PlayerTrack): ChosenTrack {
   return { ...(lang ? { lang } : {}), label: track.label };
 }
 
-export function pickTrack(tracks: readonly PlayerTrack[], wanted: ChosenTrack): number | undefined {
+export function isPlainTrack(track: PlayerTrack): boolean {
+  const code = normalizeLang(track.lang);
+  if (!code) return false;
+  const names = [languageName(code, "en"), languageName(code, code), code].filter((name): name is string => Boolean(name)).sort((a, b) => b.length - a.length);
+  return versionLabel(track, names, 0, "") === "";
+}
+
+const bestOf = (tracks: readonly PlayerTrack[], plainFirst: boolean): PlayerTrack | undefined => (plainFirst ? tracks.find(isPlainTrack) : undefined) ?? defaultTrack(tracks);
+
+export function pickTrack(tracks: readonly PlayerTrack[], wanted: ChosenTrack, plainFirst = false): number | undefined {
   const byLabel = tracks.find((track) => track.label.toLowerCase() === wanted.label.toLowerCase());
   if (byLabel || !wanted.lang) return byLabel?.id;
-  return defaultTrack(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang))?.id;
+  return bestOf(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang), plainFirst)?.id;
 }
 
-export interface SubtitleLanguages {
+export interface SubtitlePick {
   chosen?: readonly string[] | undefined;
   only?: boolean | undefined;
+  plainFirst?: boolean | undefined;
 }
 
-export function pickBaseSubtitleTrack(tracks: readonly PlayerTrack[], wanted?: ChosenTrack | "off", languages: SubtitleLanguages = {}): number | undefined {
+export function pickBaseSubtitleTrack(tracks: readonly PlayerTrack[], wanted?: ChosenTrack | "off", pick: SubtitlePick = {}): number | undefined {
   if (wanted === "off") return -1;
+  const plainFirst = pick.plainFirst === true;
   if (wanted) {
-    const chosen = pickTrack(tracks, wanted);
+    const chosen = pickTrack(tracks, wanted, plainFirst);
     if (chosen !== undefined) return chosen;
   }
-  const bestOf = (lang: string) => defaultTrack(tracks.filter((track) => normalizeLang(track.lang) === lang));
-  for (const lang of [...(languages.chosen ?? []), ...(languages.only ? [] : ["en"])]) {
-    const found = bestOf(normalizeLang(lang) ?? lang);
+  for (const lang of [...(pick.chosen ?? []), ...(pick.only ? [] : ["en"])]) {
+    const code = normalizeLang(lang) ?? lang;
+    const found = bestOf(tracks.filter((track) => normalizeLang(track.lang) === code), plainFirst);
     if (found !== undefined) return found.id;
   }
   return undefined;

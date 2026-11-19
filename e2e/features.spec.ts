@@ -1158,9 +1158,30 @@ test.describe("languages", () => {
 
     await phone.getByTestId("chip-tracks").click();
     await expect(phone.getByTestId("subtitle-0")).toHaveText(/Romanian/);
-    await expect(phone.getByTestId("subtitle-1")).toHaveCount(0);
-    await phone.getByTestId("subtitle-more").click();
     await expect(phone.getByTestId("subtitle-1")).toHaveText(/Dutch/);
+    await expect(phone.getByTestId("subtitle-more")).toHaveCount(0);
+  });
+
+  test("with many languages, three show and the rest wait behind More languages, on the TV and the phone", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    const media = seriesMedia(baseURL!);
+    const langs = [["en", "English"], ["fr", "French"], ["de", "German"], ["es", "Spanish"], ["nl", "Dutch"], ["pt", "Portuguese"]] as const;
+    await loadOnTv(phone, { ...media, subtitles: langs.map(([lang, label]) => ({ id: lang, label, lang, url: "/fixtures/sample.vtt" })) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+
+    await tv.getByTestId("tv-audio-sub-btn").click();
+    const order = async () => (await tv.getByRole("listbox", { name: "Subtitles" }).getByRole("option").allTextContents()).map((text) => text.trim());
+    await expect.poll(order).toEqual(["Off", "English", "More languages5"]);
+    await tv.locator("[data-key='more-languages-open']").click();
+    await expect.poll(order).toEqual(["Off", "English", "French", "German", "Spanish", "Dutch", "Portuguese"]);
+
+    await phone.getByTestId("chip-tracks").click();
+    await expect(phone.getByTestId("subtitle-0")).toHaveText(/English/);
+    await expect(phone.getByTestId("subtitle-1")).toHaveCount(0);
+    await expect(phone.getByTestId("subtitle-more")).toContainText("5");
+    await phone.getByTestId("subtitle-more").click();
+    await expect(phone.getByTestId("subtitle-5")).toHaveText(/Portuguese/);
   });
 });
 

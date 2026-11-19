@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultSyncMode, describeTrack, parsePrefs, pickBaseSubtitleTrack, pickTrack, serializePrefs } from "./prefs";
+import { defaultSyncMode, describeTrack, isPlainTrack, parsePrefs, pickBaseSubtitleTrack, pickTrack, serializePrefs } from "./prefs";
 
 describe("defaultSyncMode", () => {
   it("is Light on a weaker screen: 4 threads or fewer, or 4 GB or less", () => {
@@ -87,6 +87,45 @@ describe("pickBaseSubtitleTrack", () => {
   it("does not start with English for a profile that asked for its own languages only", () => {
     expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl"], only: true })).toBeUndefined();
     expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["ro"], only: true })).toBe(1);
+  });
+
+  const anime = [
+    { id: 0, label: "English · Frieren.S01E05.1080p.WEB.H264", lang: "en" },
+    { id: 1, label: "English (2)", lang: "en" },
+    { id: 2, label: "English (3)", lang: "en" },
+    { id: 3, label: "Română (2) · Frieren.S01E05.WEB", lang: "ro" },
+    { id: 4, label: "Română", lang: "ro" },
+  ];
+
+  it("for an anime starts with the plain versions the menu calls Version 1, 2, 3, the first of them, before any named release", () => {
+    expect(pickBaseSubtitleTrack(anime, undefined, { plainFirst: true })).toBe(1);
+    expect(pickBaseSubtitleTrack(anime, undefined, { chosen: ["ro"], plainFirst: true })).toBe(4);
+    expect(pickBaseSubtitleTrack(anime, { lang: "en", label: "English · Frieren.S01E04.1080p.WEB.H264" }, { plainFirst: true })).toBe(1);
+  });
+
+  it("for an anime still keeps the exact version the viewer chose, and takes the best release when there is no plain version", () => {
+    expect(pickBaseSubtitleTrack(anime, { lang: "en", label: "English · Frieren.S01E05.1080p.WEB.H264" }, { plainFirst: true })).toBe(0);
+    expect(pickBaseSubtitleTrack([anime[0]!, anime[3]!], undefined, { plainFirst: true })).toBe(0);
+  });
+
+  it("for anything else keeps picking the best release as before", () => {
+    expect(pickBaseSubtitleTrack(anime)).toBe(0);
+    expect(pickBaseSubtitleTrack(anime, undefined, { chosen: ["ro"] })).toBe(3);
+  });
+});
+
+describe("isPlainTrack", () => {
+  it("is a track named only by its language, with or without a number", () => {
+    expect(isPlainTrack({ id: 0, label: "English", lang: "en" })).toBe(true);
+    expect(isPlainTrack({ id: 0, label: "English (2)", lang: "eng" })).toBe(true);
+    expect(isPlainTrack({ id: 0, label: "Română", lang: "ro" })).toBe(true);
+    expect(isPlainTrack({ id: 0, label: "Romanian (3)", lang: "ro" })).toBe(true);
+  });
+
+  it("is not a named release, nor a track without a language", () => {
+    expect(isPlainTrack({ id: 0, label: "English · Show.S01E01.WEB", lang: "en" })).toBe(false);
+    expect(isPlainTrack({ id: 0, label: "English (SDH)", lang: "en" })).toBe(false);
+    expect(isPlainTrack({ id: 0, label: "English" })).toBe(false);
   });
 });
 

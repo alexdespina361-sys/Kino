@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { askedTime, asOpened, backOf, cardOf, cardsToLookUp, episodeWindow, EPISODES_AT_ONCE, freshSimilar, gridOf, hasRows, heldStart, heroActions, isProfilePage, isRowsPage, listedWindow, ofSection, openedAt, overviewActions, playLabel, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
+import { ratingChoices } from "../account/ratingFilter";
+import { addressOfRating, askedTime, asOpened, backOf, cardOf, cardsToLookUp, ratingSectionIn, ratingsToLookUp, episodeWindow, EPISODES_AT_ONCE, freshSimilar, gridOf, hasRows, heldStart, heroActions, isProfilePage, isRowsPage, listedWindow, ofSection, openedAt, overviewActions, playLabel, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type HomeRow, type PageData } from "./pages";
 import type { ChildGate } from "../shared/childGate";
 import type { PersonalRow } from "../shared/taste";
 import { episodeRows } from "./Episodes";
@@ -340,6 +341,28 @@ describe("rowsOfPage: the four sections", () => {
     expect(cardsToLookUp([{ ...naruto, done: true }], rows, new Map())).toEqual([]);
   });
 
+  it("puts a rating in Anime when the server says its title is an anime, a show or a film, not in Series or Movies (the owner's report of 19 Nov: Spy x Family in Series, No Game No Life: Zero in Movies)", () => {
+    const spy = rated("spy", 9, 3, { url: "https://filmpire.sc/watch/120089", kind: "series" });
+    const zero = rated("zero", 10, 2, { url: "https://filmpire.sc/watch/397567" });
+    const boss = rated("boss", 8, 1, { url: "https://filmpire.sc/watch/295693" });
+    const heaven = rated("heaven", 7, 4, { url: "https://anime.example/watch/abc", kind: "series" });
+    const stored = rated("stored", 6, 5, { url: "https://filmpire.sc/watch/1", kind: "series", section: "anime" });
+    const animePlace: LibraryRow = { ...row("ah", "series", 1, "anime"), items: [item("ah-0", "series", { url: "https://anime.example/watch/zzz" })] };
+    const rows = [...everything, animePlace];
+    const ratings = [spy, zero, boss, heaven, stored];
+    const looked = new Map<string, LibrarySection>([["tv-120089", "anime"], ["movie-397567", "anime"], ["movie-295693", "movie"]]);
+    const titlesIn = (section: LibrarySection, over: Partial<PageData> = {}) => gridOf({ kind: "ratings", section }, data({ rows, ratings, ...over }))!.entries.map((e) => e.title);
+    expect(titlesIn("series")).toEqual(["Rated spy"]);
+    expect(titlesIn("movie")).toEqual(["Rated zero", "Rated boss"]);
+    expect(titlesIn("anime")).toEqual(["Rated stored", "Rated heaven"]);
+    expect(ratingsToLookUp(ratings, rows, new Map())).toEqual(["tv-120089", "movie-397567", "movie-295693"]);
+    expect(ratingChoices(ratings, {}, ratingSectionIn(rows, looked)).sections).toEqual([{ section: "movie", count: 1 }, { section: "anime", count: 4 }]);
+    expect(titlesIn("movie", { looked })).toEqual(["Rated boss"]);
+    expect(titlesIn("anime", { looked })).toEqual(["Rated stored", "Rated heaven", "Rated spy", "Rated zero"]);
+    expect(ratingsToLookUp(ratings, rows, looked)).toEqual([]);
+    expect(addressOfRating(rated("season", 5, 1, { url: "https://filmpire.sc/watch/120089", season: 2 }))).toBe("tv-120089");
+  });
+
   it("has no rows of the lists, as Movies and Series have none (those are on Home), and the first of the profile's own rows under its ranking", () => {
     for (const page of ["cartoons", "anime"] as const) {
       const rows = titles(page, { list: [saved("l")], personal: [own("k")] });
@@ -505,7 +528,7 @@ describe("gridOf", () => {
 
   it("is the ratings of one section or of one score when the page says so, a cartoon or an anime told by the rating or by where the library lists it", () => {
     const cartoon = { id: "c1", title: "Toons", url: "https://x.example/toon", kind: "movie" as const, section: "cartoon" as const };
-    const rows = [{ id: "c", title: "Cartoons", source: "Test", kind: "movie" as const, section: "cartoon" as const, items: [cartoon] }];
+    const rows = [{ id: "c", title: "Cartoons", source: "Test", kind: "movie" as const, section: "cartoon" as const, items: [cartoon] }, row("m", "movie", 1)];
     const ratings = [rated("film", 9, 100, { kind: "movie" }), rated("toon", 7, 200, { kind: "movie" }), rated("akira", 9, 300, { kind: "movie", section: "anime" }), rated("dark", 8, 400, { kind: "series" })];
     const of = (view: { kind: "ratings"; section?: "movie" | "series" | "cartoon" | "anime"; score?: number }) => gridOf(view, data({ rows, ratings }))!.entries.map((e) => e.title);
     expect(of({ kind: "ratings" })).toEqual(["Rated dark", "Rated akira", "Rated toon", "Rated film"]);

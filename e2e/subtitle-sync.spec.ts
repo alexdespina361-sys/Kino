@@ -7,11 +7,15 @@ import { expect, type Page } from "@playwright/test";
 import { loadOnTv, openLibrary, openPairedPhone, openTv, pressMenuLine, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 
 async function openTvWithThreads(browser: Parameters<typeof openTv>[0], threads: number): Promise<Page> {
-  const tv = await openLibrary(browser, (context) =>
-    context.addInitScript((n) => {
-      Object.defineProperty(Navigator.prototype, "hardwareConcurrency", { get: () => n, configurable: true });
-      Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true });
-    }, threads),
+  const tv = await openLibrary(
+    browser,
+    (context) =>
+      context.addInitScript((n) => {
+        Object.defineProperty(Navigator.prototype, "hardwareConcurrency", { get: () => n, configurable: true });
+        Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true });
+      }, threads),
+    undefined,
+    { "tv.prefs": JSON.stringify({ subtitleSync: true }) },
   );
   await pressMenuLine(tv, "rail-connect");
   return tv;
@@ -64,10 +68,32 @@ function watchAssets(tv: Page): Map<string, number> {
 }
 
 const prefs = (tv: Page) => tv.evaluate(() => JSON.parse(localStorage.getItem("tv.prefs") ?? "{}") as { subtitleSync?: boolean; subtitleSyncMode?: string });
+const syncOn = (more: Record<string, unknown> = {}) => ({ "tv.prefs": JSON.stringify({ subtitleSync: true, ...more }) });
 
 test.describe("the subtitle aligner", () => {
-  test("starts by itself with a film that plays through hls.js, and says so", async ({ browser }) => {
+  test("is off at first: a film with subtitles plays without it and nothing of it is fetched, until the viewer turns it on, and that is kept", async ({ browser }) => {
     const tv = await openTv(browser);
+    const assets = watchAssets(tv);
+    const phone = await RawPhone.connect(tv.url().split("/").slice(0, 3).join("/"), await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: film("Tone") });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "SET_SUBTITLE", track: 0 });
+    phone.cmd({ type: "PLAY" });
+    await expect.poll(() => phone.states.at(-1)?.subtitleSync).toBe("off");
+    await tv.waitForTimeout(2500);
+    expect(await tv.evaluate(() => document.querySelector("video")!.currentTime)).toBeGreaterThan(0.5);
+    expect([...assets.keys()]).toEqual([]);
+    expect((await prefs(tv)).subtitleSync).toBeUndefined();
+
+    phone.cmd({ type: "SET_SUBTITLE_SYNC", on: true });
+    await expect.poll(() => assets.get("1/silero-vad-16k.bin"), { timeout: 30_000 }).toBe(200);
+    await expect.poll(() => phone.states.at(-1)?.subtitleSync, { timeout: 30_000 }).toMatch(/^(syncing|synced)$/);
+    await expect.poll(async () => (await prefs(tv)).subtitleSync).toBe(true);
+    phone.close();
+  });
+
+  test("once on, starts by itself with a film that plays through hls.js, and says so", async ({ browser }) => {
+    const tv = await openTv(browser, undefined, syncOn());
     const assets = watchAssets(tv);
     const phone = await RawPhone.connect(tv.url().split("/").slice(0, 3).join("/"), await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: film("Tone") });
@@ -81,7 +107,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("costs nothing while no subtitles are on: no worker and no model are fetched until one is chosen", async ({ browser }) => {
-    const tv = await openTv(browser, undefined, { "tv.prefs": JSON.stringify({ subtitles: "off" }) });
+    const tv = await openTv(browser, undefined, syncOn({ subtitles: "off" }));
     const assets = watchAssets(tv);
     const workers: string[] = [];
     tv.on("response", (response) => {
@@ -104,7 +130,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("is left alone when the viewer has turned it off: nothing of it is fetched", async ({ browser }) => {
-    const tv = await openTv(browser);
+    const tv = await openTv(browser, undefined, syncOn());
     const assets = watchAssets(tv);
     const chunks: string[] = [];
     tv.on("response", (response) => {
@@ -125,7 +151,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("listens to a film the browser plays by itself (an MP4) once subtitles are on, and not before: no model, and no sound device, until then", async ({ browser }) => {
-    const tv = await openTv(browser, undefined, { "tv.prefs": JSON.stringify({ subtitles: "off" }) });
+    const tv = await openTv(browser, undefined, syncOn({ subtitles: "off" }));
     const assets = watchAssets(tv);
     const contexts = await countSoundDevices(tv);
     const phone = await RawPhone.connect(tv.url().split("/").slice(0, 3).join("/"), await readPairingCode(tv));
@@ -150,7 +176,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("a film through the relay, which lets a page read it, is asked for so and listened to", async ({ browser }) => {
-    const tv = await openTv(browser);
+    const tv = await openTv(browser, undefined, syncOn());
     const asked = await relay(tv);
     const phone = await RawPhone.connect(tv.url().split("/").slice(0, 3).join("/"), await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: file("Beeps", RELAY) });
@@ -164,7 +190,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("a film through a relay that does not let a page read it plays all the same, asked for again as before, without the aligner", async ({ browser }) => {
-    const tv = await openTv(browser);
+    const tv = await openTv(browser, undefined, syncOn());
     const asked = { origins: [] as Array<string | undefined> };
     const server = createServer((request, response) => {
       asked.origins.push(request.headers.origin);
@@ -190,7 +216,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("a film from a host that says nothing of being read is asked for as it always was, and has no aligner", async ({ browser }) => {
-    const tv = await openTv(browser);
+    const tv = await openTv(browser, undefined, syncOn());
     const origins: Array<string | undefined> = [];
     await tv.route("https://cdn.test/**", async (route) => {
       origins.push(route.request().headers()["origin"]);
@@ -210,7 +236,7 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("can be turned off and on from the phone, and the TV's menu shows it and does the same; the choice is kept for the next film", async ({ browser }) => {
-    const tv = await openTv(browser);
+    const tv = await openTv(browser, undefined, syncOn());
     const phone = await openPairedPhone(browser, tv);
     await loadOnTv(phone, film("Tone"));
     await expect(phone.getByTestId("media-title")).toBeVisible();

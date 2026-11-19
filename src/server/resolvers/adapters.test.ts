@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createHiAnimeAdapter } from "./adapters/hianime";
-import { createFilmpireAdapter, nextEpisodeOf, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
+import { absoluteEpisodeOf, createFilmpireAdapter, nextEpisodeOf, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 import { rememberPlayerSeasons } from "../library/filmpire";
 
@@ -795,6 +795,7 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     tmdbId?: string;
     tmdb?: Record<string, unknown>;
     hiEpisodes?: number[];
+    hiSearch?: string;
   }): typeof fetch {
     const requestedEpisodes = options.hiEpisodes ?? Array.from({ length: 146 }, (_, i) => i + 1);
 
@@ -819,14 +820,17 @@ describe("HiAnime provider and multi-season anime fallback", () => {
       // HiAnime mock
       if (u.hostname.endsWith("hianime.at")) {
         if (u.pathname === "/search") {
-          return text(`
+          return text(
+            options.hiSearch ??
+              `
             <div class="film-detail">
               <h3 class="film-name"><a href="/pokemon-journeys-the-series-1879" title="Pokemon Journeys: The Series">Pokemon Journeys</a></h3>
             </div>
             <div class="film-detail">
               <h3 class="film-name"><a href="/pokemon-7102" title="Pokémon">Pokémon</a></h3>
             </div>
-          `);
+          `,
+          );
         }
         if (u.pathname.startsWith("/api/theme/episode/list/")) {
           const epHtml = requestedEpisodes.map((n) => `<a class="ep-item" data-id="${10000 + n}" data-number="${n}" title="Episode ${n}"></a>`).join("");
@@ -886,6 +890,35 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     expect(mid.status === "success" && mid.media.series).toEqual({ season: 23, episode: 3, next: { season: 23, episode: 4, url: "https://filmpire.sc/watch/60572?s=23&e=4" } });
     expect(end.status === "success" && end.media.series?.next).toEqual({ season: 24, episode: 1, url: "https://filmpire.sc/watch/60572?s=24&e=1" });
     expect(last.status === "success" && last.media.series).toEqual({ season: 25, episode: 46 });
+  });
+
+  const ONE_PIECE_COUNTS = [61, 16, 14, 39, 13, 52, 33, 35, 73, 45, 26, 14, 101, 58, 62, 50, 56, 55, 74, 14, 197, 67, 25];
+  const onePieceTmdb = {
+    id: 37854,
+    name: "One Piece",
+    original_language: "ja",
+    genres: [{ id: 16 }],
+    seasons: ONE_PIECE_COUNTS.map((episode_count, i) => ({ season_number: i + 1, name: `Season ${i + 1}`, episode_count })),
+    last_episode_to_air: { season_number: 23, episode_number: 1180 },
+  };
+  const onePiece = () =>
+    createFilmpireAdapter({
+      fetch: mockAnimeWorldWithHiAnime({
+        tmdbId: "37854",
+        tmdb: onePieceTmdb,
+        hiEpisodes: Array.from({ length: 1180 }, (_, i) => i + 1),
+        hiSearch: `<div class="film-detail"><h3 class="film-name"><a href="/one-piece-100" title="One Piece">One Piece</a></h3></div>`,
+      }),
+    });
+
+  it("plays One Piece's episode 1165 as HiAnime's 1165: TMDB numbers its seasons from the show's start (S23 is E1156-E1180), so nothing is added (the owner's report of 19 Nov)", async () => {
+    const adapter = onePiece();
+    const late = await adapter.resolve(new URL("https://filmpire.sc/watch/37854?s=23&e=1165"));
+    const early = await adapter.resolve(new URL("https://filmpire.sc/watch/37854?s=2&e=62"));
+    expect(late.status).toBe("success");
+    expect(late.status === "success" && late.media.stream.directUrl).toContain("/11165/master.m3u8");
+    expect(late.status === "success" && late.media.series).toEqual({ season: 23, episode: 1165, next: { season: 23, episode: 1166, url: "https://filmpire.sc/watch/37854?s=23&e=1166" } });
+    expect(early.status === "success" && early.media.stream.directUrl).toContain("/10062/master.m3u8");
   });
 
   it("an episode HiAnime plays has no next one when it is the last that has aired", async () => {
@@ -1496,6 +1529,30 @@ describe("the next episode of a show", () => {
     expect(nextEpisodeOf("7", 3, 6, { parts, lastAired })).toBeUndefined();
     expect(nextEpisodeOf("7", 1, 3, { parts: null })).toEqual(at(1, 4));
     expect(nextEpisodeOf("7", 1, 24, { parts: null })).toEqual(at(2, 1));
+  });
+
+  const fromStart = [
+    { season_number: 1, episode_count: 61 },
+    { season_number: 2, episode_count: 16 },
+    { season_number: 3, episode_count: 14 },
+  ];
+
+  it("follows a show whose seasons TMDB numbers from the show's start (One Piece: S2 is E62-E77)", () => {
+    expect(nextEpisodeOf("7", 2, 62, { seasons: fromStart })).toEqual(at(2, 63));
+    expect(nextEpisodeOf("7", 2, 77, { seasons: fromStart })).toEqual(at(3, 78));
+    expect(nextEpisodeOf("7", 3, 85, { seasons: fromStart, lastAired: { season_number: 3, episode_number: 86 } })).toEqual(at(3, 86));
+    expect(nextEpisodeOf("7", 3, 86, { seasons: fromStart, lastAired: { season_number: 3, episode_number: 86 } })).toBeUndefined();
+    expect(nextEpisodeOf("7", 3, 91, { seasons: fromStart })).toBeUndefined();
+  });
+
+  it("counts an episode from the show's start: earlier seasons are added only when TMDB numbers the season from 1", () => {
+    expect(absoluteEpisodeOf(fromStart, 2, 62)).toBe(62);
+    expect(absoluteEpisodeOf(fromStart, 3, 91)).toBe(91);
+    expect(absoluteEpisodeOf(fromStart, 2, 5)).toBe(66);
+    expect(absoluteEpisodeOf(fromStart, 2, 16)).toBe(77);
+    expect(absoluteEpisodeOf(seasons, 2, 12)).toBe(24);
+    expect(absoluteEpisodeOf(fromStart, 1, 30)).toBeUndefined();
+    expect(absoluteEpisodeOf([{ season_number: 2, episode_count: 16 }], 2, 62)).toBeUndefined();
   });
 });
 

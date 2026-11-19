@@ -22,3 +22,21 @@ export function useSubtitleLists<T extends TrackLike>(tracks: readonly T[], play
 }
 
 export const languageNames = (group: TrackGroup): string[] => [group.name, languageName(group.key) ?? group.name];
+
+export const LEAD_LANGUAGES = 3;
+
+export interface FoldedLanguages<T extends TrackLike> {
+  lead: TrackGroup<T>[];
+  rest: TrackGroup<T>[];
+}
+
+export function foldLanguages<T extends TrackLike>(pinned: readonly TrackGroup<T>[], more: readonly TrackGroup<T>[], keep: readonly (string | undefined)[], max = LEAD_LANGUAGES): FoldedLanguages<T> {
+  const all = [...pinned, ...more];
+  const lead = (pinned.length > 0 ? pinned : more).slice(0, max);
+  for (const key of keep) {
+    const group = all.find((one) => one.key === key);
+    if (group && !lead.includes(group)) lead.push(group);
+  }
+  const rest = all.filter((group) => !lead.includes(group));
+  return rest.length > 1 ? { lead, rest } : { lead: all, rest: [] };
+}

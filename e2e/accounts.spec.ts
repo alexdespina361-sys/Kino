@@ -867,6 +867,7 @@ const subtitled = (): NormalizedMedia => ({
 
 test.describe("the subtitle languages a profile chose", () => {
   const optionsOf = async (tv: Page) => (await tv.getByRole("listbox", { name: "Subtitles" }).getByRole("option").allTextContents()).map((text) => text.trim());
+  const FOLDED = (count: number) => `${en["player.moreLanguages"]}${count}`;
 
   async function openMenu(tv: Page, baseURL: string) {
     const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
@@ -876,11 +877,15 @@ test.describe("the subtitle languages a profile chose", () => {
     return phone;
   }
 
-  test("they come first, in the order chosen, with every other language under a heading", async ({ browser, baseURL }) => {
+  test("they come first, in the order chosen, and every other language waits behind More languages, then under a heading", async ({ browser, baseURL }) => {
     const tv = await openTv(browser, undefined, guestStorage({ settings: [{ key: "subtitleLanguages", at: Date.now(), value: ["nl", "fr"] }] }));
     const phone = await openMenu(tv, baseURL!);
+    await expect.poll(() => optionsOf(tv)).toEqual(["Off", "Dutch", "French", FOLDED(2)]);
+    await tv.locator("[data-key='more-languages-open']").focus();
+    await tv.keyboard.press("Enter");
     await expect.poll(() => optionsOf(tv)).toEqual(["Off", "Dutch", "French", "English", "Romanian"]);
     await expect(tv.getByText(en["player.moreLanguages"], { exact: true })).toBeVisible();
+    await expect(tv.getByRole("option", { name: "English", exact: true })).toBeFocused();
     phone.close();
   });
 
@@ -938,7 +943,7 @@ test.describe("the subtitle languages a profile chose", () => {
 
     await pressMenuLine(tv, "rail-connect");
     const phone = await openMenu(tv, baseURL!);
-    await expect.poll(() => optionsOf(tv)).toEqual(["Off", "Dutch", "French", "English", "Romanian"]);
+    await expect.poll(() => optionsOf(tv)).toEqual(["Off", "Dutch", "French", FOLDED(2)]);
     phone.close();
   });
 
@@ -962,7 +967,7 @@ test.describe("the subtitle languages a profile chose", () => {
   test("someone who chose nothing gets the languages of the site first", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openMenu(tv, baseURL!);
-    await expect.poll(() => optionsOf(tv)).toEqual(["Off", "English", "Romanian", "French", "Dutch"]);
+    await expect.poll(() => optionsOf(tv)).toEqual(["Off", "English", "Romanian", FOLDED(2)]);
     phone.close();
   });
 });
