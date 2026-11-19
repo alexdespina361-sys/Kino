@@ -2,6 +2,13 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.22",
+    date: "2026-11-19",
+    en: ["TVs start and scroll faster: rows far down the page are drawn as you get near them, and the chat is fetched while the TV sits idle."],
+    ro: ["Televizoarele pornesc și derulează mai repede: rândurile de jos se desenează când ajungi lângă ele, iar chatul se încarcă cât televizorul stă liber."],
+    it: ["Le TV si avviano e scorrono più in fretta: le righe in fondo si disegnano quando ti avvicini, e la chat si carica mentre la TV è inattiva."],
+  },
+  {
     version: "0.4.21",
     date: "2026-11-19",
     en: [

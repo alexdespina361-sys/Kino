@@ -58,24 +58,31 @@ import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
 import { SearchField } from "./SearchField";
-import { ChatTv } from "../chat/ChatTv";
-import type { OpenTitle } from "../chat/titles";
-import { useHost } from "../chat/useHost";
+import { watchSeen } from "./rowWatch";
+import { later, warmLater } from "./later";
+import { loadQrMaker } from "../shared/QrCode";
 import { NewsList } from "../changelog/NewsList";
 
 const STEP = 0.8;
 const NEAR_END = 1.5;
 const WAITING_TILES = 3;
-function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean }) {
+const NEAR_MARGIN = "1250px 0px";
+function RowTiles({ children, onNearEnd, loading, startFar }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean; startFar?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState({ before: false, after: false });
   const wantsMore = useRef(onNearEnd);
   wantsMore.current = onNearEnd;
   const onScreen = useRef(typeof IntersectionObserver === "undefined");
+  const near = useRef(typeof IntersectionObserver === "undefined" || !startFar);
+
+  useLayoutEffect(() => {
+    if (!near.current) box.current?.setAttribute("data-far", "");
+  }, []);
 
   const measure = useCallback(() => {
     const row = scroller.current;
-    if (!row) return;
+    if (!row || !near.current) return;
     const before = row.scrollLeft > 2;
     const after = row.scrollLeft < row.scrollWidth - row.clientWidth - 2;
     setMore((was) => (was.before === before && was.after === after ? was : { before, after }));
@@ -93,12 +100,19 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
   useEffect(() => {
     const row = scroller.current;
     if (!row || typeof IntersectionObserver === "undefined") return;
-    const watch = new IntersectionObserver((seen) => {
-      onScreen.current = seen.some((one) => one.isIntersecting);
-      if (onScreen.current) measure();
+    return watchSeen(row, null, "0px", (on) => {
+      onScreen.current = on;
+      if (on) measure();
     });
-    watch.observe(row);
-    return () => watch.disconnect();
+  }, [measure]);
+  useEffect(() => {
+    const here = box.current;
+    if (!here || typeof IntersectionObserver === "undefined") return;
+    return watchSeen(here, here.closest(".tv-rows"), NEAR_MARGIN, (on) => {
+      near.current = on;
+      here.toggleAttribute("data-far", !on);
+      if (on && onScreen.current) measure();
+    });
   }, [measure]);
 
   const go = (direction: -1 | 1) => scroller.current?.scrollBy({ left: direction * scroller.current.clientWidth * STEP, behavior: "smooth" });
@@ -117,7 +131,7 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
     </button>
   );
   return (
-    <div className="tv-row-box">
+    <div className="tv-row-box" ref={box}>
       <div className="tv-row-tiles" ref={scroller} onScroll={measure}>
         {children}
         {loading && Array.from({ length: WAITING_TILES }, (_, at) => <div className="tv-tile tv-skeleton" data-testid="tv-row-waiting" aria-hidden="true" key={`waiting-${at}`} />)}
@@ -300,31 +314,7 @@ function NewsTv({ onClose, onSeen }: { onClose: () => void; onSeen: () => void }
   );
 }
 
-function TvChat({ friendId, narrow, onClose, onOpenTitle }: { friendId: string; narrow: boolean; onClose: () => void; onOpenTitle?: ((entry: Entry) => void) | undefined }) {
-  const host = useHost(friendId, onClose);
-  if (!host.friend) return null;
-  const open: OpenTitle | undefined = onOpenTitle
-    ? (item, opening) => {
-        host.close();
-        onOpenTitle(openedAt(entryOfItem(item), opening));
-      }
-    : undefined;
-  return (
-    <ChatTv
-      name={host.friend.name}
-      avatar={host.friend.avatar}
-      online={host.friend.on && host.friend.online}
-      presence={presenceInChat(host.friend, Date.now())}
-      session={host.session}
-      report={host.report}
-      receiving={host.receiving}
-      narrow={narrow}
-      desk={typeof document !== "undefined" && document.documentElement.dataset.fit === "desk"}
-      onClose={host.close}
-      onOpenTitle={open}
-    />
-  );
-}
+const TvChat = later(() => import("./TvChat").then((module) => module.TvChat));
 
 export interface PlayOptions {
   startAt?: number;
@@ -718,7 +708,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   useEffect(() => {
     if (grownFor !== rowsKey) startTransition(() => setGrownFor(rowsKey));
   }, [rowsKey, grownFor]);
+  useEffect(() => {
+    if (status === "ready" && allRowsDrawn) warmLater([TvChat.preload, loadQrMaker]);
+  }, [status, allRowsDrawn]);
   const drawnRows = allRowsDrawn ? homeRows : homeRows.slice(0, startRow + FIRST_ROWS);
+  const farFrom = Math.max(startRow, focused && rowsPage ? homeRows.findIndex((row) => row.title === focused.label) : -1) + FIRST_ROWS;
   const onNow = focused && rowsPage ? homeRows.find((row) => row.title === focused.label)?.entries.find((entry) => entry.id === focused.entry.id) : undefined;
   const shown: Focused | null = focused
     ? onNow
@@ -1910,7 +1904,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           </div>
           )}
 
-          <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
+          <div className="tv-rows" ref={rowsRef} onScroll={askShelves} data-skip={isRowsPage(view) && !few ? "true" : undefined}>
             {homeRows.length > 0
               ? drawnRows.map((row, r) => (
                   <section
@@ -1945,7 +1939,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       />
                     )}
                     {!(friendsHead && row === peopleRow) && <h2 className="tv-row-title">{row.title}</h2>}
-                    <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
+                    <RowTiles startFar={r >= farFrom} {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
                       {rowTiles(row, r)}
                     </RowTiles>
                   </section>

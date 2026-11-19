@@ -1,0 +1,10 @@
+[Unit]
+Description=Lock a Kino copy for the off-site backup every night
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

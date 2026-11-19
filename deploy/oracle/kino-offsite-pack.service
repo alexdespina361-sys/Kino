@@ -1,0 +1,14 @@
+[Unit]
+Description=Lock the newest Kino database copy and the site's own files for the off-site copy
+After=kino-db-backup.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/kino-web.env
+ExecStart=/bin/bash /opt/kino-tools/kino-offsite-pack.sh
+Nice=19
+IOSchedulingClass=idle
+ProtectSystem=strict
+ReadWritePaths=/var/backups
+PrivateTmp=yes
+NoNewPrivileges=yes
