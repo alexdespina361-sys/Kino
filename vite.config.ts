@@ -31,5 +31,5 @@ export default defineConfig({
       },
     },
   },
-  test: { include: ["src/**/*.test.ts"], environment: "node" },
+  test: { include: ["src/**/*.test.ts"], environment: "node", setupFiles: ["src/client/i18n/testWords.ts"] },
 });
