@@ -376,17 +376,41 @@ function sectionsByLink(rows: readonly LibraryRow[]): Map<string, LibrarySection
   return out;
 }
 
-export function ratingSectionIn(rows: readonly LibraryRow[]): SectionOfRating {
+const ratingKeys = (rating: LiveRating): Array<string | undefined> =>
+  rating.kind ? [linkKey(rating.url, rating.kind === "series")] : [linkKey(rating.url, false), linkKey(rating.url, true)];
+
+export const addressOfRating = (rating: LiveRating): string | null =>
+  addressOf({ id: rating.key, url: rating.url, ...(rating.kind === "series" || rating.season !== undefined ? { kind: "series" } : {}) });
+
+export function ratingSectionIn(rows: readonly LibraryRow[], looked?: ReadonlyMap<string, LibrarySection>): SectionOfRating {
   const known = sectionsByLink(rows);
+  const hosts = sectionsByHost(rows);
   return (rating) => {
     if (rating.section) return rating.section;
-    const keys = rating.kind ? [linkKey(rating.url, rating.kind === "series")] : [linkKey(rating.url, false), linkKey(rating.url, true)];
-    for (const key of keys) {
+    for (const key of ratingKeys(rating)) {
       const section = key ? known.get(key) : undefined;
       if (section) return section;
     }
-    return ownSection(rating);
+    const address = addressOfRating(rating);
+    const found = address ? looked?.get(address) : undefined;
+    if (found) return found;
+    const host = hostOf(rating.url);
+    return (host && hosts.get(host)) || ownSection(rating);
   };
+}
+
+export function ratingsToLookUp(ratings: readonly LiveRating[], rows: readonly LibraryRow[], looked: ReadonlyMap<string, LibrarySection>): string[] {
+  const known = sectionsByLink(rows);
+  const hosts = sectionsByHost(rows);
+  const out = new Set<string>();
+  for (const rating of ratings) {
+    if (rating.section || ratingKeys(rating).some((key) => key && known.has(key))) continue;
+    const host = hostOf(rating.url);
+    if (host && hosts.get(host)) continue;
+    const address = addressOfRating(rating);
+    if (address && !looked.has(address)) out.add(address);
+  }
+  return [...out];
 }
 
 function sectionsByHost(rows: readonly LibraryRow[]): Map<string, LibrarySection | null> {
@@ -498,7 +522,7 @@ export function gridOf(view: View, data: PageData): GridPage | null {
     case "history":
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
     case "ratings": {
-      const shown = filterRatings(child ? data.ratings.filter((rating) => child.allows(ownTitle(rating))) : data.ratings, view, ratingSectionIn(data.all));
+      const shown = filterRatings(child ? data.ratings.filter((rating) => child.allows(ownTitle(rating))) : data.ratings, view, ratingSectionIn(data.all, data.looked));
       return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), shown) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(shown, "new").map(entryOfRating), empty: t("rating.empty") };
     }
     case "category": {

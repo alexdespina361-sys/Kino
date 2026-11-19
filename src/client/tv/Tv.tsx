@@ -360,7 +360,7 @@ export function Tv() {
   const [subtitleDelay, setSubtitleDelay] = useState<number>(() => initialPrefs.subtitleDelay ?? 0);
   const subtitleDelayRef = useRef(subtitleDelay);
   subtitleDelayRef.current = subtitleDelay;
-  const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? true);
+  const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? false);
   const subtitleSyncModeRef = useRef<SubtitleSyncMode>(initialPrefs.subtitleSyncMode ?? defaultSyncMode(thisDevice()));
   const republishRef = useRef<() => void>(() => {});
   const enhanceRef = useRef<PlayerState["enhance"]>(undefined);
@@ -737,7 +737,11 @@ export function Tv() {
     const subtitles = player.subtitles;
     if (!engine || !subtitles || applied.subtitles || subtitles.tracks.length === 0) return;
     applied.subtitles = true;
-    const id = pickBaseSubtitleTrack(subtitles.tracks, wanted.subtitles, { chosen: settings.subtitleLanguages, only: settings.onlySubtitleLanguages });
+    const id = pickBaseSubtitleTrack(subtitles.tracks, wanted.subtitles, {
+      chosen: settings.subtitleLanguages,
+      only: settings.onlySubtitleLanguages,
+      plainFirst: Boolean(currentMediaRef.current?.anime),
+    });
     if (id !== undefined && id !== subtitles.current) engine.setSubtitle(id);
   }, [player.subtitles]);
 
@@ -1915,6 +1919,7 @@ export function Tv() {
           kind={menu}
           player={player}
           series={series}
+          anime={Boolean(currentMedia?.anime)}
           show={currentMedia ? seriesKeyOf(currentMedia) : undefined}
           watched={watched}
           captionStyle={captionStyle}

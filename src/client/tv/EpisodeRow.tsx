@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { t } from "../i18n";
 import { CheckIcon, PlayIcon } from "../shared/icons";
 import { comesIn, hueOf } from "../shared/Poster";
@@ -13,6 +13,9 @@ export interface EpisodeCard {
   fraction?: number | undefined;
   unavailable?: boolean | undefined;
 }
+
+export const digitsStyle = (episodes: readonly { episode: number }[]): CSSProperties =>
+  ({ "--ep-digits": episodes.reduce((most, one) => Math.max(most, String(one.episode).length), 1) }) as CSSProperties;
 
 export function EpisodeRow({ number, name, still, overview, meta, state, fraction, unavailable }: EpisodeCard) {
   const [broken, setBroken] = useState(false);

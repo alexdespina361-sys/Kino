@@ -870,6 +870,7 @@ export function Controller() {
       {sheet === "tracks" && (
         <TracksSheet
           player={player}
+          anime={Boolean(media?.anime)}
           onClose={closeSheet}
           onSubtitle={(track) => send({ type: "SET_SUBTITLE", track })}
           onAudio={(track) => send({ type: "SET_AUDIO", track })}

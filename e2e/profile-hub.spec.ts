@@ -330,6 +330,36 @@ test.describe("the score a profile gave a title", () => {
     await expect(tiles(tv)).toHaveCount(1);
   });
 
+  test("puts an anime that was rated under Anime, a show or a film, once the server says what it is, not under Series or Movies (the owner's report of 19 Nov)", async ({ browser }) => {
+    const spy = { ...rated("https://filmpire.sc/watch/120089", "SPY x FAMILY", 9), kind: "series" };
+    const zero = rated("https://filmpire.sc/watch/397567", "No Game No Life: Zero", 10);
+    const boss = rated("https://filmpire.sc/watch/295693", "The Boss Baby", 8);
+    const asked: string[] = [];
+    const tv = await openLibrary(
+      browser,
+      async (context) => {
+        await withLibrary(library)(context);
+        await context.route(/\/api\/library\/title/, (route) => {
+          const id = new URL(route.request().url()).searchParams.get("id") ?? "";
+          asked.push(id);
+          const anime = id === "filmpire-tv-120089" || id === "filmpire-movie-397567";
+          return route.fulfill({ json: { item: { id, title: id, url: "https://filmpire.sc/watch/1", kind: id.includes("-tv-") ? "series" : "movie", ...(anime ? { section: "anime" } : {}) } } });
+        });
+      },
+      undefined,
+      guestStorage({ ratings: [spy, zero, boss] }),
+    );
+    await openProfilePlace(tv, "ratings");
+    await expect(tv.locator('[data-testid^="rating-filter-"]')).toHaveText(["All3", "Movies1", "Anime2"]);
+    expect(asked).toEqual(expect.arrayContaining(["filmpire-tv-120089", "filmpire-movie-397567", "filmpire-movie-295693"]));
+    await tv.getByTestId("rating-filter-anime").click();
+    await expect(tiles(tv)).toHaveCount(2);
+    await expect(tileOf(tv, "No Game No Life: Zero")).toBeVisible();
+    await tv.getByTestId("rating-filter-movie").click();
+    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tileOf(tv, "The Boss Baby")).toBeVisible();
+  });
+
   test("is there for a profile that had turned ratings off (they are on for everybody), with what was rated, and the settings have no switch for it", async ({ browser }) => {
     const off = guestStorage({ ratings: SCORES, settings: [{ key: "ratings", at: Date.now(), value: false }] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, off);

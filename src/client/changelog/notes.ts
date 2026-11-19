@@ -2,6 +2,34 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.24",
+    date: "2026-11-19",
+    en: [
+      "The subtitle menu shows your own languages, three at most, and keeps every other one behind More languages.",
+      "An anime starts with the subtitles the menu calls Version 1, made for that video, before other releases.",
+      "Auto-sync for subtitles is off until you turn it on; once on, it stays on for every video on that screen.",
+      "Episode numbers past 999 no longer slide under the picture, and One Piece's episodes after the first season play again, the right ones.",
+      "My ratings: an anime is only under Anime, not under Series or Movies.",
+      "After an anime episode, Next episode and the automatic next episode work again.",
+    ],
+    ro: [
+      "Meniul de subtitrări arată limbile tale, cel mult trei, iar pe celelalte le ține sub Alte limbi.",
+      "Un anime pornește cu subtitrarea pe care meniul o numește Varianta 1, făcută pentru acel video, înaintea altor variante.",
+      "Sincronizarea automată a subtitrărilor e oprită până o pornești; odată pornită, rămâne pornită pentru toate videoclipurile de pe acel ecran.",
+      "Numerele episoadelor de peste 999 nu mai intră sub imagine, iar episoadele One Piece de după primul sezon pornesc din nou, cele corecte.",
+      "Notele mele: un anime apare doar la Anime, nu și la Seriale sau Filme.",
+      "După un episod de anime, Episodul următor și trecerea automată la el merg din nou.",
+    ],
+    it: [
+      "Il menu dei sottotitoli mostra le tue lingue, al massimo tre, e tiene tutte le altre sotto Altre lingue.",
+      "Un anime parte con i sottotitoli che il menu chiama Versione 1, fatti per quel video, prima delle altre versioni.",
+      "La sincronizzazione automatica dei sottotitoli è spenta finché non la accendi; una volta accesa, resta accesa per ogni video su quello schermo.",
+      "I numeri degli episodi oltre 999 non finiscono più sotto l'immagine, e gli episodi di One Piece dopo la prima stagione partono di nuovo, quelli giusti.",
+      "Le mie valutazioni: un anime è solo in Anime, non in Serie TV o Film.",
+      "Dopo un episodio di un anime, Episodio successivo e il passaggio automatico funzionano di nuovo.",
+    ],
+  },
+  {
     version: "0.4.23",
     date: "2026-11-19",
     en: ["A new look for Kino: the k throws a red beam, like a projector, the icon is that k, and the pages glow with the icon's blue and red."],

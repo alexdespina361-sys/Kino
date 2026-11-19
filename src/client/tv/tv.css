@@ -859,7 +859,7 @@
 .tv-menu-show { margin-left: 0.8em; font-size: 0.55em; font-weight: 600; color: #8a8a8a; }
 .tv-opt.tv-ep {
   display: grid;
-  grid-template-columns: 2.6em 12.5em minmax(0, 1fr);
+  grid-template-columns: minmax(2.6em, max-content) 12.5em minmax(0, 1fr);
   align-items: center;
   justify-content: stretch;
   gap: 1.1em;
@@ -867,7 +867,7 @@
   font-size: 1em;
   font-weight: 400;
 }
-.tv-ep-no { text-align: center; font-size: 2em; font-weight: 700; color: #8a8a8a; font-variant-numeric: tabular-nums; }
+.tv-ep-no { min-width: calc(var(--ep-digits, 1) * 1ch); text-align: center; font-size: 2em; font-weight: 700; color: #8a8a8a; font-variant-numeric: tabular-nums; }
 .tv-ep-still { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 0.4em; }
 .tv-ep-still img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .tv-ep-play {
@@ -1090,7 +1090,7 @@
 .tv-detail-eps-title { margin: 0 0 0.5em; font-size: 1.9em; font-weight: 800; letter-spacing: -0.01em; }
 .tv-detail-list { display: flex; flex-direction: column; gap: 0.5em; padding: 0.5em; margin: 0 -0.5em; }
 .tv-detail-eps > .tv-detail-list:not([data-cols="1"]) { display: grid; grid-template-columns: repeat(var(--ep-cols, 2), minmax(0, 1fr)); gap: 0.5em 1em; max-width: none; }
-.tv-detail-list:not([data-cols="1"]) > .tv-opt.tv-ep { grid-template-columns: 2.2em 10.5em minmax(0, 1fr); gap: 0.9em; }
+.tv-detail-list:not([data-cols="1"]) > .tv-opt.tv-ep { grid-template-columns: minmax(2.2em, max-content) 10.5em minmax(0, 1fr); gap: 0.9em; }
 .tv-detail-eps-note { margin: 0.2em 0 0; font-size: 1.5em; color: var(--muted); }
 .tv-detail-list > .tv-detail-eps-more { grid-column: 1 / -1; align-self: center; justify-self: center; display: inline-flex; align-items: center; gap: 0.45em; margin: 0.2em 0; }
 .tv-detail-eps-more svg { flex: none; font-size: 1.1em; }
@@ -1975,7 +1975,7 @@
   .tv-menu-col h3 { font-size: 1.1em; }
   .tv-opts, .tv-menu[data-kind="episodes"][data-rich="true"] .tv-opts { max-height: min(34em, 46vh); }
   .tv-opt, .tv-menu[data-kind="tracks"] .tv-opt { font-size: 1.4em; }
-  .tv-opt.tv-ep { grid-template-columns: 1.6em 9em minmax(0, 1fr); gap: 0.8em; font-size: 1em; }
+  .tv-opt.tv-ep { grid-template-columns: minmax(1.6em, max-content) 9em minmax(0, 1fr); gap: 0.8em; font-size: 1em; }
   .tv-ep-no { font-size: 1.5em; }
   .tv-ep-name { font-size: 1.3em; }
   .tv-ep-about { font-size: 1em; -webkit-line-clamp: 2; }

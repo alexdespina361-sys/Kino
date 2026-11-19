@@ -6,7 +6,6 @@ import {
   CAPTION_VALUES,
   captionPresetOf,
   DEFAULT_CAPTION_STYLE,
-  defaultTrack,
   describeStatus,
   episodeName,
   episodeStatus,
@@ -31,7 +30,8 @@ import {
   type SubtitleSyncMode,
   type WatchedEntry,
 } from "../../shared";
-import { languageNames, useSubtitleLists } from "../account/subtitles";
+import { foldLanguages, languageNames, useSubtitleLists } from "../account/subtitles";
+import { startTrack } from "../tv/prefs";
 import { useAddable, useAddFromParty } from "../friends/useRequests";
 import { t, useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
@@ -139,8 +139,10 @@ export function TracksSheet({
   onSync,
   onSyncMode,
   onClose,
+  anime = false,
 }: Close & {
   player: PlayerState;
+  anime?: boolean | undefined;
   onSubtitle: (track: number) => void;
   onAudio: (track: number) => void;
   onStyle: () => void;
@@ -165,7 +167,8 @@ export function TracksSheet({
   const [language, setLanguage] = useState<string | undefined>(undefined);
   const shown = visible.find((group) => group.key === language) ?? playing ?? visible[0];
   const flat = visible.every((group) => group.tracks.length === 1);
-  const moreOpen = opened || pinned.length === 0 || more.some((group) => group.key === playing?.key || group.key === language);
+  const { lead, rest } = foldLanguages(pinned, more, [playing?.key, language]);
+  const restOpen = opened || rest.length === 0;
 
   const off: Choice = { key: -1, label: t("common.off"), active: (subtitles?.current ?? -1) === -1, testId: "subtitle--1", pick: () => onSubtitle(-1) };
   const trackChoice = (track: PlayerTrack): Choice => ({
@@ -202,7 +205,7 @@ export function TracksSheet({
         data-testid={`subtitle-lang-${group.key}`}
         onClick={() => {
           setLanguage(group.key);
-          if (!active) onSubtitle((defaultTrack(group.tracks) ?? group.tracks[0]!).id);
+          if (!active) onSubtitle((startTrack(group.tracks, anime) ?? group.tracks[0]!).id);
         }}
       >
         {group.name}
@@ -213,15 +216,23 @@ export function TracksSheet({
   const moreChip = (
     <button type="button" className="cap-choice more" data-testid="subtitle-more" onClick={() => setOpened(true)}>
       {t("player.moreLanguages")}
-      <small className="cap-count">{more.length}</small>
+      <small className="cap-count">{rest.length}</small>
     </button>
   );
   const showAllChip = hidden > 0 && (
-    <button type="button" className="cap-choice more" data-testid="subtitle-show-all" onClick={() => setAll(true)}>
+    <button
+      type="button"
+      className="cap-choice more"
+      data-testid="subtitle-show-all"
+      onClick={() => {
+        setAll(true);
+        setOpened(true);
+      }}
+    >
       {t("player.showAll")}
     </button>
   );
-  const moreLabel = pinned.length > 0 && (
+  const moreLabel = lead.length > 0 && (
     <span key="more-label" className="cap-label" role="presentation">
       {t("player.moreLanguages")}
     </span>
@@ -242,12 +253,12 @@ export function TracksSheet({
       <h3 className="sheet-section">{t("player.subtitles")}</h3>
       {flat ? (
         <>
-          <ChoiceList choices={[off, ...pinned.flatMap((group) => group.tracks.map(trackChoice))]} label={t("player.subtitles")} />
-          {more.length > 0 &&
-            (moreOpen ? (
+          <ChoiceList choices={[off, ...lead.flatMap((group) => group.tracks.map(trackChoice))]} label={t("player.subtitles")} />
+          {rest.length > 0 &&
+            (restOpen ? (
               <>
                 {moreLabel}
-                <ChoiceList choices={more.flatMap((group) => group.tracks.map(trackChoice))} label={t("player.moreLanguages")} />
+                <ChoiceList choices={rest.flatMap((group) => group.tracks.map(trackChoice))} label={t("player.moreLanguages")} />
               </>
             ) : (
               <div className="cap-choices">{moreChip}</div>
@@ -260,8 +271,8 @@ export function TracksSheet({
             <button type="button" role="option" aria-selected={off.active} className={`cap-choice ${off.active ? "active" : ""}`} data-testid={off.testId} onClick={off.pick}>
               {t("common.off")}
             </button>
-            {pinned.map(languageChip)}
-            {more.length > 0 && (moreOpen ? [moreLabel, ...more.map(languageChip)] : moreChip)}
+            {lead.map(languageChip)}
+            {rest.length > 0 && (restOpen ? [moreLabel, ...rest.map(languageChip)] : moreChip)}
             {showAllChip}
           </div>
           <ChoiceList choices={releases} label={t("player.subtitles")} />

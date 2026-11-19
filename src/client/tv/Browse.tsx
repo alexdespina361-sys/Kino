@@ -50,7 +50,7 @@ import { useBackFirst } from "./dpad";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyForChildren, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter } from "../account/ratingFilter";
-import { useCardSections } from "./cardSections";
+import { useCardSections, useRatingSections } from "./cardSections";
 import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, openedAt, overviewActions, playLabel, ratingSectionIn, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type RowsPage, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { warmPlayer } from "./engine";
@@ -635,6 +635,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const childGate = useChildGate(childEntries, everyRow, child);
   const shownRatings = useMemo(() => (childGate ? ratings.filter((rating) => childGate.allows({ id: rating.key, url: rating.url, kind: rating.kind })) : ratings), [childGate, ratings]);
   const shownProgress = useMemo(() => (childGate ? progress.filter((card) => childGate.allows({ id: card.key, url: card.url })) : progress), [childGate, progress]);
+  const ratingsPage = view.kind === "ratings";
+  useRatingSections(shownRatings, everyRow, ratingsPage && ratingsOn);
   const data = useMemo<PageData>(
     () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], personal, looked, child: childGate, wanted, watching }),
     [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, personal, looked, childGate, wanted, watching],
@@ -667,7 +669,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     [holding, view, data, language, friends.state, sharedLists, sharedRatings, iGet],
   );
   /* eslint-enable react-hooks/exhaustive-deps */
-  const ratingSectionOf = useMemo(() => (view.kind === "ratings" ? ratingSectionIn(everyRow) : ownSection), [view.kind, everyRow]);
+  const ratingSectionOf = useMemo(() => (ratingsPage ? ratingSectionIn(everyRow, looked) : ownSection), [ratingsPage, everyRow, looked]);
   const ratingFilter: RatingFilter = view.kind === "ratings" ? usableFilter(data.ratings, view, ratingSectionOf) : {};
   const ratingOptions = view.kind === "ratings" ? ratingChoices(data.ratings, ratingFilter, ratingSectionOf) : null;
   const ratingRows = ratingOptions ? filterRows(ratingOptions) : { sections: [], scores: [] };
