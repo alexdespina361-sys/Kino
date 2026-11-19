@@ -144,14 +144,14 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete,
       )}
 
       <div className="editor-actions">
-        <button type="submit" className={buttonClass("main")} disabled={busy || !name.trim()} data-testid="profile-save" {...nav}>
-          {saveLabel ?? t("common.save")}
-        </button>
         {onCancel && (
           <button type="button" className={buttonClass("plain")} onClick={onCancel} disabled={busy} data-testid="profile-cancel" {...nav}>
             {t("common.cancel")}
           </button>
         )}
+        <button type="submit" className={buttonClass("main")} disabled={busy || !name.trim()} data-testid="profile-save" {...nav}>
+          {saveLabel ?? t("common.save")}
+        </button>
       </div>
 
       {onDelete &&

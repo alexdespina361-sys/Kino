@@ -7,7 +7,7 @@ import { describeError, describePasswordError } from "../account/errors";
 import { GoogleMark } from "../account/GoogleButton";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
-import { SectionPicker, sectionsKept, sectionsShown } from "../account/ProfileSetup";
+import { animeShown, SectionPicker, sectionsKept, sectionsShown } from "../account/ProfileSetup";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
 import { COMMON_LANGUAGES, keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, moveLanguage } from "../account/subtitleLanguages";
@@ -274,25 +274,19 @@ export function SettingsPage({ onOpenFriends, grownUp }: { onOpenFriends: () => 
           <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
           <Switch label={t("settings.autoSkip")} checked={settings.autoSkip ?? false} onChange={(on) => set("autoSkip", on)} testId="auto-skip" />
         </Rows>
-        <p className="group-label">{t("settings.animeAudio")}</p>
-        <div className="segmented pair" role="radiogroup" aria-label={t("settings.animeAudio")}>
-          <button
-            role="radio"
-            aria-checked={(settings.animeAudio ?? "jp") === "jp"}
-            onClick={() => set("animeAudio", "jp")}
-            data-testid="anime-audio-jp"
-          >
-            {t("settings.animeAudioJp")}
-          </button>
-          <button
-            role="radio"
-            aria-checked={settings.animeAudio === "eng"}
-            onClick={() => set("animeAudio", "eng")}
-            data-testid="anime-audio-eng"
-          >
-            {t("settings.animeAudioEng")}
-          </button>
-        </div>
+        {animeShown(settings) && (
+          <>
+            <p className="group-label">{t("settings.animeAudio")}</p>
+            <div className="segmented pair" role="radiogroup" aria-label={t("settings.animeAudio")}>
+              <button role="radio" aria-checked={(settings.animeAudio ?? "jp") === "jp"} onClick={() => set("animeAudio", "jp")} data-testid="anime-audio-jp">
+                {t("settings.animeAudioJp")}
+              </button>
+              <button role="radio" aria-checked={settings.animeAudio === "eng"} onClick={() => set("animeAudio", "eng")} data-testid="anime-audio-eng">
+                {t("settings.animeAudioEng")}
+              </button>
+            </div>
+          </>
+        )}
       </Group>
       <SubtitleLanguages />
       {!child && (

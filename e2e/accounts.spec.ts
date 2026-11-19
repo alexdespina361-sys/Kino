@@ -673,6 +673,8 @@ test.describe("profiles made and changed on the TV itself", () => {
     await tv.keyboard.press("ArrowRight");
     await expect(inColumn(1)).toHaveCount(1);
     for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-delete-account")).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
     await expect(inColumn(1)).toHaveAttribute("data-testid", /^tv-anime-audio-/);
     await tv.keyboard.press("ArrowLeft");
     await expect(inColumn(0)).toHaveCount(1);
@@ -1024,5 +1026,96 @@ test.describe("playing the next episode", () => {
     await tv.getByTestId("upnext-play-btn").click();
     await expect(card).toHaveCount(0);
     phone.close();
+  });
+});
+
+test.describe("the account deleted from the TV's settings", () => {
+  test("a quiet line at the very bottom opens it: the word typed first, then the password; a wrong one is called so, Back returns to the line, and then the account is gone", async ({ browser }) => {
+    test.setTimeout(75_000);
+    const account = fresh();
+    const tv = await signedInScreen(browser, account);
+    await openTvSettings(tv);
+    const line = tv.getByTestId("tv-delete-account");
+    await expect(line).toHaveText(en["account.delete"]);
+    const lowest = await tv.locator("[data-testid='tv-account'] [data-nav]").evaluateAll((all) => Math.max(...all.map((one) => one.getBoundingClientRect().bottom)));
+    expect((await line.boundingBox())!.y + (await line.boundingBox())!.height).toBeGreaterThanOrEqual(lowest - 1);
+    expect(await line.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(1);
+
+    await line.click();
+    const page = tv.getByTestId("tv-delete");
+    await expect(page).toBeVisible();
+    await expect(page).toContainText(en["account.deleteAll"]);
+    const confirm = tv.getByTestId("delete-confirm");
+    await expect(confirm).toBeDisabled();
+    await expect(tv.getByTestId("delete-password")).toHaveCount(0);
+    await expect(page.locator(".editor-actions button")).toHaveText([en["common.cancel"], en["account.deleteConfirm"]]);
+    await tv.getByTestId("delete-word").fill("Understoo");
+    await expect(confirm).toBeDisabled();
+    await tv.getByTestId("delete-word").fill(" understood ");
+    await expect(confirm).toBeEnabled();
+    await tv.getByTestId("delete-password").fill("not it");
+    await confirm.click();
+    await expect(tv.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]);
+
+    await tv.keyboard.press("Escape");
+    await expect(page).toHaveCount(0);
+    await expect(line).toBeFocused();
+    await line.click();
+    await tv.getByTestId("delete-word").fill("Understood");
+    await tv.getByTestId("delete-password").fill(account.password);
+    await confirm.click();
+    await expect(page).toHaveCount(0);
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"]);
+    await openTvSignIn(tv);
+    await tv.getByTestId("tv-signin-email").click();
+    await tv.getByTestId("auth-email").fill(account.email);
+    await tv.getByTestId("auth-password").fill(account.password);
+    await tv.getByTestId("auth-submit").click();
+    await expect(tv.getByTestId("auth-error")).toBeVisible();
+  });
+
+  test("the Romanian word may be typed without its marks, and a guest has no such line", async ({ browser }) => {
+    const guest = await openLibrary(browser);
+    await openTvSettings(guest);
+    await expect(guest.getByTestId("tv-account")).toBeVisible();
+    await expect(guest.getByTestId("tv-delete-account")).toHaveCount(0);
+    await guest.context().close();
+
+    const tv = await signedInScreen(browser, fresh());
+    await openTvSettings(tv);
+    await tv.getByTestId("tv-lang-ro").click();
+    await expect(tv.getByTestId("tv-delete-account")).toHaveText(ro["account.delete"]);
+    await tv.getByTestId("tv-delete-account").click();
+    await expect(tv.getByTestId("tv-delete")).toContainText(ro["account.deleteType"].replace("{word}", ro["account.deleteWord"]));
+    await tv.getByTestId("delete-word").fill("inteleg");
+    await expect(tv.getByTestId("delete-confirm")).toBeEnabled();
+  });
+});
+
+test.describe("the anime voice in the settings", () => {
+  test("is offered only while Anime is one of the sections shown, on the TV and on the phone", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const tv = await signedInScreen(browser, fresh());
+    await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-anime-audio-jp")).toBeVisible();
+    await tv.getByTestId("tv-sections-setting").click();
+    await tv.getByTestId("section-choice-anime").click();
+    await expect(tv.getByTestId("section-choice-anime")).toHaveAttribute("aria-pressed", "false");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-account")).toBeVisible();
+    await expect(tv.getByTestId("tv-anime-audio-jp")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-autoskip")).toBeVisible();
+    await tv.getByTestId("tv-sections-setting").click();
+    await tv.getByTestId("section-choice-anime").click();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-anime-audio-jp")).toBeVisible();
+
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, fresh());
+    await phone.getByTestId("menu-settings").click();
+    await expect(phone.getByTestId("anime-audio-jp")).toBeVisible();
+    await phone.getByTestId("section-choice-anime").click();
+    await expect(phone.getByTestId("anime-audio-jp")).toHaveCount(0);
   });
 });

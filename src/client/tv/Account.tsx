@@ -1,31 +1,33 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ACCENTS, LINK_TTL_MS, MAX_PROFILES, preferredLanguages, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
-import { describeError } from "../account/errors";
+import { describeError, describePasswordError } from "../account/errors";
+import { PasswordInput } from "../account/PasswordInput";
 import { signedInLine } from "../account/google";
 import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
-import { ProfileSetup, SectionPicker, sectionsKept, sectionsShown } from "../account/ProfileSetup";
+import { animeShown, ProfileSetup, SectionPicker, sectionsKept, sectionsShown } from "../account/ProfileSetup";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { keptLanguages, languageNamer, MAX_SUBTITLE_LANGUAGES, pickableLanguages, toggleLanguage } from "../account/subtitleLanguages";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
-import { CheckIcon, ChevronIcon, FilmIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, FilmIcon, InfoIcon, LockIcon, LogoutIcon, PencilIcon, SubtitlesIcon, TrashIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { handHeld } from "../shared/backButton";
 import { BackButton, Screen } from "./Idle";
+import { NameKeys } from "./NameKeys";
 import { TvPinAsk, TvPinSetup } from "./Pin";
 import { TvCode } from "./TvCode";
 
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "pin" | "sections" | "setup";
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "subtitles" | "pin" | "sections" | "setup" | "delete";
 
-type SettingsPage = "subtitles" | "pin" | "sections";
+type SettingsPage = "subtitles" | "pin" | "sections" | "delete";
 
 const POLL_MS = 2000;
 
@@ -451,6 +453,7 @@ export function TvAccountPanel({
   onSubtitles,
   onPin,
   onSections,
+  onDelete,
   cameFrom,
 }: {
   onClose: () => void;
@@ -461,6 +464,7 @@ export function TvAccountPanel({
   onSubtitles: () => void;
   onPin: () => void;
   onSections: () => void;
+  onDelete: () => void;
   cameFrom?: SettingsPage | undefined;
 }) {
   const t = useT();
@@ -583,33 +587,21 @@ export function TvAccountPanel({
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
               <SettingsSwitch label={t("settings.autoSkip")} on={autoSkip} onToggle={() => set("autoSkip", !autoSkip)} testId="tv-autoskip" />
-              <div className="tv-field">
-                <span className="tv-field-label" aria-hidden="true">
-                  {t("settings.animeAudio")}
-                </span>
-                <div className="tv-segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
-                  <button
-                    className="tv-choice"
-                    role="radio"
-                    aria-checked={(settings.animeAudio ?? "jp") === "jp"}
-                    onClick={() => set("animeAudio", "jp")}
-                    data-nav
-                    data-testid="tv-anime-audio-jp"
-                  >
-                    {t("settings.animeAudioJp")}
-                  </button>
-                  <button
-                    className="tv-choice"
-                    role="radio"
-                    aria-checked={settings.animeAudio === "eng"}
-                    onClick={() => set("animeAudio", "eng")}
-                    data-nav
-                    data-testid="tv-anime-audio-eng"
-                  >
-                    {t("settings.animeAudioEng")}
-                  </button>
+              {animeShown(settings) && (
+                <div className="tv-field">
+                  <span className="tv-field-label" aria-hidden="true">
+                    {t("settings.animeAudio")}
+                  </span>
+                  <div className="tv-segmented" role="radiogroup" aria-label={t("settings.animeAudio")}>
+                    <button className="tv-choice" role="radio" aria-checked={(settings.animeAudio ?? "jp") === "jp"} onClick={() => set("animeAudio", "jp")} data-nav data-testid="tv-anime-audio-jp">
+                      {t("settings.animeAudioJp")}
+                    </button>
+                    <button className="tv-choice" role="radio" aria-checked={settings.animeAudio === "eng"} onClick={() => set("animeAudio", "eng")} data-nav data-testid="tv-anime-audio-eng">
+                      {t("settings.animeAudioEng")}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </SettingsGroup>
 
           </div>
@@ -661,6 +653,13 @@ export function TvAccountPanel({
             </SettingsGroup>
           </div>
         </div>
+        {me && profile && (
+          <div className="tv-set-foot" data-nav-column>
+            <button className="tv-quiet-link" onClick={onDelete} data-nav {...(cameFrom === "delete" ? { "data-autofocus": true } : {})} data-testid="tv-delete-account">
+              {t("account.delete")}
+            </button>
+          </div>
+        )}
       </div>
     </Screen>
   );
@@ -724,6 +723,85 @@ export function TvSubtitleLanguages({ onBack }: { onBack: () => void }) {
           </SettingsGroup>
         </div>
       </div>
+    </Screen>
+  );
+}
+
+const plainWord = (text: string) =>
+  text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .trim()
+    .toLowerCase();
+
+function TvDeleteAccount({ onBack, onGone }: { onBack: () => void; onGone: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const googleOnly = account.me?.account.googleOnly === true;
+  const word = t("account.deleteWord");
+  const [typed, setTyped] = useState("");
+  const [password, setPassword] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const ready = plainWord(typed) === plainWord(word);
+  const type = (update: (before: string) => string) => {
+    setTyped(update);
+    setProblem(null);
+  };
+  const remove = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!ready || busy) return;
+    if (googleOnly) return account.withGoogle("delete");
+    setBusy(true);
+    setProblem(null);
+    try {
+      await api.deleteAccount(password);
+      await account.signOut({ deleted: true });
+      onGone();
+    } catch (cause) {
+      setProblem(describePasswordError(cause));
+      setBusy(false);
+    }
+  };
+  return (
+    <Screen testId="tv-delete" compact focus onBack={onBack}>
+      <h1 className="tv-headline tv-headline-small">{t("account.delete")}</h1>
+      <form className="profile-editor profile-editor-tv list-editor-tv" onSubmit={remove} noValidate>
+        <p className="tv-lead tv-delete-warn">{t("account.deleteAll")}</p>
+        <label className="auth-field">
+          <span>{t("account.deleteType", { word })}</span>
+          <input value={typed} onChange={(event) => type(() => event.target.value)} autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" data-nav data-autofocus data-testid="delete-word" />
+        </label>
+        {!ready && <NameKeys onKey={(char) => type((before) => before + char)} onDelete={() => type((before) => before.slice(0, -1))} onClear={() => type(() => "")} />}
+        {ready && !googleOnly && (
+          <label className="auth-field">
+            <span>{t("auth.password")}</span>
+            <PasswordInput
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setProblem(null);
+              }}
+              autoComplete="current-password"
+              data-nav
+              data-testid="delete-password"
+            />
+          </label>
+        )}
+        {problem && (
+          <p className="auth-error" role="alert" data-testid="delete-error">
+            {problem}
+          </p>
+        )}
+        <div className="editor-actions">
+          <button type="button" className="tv-action" onClick={onBack} data-nav data-testid="delete-cancel">
+            {t("common.cancel")}
+          </button>
+          <button type="submit" className="tv-action tv-action-danger" disabled={!ready || busy} data-nav data-testid="delete-confirm">
+            {googleOnly ? <GoogleMark /> : <TrashIcon />} {t(googleOnly ? "account.deleteWithGoogle" : "account.deleteConfirm")}
+          </button>
+        </div>
+      </form>
     </Screen>
   );
 }
@@ -795,6 +873,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
   if (view === "pin") return <TvPinSetup onBack={backFrom("pin")} />;
   if (view === "sections") return <TvSections onBack={backFrom("sections")} />;
   if (view === "setup") return <TvSetup onDone={() => onView(null)} />;
+  if (view === "delete") return <TvDeleteAccount onBack={backFrom("delete")} onGone={() => onView(null)} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
   return (
     <TvAccountPanel
@@ -809,6 +888,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
       onSubtitles={open("subtitles")}
       onPin={open("pin")}
       onSections={open("sections")}
+      onDelete={guarded("delete")}
       cameFrom={cameFrom}
     />
   );

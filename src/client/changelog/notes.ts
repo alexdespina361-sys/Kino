@@ -2,6 +2,31 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.25",
+    date: "2026-11-19",
+    en: [
+      "My Lists: on a phone, one button opens your lists with how many titles each holds; a pencil next to the list's name renames or deletes it.",
+      "Save is always the second button, after Cancel.",
+      "Anime audio is in the settings only while Anime is one of your sections.",
+      "What's new shows six versions at a time, with a button for older ones.",
+      "An account can be deleted from the bottom of the settings, after typing a word to confirm.",
+    ],
+    ro: [
+      "Listele mele: pe telefon, un buton îți deschide listele, cu câte titluri are fiecare; un creion lângă numele listei o redenumește sau o șterge.",
+      "Salvează este mereu al doilea buton, după Anulează.",
+      "Audio pentru anime apare în setări doar cât timp Anime e una dintre secțiunile tale.",
+      "Noutăți arată câte șase versiuni, cu un buton pentru cele mai vechi.",
+      "Contul se poate șterge din josul setărilor, după ce scrii un cuvânt ca să confirmi.",
+    ],
+    it: [
+      "Le mie liste: sul telefono, un pulsante apre le tue liste, con quanti titoli ha ciascuna; una matita accanto al nome della lista la rinomina o la elimina.",
+      "Salva è sempre il secondo pulsante, dopo Annulla.",
+      "L'audio degli anime è nelle impostazioni solo finché Anime è una delle tue sezioni.",
+      "Novità mostra sei versioni alla volta, con un pulsante per quelle precedenti.",
+      "L'account si può eliminare dal fondo delle impostazioni, dopo aver scritto una parola per confermare.",
+    ],
+  },
+  {
     version: "0.4.24",
     date: "2026-11-19",
     en: [

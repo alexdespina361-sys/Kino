@@ -177,11 +177,11 @@ function NoteEditor({ value, onSave, onCancel }: { value: string; onSave: (note:
         onClear={() => change(() => "")}
       />
       <div className="editor-actions">
-        <button type="submit" className="tv-action tv-action-primary" data-nav data-testid="rate-note-save">
-          {t("common.save")}
-        </button>
         <button type="button" className="tv-action" onClick={onCancel} data-nav data-testid="rate-note-cancel">
           {t("common.cancel")}
+        </button>
+        <button type="submit" className="tv-action tv-action-primary" data-nav data-testid="rate-note-save">
+          {t("common.save")}
         </button>
       </div>
     </form>

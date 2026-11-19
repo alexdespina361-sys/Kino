@@ -8,6 +8,8 @@
 .news-wait, .news-failed p { margin: 0; color: var(--muted); }
 .news-failed { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .page-news { padding: 4px 2px 24px; }
+.news-more { align-self: center; }
+.tv-news-list .news-more { flex: none; margin-top: 0.4em; }
 
 .tv-news-screen { justify-content: flex-start; }
 .tv-news-body { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: 64em; min-height: 0; }
