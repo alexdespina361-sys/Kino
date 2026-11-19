@@ -112,7 +112,7 @@ function RowTiles({ children, onNearEnd, loading, startFar }: { children: ReactN
     return watchSeen(here, here.closest(".tv-rows"), NEAR_MARGIN, (on) => {
       near.current = on;
       here.toggleAttribute("data-far", !on);
-      if (on) measure();
+      if (on && onScreen.current) measure();
     });
   }, [measure]);
 
