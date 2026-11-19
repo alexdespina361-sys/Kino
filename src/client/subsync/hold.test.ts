@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CueEditor } from "./apply";
-import { cuesAt } from "./hold";
+import { CHECK_EVERY, cuesAt } from "./hold";
 
 type Cue = { startTime: number; endTime: number; id: number };
 const scan = (cues: Cue[], time: number) => cues.filter((cue) => cue.startTime <= time && time < cue.endTime);
@@ -43,6 +43,34 @@ describe("the cues on screen at a time", () => {
     (editor as unknown as { write: (cue: Cue, start: number, end: number) => void }).write(cues[0]!, 6.2, 6.8);
     expect(found(owner, cues, 6.5).map((cue) => cue.id).sort()).toEqual([1, 2, 3]);
     expect(found(owner, cues, 2)).toEqual([]);
+  });
+
+  it("follow cues removed from the front (the stream's own, behind the picture) and added back on a seek", () => {
+    const cues: Cue[] = Array.from({ length: 6 }, (_, id) => ({ id, startTime: id * 4, endTime: id * 4 + 3 }));
+    const owner = {};
+    expect(found(owner, cues, 1).map((cue) => cue.id)).toEqual([0]);
+    const dropped = cues.splice(0, 3);
+    expect(found(owner, cues, 1)).toEqual([]);
+    expect(found(owner, cues, 13).map((cue) => cue.id)).toEqual([3]);
+    cues.unshift(...dropped);
+    expect(found(owner, cues, 1).map((cue) => cue.id)).toEqual([0]);
+  });
+
+  it("notice within a second a cue swapped in the middle, or moved by code that does not say so", () => {
+    const cues: Cue[] = [
+      { id: 1, startTime: 1, endTime: 3 },
+      { id: 2, startTime: 5, endTime: 7 },
+      { id: 3, startTime: 9, endTime: 11 },
+    ];
+    const owner = {};
+    expect(found(owner, cues, 6).map((cue) => cue.id)).toEqual([2]);
+    cues[1] = { id: 4, startTime: 5.5, endTime: 7.5 };
+    let seen: number[] = [];
+    for (let asked = 0; asked < CHECK_EVERY && !seen.includes(4); asked++) seen = found(owner, cues, 6).map((cue) => cue.id);
+    expect(seen).toEqual([4]);
+    cues[2]!.startTime = 6;
+    for (let asked = 0; asked < CHECK_EVERY && !seen.includes(3); asked++) seen = found(owner, cues, 6.5).map((cue) => cue.id);
+    expect(seen).toEqual([4, 3]);
   });
 
   it("are none in an empty list, before the first cue and after the last", () => {

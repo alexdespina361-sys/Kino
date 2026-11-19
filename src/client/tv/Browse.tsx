@@ -1,4 +1,4 @@
-import { Children, Fragment, memo, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode, type RefObject, useCallback } from "react";
+import { Fragment, memo, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode, type RefObject, useCallback } from "react";
 import { canAskTogether, DEFAULT_LIST, forChildren, friendChoices, isWanted, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, sectionOf, tagLabel, titleLink, wantedSections, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -81,7 +81,7 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
     if (onScreen.current && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * NEAR_END) wantsMore.current?.();
   }, []);
 
-  useEffect(measure, [Children.count(children), loading, Boolean(onNearEnd)]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(measure, [children, loading, Boolean(onNearEnd)]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const row = scroller.current;
     if (!row || typeof ResizeObserver === "undefined") return;
@@ -1225,6 +1225,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const corner = cornerOf(entry, listId);
     return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} resumed={resumable(entry, progress)} label={label} source={source} listId={listId} layout={layout} landscape={shape === "landscape"} compact={compact} rank={pos.col + 1} pos={pos} corner={corner && { kind: corner.kind, label: corner.label }} score={score} act={act} />;
   };
+  useEffect(() => {
+    const shown = new Set(homeRows.map((row) => row.id));
+    for (const id of tilesOfRows.current.keys()) if (!shown.has(id)) tilesOfRows.current.delete(id);
+  }, [homeRows]);
   const rowTiles = (row: HomeRow, r: number) => {
     const deps = [row, r, compact, progress, scores, saved, lists, view.kind, t];
     const kept = tilesOfRows.current.get(row.id);

@@ -102,21 +102,42 @@ export function chooseTier(input: TierInput): Tier {
   return input.memoryGb !== undefined && input.memoryGb <= 2 ? "lite" : "full";
 }
 
-export const slowAfter = (busyMs: number, wasSlow: boolean): boolean => (busyMs >= SLOW_START_MS ? true : busyMs <= QUICK_START_MS ? false : wasSlow);
+export const SLOW_STRIKES = 2;
+export const SLOW_FOR_MS = 7 * 24 * 3600 * 1000;
+export interface Slowness {
+  strikes: number;
+  until: number;
+}
+
+export function nextSlowness(busyMs: number, was: Slowness, now: number): Slowness {
+  if (busyMs <= QUICK_START_MS) return { strikes: 0, until: 0 };
+  if (busyMs < SLOW_START_MS) return was;
+  const strikes = was.strikes + 1;
+  return strikes >= SLOW_STRIKES ? { strikes: 0, until: now + SLOW_FOR_MS } : { strikes, until: was.until };
+}
+
+export function readSlowness(text: string | undefined): Slowness {
+  try {
+    const kept = JSON.parse(text ?? "") as Partial<Slowness>;
+    return { strikes: Number.isFinite(kept.strikes) ? Number(kept.strikes) : 0, until: Number.isFinite(kept.until) ? Number(kept.until) : 0 };
+  } catch {
+    return { strikes: 0, until: 0 };
+  }
+}
 
 let tier: Tier | undefined;
 export const thisTier = (): Tier =>
   (tier ??= chooseTier({
     asked: new URLSearchParams(location.search).get("tier"),
     pinned: readStorage(TIER_KEY),
-    slow: readStorage(SLOW_KEY) === "1",
+    slow: readSlowness(readStorage(SLOW_KEY)).until > Date.now(),
     userAgent: navigator.userAgent,
     cores: navigator.hardwareConcurrency || undefined,
     memoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
   }));
 
 export function watchStartSpeed(windowMs = 10_000): void {
-  if (navigator.webdriver || typeof PerformanceObserver === "undefined" || !PerformanceObserver.supportedEntryTypes?.includes("longtask")) return;
+  if (thisTier() !== "full" || navigator.webdriver || typeof PerformanceObserver === "undefined" || !PerformanceObserver.supportedEntryTypes?.includes("longtask")) return;
   let busy = 0;
   let hidden = document.visibilityState !== "visible";
   const onHide = () => (hidden ||= document.visibilityState !== "visible");
@@ -128,7 +149,9 @@ export function watchStartSpeed(windowMs = 10_000): void {
   setTimeout(() => {
     watch.disconnect();
     document.removeEventListener("visibilitychange", onHide);
-    if (!hidden) writeStorage(SLOW_KEY, slowAfter(busy, readStorage(SLOW_KEY) === "1") ? "1" : null);
+    if (hidden) return;
+    const next = nextSlowness(busy, readSlowness(readStorage(SLOW_KEY)), Date.now());
+    writeStorage(SLOW_KEY, next.strikes || next.until ? JSON.stringify(next) : null);
   }, windowMs);
 }
 

@@ -4,6 +4,7 @@ import { AudioTap } from "../subsync/tap";
 import { signedRelayUrl } from "../../server/streamRelay/links";
 import {
   BACK_BUFFER_S,
+  DELAY_REACH_S,
   DIRECT_START_MS,
   LITE_BUFFER,
   LONE_PROXY_BUFFER_AHEAD_S,
@@ -104,6 +105,21 @@ describe("bufferPolicy", () => {
     }
     expect(bufferPolicy(true, false, "lite")).toMatchObject({ maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES });
     expect(Number.isFinite(BACK_BUFFER_S.full) && BACK_BUFFER_S.lite < BACK_BUFFER_S.full).toBe(true);
+  });
+
+  it("keeps the subtitles a delay shows: behind the picture for a late one, ahead for an early one, on any device", () => {
+    for (const tier of ["full", "lite"] as const)
+      for (const [inParty, proxied] of [[false, false], [false, true], [true, false]] as const) {
+        const plain = bufferPolicy(inParty, proxied, tier);
+        const late = bufferPolicy(inParty, proxied, tier, 60);
+        const early = bufferPolicy(inParty, proxied, tier, -60);
+        expect(late.backBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
+        expect(late.maxBufferLength).toBe(plain.maxBufferLength);
+        expect(early.maxBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
+        expect(early.maxMaxBufferLength).toBeGreaterThanOrEqual(early.maxBufferLength);
+        expect(early.backBufferLength).toBe(plain.backBufferLength);
+        expect(bufferPolicy(inParty, proxied, tier, 5)).toEqual({ ...plain, backBufferLength: Math.max(plain.backBufferLength, 5 + DELAY_REACH_S) });
+      }
   });
 
   it("keeps the screens of a party within 40 seconds and 32 MiB of their picture, at any usual bitrate", () => {

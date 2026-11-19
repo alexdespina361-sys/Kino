@@ -703,6 +703,7 @@ export function Tv() {
     setToast({ id: toastIdRef.current, text: t(mode === "light" ? "notice.syncLight" : "notice.syncFull"), notice: true });
   };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]);
+  useEffect(() => engineRef.current?.subtitleDelayChanged(), [subtitleDelay]);
   const streamUrl = currentMedia?.stream.url;
   const [enhanceHost, setEnhanceHost] = useState<HTMLDivElement | null>(null);
   const enhance = useEnhance({

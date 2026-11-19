@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseRole, chooseTier, isDesk, isHandHeld, isPhone, QUICK_START_MS, slowAfter, SLOW_START_MS, type RoleInput, type TierInput } from "./role";
+import { chooseRole, chooseTier, isDesk, isHandHeld, isPhone, nextSlowness, QUICK_START_MS, readSlowness, SLOW_FOR_MS, SLOW_START_MS, type RoleInput, type TierInput } from "./role";
 
 const desktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
 const tizen = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36";
@@ -26,12 +26,26 @@ describe("chooseTier", () => {
   });
 });
 
-describe("slowAfter", () => {
-  it("only changes its mind on a clearly slow or clearly quick start", () => {
-    expect(slowAfter(SLOW_START_MS, false)).toBe(true);
-    expect(slowAfter(QUICK_START_MS, true)).toBe(false);
-    expect(slowAfter((SLOW_START_MS + QUICK_START_MS) / 2, true)).toBe(true);
-    expect(slowAfter((SLOW_START_MS + QUICK_START_MS) / 2, false)).toBe(false);
+describe("nextSlowness", () => {
+  const none = { strikes: 0, until: 0 };
+  const middle = (SLOW_START_MS + QUICK_START_MS) / 2;
+  it("needs two slow starts before it turns the light page on, then keeps it for a week", () => {
+    const once = nextSlowness(SLOW_START_MS, none, 1000);
+    expect(once).toEqual({ strikes: 1, until: 0 });
+    expect(nextSlowness(SLOW_START_MS, once, 2000)).toEqual({ strikes: 0, until: 2000 + SLOW_FOR_MS });
+  });
+  it("forgets the strikes on a quick start and keeps them on an in-between one", () => {
+    const once = nextSlowness(SLOW_START_MS, none, 1000);
+    expect(nextSlowness(middle, once, 2000)).toBe(once);
+    expect(nextSlowness(QUICK_START_MS, once, 2000)).toEqual(none);
+    expect(nextSlowness(QUICK_START_MS, { strikes: 0, until: 9e12 }, 2000)).toEqual(none);
+  });
+  it("reads a kept value, an old flag or junk without throwing", () => {
+    expect(readSlowness(JSON.stringify({ strikes: 1, until: 5 }))).toEqual({ strikes: 1, until: 5 });
+    expect(readSlowness("1")).toEqual(none);
+    expect(readSlowness("{bad")).toEqual(none);
+    expect(readSlowness(undefined)).toEqual(none);
+    expect(readSlowness(JSON.stringify({ strikes: "x" }))).toEqual(none);
   });
 });
 

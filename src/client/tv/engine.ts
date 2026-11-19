@@ -111,7 +111,9 @@ export const LONE_PROXY_BUFFER_BYTES = 48 * 1024 * 1024;
 export const LITE_BUFFER = { maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 32 * 1024 * 1024 } as const;
 export const BACK_BUFFER_S: Record<Tier, number> = { full: 90, lite: 30 };
 
-export function bufferPolicy(inParty: boolean, isProxied = false, tier: Tier = "full"): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number; backBufferLength: number } {
+export const DELAY_REACH_S = 12;
+
+export function bufferPolicy(inParty: boolean, isProxied = false, tier: Tier = "full", subtitleDelay = 0): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number; backBufferLength: number } {
   const base = inParty
     ? { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES }
     : isProxied
@@ -121,7 +123,12 @@ export function bufferPolicy(inParty: boolean, isProxied = false, tier: Tier = "
     tier === "lite"
       ? { maxBufferLength: Math.min(base.maxBufferLength, LITE_BUFFER.maxBufferLength), maxMaxBufferLength: Math.min(base.maxMaxBufferLength, LITE_BUFFER.maxMaxBufferLength), maxBufferSize: Math.min(base.maxBufferSize, LITE_BUFFER.maxBufferSize) }
       : base;
-  return { ...capped, backBufferLength: BACK_BUFFER_S[tier] };
+  const reach = Math.abs(subtitleDelay) + DELAY_REACH_S;
+  return {
+    ...capped,
+    ...(subtitleDelay < 0 ? { maxBufferLength: Math.max(capped.maxBufferLength, reach), maxMaxBufferLength: Math.max(capped.maxMaxBufferLength, reach) } : {}),
+    backBufferLength: subtitleDelay > 0 ? Math.max(BACK_BUFFER_S[tier], reach) : BACK_BUFFER_S[tier],
+  };
 }
 
 let warmed = false;
@@ -358,7 +365,7 @@ export class PlayerEngine {
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        ...bufferPolicy(this.inParty, usesWebsiteProxy(src), thisTier()),
+        ...bufferPolicy(this.inParty, usesWebsiteProxy(src), thisTier(), this.syncDelay?.() ?? 0),
         lowLatencyMode: false,
         preserveManualLevelOnError: true,
         ...(adaptive ? { startLevel: 0 } : {}),
@@ -557,10 +564,17 @@ export class PlayerEngine {
 
   setInParty(inParty: boolean): void {
     this.inParty = inParty;
-    if (this.hls) {
-      const isProxied = usesWebsiteProxy(this.hls.url || this.video.src || location.href);
-      Object.assign(this.hls.config, bufferPolicy(inParty, isProxied, thisTier()));
-    }
+    this.applyBuffers();
+  }
+
+  subtitleDelayChanged(): void {
+    this.applyBuffers();
+  }
+
+  private applyBuffers(): void {
+    if (!this.hls) return;
+    const isProxied = usesWebsiteProxy(this.hls.url || this.video.src || location.href);
+    Object.assign(this.hls.config, bufferPolicy(this.inParty, isProxied, thisTier(), this.syncDelay?.() ?? 0));
   }
 
   setAdaptive(adaptive: boolean): void {
