@@ -59,9 +59,8 @@ import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
 import { SearchField } from "./SearchField";
 import { watchSeen } from "./rowWatch";
-import { ChatTv } from "../chat/ChatTv";
-import type { OpenTitle } from "../chat/titles";
-import { useHost } from "../chat/useHost";
+import { later, warmLater } from "./later";
+import { loadQrMaker } from "../shared/QrCode";
 import { NewsList } from "../changelog/NewsList";
 
 const STEP = 0.8;
@@ -315,31 +314,7 @@ function NewsTv({ onClose, onSeen }: { onClose: () => void; onSeen: () => void }
   );
 }
 
-function TvChat({ friendId, narrow, onClose, onOpenTitle }: { friendId: string; narrow: boolean; onClose: () => void; onOpenTitle?: ((entry: Entry) => void) | undefined }) {
-  const host = useHost(friendId, onClose);
-  if (!host.friend) return null;
-  const open: OpenTitle | undefined = onOpenTitle
-    ? (item, opening) => {
-        host.close();
-        onOpenTitle(openedAt(entryOfItem(item), opening));
-      }
-    : undefined;
-  return (
-    <ChatTv
-      name={host.friend.name}
-      avatar={host.friend.avatar}
-      online={host.friend.on && host.friend.online}
-      presence={presenceInChat(host.friend, Date.now())}
-      session={host.session}
-      report={host.report}
-      receiving={host.receiving}
-      narrow={narrow}
-      desk={typeof document !== "undefined" && document.documentElement.dataset.fit === "desk"}
-      onClose={host.close}
-      onOpenTitle={open}
-    />
-  );
-}
+const TvChat = later(() => import("./TvChat").then((module) => module.TvChat));
 
 export interface PlayOptions {
   startAt?: number;
@@ -733,6 +708,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   useEffect(() => {
     if (grownFor !== rowsKey) startTransition(() => setGrownFor(rowsKey));
   }, [rowsKey, grownFor]);
+  useEffect(() => {
+    if (status === "ready" && allRowsDrawn) warmLater([TvChat.preload, loadQrMaker]);
+  }, [status, allRowsDrawn]);
   const drawnRows = allRowsDrawn ? homeRows : homeRows.slice(0, startRow + FIRST_ROWS);
   const farFrom = Math.max(startRow, focused && rowsPage ? homeRows.findIndex((row) => row.title === focused.label) : -1) + FIRST_ROWS;
   const onNow = focused && rowsPage ? homeRows.find((row) => row.title === focused.label)?.entries.find((entry) => entry.id === focused.entry.id) : undefined;

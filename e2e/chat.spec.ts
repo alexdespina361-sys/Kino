@@ -734,6 +734,37 @@ test.describe("the chat on the TV", () => {
     await expect(bob.page.getByTestId("friend-chat-unread")).toHaveCount(0);
   });
 
+  test("a chat whose part of the site cannot be fetched says so, with Try again and Back; Try again opens it once it can be fetched, or starts the page again", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    let refuse = true;
+    await ann.page.route(/\/assets\/TvChat-[^/]+\.js$/, (route) => (refuse ? route.abort() : route.fallback()));
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-later-failed")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-later-retry")).toBeFocused();
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-later-failed")).toHaveCount(0);
+    await expect(ann.page.getByTestId("friend-chat")).toBeFocused();
+
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-later-failed")).toBeVisible();
+    refuse = false;
+    await ann.page.evaluate(() => Object.assign(window, { beforeRetry: true }));
+    await ann.page.getByTestId("tv-later-retry").click();
+    const after = async () => ((await ann.page.getByTestId("tv-chat").isVisible()) ? "chat" : (await ann.page.evaluate(() => "beforeRetry" in window).catch(() => true)) ? "waiting" : "started again");
+    await expect.poll(after, { timeout: 20_000 }).not.toBe("waiting");
+    if ((await after()) !== "chat") {
+      await expect(view(ann.page)).toBeVisible();
+      await openFriendsView(ann.page);
+      await tile(ann.page, bob.name).click();
+      await ann.page.getByTestId("friend-chat").click();
+    }
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+  });
+
   test("a message from a phone waits quietly on a screen: a line on the friend's tile, a number on the bell and the chip, a line in the bell that opens the chat; reading it clears them", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");
