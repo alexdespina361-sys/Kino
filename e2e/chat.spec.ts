@@ -768,6 +768,39 @@ test.describe("the chat on the TV", () => {
     await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
   });
 
+  test("a chat opened before its part of the site has come opens once it comes, and Back while it is on its way closes it for good", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await ann.page.route(/\/assets\/TvChat-[^/]+\.js$/, async (route) => {
+      await new Promise((done) => setTimeout(done, 2500));
+      await route.fallback();
+    });
+    const coldFriendPage = async () => {
+      await ann.page.reload();
+      await expect(view(ann.page)).toBeVisible();
+      await openFriendsView(ann.page);
+      await tile(ann.page, bob.name).click();
+    };
+    const focusInChat = () => ann.page.evaluate(() => document.activeElement?.closest('[data-testid="tv-chat"]') !== null);
+
+    await coldFriendPage();
+    await ann.page.getByTestId("friend-chat").click();
+    await expect(ann.page.getByTestId("tv-chat")).toBeVisible();
+    await expect.poll(focusInChat).toBe(true);
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("tv-chat")).toHaveCount(0);
+    await expect(ann.page.getByTestId("friend-chat")).toBeFocused();
+
+    await coldFriendPage();
+    await ann.page.getByTestId("friend-chat").click();
+    await ann.page.keyboard.press("Escape");
+    await ann.page.waitForTimeout(4000);
+    await expect(ann.page.getByTestId("tv-chat")).toHaveCount(0);
+    await expect(ann.page.getByTestId("friend-chat")).toBeFocused();
+  });
+
   test("a message from a phone waits quietly on a screen: a line on the friend's tile, a number on the bell and the chip, a line in the bell that opens the chat; reading it clears them", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");

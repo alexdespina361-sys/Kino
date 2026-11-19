@@ -1,5 +1,4 @@
 .friend-text small.friend-unread { color: var(--accent); font-weight: 600; }
-.tv-choice small { font-size: 0.8em; font-weight: 600; opacity: 0.9; }
 
 .chat-lines {
   flex: 1 1 auto;

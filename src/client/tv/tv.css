@@ -1281,6 +1281,7 @@
 .tv-choice-count { min-width: 1.5em; padding: 0.08em 0.45em; border-radius: 999px; background: rgba(255, 255, 255, 0.12); font-size: 0.7em; font-weight: 700; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; }
 .tv-choice[aria-checked="true"] .tv-choice-count { background: rgba(255, 255, 255, 0.22); }
 .tv-choice:focus-visible .tv-choice-count { background: rgba(0, 0, 0, 0.1); }
+.tv-choice small { font-size: 0.8em; font-weight: 600; opacity: 0.9; }
 .tv-filters-friend > .tv-choice { padding-inline: 0.85em; }
 .tv-friend-head { display: flex; flex: none; align-items: center; gap: 1.4em; margin-bottom: 0.9em; }
 .tv-friend-head .tv-person-pic { font-size: 6.6em; }

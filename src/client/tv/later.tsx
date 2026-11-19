@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ComponentType, type ReactElement } fr
 import { useT } from "../i18n";
 import { thisTier } from "../role";
 import { checkForUpdate } from "../shared/update";
+import { useBack } from "./dpad";
 import { BackButton, Screen } from "./Idle";
 
 type Closable = { onClose: () => void };
@@ -39,6 +40,7 @@ export function later<P extends Closable>(load: () => Promise<ComponentType<P>>)
         on = false;
       };
     }, [Made, failed]);
+    useBack(Made || failed ? undefined : props.onClose);
     if (Made) return <Made {...props} />;
     return failed ? <LaterFailed onClose={props.onClose} onRetry={() => setFailed(false)} /> : null;
   }
