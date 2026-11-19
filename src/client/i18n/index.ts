@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { UI_LANGUAGES, type UiLanguage } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
-import { en, type Dictionary } from "./en";
+import type { en, Dictionary } from "./en";
 
 export type { Dictionary };
 
@@ -10,15 +10,16 @@ type BaseKey<K> = K extends `${infer Base}_${PluralSuffix}` ? Base : K;
 export type Key = BaseKey<Extract<keyof typeof en, string>>;
 export type Params = Record<string, string | number>;
 
-export const DICTIONARIES: Partial<Record<UiLanguage, Dictionary>> & { en: Dictionary } = { en };
-const LOADERS: Record<Exclude<UiLanguage, "en">, () => Promise<Dictionary>> = {
+export const DICTIONARIES: Partial<Record<UiLanguage, Dictionary>> = {};
+const LOADERS: Record<UiLanguage, () => Promise<Dictionary>> = {
+  en: () => import("./en").then((module) => module.en),
   ro: () => import("./ro").then((module) => module.ro),
   it: () => import("./it").then((module) => module.it),
 };
 const loading = new Map<UiLanguage, Promise<boolean>>();
 
 export function loadLanguage(language: UiLanguage): Promise<boolean> {
-  if (language === "en" || DICTIONARIES[language]) return Promise.resolve(true);
+  if (DICTIONARIES[language]) return Promise.resolve(true);
   let pending = loading.get(language);
   if (!pending) {
     pending = LOADERS[language]()
@@ -35,7 +36,10 @@ export function loadLanguage(language: UiLanguage): Promise<boolean> {
   return pending;
 }
 
-export const hasKey = (key: string): key is Key => key in en || `${key}_other` in en;
+export const hasKey = (key: string): key is Key => {
+  const words = DICTIONARIES[current] ?? Object.values(DICTIONARIES)[0];
+  return words !== undefined && (key in words || `${key}_other` in words);
+};
 
 export const LANGUAGE_KEY = "kino.lang";
 export const LANGUAGE_NAMES: Record<UiLanguage, string> = { en: "English", ro: "Română", it: "Italiano" };
@@ -48,7 +52,7 @@ export function detectLanguage(stored: string | undefined, browser: readonly str
 export const screenLanguage = (): UiLanguage => detectLanguage(readStorage(LANGUAGE_KEY), typeof navigator === "undefined" ? [] : (navigator.languages ?? [navigator.language]));
 
 let wanted: UiLanguage = screenLanguage();
-let current: UiLanguage = DICTIONARIES[wanted] ? wanted : "en";
+let current: UiLanguage = wanted;
 const listeners = new Set<() => void>();
 const announce = () => {
   if (typeof document !== "undefined") document.documentElement.lang = current;
@@ -74,7 +78,9 @@ function show(language: UiLanguage): void {
   listeners.forEach((listener) => listener());
 }
 
-export const languageReady: Promise<void> = current === wanted ? Promise.resolve() : loadLanguage(wanted).then((here) => void (here && show(wanted)));
+export const languageReady: Promise<void> = loadLanguage(wanted).then(async (here) => {
+  if (!here && (await loadLanguage("en"))) show("en");
+});
 
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -91,8 +97,8 @@ export function useT(): typeof t {
 const fill = (text: string, params: Params | undefined) => (params ? text.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole)) : text);
 
 export function translate(language: UiLanguage, key: Key, params?: Params): string {
-  const dictionary = (DICTIONARIES[language] ?? en) as Record<string, string>;
-  const english = en as Record<string, string>;
+  const english = (DICTIONARIES.en ?? {}) as Record<string, string>;
+  const dictionary = (DICTIONARIES[language] ?? english) as Record<string, string>;
   let text: string | undefined;
   if (typeof params?.count === "number") {
     const form = new Intl.PluralRules(language).select(params.count);

@@ -4,7 +4,7 @@ import { FILMPIRE_CATEGORIES } from "../../server/library/filmpire";
 import { FILMPIRE_SHELVES } from "../../server/library/shelves";
 import { DICTIONARIES, detectLanguage, hasKey, loadLanguage, rowTitle, translate } from "./index";
 
-await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
+await Promise.all([loadLanguage("en"), loadLanguage("ro"), loadLanguage("it")]);
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
 const baseOf = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/, "");
@@ -37,7 +37,7 @@ describe("translate", () => {
 });
 
 describe("the dictionaries", () => {
-  const english = DICTIONARIES.en;
+  const english = DICTIONARIES.en!;
   const keys = Object.keys(english);
 
   for (const language of ["ro", "it"] as const) {
