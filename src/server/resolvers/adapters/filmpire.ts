@@ -610,8 +610,7 @@ export function nextEpisodeOf(id: string, season: number, episode: number, show:
     let before = 0;
     for (let part = 1; part < season; part++) before += counts[part] ?? 24;
     if (aired && lastSeason === 1 && before + episode >= lastEpisode) return undefined;
-    const count = counts[season];
-    return count && episode >= count ? watchLink(id, season + 1, 1) : watchLink(id, season, episode + 1);
+    return episode >= (counts[season] ?? 24) ? watchLink(id, season + 1, 1) : watchLink(id, season, episode + 1);
   }
   if (aired && (season > lastSeason || (season === lastSeason && episode >= lastEpisode))) return undefined;
   const count = show.seasons?.find((one) => one.season_number === season)?.episode_count ?? 0;
@@ -734,7 +733,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         (validTmdbSeasons[0]!.episode_count ?? 0) > 30;
 
       const seriesAt = (season: number, episode: number): SeriesInfo => {
-        const next = nextEpisodeOf(id, season, episode, {
+        const next = isTv && nextEpisodeOf(id, season, episode, {
           seasons: tmdbSeasons,
           lastAired: tmdbLastAired,
           ...(isSingleLongTmdbSeason ? { parts: playerSeasonCounts(Number(id)) ?? null } : {}),
@@ -1033,7 +1032,9 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                     ...media,
                     title,
                     page: url.href,
-                    ...(found ? { series: { ...(found.episodes ? { episodes: found.episodes } : {}), ...seriesAt(targetSeason, targetEpisode) } } : {}),
+                    ...(found
+                      ? { series: isTv ? { ...(found.episodes ? { episodes: found.episodes } : {}), ...seriesAt(targetSeason, targetEpisode) } : { ...found, season: targetSeason, episode: targetEpisode } }
+                      : {}),
                   },
                 };
               }

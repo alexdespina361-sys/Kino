@@ -413,6 +413,25 @@ describe("createAnimeHeavenAdapter", () => {
     }
   });
 
+  it("an anime film played from AnimeHeaven has no next episode", async () => {
+    const page = (body: string) => ({ ok: true, status: 200, text: async () => body });
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org/3/movie/372058")) return { ok: true, status: 200, json: async () => ({ id: 372058, title: "Your Name.", original_language: "ja", genres: [{ id: 16 }] }) };
+      if (u.includes("animeheaven.me/search.php")) return page("<div class='boldtext'><div class='info3 bc1'><div class='similarimg'><div class='p1'><a href='anime.php?yname1'><img class='coverimg' src='image.php?yname1' alt='Your Name.'></a><div class='similarname c'><a href='anime.php?yname1' class='c'>Your Name.</a></div></div></div></div></div>");
+      if (u.includes("animeheaven.me/anime.php")) return page("<div class='infotitle c'>Your Name.</div><a class='c' id=\"11111111111111111111111111111111\" href='gate.php'><div class='watch1'>Episode</div><div class='watch2'>1</div></a>");
+      if (u.includes("animeheaven.me/gate.php")) return page("<video id='vid'><source src='https://cdn.animeheaven.me/your-name.mp4?11111111111111111111111111111111' type='video/mp4'></video>");
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+    const res = await createFilmpireAdapter({ fetch: fakeFetch }).resolve(new URL("https://filmpire.sc/watch/372058"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.directUrl).toContain("your-name.mp4");
+      expect(res.media.series?.episode).toBe(1);
+      expect(res.media.series?.next).toBeUndefined();
+    }
+  });
+
   it("resolves continuous/absolute-numbered anime via AnimeHeaven fallback (e.g. Detective Conan S2 E5 -> Ep 47)", async () => {
     const fakeSearchHtml = `
       <div class='boldtext'>
@@ -1476,6 +1495,7 @@ describe("the next episode of a show", () => {
     expect(nextEpisodeOf("7", 3, 5, { parts, lastAired })).toEqual(at(3, 6));
     expect(nextEpisodeOf("7", 3, 6, { parts, lastAired })).toBeUndefined();
     expect(nextEpisodeOf("7", 1, 3, { parts: null })).toEqual(at(1, 4));
+    expect(nextEpisodeOf("7", 1, 24, { parts: null })).toEqual(at(2, 1));
   });
 });
 
