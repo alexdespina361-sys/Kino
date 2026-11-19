@@ -741,6 +741,9 @@ test.describe("the chat on the TV", () => {
     await meet(ann, bob);
     let refuse = true;
     await ann.page.route(/\/assets\/TvChat-[^/]+\.js$/, (route) => (refuse ? route.abort() : route.fallback()));
+    await ann.page.reload();
+    await expect(view(ann.page)).toBeVisible();
+    await openFriendsView(ann.page);
     await tile(ann.page, bob.name).click();
     await ann.page.getByTestId("friend-chat").click();
     await expect(ann.page.getByTestId("tv-later-failed")).toBeVisible();
