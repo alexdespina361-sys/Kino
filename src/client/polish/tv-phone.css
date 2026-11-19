@@ -430,9 +430,6 @@
 :root[data-tier="lite"] .tv-tile, :root[data-tier="lite"] .tv-tile-art, :root[data-tier="lite"] .tv-tile-category, :root[data-tier="lite"] .tv-tile-person, :root[data-tier="lite"] .tv-tile-corner, :root[data-tier="lite"] .tv-hero { transition: none !important; }
 :root[data-tier="lite"] .tv-tile:focus .tv-tile-art, :root[data-tier="lite"] .tv-tile-category:focus, :root[data-tier="lite"] .tv-end-tile:focus-visible .tv-end-art { box-shadow: 0 0 0 0.2em #fff; }
 :root[data-ui][data-tier="lite"] .tv-tile:focus .tv-tile-art, :root[data-ui][data-tier="lite"] .tv-tile-category:focus { box-shadow: var(--focus-ring); }
-:root[data-tier="lite"] .tv-row-tiles { -webkit-mask-image: none; mask-image: none; clip-path: inset(0 0 0 5.6em); }
-@media (max-width: 899px) { :root[data-tier="lite"] .tv-row-tiles { clip-path: inset(0 0 0 5.2em); } }
-@media (max-width: 599px) and (min-height: 480px), (max-width: 479px) { :root[data-tier="lite"] .tv-row-tiles { clip-path: none; } }
 :root[data-tier="lite"] .tv-starting:not([data-phase="loading"]):not([data-phase="done"]) .tv-starting-fill { animation: tv-starting-find 5s cubic-bezier(0.12, 0.75, 0.25, 1) forwards; }
 :root[data-tier="lite"] .tv-starting[data-phase="loading"] .tv-starting-fill { animation: tv-starting-load 9s cubic-bezier(0.12, 0.75, 0.25, 1) forwards; }
 :root[data-tier="lite"] .hud-skip-btn, :root[data-tier="lite"] .chat-view { -webkit-backdrop-filter: none; backdrop-filter: none; }
