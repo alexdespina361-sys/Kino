@@ -183,7 +183,7 @@ function ScorePick({ scores, chosen, countOf, row, columns, open, onOpen, onPick
       ref={box}
       className="tv-score-pick"
       onBlur={(event) => {
-        if (open && !box.current?.contains(event.relatedTarget as Node | null)) onOpen(false);
+        if (open && event.relatedTarget instanceof Node && !box.current?.contains(event.relatedTarget)) onOpen(false);
       }}
     >
       <button
@@ -678,8 +678,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const scoreCount = (score: number | undefined) => (!ratingOptions ? 0 : score === undefined ? ratingOptions.scores.reduce((sum, each) => sum + each.count, 0) : (ratingOptions.scores.find((each) => each.score === score)?.count ?? 0));
   const [scoreOpen, setScoreOpen] = useState(false);
   const scorePicking = few && ratingRows.scores.length > 0;
-  useEffect(() => setScoreOpen(false), [view.kind, scorePicking]);
   const scoreColumns = compact ? 2 : 5;
+  useEffect(() => setScoreOpen(false), [view.kind, scorePicking, scoreColumns]);
   const scoreRows = ratingRows.scores.length === 0 ? [] : scorePicking ? [1, ...(scoreOpen ? scoreMenuRows(ratingRows.scores.length, scoreColumns) : [])] : [ratingRows.scores.length];
   const ratingChipRows = [...(ratingRows.sections.length > 0 ? [ratingRows.sections.length] : []), ...scoreRows];
   const scoreRow = ratingRows.sections.length > 0 ? 1 : 0;

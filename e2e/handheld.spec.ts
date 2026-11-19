@@ -207,6 +207,17 @@ test.describe("a phone used as the screen", () => {
           await expect(menu).toBeHidden();
           await expect(pick).toBeFocused();
           await pick.tap();
+          await expect(menu).toBeVisible();
+          await phone.goBack();
+          await expect(menu).toBeHidden();
+          await expect(phone.getByTestId("rating-filters")).toBeVisible();
+          await pick.tap();
+          await expect(menu).toBeVisible();
+          await phone.setViewportSize({ width: 780, height: 353 });
+          await expect(menu).toBeHidden();
+          await phone.setViewportSize({ width, height: 760 });
+          await expect(menu).toBeHidden();
+          await pick.tap();
           await phone.getByTestId("rating-filter-movie").tap();
           await expect(menu).toBeHidden();
           await pick.tap();
