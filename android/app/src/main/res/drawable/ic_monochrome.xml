@@ -1,16 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The themed icon: Kino's mark (the wordmark's "o", a ring with a play), in the phone's own colours, inside the icon's safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="9.7"
-        android:pathData="M54,31.85a22.15,22.15 0 1,1 0,44.3a22.15,22.15 0 1,1 0,-44.3z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M49.15,45L49.15,63L63.7,54Z" />
+    <group
+        android:scaleX="0.10546875"
+        android:scaleY="0.10546875">
+        <group
+            android:translateX="315.3"
+            android:translateY="703.4"
+            android:scaleX="1.32"
+            android:scaleY="1.32">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M139.4,-116.3L346.8,-183.7A282.6,282.6 0,0 1,358.2 -133.5ZM141.2,-82.9L360.5,-88.7A282.6,282.6 0,0 1,354.4 -37.6Z" />
+            <group
+                android:translateX="-77.74"
+                android:translateY="-344.86"
+                android:scaleX="3.03"
+                android:scaleY="3.03">
+                <path
+                    android:strokeColor="#FFFFFFFF"
+                    android:strokeWidth="16"
+                    android:strokeLineCap="round"
+                    android:strokeLineJoin="round"
+                    android:pathData="M31,29V109M39,82L71,55M39,82L72,109" />
+            </group>
+        </group>
+    </group>
 </vector>

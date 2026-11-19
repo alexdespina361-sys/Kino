@@ -50,7 +50,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   flex: none;
   width: 4em;
 }
-.logo img { display: block; width: 100%; height: auto; pointer-events: none; }
+.logo img { display: block; width: 108.18%; max-width: none; height: auto; margin-bottom: -11.9%; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 2.4s; }

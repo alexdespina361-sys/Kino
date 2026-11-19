@@ -2,6 +2,13 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.23",
+    date: "2026-11-19",
+    en: ["A new look for Kino: the k throws a red beam, like a projector, and the icon is that k."],
+    ro: ["Kino arată nou: k-ul aruncă o rază roșie, ca un proiector, iar iconița este acel k."],
+    it: ["Kino ha un nuovo aspetto: la k proietta un raggio rosso, come un proiettore, e l'icona è quella k."],
+  },
+  {
     version: "0.4.22",
     date: "2026-11-19",
     en: ["TVs start and scroll faster: rows far down the page are drawn as you get near them, and the chat is fetched while the TV sits idle."],
