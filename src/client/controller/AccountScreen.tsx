@@ -17,7 +17,7 @@ import { LATEST, useNews } from "../changelog/news";
 import { NewsList } from "../changelog/NewsList";
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
-import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
+import { DevicesPage, LabsPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { PinAsk } from "./Pin";
 import { pinAsker } from "../account/pinAsker";
 import { LinkApprove } from "../account/LinkApprove";
@@ -81,7 +81,7 @@ export function Page({ title, onBack, children, testId, backTestId, bare = false
   );
 }
 
-type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "approve" | "friends" | "friend" | "news";
+type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "approve" | "friends" | "friend" | "news" | "labs";
 
 function NewsPage({ onSeen }: { onSeen: () => void }) {
   useEffect(onSeen, [onSeen]);
@@ -136,6 +136,7 @@ export function AccountScreen({
   const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main");
   const { me, profile } = account;
   const [settingsFrom, setSettingsFrom] = useState<View>("main");
+  const [deleteFirst, setDeleteFirst] = useState(false);
   const back = () => setView("main");
   const { asking, cancel, relock } = account.childLock;
   const self = useRef({}).current;
@@ -187,7 +188,21 @@ export function AccountScreen({
             setSettingsFrom("main");
             openFriends("settings");
           }}
+          onOpenLabs={() => setView("labs")}
+          onDeleteAccount={() =>
+            grownUp(() => {
+              setDeleteFirst(true);
+              setView("security");
+            })
+          }
         />
+      </Page>
+    );
+  }
+  if (view === "labs") {
+    return (
+      <Page title={t("settings.labs")} onBack={() => setView("settings")} testId="labs-screen">
+        <LabsPage />
       </Page>
     );
   }
@@ -245,8 +260,14 @@ export function AccountScreen({
   }
   if (view === "security") {
     return (
-      <Page title={t("account.security")} onBack={back}>
-        <SecurityPage onDeleted={onClose} />
+      <Page
+        title={t("account.security")}
+        onBack={() => {
+          setDeleteFirst(false);
+          setView(deleteFirst ? "settings" : "main");
+        }}
+      >
+        <SecurityPage onDeleted={onClose} startDeleting={deleteFirst} />
       </Page>
     );
   }

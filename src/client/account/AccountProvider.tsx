@@ -442,7 +442,6 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       },
       childLock,
       async changeChildPin(change) {
-        if (change.next !== null && !meRef.current?.account.childPin && (childRef.current || unsureRef.current)) throw new ApiError(403, "child_profile");
         setMe(await api.changeChildPin(change));
       },
     }),

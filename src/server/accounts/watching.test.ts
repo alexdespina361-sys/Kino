@@ -46,27 +46,26 @@ describe("what people watch on Kino", () => {
     expect(watchedOnKino(store)).toEqual(["filmpire-tv-1399", "filmpire-movie-603"]);
   });
 
-  it("leaves out whoever turned it off, a child's profile, one that said no to sharing before, a few seconds, and last week's", async () => {
+  it("leaves out a child's profile, one that said no to sharing before, a few seconds, and last week's, but no longer an old switch turned off", async () => {
     const { clock, store, person, watch, set } = await world();
-    const people = [person(), person(), person(), person(), person(), person()];
-    const [a, b, c, d, e, f] = people;
+    const people = [person(), person(), person(), person(), person()];
+    const [a, b, c, d, e] = people;
     for (const one of people) watch(one!.profile, FILM);
     expect(watchedOnKino(store)).toEqual(["filmpire-movie-603"]);
-    set(a!.profile, "publicWatching", false);
-    set(b!.profile, "child", true);
-    set(c!.profile, "friends", false);
+    set(a!.profile, "child", true);
+    set(b!.profile, "friends", false);
+    set(c!.profile, "publicWatching", false);
     clock.now += 1000;
     watch(d!.profile, FILM, { position: 5 });
+    watch(e!.profile, FILM, { position: 5 });
     expect(watchedOnKino(store)).toEqual([]);
     clock.now += 1000;
     watch(d!.profile, FILM, { position: 5, done: true });
-    expect(watchedOnKino(store)).toEqual(["filmpire-movie-603"]);
-    clock.now += 1000;
-    set(a!.profile, "publicWatching", true);
+    expect(watchedOnKino(store)).toEqual([]);
+    watch(e!.profile, FILM, { position: 5, done: true });
     expect(watchedOnKino(store)).toEqual(["filmpire-movie-603"]);
     clock.now += WATCHING_DAYS * DAY + 1;
     expect(watchedOnKino(store)).toEqual([]);
-    expect([e, f]).toHaveLength(2);
   });
 
   it("counts only the movie database's titles: a pasted link is nobody's business", async () => {

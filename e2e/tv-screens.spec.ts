@@ -338,7 +338,7 @@ test.describe("a menu's close button on the TV", () => {
     const { tv, phone } = await openMenu(browser, baseURL!, "tv-audio-sub-btn");
     const modal = tv.getByTestId("audio-subtitles-modal");
     const close = modal.getByRole("button", { name: "Close" });
-    const off = modal.getByRole("option", { name: "Off" });
+    const off = modal.getByRole("option", { name: "Off", exact: true });
     await expect(modal.getByRole("option", { name: "English" })).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await expect(off).toBeFocused();
@@ -3197,7 +3197,7 @@ test.describe("ratings on the TV", () => {
       const tv = await openLibrary(browser, withLibrary(library), { width: screen.width, height: screen.height });
       await openProfilePlace(tv, "settings");
       await expect(tv.getByTestId("tv-account")).toBeVisible();
-      for (const id of ["tv-lang-en", "tv-autoplay", "tv-subtitle-languages", "tv-tap-to-pause", "tv-adaptive-quality", "tv-account-back"]) {
+      for (const id of ["tv-lang-en", "tv-autoplay", "tv-subtitle-languages", "tv-labs", "tv-account-back"]) {
         const at = (await tv.getByTestId(id).boundingBox())!;
         expect(at.x, `${id} from the left`).toBeGreaterThanOrEqual(0);
         expect(at.y, `${id} from the top`).toBeGreaterThanOrEqual(0);
@@ -3225,7 +3225,7 @@ test.describe("ratings on the TV", () => {
         await expect(tv.getByTestId("tv-account-chip")).toBeVisible();
       }
       await openProfilePlace(tv, "settings");
-      await expect(tv.getByTestId("tv-public-watching")).toHaveCount(signedIn ? 1 : 0);
+      await expect(tv.getByTestId("tv-sign-out")).toHaveCount(signedIn ? 1 : 0);
       const bottoms = await tv.locator(".tv-set-grid-panel > .tv-set-col").evaluateAll((columns) =>
         columns.map((column) => {
           const cards = column.querySelectorAll(".tv-group-body");

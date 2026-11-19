@@ -231,6 +231,10 @@ test.describe("accounts and profiles", () => {
 
     await phone.getByTestId("menu-security").click();
     await phone.getByTestId("delete-account").click();
+    await expect(phone.getByTestId("delete-password")).toHaveCount(0);
+    await expect(phone.getByTestId("delete-confirm")).toBeDisabled();
+    expect(await phone.locator(".editor-actions button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("data-testid")))).toEqual(["delete-cancel", "delete-confirm"]);
+    await phone.getByTestId("delete-word").fill("understood");
     await phone.getByTestId("delete-password").fill("2");
     await phone.getByTestId("delete-confirm").click();
     await expect(phone.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]);
@@ -241,6 +245,27 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
     await phone.waitForTimeout(800);
     expect(turnedAway).toEqual(["/api/me/delete"]);
+  });
+
+  test("the foot of the phone's settings has the same quiet line: it opens the word to type on Password & security, and Back returns to the settings", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account, { asMade: true });
+    await phone.getByTestId("menu-settings").click();
+    const line = phone.getByTestId("settings-delete-account");
+    await expect(line).toHaveText(en["account.delete"]);
+    expect(await line.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(1);
+    const lowest = await phone.getByTestId("settings-page").locator("button").evaluateAll((all) => Math.max(...all.map((one) => one.getBoundingClientRect().bottom)));
+    expect((await line.boundingBox())!.y + (await line.boundingBox())!.height).toBeGreaterThanOrEqual(lowest - 1);
+
+    await line.click();
+    await expect(phone.getByTestId("delete-word")).toBeFocused();
+    await expect(phone.getByTestId("delete-confirm")).toBeDisabled();
+    await phone.getByTestId("page-back").click();
+    await expect(phone.getByTestId("labs-open")).toBeVisible();
+    await expect(phone.getByTestId("delete-word")).toHaveCount(0);
   });
 
   test("an account can have no password: the empty field says what that means, the sign-up says it again and asks, and signing in with nothing opens it", async ({ browser }) => {
@@ -675,7 +700,7 @@ test.describe("profiles made and changed on the TV itself", () => {
     for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-delete-account")).toBeFocused();
     await tv.keyboard.press("ArrowUp");
-    await expect(inColumn(1)).toHaveAttribute("data-testid", /^tv-anime-audio-/);
+    await expect(inColumn(1)).toHaveAttribute("data-testid", "tv-autoskip");
     await tv.keyboard.press("ArrowLeft");
     await expect(inColumn(0)).toHaveCount(1);
 

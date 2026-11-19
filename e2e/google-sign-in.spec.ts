@@ -512,6 +512,9 @@ test.describe("with Google sign-in on", () => {
     await expect(phone.getByTestId("google-connect")).toHaveCount(0);
 
     await phone.getByTestId("delete-account").click();
+    await expect(phone.getByTestId("delete-google")).toBeDisabled();
+    await phone.getByTestId("delete-word").fill("Understood");
+    await expect(phone.getByTestId("delete-password")).toHaveCount(0);
     await viaGoogle(phone, google, phone.getByTestId("delete-google"), "cancel");
     await expect(phone.getByTestId("account-toast")).toHaveText(en["google.denied"]);
     expect((await sessionOf(phone)).me).not.toBeNull();
@@ -519,6 +522,7 @@ test.describe("with Google sign-in on", () => {
     await phone.getByTestId("account-button").click();
     await phone.getByTestId("menu-security").click();
     await phone.getByTestId("delete-account").click();
+    await phone.getByTestId("delete-word").fill("Understood");
     await viaGoogle(phone, google, phone.getByTestId("delete-google"));
     expect(google.asked.at(-1)!.get("max_age")).toBe("0");
     await expect(phone.getByTestId("account-toast")).toHaveText(en["account.deleted"]);

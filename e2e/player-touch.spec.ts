@@ -716,6 +716,7 @@ test.describe("the profile's choice of what a tap does", () => {
     const open = async () => {
       await phone.getByTestId("account-button").click();
       await phone.getByTestId("menu-settings").click();
+      await phone.getByTestId("labs-open").click();
       return phone.getByTestId("tap-to-pause");
     };
     const tap = await open();
@@ -731,10 +732,15 @@ test.describe("the profile's choice of what a tap does", () => {
   test("is a switch on the TV's own account page too", async ({ browser }) => {
     const tv = await openLibrary(browser, withFilms);
     await openProfilePlace(tv, "settings");
+    await tv.getByTestId("tv-labs").focus();
+    await tv.keyboard.press("Enter");
     const tap = tv.getByTestId("tv-tap-to-pause");
+    await expect(tap).toBeFocused();
     await expect(tap).toHaveAttribute("aria-checked", "false");
-    await tap.click();
+    await tv.keyboard.press("Enter");
     await expect(tap).toHaveAttribute("aria-checked", "true");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-labs")).toBeFocused();
     tv.close();
   });
 });
@@ -746,6 +752,7 @@ test.describe("the profile's choice of letting the picture's quality follow the 
     const open = async () => {
       await phone.getByTestId("account-button").click();
       await phone.getByTestId("menu-settings").click();
+      await phone.getByTestId("labs-open").click();
       return phone.getByTestId("adaptive-quality");
     };
     const adaptive = await open();
@@ -761,6 +768,7 @@ test.describe("the profile's choice of letting the picture's quality follow the 
   test("is a switch on the TV's own account page too", async ({ browser }) => {
     const tv = await openLibrary(browser, withFilms);
     await openProfilePlace(tv, "settings");
+    await tv.getByTestId("tv-labs").click();
     const adaptive = tv.getByTestId("tv-adaptive-quality");
     await expect(adaptive).toHaveAttribute("aria-checked", "true");
     await adaptive.click();
