@@ -264,6 +264,8 @@ test.describe("a phone used as the screen", () => {
       }
       for (let i = 1; i < lines.length; i++) expect(lines[i]!.top - lines[i - 1]!.bottom, where).toBeGreaterThanOrEqual(8);
       const menuRight = await phone.getByTestId("tv-rail").evaluate((rail) => rail.getBoundingClientRect().right);
+      const icons = await phone.locator(".tv-rail .tv-rail-item svg").evaluateAll((all) => all.map((icon) => icon.getBoundingClientRect()).map((box) => box.left + box.width / 2));
+      for (const middle of icons) expect(Math.abs(middle - menuRight / 2), `the icons sit in the middle of the menu ${where}`).toBeLessThanOrEqual(4);
       for (const kind of ["home", "movies", "series", "cartoons", "anime"]) {
         const box = (await phone.getByTestId(`section-${kind}`).boundingBox())!;
         expect(box.x, `section-${kind} ${where}`).toBeGreaterThanOrEqual(menuRight);

@@ -1064,7 +1064,10 @@
 
 :root[data-ui="polish"] .tv-rail[data-flat="true"] { gap: 10px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item { min-height: 48px; margin-left: 4px; padding-top: 0; padding-bottom: 0; font-size: 15px; }
-:root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-item { align-self: flex-start; justify-content: center; width: 48px; margin-right: 0; padding-inline: 0; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-item { align-self: flex-start; justify-content: center; width: 48px; margin-right: 0; margin-left: max(4px, calc((var(--rail-w) - 48px) / 2)); padding-inline: 0; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-item span,
+:root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-badge { display: none; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-item[data-badged="true"]::after { left: calc(50% + 4px); top: 9px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item svg { font-size: 18px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item[aria-current="page"]::before { left: -2px; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections { gap: 8px; margin: 0; padding: 2px var(--edge-r) 4px var(--gutter); scroll-padding-inline: var(--gutter); }
