@@ -4,7 +4,8 @@ import { filterRatings, filterRows, ratingChoices, usableFilter, type RatingFilt
 import { factLines, mergeFacts, ratingSummary, scoreWord, sortRatings, storedFacts, watchFacts, type RatingOrder } from "../account/ratings";
 import { useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
-import { StarIcon } from "../shared/icons";
+import { useBackWhile } from "../shared/backButton";
+import { ChevronIcon, StarIcon } from "../shared/icons";
 import { allRows, useFeed } from "../shared/feed";
 import { Poster } from "../shared/Poster";
 import { entryOfRating, ratingSectionIn, type Entry } from "../tv/pages";
@@ -22,6 +23,16 @@ export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly L
   const options = ratingChoices(ratings, filter, sectionOf);
   const choices = filterRows(options);
   const sorted = useMemo(() => sortRatings(filterRatings(ratings, filter, sectionOf), order), [ratings, filter.section, filter.score, sectionOf, order]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [picking, setPicking] = useState(false);
+  useBackWhile(picking, () => setPicking(false));
+  const scoreLabel = (score: number | undefined) =>
+    score === undefined ? (
+      t("rating.filterAnyScore")
+    ) : (
+      <>
+        <StarIcon filled /> {score}
+      </>
+    );
   const sectionLabel = (section: LibrarySection | undefined) =>
     t(section === undefined ? "tv.filterAll" : section === "movie" ? "tv.filterMovies" : section === "series" ? "tv.filterSeries" : section === "cartoon" ? "tv.filterCartoons" : "tv.filterAnime");
 
@@ -50,33 +61,58 @@ export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly L
       {choices.sections.length > 0 && (
         <div className="lib-pills" role="group" aria-label={t("rating.filterKind")}>
           {choices.sections.map((section) => (
-            <button key={section ?? "all"} type="button" className="lib-pill" aria-pressed={filter.section === section} onClick={() => setWanted({ ...filter, section })} data-testid={`ratings-filter-${section ?? "all"}`}>
+            <button
+              key={section ?? "all"}
+              type="button"
+              className="lib-pill"
+              aria-pressed={filter.section === section}
+              onClick={() => {
+                setWanted({ ...filter, section });
+                setPicking(false);
+              }}
+              data-testid={`ratings-filter-${section ?? "all"}`}
+            >
               {sectionLabel(section)} <span className="lib-pill-count">{section ? (options.sections.find((each) => each.section === section)?.count ?? 0) : ratings.length}</span>
             </button>
           ))}
         </div>
       )}
       {choices.scores.length > 0 && (
-        <div className="lib-pills" role="group" aria-label={t("rating.filterScores")}>
-          {choices.scores.map((score) => (
-            <button
-              key={score ?? "any"}
-              type="button"
-              className="lib-pill"
-              aria-pressed={filter.score === score}
-              {...(score !== undefined ? { "aria-label": t("rating.filterScore", { score }) } : {})}
-              onClick={() => setWanted({ ...filter, score })}
-              data-testid={`ratings-score-${score ?? "any"}`}
-            >
-              {score === undefined ? (
-                t("rating.filterAnyScore")
-              ) : (
-                <>
-                  <StarIcon filled /> {score}
-                </>
-              )}
-            </button>
-          ))}
+        <div className="lib-pick">
+          <button
+            type="button"
+            className="lib-pill lib-pick-button"
+            aria-haspopup="listbox"
+            aria-expanded={picking}
+            aria-label={`${t("rating.filterScores")}: ${filter.score === undefined ? t("rating.filterAnyScore") : t("rating.filterScore", { score: filter.score })}`}
+            onClick={() => setPicking(!picking)}
+            data-testid="ratings-pick"
+          >
+            {scoreLabel(filter.score)}
+            <ChevronIcon className="lib-pick-chevron" />
+          </button>
+          {picking && (
+            <div className="lib-pick-grid" role="listbox" aria-label={t("rating.filterScores")}>
+              {choices.scores.map((score) => (
+                <button
+                  key={score ?? "any"}
+                  type="button"
+                  role="option"
+                  className={score === undefined ? "lib-pick-option is-any" : "lib-pick-option"}
+                  aria-selected={filter.score === score}
+                  {...(score !== undefined ? { "aria-label": t("rating.filterScore", { score }) } : {})}
+                  onClick={() => {
+                    setWanted({ ...filter, score });
+                    setPicking(false);
+                  }}
+                  data-testid={`ratings-score-${score ?? "any"}`}
+                >
+                  <span className="lib-pick-name">{scoreLabel(score)}</span>
+                  <span className="lib-pill-count">{score === undefined ? options.scores.reduce((sum, each) => sum + each.count, 0) : (options.scores.find((each) => each.score === score)?.count ?? 0)}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <ul className="rating-list" data-testid="ratings-list">

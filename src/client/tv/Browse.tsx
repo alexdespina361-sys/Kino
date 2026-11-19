@@ -658,7 +658,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const sharedLists = useShared(friendId, Boolean(friendTab === "lists" && friend?.on && friend.lists), askLists, friend?.activity);
   const sharedRatings = useShared(friendId, Boolean(friendTab === "ratings" && friend?.on && friend.ratings), askRatings, friend?.activity);
   /* eslint-disable react-hooks/exhaustive-deps */
-  const homeRows = useMemo<HomeRow[]>(() => {
+  const listedRows = useMemo<HomeRow[]>(() => {
     if (holding) return [];
     if (isRowsPage(view)) return rowsOfPage(view.kind, data);
     if (view.kind === "friends") return friendRows(friends.state, Date.now(), iGet);
@@ -666,6 +666,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const latest = { version: LATEST.version, day: dayOf(LATEST.date, language, true), fresh: news.fresh };
     return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings: shownRatings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: shownProgress.length, progress: shownProgress, news: latest });
   }, [holding, view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, shownRatings, shownProgress, iGet, news.fresh]);
+  const featureRow = compact && isRowsPage(view) ? listedRows.find((row) => row.layout === "ranked") : undefined;
+  const featured = featureRow?.entries.slice(0, FEATURE_FROM).find((entry) => entry.url && !entry.opens && (entry.image ?? entry.backdrop));
+  const homeRows = useMemo(
+    () => (featureRow && featured ? listedRows.flatMap((row) => (row !== featureRow ? [row] : row.entries.length > 1 ? [{ ...row, entries: row.entries.filter((entry) => entry !== featured) }] : [])) : listedRows),
+    [listedRows, featureRow, featured],
+  );
   const grid = useMemo(
     () => (holding ? null : (gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data))),
     [holding, view, data, language, friends.state, sharedLists, sharedRatings, iGet],
@@ -722,7 +728,6 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) }
       : null;
   const actions = rowsPage ? heroActions(shown?.entry) : [];
-  const featured = compact && isRowsPage(view) ? homeRows.find((row) => row.layout === "ranked")?.entries.slice(0, FEATURE_FROM).find((entry) => entry.url && !entry.opens && (entry.image ?? entry.backdrop)) : undefined;
   const featuredIn = featured ? homeRows.find((row) => row.layout !== "continue") : undefined;
   const saved = useMemo(() => savedKeys(list), [list]);
   const scores = useScores();
@@ -1780,6 +1785,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       data-deep={deep}
       data-stage={stage ? "rows" : undefined}
       data-billboard={billboard ? "true" : undefined}
+      data-hand={few ? "true" : undefined}
       aria-label={t("tv.library")}
     >
       <Backdrop image={compact ? undefined : (shown?.entry.backdrop ?? shown?.entry.image)} />

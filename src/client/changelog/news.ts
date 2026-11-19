@@ -10,7 +10,7 @@ export interface ChangeNote {
   it: readonly string[];
 }
 
-export const LATEST = { version: "0.4.20", date: "2026-11-18" } as const;
+export const LATEST = { version: "0.4.21", date: "2026-11-19" } as const;
 
 export const SEEN_KEY = "kino.seenVersion";
 

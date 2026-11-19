@@ -2,6 +2,31 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.21",
+    date: "2026-11-19",
+    en: [
+      "On a phone, All, Movies, Series, Cartoons and Anime fit in one bar, and list names go onto more lines instead of sliding sideways.",
+      "My ratings on a phone: the scores are one button that opens a small grid of them, with how many titles each has.",
+      "On a phone, a title's corner button keeps it in your list with one tap (and takes it out again), as a mouse does on a TV.",
+      "The big poster on a phone's home page is no longer repeated as the first title of the row under it.",
+      "Weak TVs and slow devices get a lighter look that starts faster; videos keep less already-watched picture in memory.",
+    ],
+    ro: [
+      "Pe telefon, Toate, Filme, Seriale, Desene animate și Anime încap într-o bară, iar numele listelor trec pe mai multe rânduri.",
+      "Notele mele pe telefon: notele sunt un singur buton care deschide o mică grilă cu ele și câte titluri are fiecare.",
+      "Pe telefon, butonul din colțul unui titlu îl păstrează în lista ta dintr-o atingere (și îl scoate din nou), ca mouse-ul pe televizor.",
+      "Posterul mare de pe pagina de start a telefonului nu mai apare din nou ca primul titlu din rândul de sub el.",
+      "Televizoarele slabe și dispozitivele lente au un aspect mai ușor, care pornește mai repede; videoclipurile țin mai puțin în memorie.",
+    ],
+    it: [
+      "Sul telefono Tutti, Film, Serie TV, Cartoni e Anime stanno in una barra, e i nomi delle liste vanno su più righe invece di scorrere.",
+      "Le mie valutazioni sul telefono: i voti sono un solo pulsante che apre una piccola griglia, con quanti titoli ha ciascuno.",
+      "Sul telefono, il pulsante nell'angolo di un titolo lo tiene nella tua lista con un tocco (e lo toglie di nuovo), come il mouse sulla TV.",
+      "Il poster grande della pagina iniziale del telefono non si ripete più come primo titolo della riga sotto.",
+      "Le TV deboli e i dispositivi lenti hanno un aspetto più leggero che parte prima; i video tengono meno in memoria.",
+    ],
+  },
+  {
     version: "0.4.20",
     date: "2026-11-18",
     en: [

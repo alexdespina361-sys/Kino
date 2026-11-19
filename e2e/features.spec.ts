@@ -3686,18 +3686,28 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
 
       await expect(sheet.getByTestId("ratings-filter-all")).toHaveAttribute("aria-pressed", "true");
       await expect(sheet.locator('[data-testid^="ratings-filter-"]')).toHaveText(["All 3", "Movies 2", "Series 1"]);
-      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveText(["Any score", "9", "8", "6"]);
+      const pick = sheet.getByTestId("ratings-pick");
+      await expect(pick).toHaveAttribute("aria-expanded", "false");
+      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveCount(0);
+      await pick.click();
+      await expect(sheet.locator('[data-testid^="ratings-score-"] .lib-pick-name')).toHaveText(["Any score", "9", "8", "6"]);
+      await expect(sheet.locator('[data-testid^="ratings-score-"] .lib-pill-count')).toHaveText(["3", "1", "1", "1"]);
       await sheet.getByTestId("ratings-filter-series").click();
       await expect(entries.locator(".rating-name")).toHaveText(["The Long Night · Season 2"]);
-      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveCount(0);
+      await expect(sheet.getByTestId("ratings-pick")).toHaveCount(0);
       await sheet.getByTestId("ratings-filter-all").click();
+      await pick.click();
       await sheet.getByTestId("ratings-score-9").click();
+      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveCount(0);
+      await expect(pick).toHaveAccessibleName("Score: Rated 9");
       await expect(entries.locator(".rating-name")).toHaveText(["Film number 2"]);
       await expect(sheet.getByTestId("ratings-summary")).toContainText("average 9");
       await sheet.getByTestId("ratings-filter-movie").click();
       await expect(entries.locator(".rating-name")).toHaveText(["Film number 2"]);
-      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveText(["Any score", "9", "6"]);
+      await pick.click();
+      await expect(sheet.locator('[data-testid^="ratings-score-"] .lib-pick-name')).toHaveText(["Any score", "9", "6"]);
       await sheet.getByTestId("ratings-filter-all").click();
+      await pick.click();
       await sheet.getByTestId("ratings-score-any").click();
       await expect(entries.locator(".rating-name")).toHaveText(["Film number 2", "The Long Night · Season 2", "Film number 1"]);
 
