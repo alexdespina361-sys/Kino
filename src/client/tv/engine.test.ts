@@ -3,7 +3,10 @@ import { hold, isHeld } from "../subsync/hold";
 import { AudioTap } from "../subsync/tap";
 import { signedRelayUrl } from "../../server/streamRelay/links";
 import {
+  BACK_BUFFER_S,
+  DELAY_REACH_S,
   DIRECT_START_MS,
+  LITE_BUFFER,
   LONE_PROXY_BUFFER_AHEAD_S,
   LONE_PROXY_BUFFER_BYTES,
   PARTY_BUFFER_AHEAD_S,
@@ -81,13 +84,43 @@ function aheadSeconds(policy: ReturnType<typeof bufferPolicy>, bitsPerSecond: nu
 
 describe("bufferPolicy", () => {
   it("lets a screen that watches alone take a good part of the film in, as it always did", () => {
-    expect(bufferPolicy(false)).toEqual({ maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 });
+    expect(bufferPolicy(false)).toEqual({ maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024, backBufferLength: BACK_BUFFER_S.full });
     expect(aheadSeconds(bufferPolicy(false), 4_000_000)).toBeGreaterThan(250);
   });
 
   it("limits buffer size when streaming through the proxy to prevent server bandwidth spikes", () => {
-    expect(bufferPolicy(false, true)).toEqual({ maxBufferLength: 30, maxMaxBufferLength: LONE_PROXY_BUFFER_AHEAD_S, maxBufferSize: LONE_PROXY_BUFFER_BYTES });
+    expect(bufferPolicy(false, true)).toEqual({ maxBufferLength: 30, maxMaxBufferLength: LONE_PROXY_BUFFER_AHEAD_S, maxBufferSize: LONE_PROXY_BUFFER_BYTES, backBufferLength: BACK_BUFFER_S.full });
     expect(aheadSeconds(bufferPolicy(false, true), 4_000_000)).toBe(LONE_PROXY_BUFFER_AHEAD_S);
+  });
+
+  it("keeps a weak device's memory small, behind the picture too, and is never looser than the party or the proxy", () => {
+    for (const [inParty, proxied] of [[false, false], [false, true], [true, false], [true, true]] as const) {
+      const lite = bufferPolicy(inParty, proxied, "lite");
+      const full = bufferPolicy(inParty, proxied);
+      expect(lite.maxBufferLength).toBeLessThanOrEqual(Math.min(full.maxBufferLength, LITE_BUFFER.maxBufferLength));
+      expect(lite.maxMaxBufferLength).toBeLessThanOrEqual(Math.min(full.maxMaxBufferLength, LITE_BUFFER.maxMaxBufferLength));
+      expect(lite.maxBufferSize).toBeLessThanOrEqual(Math.min(full.maxBufferSize, LITE_BUFFER.maxBufferSize));
+      expect(lite.backBufferLength).toBe(BACK_BUFFER_S.lite);
+      expect(full.backBufferLength).toBe(BACK_BUFFER_S.full);
+    }
+    expect(bufferPolicy(true, false, "lite")).toMatchObject({ maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES });
+    expect(Number.isFinite(BACK_BUFFER_S.full) && BACK_BUFFER_S.lite < BACK_BUFFER_S.full).toBe(true);
+  });
+
+  it("keeps the subtitles a delay shows: behind the picture for a late one, ahead for an early one outside a party, on any device", () => {
+    for (const tier of ["full", "lite"] as const)
+      for (const [inParty, proxied] of [[false, false], [false, true], [true, false]] as const) {
+        const plain = bufferPolicy(inParty, proxied, tier);
+        const late = bufferPolicy(inParty, proxied, tier, 60);
+        const early = bufferPolicy(inParty, proxied, tier, -60);
+        expect(late.backBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
+        expect(late.maxBufferLength).toBe(plain.maxBufferLength);
+        if (inParty) expect({ ...early, backBufferLength: 0 }).toEqual({ ...plain, backBufferLength: 0 });
+        else expect(early.maxBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
+        expect(early.maxMaxBufferLength).toBeGreaterThanOrEqual(early.maxBufferLength);
+        expect(early.backBufferLength).toBe(plain.backBufferLength);
+        expect(bufferPolicy(inParty, proxied, tier, 5)).toEqual({ ...plain, backBufferLength: Math.max(plain.backBufferLength, 5 + DELAY_REACH_S) });
+      }
   });
 
   it("keeps the screens of a party within 40 seconds and 32 MiB of their picture, at any usual bitrate", () => {

@@ -1,5 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { chooseRole, isDesk, isHandHeld, isPhone, type RoleInput } from "./role";
+import { chooseRole, chooseTier, isDesk, isHandHeld, isPhone, nextSlowness, QUICK_START_MS, readSlowness, SLOW_FOR_MS, SLOW_START_MS, type RoleInput, type TierInput } from "./role";
+
+const desktop = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
+const tizen = "Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36";
+const tierOf = (input: Partial<TierInput>) => chooseTier({ asked: null, pinned: undefined, slow: false, userAgent: desktop, cores: 8, memoryGb: 8, ...input });
+
+describe("chooseTier", () => {
+  it("gives a strong desktop the full page", () => {
+    expect(tierOf({})).toBe("full");
+    expect(tierOf({ cores: undefined, memoryGb: undefined })).toBe("full");
+  });
+  it("gives TVs, few cores, little memory and a slow start the light page", () => {
+    expect(tierOf({ userAgent: tizen })).toBe("lite");
+    expect(tierOf({ cores: 2 })).toBe("lite");
+    expect(tierOf({ memoryGb: 2 })).toBe("lite");
+    expect(tierOf({ slow: true })).toBe("lite");
+    expect(tierOf({ cores: 4, memoryGb: 4 })).toBe("full");
+  });
+  it("lets the address or a kept choice win both ways", () => {
+    expect(tierOf({ userAgent: tizen, asked: "full" })).toBe("full");
+    expect(tierOf({ asked: "lite" })).toBe("lite");
+    expect(tierOf({ userAgent: tizen, pinned: "full" })).toBe("full");
+    expect(tierOf({ pinned: "full", asked: "lite" })).toBe("lite");
+    expect(tierOf({ userAgent: tizen, asked: "junk", pinned: "junk" })).toBe("lite");
+  });
+});
+
+describe("nextSlowness", () => {
+  const none = { strikes: 0, until: 0 };
+  const middle = (SLOW_START_MS + QUICK_START_MS) / 2;
+  it("needs two slow starts before it turns the light page on, then keeps it for a week", () => {
+    const once = nextSlowness(SLOW_START_MS, none, 1000);
+    expect(once).toEqual({ strikes: 1, until: 0 });
+    expect(nextSlowness(SLOW_START_MS, once, 2000)).toEqual({ strikes: 0, until: 2000 + SLOW_FOR_MS });
+  });
+  it("forgets the strikes on a quick start and keeps them on an in-between one", () => {
+    const once = nextSlowness(SLOW_START_MS, none, 1000);
+    expect(nextSlowness(middle, once, 2000)).toBe(once);
+    expect(nextSlowness(QUICK_START_MS, once, 2000)).toEqual(none);
+    expect(nextSlowness(QUICK_START_MS, { strikes: 0, until: 9e12 }, 2000)).toEqual(none);
+  });
+  it("reads a kept value, an old flag or junk without throwing", () => {
+    expect(readSlowness(JSON.stringify({ strikes: 1, until: 5 }))).toEqual({ strikes: 1, until: 5 });
+    expect(readSlowness("1")).toEqual(none);
+    expect(readSlowness("{bad")).toEqual(none);
+    expect(readSlowness(undefined)).toEqual(none);
+    expect(readSlowness(JSON.stringify({ strikes: "x" }))).toEqual(none);
+  });
+});
 
 const DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";

@@ -15,16 +15,20 @@ export const comesIn = {
 
 export const sharper = (picture: string | undefined) => picture?.replace(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500\//, "$1w780/");
 
-export function posterSizes(picture: string | undefined): { srcSet: string; sizes: string } | undefined {
+export const TILE_FIT = { poster: "(max-width: 599px) 120px, 9.4vw", still: "(max-width: 599px) 216px, 21vw" } as const;
+export const CARD_FIT = { poster: TILE_FIT.still, still: TILE_FIT.still } as const;
+export const FAN_FIT = { poster: "(max-width: 599px) 64px, 4.5vw", still: "(max-width: 599px) 64px, 4.5vw" } as const;
+
+export function posterSizes(picture: string | undefined, fit?: { poster: string; still: string }): { srcSet: string; sizes: string } | undefined {
   const match = picture?.match(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500(\/[^\s,]+)$/);
-  if (!match) return stillSizes(picture);
-  return { srcSet: [342, 500, 780].map((width) => `${match[1]}w${width}${match[2]} ${width}w`).join(", "), sizes: "auto, 160px" };
+  if (!match) return stillSizes(picture, fit?.still);
+  return { srcSet: [...(fit ? [185] : []), 342, 500, 780].map((width) => `${match[1]}w${width}${match[2]} ${width}w`).join(", "), sizes: `auto, ${fit?.poster ?? "160px"}` };
 }
 
-function stillSizes(picture: string | undefined): { srcSet: string; sizes: string } | undefined {
+function stillSizes(picture: string | undefined, fit = "400px"): { srcSet: string; sizes: string } | undefined {
   const match = picture?.match(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w1280(\/[^\s,]+)$/);
   if (!match) return undefined;
-  return { srcSet: [300, 780, 1280].map((width) => `${match[1]}w${width}${match[2]} ${width}w`).join(", "), sizes: "auto, 400px" };
+  return { srcSet: [300, 780, 1280].map((width) => `${match[1]}w${width}${match[2]} ${width}w`).join(", "), sizes: `auto, ${fit}` };
 }
 
 export function Poster({ title, image, seed, className, children }: { title: string; image?: string | undefined; seed?: string; className?: string; children?: ReactNode }) {

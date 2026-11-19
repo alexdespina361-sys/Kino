@@ -1,3 +1,5 @@
+import { cuesMoved } from "./hold";
+
 export interface EditableCue {
   startTime: number;
   endTime: number;
@@ -74,5 +76,6 @@ export class CueEditor<T extends EditableCue> {
       cue.endTime = end;
     }
     this.moved = true;
+    cuesMoved();
   }
 }

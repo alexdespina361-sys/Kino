@@ -7,7 +7,7 @@ import { installDiagnostics } from "./feedback/diagnostics";
 import { FeedbackGate } from "./feedback/FeedbackGate";
 import { FriendsProvider } from "./friends/FriendsProvider";
 import { languageReady, t } from "./i18n";
-import { roleOfThisPage, thisIsDesk, thisIsHandHeld } from "./role";
+import { roleOfThisPage, thisIsDesk, thisIsHandHeld, thisTier, watchStartSpeed } from "./role";
 import { installExitGuard } from "./shared/backButton";
 import { askLibraryEarly } from "./shared/earlyLibrary";
 import { ExitHint } from "./shared/ExitHint";
@@ -46,6 +46,7 @@ const Tv = lazy(loadTv);
 const Controller = lazy(loadController);
 
 document.documentElement.setAttribute("data-kino-started", "1");
+document.documentElement.dataset.tier = thisTier();
 installUpdateKeys();
 const role = roleOfThisPage();
 noteStrayAddress();
@@ -55,6 +56,7 @@ if (role === "tv") askLibraryEarly();
 setUpFullscreen({ byItself: role === "tv" && !thisIsDesk() && !thisIsHandHeld() });
 if (thisIsHandHeld()) installExitGuard();
 installDiagnostics();
+watchStartSpeed();
 watchForUpdates();
 askEarly();
 void languageReady.then(() =>

@@ -79,6 +79,82 @@ export const roleOfThisPage = (): Role =>
     remoteBefore: hasKept(CONTROLLER_KEY),
   });
 
+export type Tier = "full" | "lite";
+export const TIER_KEY = "kino.tier";
+export const SLOW_KEY = "kino.slow";
+export const SLOW_START_MS = 1500;
+export const QUICK_START_MS = 400;
+
+export interface TierInput {
+  asked: string | null;
+  pinned: string | undefined;
+  slow: boolean;
+  userAgent: string;
+  cores: number | undefined;
+  memoryGb: number | undefined;
+}
+
+export function chooseTier(input: TierInput): Tier {
+  const pin = input.asked ?? input.pinned;
+  if (pin === "full" || pin === "lite") return pin;
+  if (input.slow || TV_AGENT.test(input.userAgent)) return "lite";
+  if (input.cores !== undefined && input.cores > 0 && input.cores <= 2) return "lite";
+  return input.memoryGb !== undefined && input.memoryGb <= 2 ? "lite" : "full";
+}
+
+export const SLOW_STRIKES = 2;
+export const SLOW_FOR_MS = 7 * 24 * 3600 * 1000;
+export interface Slowness {
+  strikes: number;
+  until: number;
+}
+
+export function nextSlowness(busyMs: number, was: Slowness, now: number): Slowness {
+  if (busyMs <= QUICK_START_MS) return { strikes: 0, until: 0 };
+  if (busyMs < SLOW_START_MS) return was;
+  const strikes = was.strikes + 1;
+  return strikes >= SLOW_STRIKES ? { strikes: 0, until: now + SLOW_FOR_MS } : { strikes, until: was.until };
+}
+
+export function readSlowness(text: string | undefined): Slowness {
+  try {
+    const kept = JSON.parse(text ?? "") as Partial<Slowness>;
+    return { strikes: Number.isFinite(kept.strikes) ? Number(kept.strikes) : 0, until: Number.isFinite(kept.until) ? Number(kept.until) : 0 };
+  } catch {
+    return { strikes: 0, until: 0 };
+  }
+}
+
+let tier: Tier | undefined;
+export const thisTier = (): Tier =>
+  (tier ??= chooseTier({
+    asked: new URLSearchParams(location.search).get("tier"),
+    pinned: readStorage(TIER_KEY),
+    slow: readSlowness(readStorage(SLOW_KEY)).until > Date.now(),
+    userAgent: navigator.userAgent,
+    cores: navigator.hardwareConcurrency || undefined,
+    memoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  }));
+
+export function watchStartSpeed(windowMs = 10_000): void {
+  if (thisTier() !== "full" || navigator.webdriver || typeof PerformanceObserver === "undefined" || !PerformanceObserver.supportedEntryTypes?.includes("longtask")) return;
+  let busy = 0;
+  let hidden = document.visibilityState !== "visible";
+  const onHide = () => (hidden ||= document.visibilityState !== "visible");
+  document.addEventListener("visibilitychange", onHide);
+  const watch = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) busy += entry.duration;
+  });
+  watch.observe({ entryTypes: ["longtask"] });
+  setTimeout(() => {
+    watch.disconnect();
+    document.removeEventListener("visibilitychange", onHide);
+    if (hidden) return;
+    const next = nextSlowness(busy, readSlowness(readStorage(SLOW_KEY)), Date.now());
+    writeStorage(SLOW_KEY, next.strikes || next.until ? JSON.stringify(next) : null);
+  }, windowMs);
+}
+
 export function playOnTv(link: string, startAt?: number): void {
   if (readStorage(ROLE_KEY) === undefined) writeStorage(ROLE_KEY, "tv");
   const at = startAt !== undefined && Number.isFinite(startAt) ? Math.floor(startAt) : 0;

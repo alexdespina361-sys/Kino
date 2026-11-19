@@ -17,11 +17,11 @@ const source: LibrarySource = {
 };
 
 describe("GET /api/library", () => {
-  it("answers with the rows, which a phone may keep for a few minutes", async () => {
+  it("answers with the rows, which a phone may keep for a few minutes and show at once for an hour more while it asks again", async () => {
     app = await buildApp({ librarySources: [source] });
     const response = await app.inject({ url: "/api/library" });
     expect(response.statusCode).toBe(200);
-    expect(response.headers["cache-control"]).toBe("public, max-age=300");
+    expect(response.headers["cache-control"]).toBe("public, max-age=300, stale-while-revalidate=3600");
     const library = LibrarySchema.parse(response.json());
     expect(library.rows[0]?.items[0]?.title).toBe("Title");
     expect(library.updatedAt).toBeGreaterThan(0);
@@ -41,7 +41,7 @@ describe("GET /api/library", () => {
       const again = await app.inject({ url: "/api/library", headers: { "if-none-match": asked } });
       expect(again.statusCode, asked).toBe(304);
       expect(again.body, asked).toBe("");
-      expect(again.headers["cache-control"], asked).toBe("public, max-age=300");
+      expect(again.headers["cache-control"], asked).toBe("public, max-age=300, stale-while-revalidate=3600");
     }
     const other = await app.inject({ url: "/api/library", headers: { "if-none-match": 'W/"not-this-list"' } });
     expect(other.statusCode).toBe(200);
