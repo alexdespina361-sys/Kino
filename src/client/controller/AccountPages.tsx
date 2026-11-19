@@ -252,7 +252,17 @@ export function LabsPage() {
   );
 }
 
-export function SettingsPage({ onOpenFriends, onOpenLabs, grownUp }: { onOpenFriends: () => void; onOpenLabs: () => void; grownUp: (action: () => void) => void }) {
+export function SettingsPage({
+  onOpenFriends,
+  onOpenLabs,
+  onDeleteAccount,
+  grownUp,
+}: {
+  onOpenFriends: () => void;
+  onOpenLabs: () => void;
+  onDeleteAccount?: () => void;
+  grownUp: (action: () => void) => void;
+}) {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
@@ -346,6 +356,11 @@ export function SettingsPage({ onOpenFriends, onOpenLabs, grownUp }: { onOpenFri
         </button>
       </nav>
       {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}
+      {account.me && account.profile && onDeleteAccount && (
+        <button type="button" className="quiet-link" onClick={onDeleteAccount} data-testid="settings-delete-account">
+          {t("account.delete")}
+        </button>
+      )}
     </div>
   );
 }
@@ -488,7 +503,7 @@ function Password({ label, value, onChange, autoComplete, testId }: { label: str
   );
 }
 
-export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
+export function SecurityPage({ onDeleted, startDeleting = false }: { onDeleted: () => void; startDeleting?: boolean }) {
   const t = useT();
   const account = useAccount();
   const googleOnly = account.me?.account.googleOnly === true;
@@ -499,7 +514,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
   const [changeProblem, setChangeProblem] = useState<string | null>(null);
   const [confirm, setConfirm] = useState("");
   const [typed, setTyped] = useState("");
-  const [deleting, setDeleting] = useState(false);
+  const [deleting, setDeleting] = useState(startDeleting);
   const word = t("account.deleteWord");
   const ready = wordTyped(typed, word);
   const stopDeleting = () => {

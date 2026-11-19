@@ -732,11 +732,15 @@ test.describe("the profile's choice of what a tap does", () => {
   test("is a switch on the TV's own account page too", async ({ browser }) => {
     const tv = await openLibrary(browser, withFilms);
     await openProfilePlace(tv, "settings");
-    await tv.getByTestId("tv-labs").click();
+    await tv.getByTestId("tv-labs").focus();
+    await tv.keyboard.press("Enter");
     const tap = tv.getByTestId("tv-tap-to-pause");
+    await expect(tap).toBeFocused();
     await expect(tap).toHaveAttribute("aria-checked", "false");
-    await tap.click();
+    await tv.keyboard.press("Enter");
     await expect(tap).toHaveAttribute("aria-checked", "true");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-labs")).toBeFocused();
     tv.close();
   });
 });

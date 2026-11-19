@@ -136,6 +136,7 @@ export function AccountScreen({
   const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main");
   const { me, profile } = account;
   const [settingsFrom, setSettingsFrom] = useState<View>("main");
+  const [deleteFirst, setDeleteFirst] = useState(false);
   const back = () => setView("main");
   const { asking, cancel, relock } = account.childLock;
   const self = useRef({}).current;
@@ -188,6 +189,12 @@ export function AccountScreen({
             openFriends("settings");
           }}
           onOpenLabs={() => setView("labs")}
+          onDeleteAccount={() =>
+            grownUp(() => {
+              setDeleteFirst(true);
+              setView("security");
+            })
+          }
         />
       </Page>
     );
@@ -253,8 +260,14 @@ export function AccountScreen({
   }
   if (view === "security") {
     return (
-      <Page title={t("account.security")} onBack={back}>
-        <SecurityPage onDeleted={onClose} />
+      <Page
+        title={t("account.security")}
+        onBack={() => {
+          setDeleteFirst(false);
+          setView(deleteFirst ? "settings" : "main");
+        }}
+      >
+        <SecurityPage onDeleted={onClose} startDeleting={deleteFirst} />
       </Page>
     );
   }

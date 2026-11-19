@@ -247,6 +247,27 @@ test.describe("accounts and profiles", () => {
     expect(turnedAway).toEqual(["/api/me/delete"]);
   });
 
+  test("the foot of the phone's settings has the same quiet line: it opens the word to type on Password & security, and Back returns to the settings", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account, { asMade: true });
+    await phone.getByTestId("menu-settings").click();
+    const line = phone.getByTestId("settings-delete-account");
+    await expect(line).toHaveText(en["account.delete"]);
+    expect(await line.evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(1);
+    const lowest = await phone.getByTestId("settings-page").locator("button").evaluateAll((all) => Math.max(...all.map((one) => one.getBoundingClientRect().bottom)));
+    expect((await line.boundingBox())!.y + (await line.boundingBox())!.height).toBeGreaterThanOrEqual(lowest - 1);
+
+    await line.click();
+    await expect(phone.getByTestId("delete-word")).toBeFocused();
+    await expect(phone.getByTestId("delete-confirm")).toBeDisabled();
+    await phone.getByTestId("page-back").click();
+    await expect(phone.getByTestId("labs-open")).toBeVisible();
+    await expect(phone.getByTestId("delete-word")).toHaveCount(0);
+  });
+
   test("an account can have no password: the empty field says what that means, the sign-up says it again and asks, and signing in with nothing opens it", async ({ browser }) => {
     test.setTimeout(60_000);
     const account = { email: `Guest ${Date.now().toString(36)}${++counter}`, password: "" };
