@@ -66,16 +66,19 @@ import { NewsList } from "../changelog/NewsList";
 const STEP = 0.8;
 const NEAR_END = 1.5;
 const WAITING_TILES = 3;
-function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean }) {
+const NEAR_MARGIN = "1250px 0px";
+function RowTiles({ children, onNearEnd, loading, keep }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean; keep?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState({ before: false, after: false });
   const wantsMore = useRef(onNearEnd);
   wantsMore.current = onNearEnd;
   const onScreen = useRef(typeof IntersectionObserver === "undefined");
+  const near = useRef(typeof IntersectionObserver === "undefined");
 
   const measure = useCallback(() => {
     const row = scroller.current;
-    if (!row) return;
+    if (!row || !near.current) return;
     const before = row.scrollLeft > 2;
     const after = row.scrollLeft < row.scrollWidth - row.clientWidth - 2;
     setMore((was) => (was.before === before && was.after === after ? was : { before, after }));
@@ -100,6 +103,21 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
     watch.observe(row);
     return () => watch.disconnect();
   }, [measure]);
+  useEffect(() => {
+    const here = box.current;
+    if (!here || typeof IntersectionObserver === "undefined") return;
+    const root = here.closest(".tv-rows");
+    const watch = new IntersectionObserver(
+      (seen) => {
+        near.current = seen[seen.length - 1]!.isIntersecting;
+        here.toggleAttribute("data-near", near.current);
+        if (near.current) measure();
+      },
+      { root, rootMargin: NEAR_MARGIN },
+    );
+    watch.observe(here);
+    return () => watch.disconnect();
+  }, [measure]);
 
   const go = (direction: -1 | 1) => scroller.current?.scrollBy({ left: direction * scroller.current.clientWidth * STEP, behavior: "smooth" });
   const arrow = (side: "before" | "after") => (
@@ -117,7 +135,7 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
     </button>
   );
   return (
-    <div className="tv-row-box">
+    <div className="tv-row-box" ref={box} data-keep={keep ? "true" : undefined}>
       <div className="tv-row-tiles" ref={scroller} onScroll={measure}>
         {children}
         {loading && Array.from({ length: WAITING_TILES }, (_, at) => <div className="tv-tile tv-skeleton" data-testid="tv-row-waiting" aria-hidden="true" key={`waiting-${at}`} />)}
@@ -719,6 +737,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (grownFor !== rowsKey) startTransition(() => setGrownFor(rowsKey));
   }, [rowsKey, grownFor]);
   const drawnRows = allRowsDrawn ? homeRows : homeRows.slice(0, startRow + FIRST_ROWS);
+  const keptAbove = useRef<{ key: string; row: number } | null>(null);
+  if (homeRows.length > 0 && keptAbove.current?.key !== rowsKey) keptAbove.current = { key: rowsKey, row: startRow };
+  const keepUpTo = keptAbove.current?.key === rowsKey ? keptAbove.current.row : 0;
   const onNow = focused && rowsPage ? homeRows.find((row) => row.title === focused.label)?.entries.find((entry) => entry.id === focused.entry.id) : undefined;
   const shown: Focused | null = focused
     ? onNow
@@ -1910,7 +1931,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           </div>
           )}
 
-          <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
+          <div className="tv-rows" ref={rowsRef} onScroll={askShelves} data-skip={isRowsPage(view) && !few ? "true" : undefined}>
             {homeRows.length > 0
               ? drawnRows.map((row, r) => (
                   <section
@@ -1945,7 +1966,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       />
                     )}
                     {!(friendsHead && row === peopleRow) && <h2 className="tv-row-title">{row.title}</h2>}
-                    <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
+                    <RowTiles keep={r <= keepUpTo} {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
                       {rowTiles(row, r)}
                     </RowTiles>
                   </section>

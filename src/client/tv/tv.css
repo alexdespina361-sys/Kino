@@ -1622,6 +1622,13 @@
 .tv-row { animation: tv-rise 0.45s ease both; }
 .tv-rows > .tv-row:nth-child(n + 4) { animation: none; }
 
+@supports (contain-intrinsic-size: auto 1px) {
+  .tv-rows[data-skip="true"] > .tv-row[data-layout="ranked"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 14.4984em; }
+  .tv-rows[data-skip="true"] > .tv-row[data-posters="true"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 21.4945em; }
+  .tv-rows[data-skip="true"] > .tv-row[data-shape="landscape"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 17.5172em; }
+  .tv-rows[data-skip="true"] > .tv-row[data-layout="categories"] > .tv-row-box:not([data-near]):not([data-keep]) { content-visibility: auto; contain-intrinsic-size: auto 1px auto 10.9984em; }
+}
+
 .tv-tile-ranked { width: auto; flex-direction: row; align-items: flex-start; }
 .tv-tile-ranked .tv-tile-art { z-index: 1; width: 8.6em; flex: none; aspect-ratio: 2 / 3; }
 .tv-rank { flex: none; display: flex; align-items: flex-end; justify-content: flex-end; width: 4.6em; height: 12.9em; margin-right: -1.1em; }
