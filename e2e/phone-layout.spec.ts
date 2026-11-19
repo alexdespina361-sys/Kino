@@ -349,6 +349,8 @@ test.describe("a phone used as the screen, held upright", () => {
     expect(box.width, "across the screen, with the page's own margins").toBeGreaterThan(size.width - 40);
     expect(box.y, "it starts under the sections").toBeLessThan(260);
     await expect(hero.getByRole("heading")).toHaveText("Shelf 1 film 1");
+    await expect(tv.locator('[data-testid="tv-browse-tile"][title="Shelf 1 film 1"]'), "the row under it does not show the poster's title again").toHaveCount(0);
+    await expect(tv.locator('[data-testid="tv-browse-tile"][title="Shelf 1 film 2"]').first()).toBeVisible();
     await expectFits(tv, "Home with its poster");
 
     const keep = tv.getByTestId("tv-feature-list");

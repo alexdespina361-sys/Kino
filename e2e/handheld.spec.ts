@@ -96,12 +96,22 @@ test.describe("a phone used as the screen", () => {
     }
   });
 
-  test("a finger gets no corner buttons on the titles (a title's own page keeps and clears them), and a tap on the menu's icons still goes there", async ({ browser }) => {
+  test("a finger gets the corner button on a title: one tap keeps it in the list and another takes it out, without opening its page; a tap on the menu's icons still goes there", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, withFilms);
     await phone.goto("/tv");
-    await expect(phone.getByTestId("tv-browse-tile").first()).toBeVisible();
-    await expect(phone.getByTestId("tv-tile-corner")).not.toHaveCount(0);
-    await expect(phone.getByTestId("tv-tile-corner").first()).toBeHidden();
+    const tile = phone.getByRole("region", { name: "Classics" }).locator('[data-testid="tv-browse-tile"][title="Film number 2"]');
+    await expect(tile).toBeVisible();
+    const corner = tile.getByTestId("tv-tile-corner");
+    await expect(corner).toBeVisible();
+    await expect(corner).toHaveAttribute("data-corner", "add");
+    const box = (await corner.boundingBox())!;
+    expect(Math.min(box.width, box.height), "big enough to see and hit").toBeGreaterThanOrEqual(28);
+    await corner.tap();
+    await expect(corner).toHaveAttribute("data-corner", "kept");
+    await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
+    await corner.tap();
+    await expect(corner).toHaveAttribute("data-corner", "add");
+    await expect(phone.getByTestId("tv-detail")).toHaveCount(0);
 
     await phone.getByTestId("rail-search").tap();
     await expect(phone.getByTestId("tv-browse")).toHaveAttribute("data-view", "search");
