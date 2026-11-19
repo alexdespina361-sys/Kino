@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { LibrarySectionSchema, type LibraryRow, type LibrarySection, type LiveProgress, type LiveRating } from "../../shared";
 import { fetchTitle, titleIdOf } from "../shared/titleAddress";
 import { cardsToLookUp, ratingsToLookUp } from "./pages";
@@ -27,14 +27,29 @@ function remember(known: Looked): void {
 }
 
 const asked = new Set<string>();
+const listeners = new Set<() => void>();
+let known: Looked | undefined;
+
+const current = (): Looked => (known ??= remembered());
+
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+function learn(found: ReadonlyArray<readonly [string, LibrarySection]>): void {
+  const next = new Map([...current(), ...found]);
+  known = next;
+  remember(next);
+  for (const listener of listeners) listener();
+}
 
 function useLookedSections(toLookUp: (looked: Looked) => string[], on: boolean): Looked {
-  const [looked, setLooked] = useState(remembered);
+  const looked = useSyncExternalStore(subscribe, current, current);
   const wanted = useMemo(() => (on ? toLookUp(looked).filter((address) => !asked.has(address)).slice(0, PER_LOOK) : []), [on, toLookUp, looked]);
   const key = wanted.join(" ");
   useEffect(() => {
     if (wanted.length === 0) return;
-    let live = true;
     for (const address of wanted) asked.add(address);
     void Promise.all(
       wanted.map(async (address) => {
@@ -44,14 +59,8 @@ function useLookedSections(toLookUp: (looked: Looked) => string[], on: boolean):
       }),
     ).then((answers) => {
       const found = answers.filter((answer): answer is readonly [string, LibrarySection] => answer !== null);
-      if (found.length === 0) return;
-      const next = new Map([...remembered(), ...found]);
-      remember(next);
-      if (live) setLooked(next);
+      if (found.length > 0) learn(found);
     });
-    return () => {
-      live = false;
-    };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   return looked;
 }

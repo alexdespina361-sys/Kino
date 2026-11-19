@@ -1919,6 +1919,7 @@ export function Tv() {
           kind={menu}
           player={player}
           series={series}
+          anime={Boolean(currentMedia?.anime)}
           show={currentMedia ? seriesKeyOf(currentMedia) : undefined}
           watched={watched}
           captionStyle={captionStyle}

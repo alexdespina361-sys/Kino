@@ -1162,6 +1162,40 @@ test.describe("languages", () => {
     await expect(phone.getByTestId("subtitle-more")).toHaveCount(0);
   });
 
+  test("an anime starts with the plain version, the menu's Version 1, before a named release, by itself and when its language is picked; anything else starts with the release", async ({ browser }) => {
+    const tracks = [
+      { id: "web", label: "English · Frieren.S01E05.1080p.WEB.H264", lang: "en", url: "/fixtures/sample.vtt" },
+      { id: "plain", label: "English", lang: "en", url: "/fixtures/sample.vtt" },
+      { id: "fr", label: "French", lang: "fr", url: "/fixtures/sample.vtt" },
+    ];
+    const media = (anime: boolean): NormalizedMedia => ({
+      title: "Frieren",
+      stream: { url: "/fixtures/sample.mp4", type: "mp4" },
+      subtitles: tracks,
+      ...(anime ? { anime: { title: "Frieren", season: 1, episode: 5 } } : {}),
+    });
+    const playing = async (anime: boolean) => {
+      const tv = await openTv(browser);
+      const phone = await RawPhone.connect(tv.url().split("/").slice(0, 3).join("/"), await readPairingCode(tv));
+      phone.cmd({ type: "LOAD", media: media(anime) });
+      await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+      return { tv, phone, current: () => phone.states.at(-1)?.subtitles?.current };
+    };
+
+    const anime = await playing(true);
+    await expect.poll(anime.current).toBe(1);
+    await anime.tv.getByTestId("tv-audio-sub-btn").click();
+    await anime.tv.locator("[data-tv-menu] [data-key='fr']").click();
+    await expect.poll(anime.current).toBe(2);
+    await anime.tv.locator("[data-tv-menu] [data-key='en']").click();
+    await expect.poll(anime.current).toBe(1);
+    anime.phone.close();
+
+    const film = await playing(false);
+    await expect.poll(film.current).toBe(0);
+    film.phone.close();
+  });
+
   test("with many languages, three show and the rest wait behind More languages, on the TV and the phone", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);

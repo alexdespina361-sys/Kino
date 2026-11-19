@@ -5,7 +5,6 @@ import {
   CAPTION_SETTINGS,
   CAPTION_VALUES,
   captionPresetOf,
-  defaultTrack,
   describeStatus,
   episodeName,
   episodeStatus,
@@ -33,6 +32,7 @@ import { formatLeft } from "../shared/format";
 import { CheckIcon, CloseIcon } from "../shared/icons";
 import { captionLabel, captionPresetName, captionTitle, enhanceName, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { digitsStyle, EpisodeRow, type EpisodeCard } from "./EpisodeRow";
+import { startTrack } from "./prefs";
 
 export type MenuKind = "tracks" | "captions" | "captionsMore" | "speed" | "quality" | "sources" | "episodes";
 
@@ -62,6 +62,7 @@ interface MenuProps {
   kind: MenuKind;
   player: PlayerState;
   series: SeriesInfo | undefined;
+  anime?: boolean | undefined;
   captionStyle: CaptionStyle;
   subtitleDelay?: number;
   onSubtitleDelay?: (delay: number) => void;
@@ -325,7 +326,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       ...(group.tracks.length > 1 ? { detail: String(group.tracks.length) } : {}),
       active: playing?.key === group.key,
       onFocus: () => setLanguage(group.key),
-      pick: () => p.onSubtitle(playing?.key === group.key ? subtitles!.current : (defaultTrack(group.tracks) ?? group.tracks[0]!).id),
+      pick: () => p.onSubtitle(playing?.key === group.key ? subtitles!.current : (startTrack(group.tracks, Boolean(p.anime)) ?? group.tracks[0]!).id),
     });
     columns.push({
       title: t("player.subtitleLanguage"),

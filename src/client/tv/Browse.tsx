@@ -636,10 +636,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const shownRatings = useMemo(() => (childGate ? ratings.filter((rating) => childGate.allows({ id: rating.key, url: rating.url, kind: rating.kind })) : ratings), [childGate, ratings]);
   const shownProgress = useMemo(() => (childGate ? progress.filter((card) => childGate.allows({ id: card.key, url: card.url })) : progress), [childGate, progress]);
   const ratingsPage = view.kind === "ratings";
-  const ratingLooked = useRatingSections(shownRatings, everyRow, ratingsPage && ratingsOn);
+  useRatingSections(shownRatings, everyRow, ratingsPage && ratingsOn);
   const data = useMemo<PageData>(
-    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], personal, looked: ratingsPage ? ratingLooked : looked, child: childGate, wanted, watching }),
-    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, personal, looked, ratingsPage, ratingLooked, childGate, wanted, watching],
+    () => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? shownRatings : [], personal, looked, child: childGate, wanted, watching }),
+    [pageLibraryRows, everyRow, progress, lists, list, shownRatings, ratingsOn, personal, looked, childGate, wanted, watching],
   );
 
   const rowsPage = hasRows(view);
@@ -669,7 +669,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     [holding, view, data, language, friends.state, sharedLists, sharedRatings, iGet],
   );
   /* eslint-enable react-hooks/exhaustive-deps */
-  const ratingSectionOf = useMemo(() => (ratingsPage ? ratingSectionIn(everyRow, ratingLooked) : ownSection), [ratingsPage, everyRow, ratingLooked]);
+  const ratingSectionOf = useMemo(() => (ratingsPage ? ratingSectionIn(everyRow, looked) : ownSection), [ratingsPage, everyRow, looked]);
   const ratingFilter: RatingFilter = view.kind === "ratings" ? usableFilter(data.ratings, view, ratingSectionOf) : {};
   const ratingOptions = view.kind === "ratings" ? ratingChoices(data.ratings, ratingFilter, ratingSectionOf) : null;
   const ratingRows = ratingOptions ? filterRows(ratingOptions) : { sections: [], scores: [] };

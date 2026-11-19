@@ -58,12 +58,12 @@ export function isPlainTrack(track: PlayerTrack): boolean {
   return versionLabel(track, names, 0, "") === "";
 }
 
-const bestOf = (tracks: readonly PlayerTrack[], plainFirst: boolean): PlayerTrack | undefined => (plainFirst ? tracks.find(isPlainTrack) : undefined) ?? defaultTrack(tracks);
+export const startTrack = (tracks: readonly PlayerTrack[], plainFirst: boolean): PlayerTrack | undefined => (plainFirst ? tracks.find(isPlainTrack) : undefined) ?? defaultTrack(tracks);
 
 export function pickTrack(tracks: readonly PlayerTrack[], wanted: ChosenTrack, plainFirst = false): number | undefined {
   const byLabel = tracks.find((track) => track.label.toLowerCase() === wanted.label.toLowerCase());
   if (byLabel || !wanted.lang) return byLabel?.id;
-  return bestOf(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang), plainFirst)?.id;
+  return startTrack(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang), plainFirst)?.id;
 }
 
 export interface SubtitlePick {
@@ -81,7 +81,7 @@ export function pickBaseSubtitleTrack(tracks: readonly PlayerTrack[], wanted?: C
   }
   for (const lang of [...(pick.chosen ?? []), ...(pick.only ? [] : ["en"])]) {
     const code = normalizeLang(lang) ?? lang;
-    const found = bestOf(tracks.filter((track) => normalizeLang(track.lang) === code), plainFirst);
+    const found = startTrack(tracks.filter((track) => normalizeLang(track.lang) === code), plainFirst);
     if (found !== undefined) return found.id;
   }
   return undefined;

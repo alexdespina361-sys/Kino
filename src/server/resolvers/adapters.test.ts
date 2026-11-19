@@ -892,13 +892,37 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     expect(last.status === "success" && last.media.series).toEqual({ season: 25, episode: 46 });
   });
 
-  const ONE_PIECE_COUNTS = [61, 16, 14, 39, 13, 52, 33, 35, 73, 45, 26, 14, 101, 58, 62, 50, 56, 55, 74, 14, 197, 67, 25];
+  const ONE_PIECE_SEASONS: Array<[string, number]> = [
+    ["East Blue", 61],
+    ["Whiskey Peak & Little Garden", 16],
+    ["Drum Island", 14],
+    ["Alabasta", 39],
+    ["Dreams!, The Zenny Pirate Crew Sortie!, Beyond the Rainbow", 13],
+    ["Skypiea", 52],
+    ["G-8 & Long Ring Long Land", 33],
+    ["Water Seven", 35],
+    ["Enies Lobby", 73],
+    ["Thriller Bark", 45],
+    ["Sabaody Archipelago", 26],
+    ["Amazon Lily", 14],
+    ["Impel Down & Marineford", 101],
+    ["Fishman Island", 58],
+    ["Punk Hazard", 62],
+    ["Dressrosa", 50],
+    ["Dressrosa (2)", 56],
+    ["Zou", 55],
+    ["Whole Cake Island", 74],
+    ["Levely Arc", 14],
+    ["Wano Country Arc", 197],
+    ["Egghead", 67],
+    ["Elbaph", 25],
+  ];
   const onePieceTmdb = {
     id: 37854,
     name: "One Piece",
     original_language: "ja",
     genres: [{ id: 16 }],
-    seasons: ONE_PIECE_COUNTS.map((episode_count, i) => ({ season_number: i + 1, name: `Season ${i + 1}`, episode_count })),
+    seasons: ONE_PIECE_SEASONS.map(([name, episode_count], i) => ({ season_number: i + 1, name, episode_count })),
     last_episode_to_air: { season_number: 23, episode_number: 1180 },
   };
   const onePiece = () =>
@@ -915,6 +939,8 @@ describe("HiAnime provider and multi-season anime fallback", () => {
     const adapter = onePiece();
     const late = await adapter.resolve(new URL("https://filmpire.sc/watch/37854?s=23&e=1165"));
     const early = await adapter.resolve(new URL("https://filmpire.sc/watch/37854?s=2&e=62"));
+    const dressrosa = await adapter.resolve(new URL("https://filmpire.sc/watch/37854?s=17&e=700"));
+    expect(dressrosa.status === "success" && dressrosa.media.stream.directUrl).toContain("/10700/master.m3u8");
     expect(late.status).toBe("success");
     expect(late.status === "success" && late.media.stream.directUrl).toContain("/11165/master.m3u8");
     expect(late.status === "success" && late.media.series).toEqual({ season: 23, episode: 1165, next: { season: 23, episode: 1166, url: "https://filmpire.sc/watch/37854?s=23&e=1166" } });

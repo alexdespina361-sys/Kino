@@ -6,7 +6,6 @@ import {
   CAPTION_VALUES,
   captionPresetOf,
   DEFAULT_CAPTION_STYLE,
-  defaultTrack,
   describeStatus,
   episodeName,
   episodeStatus,
@@ -32,6 +31,7 @@ import {
   type WatchedEntry,
 } from "../../shared";
 import { foldLanguages, languageNames, useSubtitleLists } from "../account/subtitles";
+import { startTrack } from "../tv/prefs";
 import { useAddable, useAddFromParty } from "../friends/useRequests";
 import { t, useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
@@ -139,8 +139,10 @@ export function TracksSheet({
   onSync,
   onSyncMode,
   onClose,
+  anime = false,
 }: Close & {
   player: PlayerState;
+  anime?: boolean | undefined;
   onSubtitle: (track: number) => void;
   onAudio: (track: number) => void;
   onStyle: () => void;
@@ -203,7 +205,7 @@ export function TracksSheet({
         data-testid={`subtitle-lang-${group.key}`}
         onClick={() => {
           setLanguage(group.key);
-          if (!active) onSubtitle((defaultTrack(group.tracks) ?? group.tracks[0]!).id);
+          if (!active) onSubtitle((startTrack(group.tracks, anime) ?? group.tracks[0]!).id);
         }}
       >
         {group.name}
