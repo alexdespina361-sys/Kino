@@ -126,7 +126,7 @@ export function bufferPolicy(inParty: boolean, isProxied = false, tier: Tier = "
   const reach = Math.abs(subtitleDelay) + DELAY_REACH_S;
   return {
     ...capped,
-    ...(subtitleDelay < 0 ? { maxBufferLength: Math.max(capped.maxBufferLength, reach), maxMaxBufferLength: Math.max(capped.maxMaxBufferLength, reach) } : {}),
+    ...(subtitleDelay < 0 && !inParty ? { maxBufferLength: Math.max(capped.maxBufferLength, reach), maxMaxBufferLength: Math.max(capped.maxMaxBufferLength, reach) } : {}),
     backBufferLength: subtitleDelay > 0 ? Math.max(BACK_BUFFER_S[tier], reach) : BACK_BUFFER_S[tier],
   };
 }
@@ -365,13 +365,14 @@ export class PlayerEngine {
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        ...bufferPolicy(this.inParty, usesWebsiteProxy(src), thisTier(), this.syncDelay?.() ?? 0),
+        ...bufferPolicy(this.inParty, usesWebsiteProxy(src), thisTier()),
         lowLatencyMode: false,
         preserveManualLevelOnError: true,
         ...(adaptive ? { startLevel: 0 } : {}),
       });
       this.hls = hls;
       hls.subtitleDisplay = false;
+      hls.on(HlsLib.Events.SUBTITLE_TRACK_SWITCH, () => this.hls === hls && this.applyBuffers());
       let mediaRecoverAttempts = 0;
       let qualityGiveUps = 0;
       hls.on(HlsLib.Events.FRAG_LOADED, (_event, data) => {
@@ -574,7 +575,7 @@ export class PlayerEngine {
   private applyBuffers(): void {
     if (!this.hls) return;
     const isProxied = usesWebsiteProxy(this.hls.url || this.video.src || location.href);
-    Object.assign(this.hls.config, bufferPolicy(this.inParty, isProxied, thisTier(), this.syncDelay?.() ?? 0));
+    Object.assign(this.hls.config, bufferPolicy(this.inParty, isProxied, thisTier(), this.hls.subtitleTrack >= 0 ? (this.syncDelay?.() ?? 0) : 0));
   }
 
   setAdaptive(adaptive: boolean): void {

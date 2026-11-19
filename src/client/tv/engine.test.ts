@@ -107,7 +107,7 @@ describe("bufferPolicy", () => {
     expect(Number.isFinite(BACK_BUFFER_S.full) && BACK_BUFFER_S.lite < BACK_BUFFER_S.full).toBe(true);
   });
 
-  it("keeps the subtitles a delay shows: behind the picture for a late one, ahead for an early one, on any device", () => {
+  it("keeps the subtitles a delay shows: behind the picture for a late one, ahead for an early one outside a party, on any device", () => {
     for (const tier of ["full", "lite"] as const)
       for (const [inParty, proxied] of [[false, false], [false, true], [true, false]] as const) {
         const plain = bufferPolicy(inParty, proxied, tier);
@@ -115,7 +115,8 @@ describe("bufferPolicy", () => {
         const early = bufferPolicy(inParty, proxied, tier, -60);
         expect(late.backBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
         expect(late.maxBufferLength).toBe(plain.maxBufferLength);
-        expect(early.maxBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
+        if (inParty) expect({ ...early, backBufferLength: 0 }).toEqual({ ...plain, backBufferLength: 0 });
+        else expect(early.maxBufferLength).toBeGreaterThanOrEqual(60 + DELAY_REACH_S);
         expect(early.maxMaxBufferLength).toBeGreaterThanOrEqual(early.maxBufferLength);
         expect(early.backBufferLength).toBe(plain.backBufferLength);
         expect(bufferPolicy(inParty, proxied, tier, 5)).toEqual({ ...plain, backBufferLength: Math.max(plain.backBufferLength, 5 + DELAY_REACH_S) });
