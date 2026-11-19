@@ -1,4 +1,4 @@
-import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { isHttpUrl, normalizeLang, releaseRank, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type NextEpisode, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { withAnimeHint, sourceSkipTimes, type AnimeFacts } from "../../anime/hint";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY, playerSeasonCounts, probePlayback, type ProbeRecord } from "../../library/filmpire";
@@ -580,6 +580,46 @@ async function extrasByThen(extras: Extras, graceMs: number): Promise<[SubtitleT
   }
 }
 
+type TmdbSeasonCount = { season_number?: number; name?: string; episode_count?: number };
+type TmdbEpisodeMark = { season_number?: number; episode_number?: number } | null;
+type TmdbTitle = {
+  title?: string;
+  name?: string;
+  imdb_id?: string;
+  external_ids?: { imdb_id?: string };
+  genres?: Array<{ id?: number }>;
+  original_language?: string;
+  seasons?: TmdbSeasonCount[];
+  last_episode_to_air?: TmdbEpisodeMark;
+};
+
+export interface ShowShape {
+  seasons?: readonly TmdbSeasonCount[] | undefined;
+  lastAired?: TmdbEpisodeMark | undefined;
+  parts?: Readonly<Record<number, number>> | null | undefined;
+}
+
+const watchLink = (id: string, season: number, episode: number): NextEpisode => ({ season, episode, url: `https://filmpire.sc/watch/${id}?s=${season}&e=${episode}` });
+
+export function nextEpisodeOf(id: string, season: number, episode: number, show: ShowShape): NextEpisode | undefined {
+  const lastSeason = show.lastAired?.season_number ?? 0;
+  const lastEpisode = show.lastAired?.episode_number ?? 0;
+  const aired = lastSeason >= 1 && lastEpisode >= 1;
+  if (show.parts !== undefined) {
+    const counts = show.parts ?? {};
+    let before = 0;
+    for (let part = 1; part < season; part++) before += counts[part] ?? 24;
+    if (aired && lastSeason === 1 && before + episode >= lastEpisode) return undefined;
+    const count = counts[season];
+    return count && episode >= count ? watchLink(id, season + 1, 1) : watchLink(id, season, episode + 1);
+  }
+  if (aired && (season > lastSeason || (season === lastSeason && episode >= lastEpisode))) return undefined;
+  const count = show.seasons?.find((one) => one.season_number === season)?.episode_count ?? 0;
+  if (count <= 0 || episode < count) return watchLink(id, season, episode + 1);
+  const later = (show.seasons ?? []).flatMap((one) => ((one.season_number ?? 0) > season && (one.episode_count ?? 0) > 0 ? [one.season_number!] : []));
+  return later.length > 0 ? watchLink(id, Math.min(...later), 1) : undefined;
+}
+
 export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): SiteAdapter {
   const get = options.fetch ?? providerFetch();
   const extras = options.extras ?? lookForExtras;
@@ -622,57 +662,22 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let title = "Filmpire Video";
       let tmdbImdbId: string | undefined;
       let rawShowTitle: string | undefined;
-      let tmdbSeasons: Array<{ season_number?: number; name?: string; episode_count?: number }> | undefined;
+      let tmdbSeasons: TmdbSeasonCount[] | undefined;
+      let tmdbLastAired: TmdbEpisodeMark | undefined;
       /** Whether TMDB says the title is animated (genre 16); unknown when TMDB did not answer, or said nothing of its genres. */
       let animated: boolean | undefined;
       let originalLang: string | undefined;
       try {
         const tmdbUrl = (cType: string) =>
           `https://api.themoviedb.org/3/${cType}/${id}?append_to_response=external_ids&api_key=${FILMPIRE_TMDB_API_KEY}`;
-        let tmdbData: {
-          title?: string;
-          name?: string;
-          imdb_id?: string;
-          external_ids?: { imdb_id?: string };
-          genres?: Array<{ id?: number }>;
-          original_language?: string;
-          seasons?: Array<{
-            season_number?: number;
-            name?: string;
-            episode_count?: number;
-          }>;
-        };
+        let tmdbData: TmdbTitle;
         try {
-          tmdbData = await fetchJson<{
-            title?: string;
-            name?: string;
-            imdb_id?: string;
-            external_ids?: { imdb_id?: string };
-            genres?: Array<{ id?: number }>;
-            original_language?: string;
-            seasons?: Array<{
-              season_number?: number;
-              name?: string;
-              episode_count?: number;
-            }>;
-          }>(tmdbUrl(contentType));
+          tmdbData = await fetchJson<TmdbTitle>(tmdbUrl(contentType));
         } catch (initialErr) {
           const is404 = (initialErr as { status?: number })?.status === 404 || String(initialErr).includes("HTTP 404");
           const isExplicitMovie = url.pathname.includes("/movie") || url.searchParams.get("type") === "movie";
           if (!isTv && is404 && !isExplicitMovie) {
-            tmdbData = await fetchJson<{
-              title?: string;
-              name?: string;
-              imdb_id?: string;
-              external_ids?: { imdb_id?: string };
-              genres?: Array<{ id?: number }>;
-              original_language?: string;
-              seasons?: Array<{
-                season_number?: number;
-                name?: string;
-                episode_count?: number;
-              }>;
-            }>(tmdbUrl("tv"));
+            tmdbData = await fetchJson<TmdbTitle>(tmdbUrl("tv"));
             isTv = true;
             contentType = "tv";
             s = s || "1";
@@ -691,6 +696,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         if (Array.isArray(tmdbData.genres)) animated = tmdbData.genres.some((genre) => genre?.id === 16);
         if (tmdbData.original_language) originalLang = tmdbData.original_language;
         if (Array.isArray(tmdbData.seasons)) tmdbSeasons = tmdbData.seasons;
+        if (tmdbData.last_episode_to_air && typeof tmdbData.last_episode_to_air === "object") tmdbLastAired = tmdbData.last_episode_to_air;
       } catch {
         // Non-fatal if TMDB is unreachable
       }
@@ -726,6 +732,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         validTmdbSeasons.length === 1 &&
         validTmdbSeasons[0]!.season_number === 1 &&
         (validTmdbSeasons[0]!.episode_count ?? 0) > 30;
+
+      const seriesAt = (season: number, episode: number): SeriesInfo => {
+        const next = nextEpisodeOf(id, season, episode, {
+          seasons: tmdbSeasons,
+          lastAired: tmdbLastAired,
+          ...(isSingleLongTmdbSeason ? { parts: playerSeasonCounts(Number(id)) ?? null } : {}),
+        });
+        return next ? { season, episode, next } : { season, episode };
+      };
 
       let partMappingPromise: Promise<{ absoluteEpisode: number; cutByProvider: boolean } | null> | undefined;
       const getSingleSeasonPartMapping = (): Promise<{ absoluteEpisode: number; cutByProvider: boolean } | null> => {
@@ -1011,21 +1026,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
               const res = await ahAdapter.resolve(new URL(targetEp.url));
               if (res.status === "success") {
+                const { series: found, ...media } = res.media;
                 return {
                   ...res,
                   media: {
-                    ...res.media,
+                    ...media,
                     title,
                     page: url.href,
-                    ...(res.media.series
-                      ? {
-                          series: {
-                            ...res.media.series,
-                            season: targetSeason,
-                            episode: targetEpisode,
-                          },
-                        }
-                      : {}),
+                    ...(found ? { series: { ...(found.episodes ? { episodes: found.episodes } : {}), ...seriesAt(targetSeason, targetEpisode) } } : {}),
                   },
                 };
               }
@@ -1233,14 +1241,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                   // (HiAnime's own times for its own stream, the main one: the player takes them over AniSkip's, and only while it plays this stream.)
                   ...sourceSkipTimes(resolved.stream.skip),
                   page: url.href,
-                  ...(isTv
-                    ? {
-                        series: {
-                          season: targetSeason,
-                          episode: targetEpisode,
-                        },
-                      }
-                    : {}),
+                  ...(isTv ? { series: seriesAt(targetSeason, targetEpisode) } : {}),
                 },
               };
             } catch {
@@ -1272,20 +1273,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           : [[], [], undefined];
         const subList = finalSubtitles([...roSubs, ...vx.subtitles, ...listed]);
 
-        let sInfo: SeriesInfo | undefined;
-        if (isTv) {
-          const currS = Number(s || "1");
-          const currE = Number(e || "1");
-          sInfo = {
-            season: currS,
-            episode: currE,
-            next: {
-              season: currS,
-              episode: currE + 1,
-              url: `https://filmpire.sc/watch/${id}?s=${currS}&e=${currE + 1}`,
-            },
-          };
-        }
+        const sInfo = isTv ? seriesAt(Number(s || "1"), Number(e || "1")) : undefined;
 
         const proxiedUrl = streamAddress(vx.streamUrl, vx.embedUrl, process.env, false);
         const alternates: AlternateSource[] = [];
@@ -1330,20 +1318,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
         const subList = finalSubtitles([...roSubs, ...vlSubs, ...listed]);
 
-        let sInfo: SeriesInfo | undefined;
-        if (isTv) {
-          const currS = Number(s || "1");
-          const currE = Number(e || "1");
-          sInfo = {
-            season: currS,
-            episode: currE,
-            next: {
-              season: currS,
-              episode: currE + 1,
-              url: `https://filmpire.sc/watch/${id}?s=${currS}&e=${currE + 1}`,
-            },
-          };
-        }
+        const sInfo = isTv ? seriesAt(Number(s || "1"), Number(e || "1")) : undefined;
 
         const primary = vl.qualities[0]!;
         const proxiedUrl = streamAddress(primary.url, primary.referer || "none", process.env, false);

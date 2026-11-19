@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createHiAnimeAdapter } from "./adapters/hianime";
-import { createFilmpireAdapter, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
+import { createFilmpireAdapter, nextEpisodeOf, resolveVidLinkStream, resolveVixSrcStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 import { rememberPlayerSeasons } from "../library/filmpire";
 
@@ -409,6 +409,7 @@ describe("createAnimeHeavenAdapter", () => {
       expect(res.media.stream.directUrl).toContain("pokemon-s25-e6.mp4");
       expect(res.media.series?.season).toBe(25);
       expect(res.media.series?.episode).toBe(6);
+      expect(res.media.series?.next).toEqual({ season: 25, episode: 7, url: "https://filmpire.sc/watch/60572?s=25&e=7" });
     }
   });
 
@@ -856,6 +857,25 @@ describe("HiAnime provider and multi-season anime fallback", () => {
       expect(res.media.stream.directUrl).toContain("cdn.hianime.test/pokemon/10096/master.m3u8");
       expect(res.media.subtitles?.[0]?.lang).toBe("en");
     }
+  });
+
+  it("an episode HiAnime plays knows the next one, by Kino's own link: the next in the season, the next season's first at a season's end, none after the show's last", async () => {
+    const adapter = createFilmpireAdapter({ fetch: mockAnimeWorldWithHiAnime({}) });
+    const mid = await adapter.resolve(new URL("https://filmpire.sc/watch/60572?s=23&e=3"));
+    const end = await adapter.resolve(new URL("https://filmpire.sc/watch/60572?s=23&e=48"));
+    const last = await adapter.resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=46"));
+    expect(mid.status === "success" && mid.media.series).toEqual({ season: 23, episode: 3, next: { season: 23, episode: 4, url: "https://filmpire.sc/watch/60572?s=23&e=4" } });
+    expect(end.status === "success" && end.media.series?.next).toEqual({ season: 24, episode: 1, url: "https://filmpire.sc/watch/60572?s=24&e=1" });
+    expect(last.status === "success" && last.media.series).toEqual({ season: 25, episode: 46 });
+  });
+
+  it("an episode HiAnime plays has no next one when it is the last that has aired", async () => {
+    const airing = { ...pokemonTmdb, last_episode_to_air: { season_number: 25, episode_number: 6 } };
+    const adapter = createFilmpireAdapter({ fetch: mockAnimeWorldWithHiAnime({ tmdb: airing }) });
+    const before = await adapter.resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=5"));
+    const latest = await adapter.resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(before.status === "success" && before.media.series?.next?.episode).toBe(6);
+    expect(latest.status === "success" && latest.media.series).toEqual({ season: 25, episode: 6 });
   });
 
   it("resolves Yu Yu Hakusho S1 E1 to Ghost Files and never matches One Piece from search results", async () => {
@@ -1418,6 +1438,44 @@ https://vixsrc.to/720p.m3u8`;
       expect(vixAlt?.stream.directUrl).toContain("vixsrc.to/playlist/294042");
       expect(vixAlt?.stream.type).toBe("hls");
     }
+  });
+});
+
+describe("the next episode of a show", () => {
+  const seasons = [
+    { season_number: 0, name: "Specials", episode_count: 3 },
+    { season_number: 1, name: "Season 1", episode_count: 12 },
+    { season_number: 2, name: "Season 2", episode_count: 12 },
+  ];
+  const at = (season: number, episode: number) => ({ season, episode, url: `https://filmpire.sc/watch/7?s=${season}&e=${episode}` });
+
+  it("is the next in the season, then the next season's first, then none", () => {
+    expect(nextEpisodeOf("7", 1, 1, { seasons })).toEqual(at(1, 2));
+    expect(nextEpisodeOf("7", 1, 12, { seasons })).toEqual(at(2, 1));
+    expect(nextEpisodeOf("7", 2, 12, { seasons })).toBeUndefined();
+  });
+
+  it("stops at the last episode that has aired, in that season or an earlier one", () => {
+    const lastAired = { season_number: 2, episode_number: 4 };
+    expect(nextEpisodeOf("7", 1, 12, { seasons, lastAired })).toEqual(at(2, 1));
+    expect(nextEpisodeOf("7", 2, 3, { seasons, lastAired })).toEqual(at(2, 4));
+    expect(nextEpisodeOf("7", 2, 4, { seasons, lastAired })).toBeUndefined();
+    expect(nextEpisodeOf("7", 1, 12, { seasons: seasons.slice(0, 2), lastAired: { season_number: 1, episode_number: 12 } })).toBeUndefined();
+  });
+
+  it("goes on to the next number when the seasons are not known, and a special aired last stops nothing", () => {
+    expect(nextEpisodeOf("7", 3, 5, {})).toEqual(at(3, 6));
+    expect(nextEpisodeOf("7", 1, 5, { seasons, lastAired: { season_number: 0, episode_number: 3 } })).toEqual(at(1, 6));
+  });
+
+  it("goes by the parts a long first season is cut into, and stops at its last aired episode", () => {
+    const parts = { 1: 24, 2: 20 };
+    const lastAired = { season_number: 1, episode_number: 50 };
+    expect(nextEpisodeOf("7", 1, 24, { parts, lastAired })).toEqual(at(2, 1));
+    expect(nextEpisodeOf("7", 2, 20, { parts, lastAired })).toEqual(at(3, 1));
+    expect(nextEpisodeOf("7", 3, 5, { parts, lastAired })).toEqual(at(3, 6));
+    expect(nextEpisodeOf("7", 3, 6, { parts, lastAired })).toBeUndefined();
+    expect(nextEpisodeOf("7", 1, 3, { parts: null })).toEqual(at(1, 4));
   });
 });
 
