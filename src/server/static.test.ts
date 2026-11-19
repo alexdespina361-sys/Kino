@@ -132,7 +132,7 @@ describe("serving the built page", () => {
     await cp(new URL("../../public/branding", import.meta.url), path.join(dir, "branding"), { recursive: true });
     const app = await buildApp({ clientDir: dir });
     try {
-      for (const name of ["kino-cat-off.svg"]) {
+      for (const name of ["kino-beam.svg", "kino-cat-off.svg"]) {
         const picture = await app.inject({ url: `/branding/${name}` });
         expect(picture.statusCode).toBe(200);
         expect(picture.headers["content-type"]).toMatch(/^image\/svg\+xml/);
