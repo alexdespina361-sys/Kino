@@ -45,7 +45,7 @@
   height: calc(var(--top-h) + env(safe-area-inset-top));
   margin: 0 calc(var(--pad) * -1);
   padding: env(safe-area-inset-top) var(--pad) 0;
-  background: var(--bg);
+  background: var(--glow-cool), var(--bg);
 }
 :root[data-ui="polish"] .phone-ui .top-actions { display: flex; flex: none; align-items: center; gap: 4px; }
 :root[data-ui="polish"] .phone-ui .top-back { margin-left: -8px; color: var(--text); font-size: 1.5rem; }

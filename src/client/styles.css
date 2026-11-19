@@ -13,6 +13,10 @@
   --brand-gradient: linear-gradient(150deg, #ff3b46 0%, #c40812 55%, #8f040b 100%);
   --ok: #46d369;
   --bad: #ff6b6b;
+  --glow-cool: radial-gradient(80vw 70vh at 0 0, rgb(64 68 156 / 0.36), rgb(40 46 108 / 0.14) 50%, rgb(40 46 108 / 0) 80%);
+  --glow-warm: radial-gradient(85vw 75vh at 100vw 100vh, rgb(var(--accent-rgb) / 0.18), rgb(var(--accent-rgb) / 0.06) 50%, rgb(var(--accent-rgb) / 0) 80%);
+  --glow: var(--glow-cool), var(--glow-warm);
+  --backdrop: var(--glow), var(--bg);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
@@ -24,7 +28,9 @@
 :root[data-accent="pink"] { --accent: #ff4f9a; --accent-hover: #ff72b0; --accent-rgb: 255 79 154; --accent-ink: #111; --brand-gradient: linear-gradient(150deg, #ff86bb 0%, #e02479 55%, #9d1455 100%); }
 
 * { box-sizing: border-box; }
-html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+html, body, #root { margin: 0; height: 100%; color: var(--text); }
+html { background: var(--bg); }
+html::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--glow); pointer-events: none; }
 button { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: default; }
 

@@ -4,9 +4,9 @@ export const CHANGELOG: readonly ChangeNote[] = [
   {
     version: "0.4.23",
     date: "2026-11-19",
-    en: ["A new look for Kino: the k throws a red beam, like a projector, and the icon is that k."],
-    ro: ["Kino arată nou: k-ul aruncă o rază roșie, ca un proiector, iar iconița este acel k."],
-    it: ["Kino ha un nuovo aspetto: la k proietta un raggio rosso, come un proiettore, e l'icona è quella k."],
+    en: ["A new look for Kino: the k throws a red beam, like a projector, the icon is that k, and the pages glow with the icon's blue and red."],
+    ro: ["Kino arată nou: k-ul aruncă o rază roșie, ca un proiector, iconița este acel k, iar paginile au albastrul și roșul iconiței."],
+    it: ["Kino ha un nuovo aspetto: la k proietta un raggio rosso, come un proiettore, l'icona è quella k e le pagine brillano del blu e del rosso dell'icona."],
   },
   {
     version: "0.4.22",

@@ -111,9 +111,7 @@
   gap: 2.4em;
   padding: 6em 6em 4em;
   text-align: center;
-  background:
-    radial-gradient(ellipse 90% 55% at 50% 118%, rgb(var(--accent-rgb) / 0.3), transparent 70%),
-    linear-gradient(#101010, #050505);
+  background: var(--backdrop);
 }
 .tv-brand {
   position: absolute;
@@ -179,9 +177,7 @@
   align-items: center;
   justify-content: center;
   gap: 1.2em;
-  background:
-    radial-gradient(ellipse 90% 55% at 50% 118%, rgb(var(--accent-rgb) / 0.3), transparent 70%),
-    linear-gradient(#101010, #050505);
+  background: var(--backdrop);
   pointer-events: none;
   transition: opacity 0.7s ease;
 }
@@ -923,7 +919,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--backdrop);
 }
 .tv-hero-bg {
   position: absolute;
@@ -941,6 +937,7 @@
   inset: 0;
   pointer-events: none;
   background:
+    var(--glow),
     linear-gradient(90deg, var(--bg) 18%, rgba(11, 11, 12, 0.35) 65%, rgba(11, 11, 12, 0.7)),
     linear-gradient(0deg, var(--bg) 22%, transparent 70%),
     rgba(11, 11, 12, 0.45);
@@ -1043,7 +1040,7 @@
   position: absolute;
   inset: 0;
   z-index: 60;
-  background: var(--bg);
+  background: var(--backdrop);
   animation: tv-fade 0.25s ease, tv-arrive 0.5s linear;
 }
 .tv-detail-scroll { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden auto; scrollbar-width: none; }
