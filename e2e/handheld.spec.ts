@@ -1,6 +1,7 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, pressMenuLine, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
+import { ratingKey } from "../src/shared";
+import { FIRST_VISIT, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePlace, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, pressMenuLine, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const films = Array.from({ length: 9 }, (_, i) => ({ id: `f${i}`, title: `Film number ${i + 1}`, year: 1990 + i, url: `/fixtures/sample.mp4?n=${i}` }));
 const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: films }] };
@@ -146,6 +147,74 @@ test.describe("a phone used as the screen", () => {
     expect(heroBottom).toBeLessThan(390 * 0.5);
     expect(firstRowBottom).toBeLessThanOrEqual(390);
     expect(await sidewaysScroll(sideways)).toBeLessThanOrEqual(0);
+  });
+
+  test("an upright phone's filters fit its width in every language: the sections, search and rating kinds as one bar, list names on more lines, the scores one button that opens their list", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const at = Date.now();
+    const kinds = [{ kind: "movie" }, { kind: "series" }, { kind: "movie", section: "cartoon" }, { kind: "series", section: "anime" }];
+    const ratings = films.map((film, n) => ({ key: ratingKey(film.url), at, title: film.title, url: film.url, year: film.year, ...kinds[n % 4], score: n + 1, ratedAt: at - n }));
+    const listNames = ["Weekend with the family", "Watch later together!!!", "Rainy Sunday classics", "Kids", "Documentaries"].map((name, i) => ({ key: `l${i}`, at, name }));
+    const fits = (page: Page, selector: string) =>
+      page.locator(selector).evaluate((bar) => {
+        const lost = [...bar.querySelectorAll<HTMLElement>(".tv-choice")].filter((chip) => {
+          const box = chip.getBoundingClientRect();
+          return box.left < -0.5 || box.right > innerWidth + 0.5 || chip.scrollWidth > chip.clientWidth + 1;
+        });
+        return { scrolls: bar.scrollWidth - bar.clientWidth, lost: lost.map((chip) => chip.textContent), lines: new Set([...bar.querySelectorAll<HTMLElement>(".tv-choice")].map((chip) => Math.round(chip.getBoundingClientRect().top))).size };
+      });
+    for (const lang of ["en", "ro", "it"] as const)
+      for (const width of [320, 360, 390]) {
+        const where = `${lang} at ${width}`;
+        const phone = await openDevice(browser, { viewport: { width, height: 760 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }, { ...guestStorage({ ratings, listNames }), "kino.lang": lang, "kino.role": "tv" }, withFilms);
+        await phone.goto("/tv");
+        await expect(phone.getByTestId("section-anime")).toBeVisible();
+        expect(await fits(phone, ".tv-sections"), where).toEqual({ scrolls: 0, lost: [], lines: 1 });
+        await phone.getByTestId("rail-search").tap();
+        await phone.getByTestId("tv-query").fill("film");
+        expect(await fits(phone, ".tv-search-main .tv-filters"), where).toEqual({ scrolls: 0, lost: [], lines: 1 });
+        await phone.getByTestId("rail-list").tap();
+        await expect(phone.locator(".tv-filters-wrap .tv-choice")).not.toHaveCount(0);
+        expect(await fits(phone, ".tv-filters-wrap"), where).toMatchObject({ scrolls: 0, lost: [] });
+        await openProfilePlace(phone, "ratings");
+        await expect(phone.getByTestId("rating-filters")).toBeVisible();
+        expect(await fits(phone, '.tv-rating-filters .tv-filters-kind'), where).toEqual({ scrolls: 0, lost: [], lines: 1 });
+        await expect(phone.locator(".tv-rating-filters .tv-filters-wrap")).toHaveCount(0);
+        const pick = phone.getByTestId("rating-pick");
+        await pick.tap();
+        const menu = phone.getByTestId("rating-pick-menu");
+        await expect(menu.getByRole("option")).toHaveCount(films.length + 1);
+        expect(await menu.evaluate((box) => { const at = box.getBoundingClientRect(); return { inside: at.left >= 0 && at.right <= innerWidth && at.bottom <= innerHeight, scrolls: box.scrollHeight > box.clientHeight }; }), where).toEqual({ inside: true, scrolls: false });
+        expect(await sidewaysScroll(phone), where).toBeLessThanOrEqual(0);
+        if (lang === "en" && width === 320) {
+          await phone.getByTestId("rating-pick-3").tap();
+          await expect(menu).toBeHidden();
+          await expect(pick).toHaveAccessibleName("Score: Rated 3");
+          await expect(phone.locator('[data-zone="grid"]')).toHaveCount(1);
+          await pick.tap();
+          await expect(phone.getByTestId("rating-pick-3")).toHaveAttribute("aria-selected", "true");
+          await phone.keyboard.press("Escape");
+          await expect(menu).toBeHidden();
+          await expect(phone.getByTestId("rating-filters")).toBeVisible();
+          await pick.focus();
+          await phone.keyboard.press("Enter");
+          await expect(menu).toBeVisible();
+          await phone.keyboard.press("ArrowDown");
+          await expect(phone.getByTestId("rating-pick-any")).toBeFocused();
+          await phone.keyboard.press("ArrowDown");
+          await expect(phone.getByTestId("rating-pick-9")).toBeFocused();
+          await phone.keyboard.press("Escape");
+          await expect(menu).toBeHidden();
+          await expect(pick).toBeFocused();
+          await pick.tap();
+          await phone.getByTestId("rating-filter-movie").tap();
+          await expect(menu).toBeHidden();
+          await pick.tap();
+          await phone.getByTestId("rating-pick-any").tap();
+          await expect(pick).toHaveAccessibleName("Score: Any score");
+        }
+        await phone.context().close();
+      }
   });
 
   test("a phone on its side has the four places of an upright phone down the left, each a thumb's size with room between them, and its sections over the titles", async ({ browser }) => {

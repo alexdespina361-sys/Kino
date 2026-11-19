@@ -38,7 +38,7 @@ import { takeStrayAddress } from "../shared/strayAddress";
 import { ownTitles, useChildGate } from "../shared/childGate";
 import { useProfileHold } from "../shared/profileHold";
 import { addressOf, dropLink, pendingLink, showTitle } from "../shared/titleAddress";
-import { playOnTv, switchRole, thisIsPhone } from "../role";
+import { playOnTv, switchRole, thisIsPhone, thisTier } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact, useFlatHand } from "./compact";
 import { episodeRows, SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
@@ -46,6 +46,7 @@ import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, Notific
 import { dayOf, LATEST, useNews } from "../changelog/news";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
+import { useBackFirst } from "./dpad";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyForChildren, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter } from "../account/ratingFilter";
@@ -123,6 +124,109 @@ function RowTiles({ children, onNearEnd, loading }: { children: ReactNode; onNea
       </div>
       {more.before && arrow("before")}
       {more.after && arrow("after")}
+    </div>
+  );
+}
+
+function Thumb({ on }: { on: unknown }) {
+  const ref = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const thumb = ref.current;
+    const box = thumb?.parentElement;
+    if (!thumb || !box) return;
+    const place = () => {
+      const chosen = box.querySelector<HTMLElement>('[aria-checked="true"]');
+      thumb.style.visibility = chosen ? "" : "hidden";
+      if (chosen) {
+        thumb.style.width = `${chosen.offsetWidth}px`;
+        thumb.style.transform = `translateX(${chosen.offsetLeft}px)`;
+      }
+    };
+    place();
+    if (typeof ResizeObserver !== "function") return;
+    const watch = new ResizeObserver(place);
+    for (const one of Array.from(box.children)) watch.observe(one);
+    return () => watch.disconnect();
+  }, [on]);
+  return <i ref={ref} className="tv-thumb" aria-hidden="true" />;
+}
+
+const scoreMenuRows = (scores: number, columns: number) => [1, ...Array.from({ length: Math.ceil((scores - 1) / columns) }, (_, at) => Math.min(columns, scores - 1 - at * columns))];
+
+function ScorePick({ scores, chosen, countOf, row, columns, open, onOpen, onPick, onFocusButton }: { scores: ReadonlyArray<number | undefined>; chosen: number | undefined; countOf: (score: number | undefined) => number; row: number; columns: number; open: boolean; onOpen: (open: boolean) => void; onPick: (score: number | undefined) => void; onFocusButton: () => void }) {
+  const t = useT();
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const shut = () => {
+    onOpen(false);
+    button.current?.focus({ preventScroll: true });
+  };
+  useBackFirst(open ? shut : undefined);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (!box.current?.contains(event.target as Node)) onOpen(false);
+    };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [open, onOpen]);
+  const label = (score: number | undefined) =>
+    score === undefined ? (
+      t("rating.filterAnyScore")
+    ) : (
+      <>
+        <StarIcon filled /> {score}
+      </>
+    );
+  return (
+    <div
+      ref={box}
+      className="tv-score-pick"
+      onBlur={(event) => {
+        if (open && !box.current?.contains(event.relatedTarget as Node | null)) onOpen(false);
+      }}
+    >
+      <button
+        ref={button}
+        type="button"
+        className="tv-choice tv-score-button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`${t("rating.filterScores")}: ${chosen === undefined ? t("rating.filterAnyScore") : t("rating.filterScore", { score: chosen })}`}
+        data-testid="rating-pick"
+        data-zone="chips"
+        data-row={row}
+        data-col={0}
+        onClick={() => onOpen(!open)}
+        onFocus={onFocusButton}
+      >
+        {label(chosen)}
+        <ChevronIcon className="tv-score-chevron" />
+      </button>
+      {open && (
+        <div className="tv-score-menu" role="listbox" aria-label={t("rating.filterScores")} data-testid="rating-pick-menu" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+          {scores.map((score, index) => (
+            <button
+              key={score ?? "any"}
+              type="button"
+              role="option"
+              aria-selected={chosen === score}
+              className={index === 0 ? "tv-score-option tv-score-any" : "tv-score-option"}
+              data-testid={`rating-pick-${score ?? "any"}`}
+              data-zone="chips"
+              data-row={index === 0 ? row + 1 : row + 2 + Math.floor((index - 1) / columns)}
+              data-col={index === 0 ? 0 : (index - 1) % columns}
+              onClick={() => {
+                onPick(score);
+                shut();
+              }}
+            >
+              <span className="tv-score-name">{label(score)}</span>
+              <span className="tv-score-count">{countOf(score)}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -455,6 +559,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const compact = useCompact();
   const flatHand = useFlatHand();
   const few = compact || flatHand;
+  const sliding = few && thisTier() === "full";
   const narrowColumns = useNarrowColumns(true);
   const narrowCategoryColumns = useNarrowColumns(false);
   const narrow = narrowColumns > 0;
@@ -570,7 +675,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const ratingFilter: RatingFilter = view.kind === "ratings" ? usableFilter(data.ratings, view, ratingSectionOf) : {};
   const ratingOptions = view.kind === "ratings" ? ratingChoices(data.ratings, ratingFilter, ratingSectionOf) : null;
   const ratingRows = ratingOptions ? filterRows(ratingOptions) : { sections: [], scores: [] };
-  const ratingChipRows = [ratingRows.sections.length, ratingRows.scores.length].filter((length) => length > 0);
+  const scoreCount = (score: number | undefined) => (!ratingOptions ? 0 : score === undefined ? ratingOptions.scores.reduce((sum, each) => sum + each.count, 0) : (ratingOptions.scores.find((each) => each.score === score)?.count ?? 0));
+  const [scoreOpen, setScoreOpen] = useState(false);
+  const scorePicking = few && ratingRows.scores.length > 0;
+  useEffect(() => setScoreOpen(false), [view.kind, scorePicking]);
+  const scoreColumns = compact ? 2 : 5;
+  const scoreRows = ratingRows.scores.length === 0 ? [] : scorePicking ? [1, ...(scoreOpen ? scoreMenuRows(ratingRows.scores.length, scoreColumns) : [])] : [ratingRows.scores.length];
+  const ratingChipRows = [...(ratingRows.sections.length > 0 ? [ratingRows.sections.length] : []), ...scoreRows];
   const scoreRow = ratingRows.sections.length > 0 ? 1 : 0;
   const posterGrid = !!grid && grid.layout !== "categories" && grid.entries.every(isTitle);
   const gridColumns =
@@ -1429,7 +1540,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       {view.kind === "ratings" && ratingOptions && ratingChipRows.length > 0 && (
         <div className="tv-rating-filters" data-testid="rating-filters">
           {ratingRows.sections.length > 0 && (
-            <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterKind")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+            <div className="tv-filters tv-filters-kind" role="radiogroup" aria-label={t("rating.filterKind")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+              {sliding && <Thumb on={`${ratingFilter.section}|${ratingRows.sections.length}`} />}
               {ratingRows.sections.map((section, col) => {
                 const pos: Pos = { zone: "chips", row: 0, col };
                 const count = section ? (ratingOptions.sections.find((each) => each.section === section)?.count ?? 0) : data.ratings.length;
@@ -1453,11 +1565,24 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               })}
             </div>
           )}
-          {ratingRows.scores.length > 0 && (
-            <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterScores")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+          {scorePicking && (
+            <ScorePick
+              scores={ratingRows.scores}
+              chosen={ratingFilter.score}
+              countOf={scoreCount}
+              row={scoreRow}
+              columns={scoreColumns}
+              open={scoreOpen}
+              onOpen={setScoreOpen}
+              onPick={(score) => selectRatings({ ...ratingFilter, score })}
+              onFocusButton={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: scoreRow, col: 0 })}
+            />
+          )}
+          {ratingRows.scores.length > 0 && !scorePicking && (
+            <div className="tv-filters tv-filters-wrap" role="radiogroup" aria-label={t("rating.filterScores")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
               {ratingRows.scores.map((score, col) => {
                 const pos: Pos = { zone: "chips", row: scoreRow, col };
-                const count = score === undefined ? ratingOptions.scores.reduce((sum, each) => sum + each.count, 0) : (ratingOptions.scores.find((each) => each.score === score)?.count ?? 0);
+                const count = scoreCount(score);
                 return (
                   <button
                     key={score ?? "any"}
@@ -1493,7 +1618,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         </p>
       )}
       {view.kind === "list" && (
-        <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+        <div className="tv-filters tv-filters-wrap" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
           {listChips.map((info, col) => (
             <button
               key={info.id}
@@ -1684,7 +1809,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         <>
           {view.kind !== "profile" && <GetTheAppStrip className="in-browse" />}
           {sectionButtons && (
-            <div className="tv-filters tv-sections" role="radiogroup" aria-label={t("tv.sections")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+            <div className="tv-filters tv-sections tv-filters-kind" role="radiogroup" aria-label={t("tv.sections")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+              {sliding && <Thumb on={`${view.kind}|${sectionChips.length}`} />}
               {sectionChips.map((chip, col) => (
                 <button
                   key={chip.kind}
@@ -1952,7 +2078,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             )}
           </div>
           <div className="tv-search-main">
-            <div className="tv-filters" role="radiogroup" aria-label={t("tv.search")}>
+            <div className="tv-filters tv-filters-kind" role="radiogroup" aria-label={t("tv.search")}>
+              {sliding && <Thumb on={`${filter}|${child}|${searchFilters.length}`} />}
               {searchFilters.map((value, col) => {
                 const pos: Pos = { zone: "chips", row: 0, col };
                 return (
