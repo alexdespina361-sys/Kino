@@ -58,6 +58,7 @@ import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
 import { SearchField } from "./SearchField";
+import { watchSeen } from "./rowWatch";
 import { ChatTv } from "../chat/ChatTv";
 import type { OpenTitle } from "../chat/titles";
 import { useHost } from "../chat/useHost";
@@ -100,27 +101,19 @@ function RowTiles({ children, onNearEnd, loading, startFar }: { children: ReactN
   useEffect(() => {
     const row = scroller.current;
     if (!row || typeof IntersectionObserver === "undefined") return;
-    const watch = new IntersectionObserver((seen) => {
-      onScreen.current = seen.some((one) => one.isIntersecting);
-      if (onScreen.current) measure();
+    return watchSeen(row, null, "0px", (on) => {
+      onScreen.current = on;
+      if (on) measure();
     });
-    watch.observe(row);
-    return () => watch.disconnect();
   }, [measure]);
   useEffect(() => {
     const here = box.current;
     if (!here || typeof IntersectionObserver === "undefined") return;
-    const root = here.closest(".tv-rows");
-    const watch = new IntersectionObserver(
-      (seen) => {
-        near.current = seen[seen.length - 1]!.isIntersecting;
-        here.toggleAttribute("data-far", !near.current);
-        if (near.current) measure();
-      },
-      { root, rootMargin: NEAR_MARGIN },
-    );
-    watch.observe(here);
-    return () => watch.disconnect();
+    return watchSeen(here, here.closest(".tv-rows"), NEAR_MARGIN, (on) => {
+      near.current = on;
+      here.toggleAttribute("data-far", !on);
+      if (on) measure();
+    });
   }, [measure]);
 
   const go = (direction: -1 | 1) => scroller.current?.scrollBy({ left: direction * scroller.current.clientWidth * STEP, behavior: "smooth" });
