@@ -79,6 +79,8 @@ The script:
 
 On Android 12 and later, once the app has installed one update itself, the later ones go in without a tap while the app is in the background. Before that, the person gets one confirmation: in the app, or as a notification. Every app also looks when it is opened (if its last look is six hours old) and twice a day in the background, through WorkManager, which waits for a network and tries again when a look fails.
 
+A downloaded version is offered only while it is newer than the one running. Once it runs, the download and its notification are let go. Up to 0.3.3, the app offered the version it had just installed each time it opened, for up to six hours after its last look.
+
 ## Firebase
 
 The project is `kino-513800`, the same Google Cloud project as Google sign-in, on the free Spark plan. Setup:
