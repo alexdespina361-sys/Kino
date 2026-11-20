@@ -144,6 +144,15 @@ export const chatIt: ChatDictionary = {
   "chat.unreadShort_one": "{count} nuovo messaggio",
   "chat.unreadShort_other": "{count} nuovi messaggi",
 
+  "chats.title": "Chat",
+  "chats.ariaCount_one": "Chat: {count} con un nuovo messaggio",
+  "chats.ariaCount_other": "Chat: {count} con nuovi messaggi",
+  "chats.mine": "Tu: {text}",
+  "chats.sticker": "Sticker",
+  "chats.gif": "GIF",
+  "chats.aTitle": "Un titolo",
+  "chats.none": "Ancora nessun messaggio",
+
   "chat.settingsSwitch": "Gli amici possono scrivermi",
   "chat.settingsHint": "I messaggi sono testo semplice, salvato sul server senza cifratura. Si conservano gli ultimi {messages} con ogni amico, per al massimo {days} giorni.",
 };

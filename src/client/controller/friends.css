@@ -58,6 +58,19 @@
 .bell-badge { position: absolute; top: 1px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 0.7rem; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
 .bell-dot { position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
 .inbox-item { touch-action: pan-y; transition: transform 0.18s ease, opacity 0.18s ease; }
+.chats-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.chats-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 8px 10px; border-radius: 12px; text-align: left; transition: background 0.15s ease; }
+.chats-row:active { background: var(--surface); }
+.chats-row:focus-visible { background: var(--surface-2); }
+.chats-text { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.chats-top, .chats-bottom { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.chats-top b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chats-when { flex: none; color: var(--muted); font-size: 0.75rem; }
+.chats-said { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 0.85rem; text-overflow: ellipsis; white-space: nowrap; }
+.chats-row[data-unread="true"] .chats-said { color: var(--text); }
+.chats-row[data-unread="true"] .chats-when { color: var(--accent); }
+.chats-count { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 0.72rem; font-weight: 700; line-height: 20px; text-align: center; }
+.chats-count[data-muted="true"] { background: var(--surface-2); color: var(--muted); }
 .sheet-section-with-action { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sheet-clear { min-height: 44px; margin: -12px -8px -12px 0; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .sheet-clear:active { color: var(--text); background: var(--surface); }

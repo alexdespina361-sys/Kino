@@ -385,6 +385,7 @@ const ROWS: Row[] = [
   row(`POST ${FRIENDS}/plans/:itemId/decline`, { id: ["profile"], itemId: ["plan", "recommend", "party"] }),
   row(`POST ${FRIENDS}/inbox/read`, { id: asking }),
   row(`DELETE ${FRIENDS}/inbox/:itemId`, { id: ["profile"], itemId: ["recommend", "plan", "party"] }),
+  row("GET /api/profiles/:id/chats", { id: asking }),
   row(`GET ${CHAT}`, { id: asking, fid: other }),
   row(`POST ${CHAT}`, { id: asking, fid: other }, { body: () => ({ text: "hello" }) }),
   row(`DELETE ${CHAT}/:n`, { id: ["profile"], fid: other, n: ["mine", "theirs"] }),

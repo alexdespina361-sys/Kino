@@ -2,6 +2,25 @@ import type { ChangeNote } from "./news";
 
 export const CHANGELOG: readonly ChangeNote[] = [
   {
+    version: "0.4.27",
+    date: "2026-11-20",
+    en: [
+      "On a phone with two friends or more, a Chats button sits next to the bell: all your friends in one list, the newest message first.",
+      "Each friend shows what was said last and how many messages are unread. A tap opens the chat, and Back brings you to the list again.",
+      "New messages are counted on Chats instead of the bell.",
+    ],
+    ro: [
+      "Pe un telefon cu doi prieteni sau mai mulți, lângă clopoțel e un buton Conversații: toți prietenii într-o listă, cel mai nou mesaj primul.",
+      "La fiecare prieten vezi ce s-a spus ultima dată și câte mesaje sunt necitite. O atingere deschide conversația, iar Înapoi te aduce la listă.",
+      "Mesajele noi se numără pe Conversații, nu pe clopoțel.",
+    ],
+    it: [
+      "Su un telefono con due amici o più, accanto alla campanella c'è il pulsante Chat: tutti gli amici in un elenco, il messaggio più recente per primo.",
+      "Per ogni amico vedi l'ultima cosa detta e quanti messaggi non sono letti. Un tocco apre la chat, e Indietro ti riporta all'elenco.",
+      "I nuovi messaggi si contano su Chat invece che sulla campanella.",
+    ],
+  },
+  {
     version: "0.4.26",
     date: "2026-11-19",
     en: [

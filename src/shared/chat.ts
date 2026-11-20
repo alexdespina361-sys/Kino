@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { plainText } from "./friends";
+import { MAX_FRIENDS, plainText } from "./friends";
 import { looksLikeGifButIsNot } from "./gifs";
 
 export const CHAT_TEXT_MAX = 500;
@@ -72,6 +72,16 @@ export const ChatSendSchema = z.object({ text: z.string().max(CHAT_TEXT_MAX * 4)
 export const ChatMuteSchema = z.object({ muted: z.boolean() });
 export type ChatMute = z.infer<typeof ChatMuteSchema>;
 export const ChatReactSchema = z.object({ reaction: z.enum(CHAT_ALL_REACTIONS).nullable() });
+
+export const ChatTalkSchema = z.object({
+  friend: z.string().min(1).max(60),
+  last: ChatLineSchema.pick({ id: true, at: true, mine: true, text: true, sticker: true }),
+  unread: z.number().int().nonnegative(),
+  muted: z.boolean().optional(),
+});
+export type ChatTalk = z.infer<typeof ChatTalkSchema>;
+export const ChatTalksSchema = z.object({ talks: z.array(ChatTalkSchema).max(MAX_FRIENDS) });
+export type ChatTalks = z.infer<typeof ChatTalksSchema>;
 
 export const ChatReportPreviewSchema = z.object({ rev: z.number().int().nonnegative(), lines: z.array(ChatLineSchema).max(CHAT_REPORT_LINES) });
 export type ChatReportPreview = z.infer<typeof ChatReportPreviewSchema>;

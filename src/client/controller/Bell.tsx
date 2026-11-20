@@ -9,7 +9,9 @@ import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
 import { useCleared } from "../friends/useCleared";
 import { useLanguage, useT } from "../i18n";
-import { BellIcon, CloseIcon } from "../shared/icons";
+import { BellIcon, CloseIcon, UsersIcon } from "../shared/icons";
+import { chatsApart, withoutChat } from "../chat/apart";
+import { chatWaiting } from "../chat/notices";
 import type { Entry } from "../tv/pages";
 import { InboxRow, RequestRow } from "./Friends";
 import { Sheet } from "./Sheet";
@@ -17,9 +19,26 @@ import { ShownTitle } from "../shared/Shown";
 import { useSwipeAway } from "../shared/swipe";
 import { BELL_TITLES, entryOfNotice, noticeLine, useTitleNotices } from "../titleNotices/notices";
 
-export function BellButton({ onClick }: { onClick: () => void }) {
+export function ChatsButton({ onClick }: { onClick: () => void }) {
   const t = useT();
-  const bell = useBell();
+  const friends = useFriends();
+  if (!friends.on || !chatsApart(friends.state)) return null;
+  const count = chatWaiting(friends.state).length;
+  return (
+    <button className="icon-btn bell-button chats-button" onClick={onClick} aria-label={count > 0 ? t("chats.ariaCount", { count }) : t("chats.title")} data-testid="chats-button">
+      <UsersIcon />
+      {count > 0 && (
+        <b className="bell-badge" data-testid="chats-badge">
+          {count > 9 ? "9+" : count}
+        </b>
+      )}
+    </button>
+  );
+}
+
+export function BellButton({ onClick, chatsApart: apart = false }: { onClick: () => void; chatsApart?: boolean }) {
+  const t = useT();
+  const bell = useBell(apart);
   if (!bell.on) return null;
   return (
     <button className="icon-btn bell-button" onClick={onClick} aria-label={bell.badge > 0 ? t("bell.ariaCount", { count: bell.badge }) : t("bell.title")} data-testid="bell-button">
@@ -118,12 +137,14 @@ export function NotificationsSheet({
   onStartParty,
   onOpenFriends,
   onOpenChat,
+  chatsApart: apart = false,
 }: {
   onClose: () => void;
   onOpenTitle: (entry: Entry) => void;
   onStartParty?: (friendId: string) => void;
   onOpenFriends: () => void;
   onOpenChat: (friendId: string) => void;
+  chatsApart?: boolean;
 }) {
   const t = useT();
   const friends = useFriends();
@@ -146,7 +167,7 @@ export function NotificationsSheet({
     if (titles.unread > 0) titles.seen();
   }, [titles.unread]);
 
-  const view = state ? bellView(state, Date.now(), cleared, seenBefore) : friends.on ? null : { requests: [], inbox: [], chat: [], lately: [], joined: [], more: 0 };
+  const view = state ? bellView(apart ? withoutChat(state) : state, Date.now(), cleared, seenBefore) : friends.on ? null : { requests: [], inbox: [], chat: [], lately: [], joined: [], more: 0 };
   const people = state?.friends ?? [];
   const waiting = view !== null && view.requests.length + view.inbox.length + view.chat.length > 0;
   return (

@@ -146,6 +146,16 @@ export const chatRo: ChatDictionary = {
   "chat.unreadShort_few": "{count} mesaje noi",
   "chat.unreadShort_other": "{count} de mesaje noi",
 
+  "chats.title": "Conversații",
+  "chats.ariaCount_one": "Conversații: {count} cu mesaj nou",
+  "chats.ariaCount_few": "Conversații: {count} cu mesaje noi",
+  "chats.ariaCount_other": "Conversații: {count} cu mesaje noi",
+  "chats.mine": "Tu: {text}",
+  "chats.sticker": "Sticker",
+  "chats.gif": "GIF",
+  "chats.aTitle": "Un titlu",
+  "chats.none": "Niciun mesaj încă",
+
   "chat.settingsSwitch": "Prietenii îmi pot scrie mesaje",
   "chat.settingsHint": "Mesajele sunt text simplu, stocat pe server fără criptare. Se păstrează ultimele {messages} cu fiecare prieten, cel mult {days} de zile.",
 };

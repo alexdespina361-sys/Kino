@@ -142,6 +142,15 @@ export const chatEn = {
   "chat.unreadShort_one": "{count} new message",
   "chat.unreadShort_other": "{count} new messages",
 
+  "chats.title": "Chats",
+  "chats.ariaCount_one": "Chats: {count} with a new message",
+  "chats.ariaCount_other": "Chats: {count} with new messages",
+  "chats.mine": "You: {text}",
+  "chats.sticker": "Sticker",
+  "chats.gif": "GIF",
+  "chats.aTitle": "A title",
+  "chats.none": "No messages yet",
+
   "chat.settingsSwitch": "Friends can message me",
   "chat.settingsHint": "Messages are plain text, stored on the server without encryption. The last {messages} with each friend are kept, for {days} days at most.",
 } as const;

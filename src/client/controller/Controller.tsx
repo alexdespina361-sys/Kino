@@ -37,7 +37,9 @@ import { forgetStrayAddress, strayAddress } from "../shared/strayAddress";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, SetUpProfile, Page } from "./AccountScreen";
-import { BellButton, NotificationsSheet } from "./Bell";
+import { BellButton, ChatsButton, NotificationsSheet } from "./Bell";
+import { chatsApart } from "../chat/apart";
+import { ChatsPhone } from "../chat/ChatsPhone";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
 import { FriendInvite, FriendsHome } from "./Friends";
@@ -293,6 +295,7 @@ export function Controller() {
   const [accountAt, setAccountAt] = useState<"main" | "friends">("main");
   const [showBell, setShowBell] = useState(false);
   const [chatWith, setChatWith] = useState<string | null>(null);
+  const [showChats, setShowChats] = useState(false);
   const closeAccount = () => {
     setShowAccount(false);
     setAccountAt("main");
@@ -547,7 +550,7 @@ export function Controller() {
   const away = connection === "open" && tv !== null && !tv.online;
   const remoteOpen = active && remoteShown && !away;
   useBackWhile(remoteOpen, () => setRemoteShown(false));
-  const covered = seeAll !== null || title !== null || sheet !== null || listSheet !== null || other !== null || ratingsOpen || showAccount || showBell || chatWith !== null || approveCode !== null || friendCode !== null;
+  const covered = seeAll !== null || title !== null || sheet !== null || listSheet !== null || other !== null || ratingsOpen || showAccount || showBell || showChats || chatWith !== null || approveCode !== null || friendCode !== null;
   const tabs = useTabs(remoteOpen || covered, tv !== null);
   useEffect(() => {
     if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" && open !== "tvs" ? null : open));
@@ -557,7 +560,13 @@ export function Controller() {
   const tellTvToLookAgain = () => {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
-  const bellButton = <BellButton onClick={() => setShowBell(true)} />;
+  const chatsHere = friends.on && chatsApart(friends.state);
+  const bellButton = (
+    <>
+      {chatsHere && <ChatsButton onClick={() => setShowChats(true)} />}
+      <BellButton chatsApart={chatsHere} onClick={() => setShowBell(true)} />
+    </>
+  );
   const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
   const titleSheets = (
     <>
@@ -601,8 +610,10 @@ export function Controller() {
           />
         )
       )}
+      {showChats && !showAccount && !approveCode && <ChatsPhone looking={chatWith === null} onClose={() => setShowChats(false)} onOpenChat={setChatWith} />}
       {showBell && !showAccount && !approveCode && (
         <NotificationsSheet
+          chatsApart={chatsHere}
           onClose={() => setShowBell(false)}
           onOpenTitle={setTitle}
           {...(tv ? { onStartParty: startTogether } : {})}
