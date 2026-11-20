@@ -102,6 +102,10 @@ final class Notices {
         }
     }
 
+    static void updateGone(Context context) {
+        NotificationManagerCompat.from(context).cancel(UPDATE_ID);
+    }
+
     static void updateReady(Context context) {
         if (!allowed(context)) return;
         channels(context);

@@ -32,6 +32,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The app's own updates (src/server/push/appRelease.ts). The site says which version is the newest (`/api/app/android`); a newer one is downloaded, its size and
@@ -114,7 +116,9 @@ final class Updates {
                 throw new IOException("the download is not the build the site said");
             }
         }
-        Prefs.of(app).edit().putString(Prefs.UPDATE_READY, apk.getName()).apply();
+        synchronized (READY) {
+            Prefs.of(app).edit().putString(Prefs.UPDATE_READY, apk.getName()).apply();
+        }
         done(app);
         // (On the screen the person is asked, whatever made it look; in the background it goes in without a tap where Android allows.)
         if (MainActivity.onScreen) offer(app);
@@ -133,19 +137,52 @@ final class Updates {
         return dir;
     }
 
+    private static final Pattern DOWNLOADED = Pattern.compile("kino-(\\d{1,9})\\.apk");
+    private static final Object READY = new Object();
+
+    static int versionOf(String name) {
+        Matcher found = DOWNLOADED.matcher(name == null ? "" : name);
+        return found.matches() ? Integer.parseInt(found.group(1)) : -1;
+    }
+
+    static boolean newerThan(String name, int running) {
+        return versionOf(name) > running;
+    }
+
     private static File readyFile(Context context) {
         String name = Prefs.of(context).getString(Prefs.UPDATE_READY, null);
         if (name == null) return null;
+        if (!newerThan(name, BuildConfig.VERSION_CODE)) {
+            letGoOf(context, name);
+            return null;
+        }
         File apk = new File(dir(context), name);
         return apk.exists() ? apk : null;
     }
 
+    private static void letGoOf(Context context, String name) {
+        synchronized (READY) {
+            SharedPreferences prefs = Prefs.of(context);
+            if (name.equals(prefs.getString(Prefs.UPDATE_READY, null))) prefs.edit().remove(Prefs.UPDATE_READY).apply();
+        }
+        File[] kept = dir(context).listFiles();
+        if (kept != null) for (File file : kept) {
+            int version = versionOf(file.getName());
+            if (version > 0 && version <= BuildConfig.VERSION_CODE) //noinspection ResultOfMethodCallIgnored
+                file.delete();
+        }
+        Notices.updateGone(context);
+    }
+
     /** This version is the newest: the downloads are let go. */
     private static void clear(Context context) {
-        Prefs.of(context).edit().remove(Prefs.UPDATE_READY).apply();
+        synchronized (READY) {
+            Prefs.of(context).edit().remove(Prefs.UPDATE_READY).apply();
+        }
         File[] old = dir(context).listFiles();
         if (old != null) for (File file : old) //noinspection ResultOfMethodCallIgnored
             file.delete();
+        Notices.updateGone(context);
     }
 
     /** On the screen: ask the person (the update closes the app for a moment). */
