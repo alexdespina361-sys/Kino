@@ -3,7 +3,7 @@ import { Avatar } from "../account/Avatar";
 import { presenceLine } from "../friends/entries";
 import { useFriends, useQuickLooks } from "../friends/FriendsProvider";
 import { useLanguage, useT } from "../i18n";
-import { Screen } from "../tv/Idle";
+import { BackButton, Screen } from "../tv/Idle";
 import { chatWaiting } from "./notices";
 import { previewOf, talkRows, whenOf, type TalkRow } from "./talks";
 import { useTalks } from "./useTalks";
@@ -80,6 +80,7 @@ export function ChatsTv({ onOpen, onClose }: { onOpen: (friendId: string) => voi
           ))}
         </ul>
       )}
+      <BackButton onClick={onClose} testId="tv-chats-back" />
     </Screen>
   );
 }

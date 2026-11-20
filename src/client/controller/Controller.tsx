@@ -561,6 +561,10 @@ export function Controller() {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
   const chatsHere = friends.on && chatsApart(friends.state);
+  const chatsGone = !friends.on || (friends.state !== null && !chatsHere);
+  useEffect(() => {
+    if (chatsGone) setShowChats(false);
+  }, [chatsGone]);
   const bellButton = (
     <>
       {chatsHere && <ChatsButton onClick={() => setShowChats(true)} />}

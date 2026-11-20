@@ -447,6 +447,18 @@ function useNarrowColumns(posters: boolean): number {
   }, [posters]);
   return columns;
 }
+const CHATS_BESIDE_BACK_PX = 360;
+
+function useWidthFrom(px: number): boolean {
+  const read = () => innerWidth >= px;
+  const [from, setFrom] = useState(read);
+  useEffect(() => {
+    const update = () => setFrom(read());
+    addEventListener("resize", update);
+    return () => removeEventListener("resize", update);
+  }, [px]);
+  return from;
+}
 function usePageWidth(): number {
   const read = () => pageWidth(innerWidth, innerHeight, document.documentElement.dataset.fit === "desk");
   const [width, setWidth] = useState(read);
@@ -611,6 +623,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const narrowCategoryColumns = useNarrowColumns(false);
   const narrow = narrowColumns > 0;
   const wide = usePageWidth();
+  const roomBesideBack = useWidthFrom(CHATS_BESIDE_BACK_PX);
   const resultColumns = narrowColumns || columnsFor(wide, RESULT_COLUMNS, PITCH_EM.poster);
   const [library, setLibrary] = useState<Library | null>(remembered.library);
   const [libraryStatus, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
@@ -945,8 +958,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const canSignIn = accountStatus === "ready";
   const showAccount = accountStatus !== "loading";
   const showBell = canSignIn && bell.on;
-  const chatsHere = phone && showBell && friends.on && chatsApart(friends.state);
+  const chatsApartHere = phone && showBell && friends.on && chatsApart(friends.state);
+  const chatsGone = overlay?.kind === "chats" && (!showBell || !friends.on || (friends.state !== null && !chatsApartHere));
+  useEffect(() => {
+    if (chatsGone) closeOverlay();
+  }, [chatsGone]);
   const wayBack = view.kind !== "friend" && isProfilePage(view) ? backOf(view) : null;
+  const chatsHere = chatsApartHere && (!wayBack || roomBesideBack);
   const lead = wayBack ? 1 : 0;
   const bellCol = lead + (chatsHere ? 1 : 0);
   const accountCol = bellCol + (showBell ? 1 : 0);
@@ -1887,7 +1905,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             {notice || ownNotice}
           </p>
         )}
-        <div className="tv-browse-corner">
+        <div className="tv-browse-corner" data-chats={chatsHere ? "true" : undefined}>
           {wayBack && <BackButton onClick={() => choose(wayBack)} testId="tv-page-back" col={0} />}
           {chatsHere && <ChatsChip onOpen={() => setOverlay({ kind: "chats", back: { zone: "top", row: 0, col: lead } })} col={lead} />}
           {showBell && <BellChip chatsApart={chatsHere} onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: bellCol } })} col={bellCol} />}

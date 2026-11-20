@@ -1,6 +1,6 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { nameFirstProfile, openDevice, openTvSignIn, PHONE, PICTURE_NAMED, test } from "./helpers";
+import { nameFirstProfile, openDevice, openProfilePlace, openTv, openTvSignIn, PHONE, PICTURE_NAMED, readPairingCode, test } from "./helpers";
 
 test.use({ actionTimeout: 15_000 });
 
@@ -77,14 +77,16 @@ const cornerProblems = (page: Page, ids: string[]) =>
     for (const [id, box] of boxes) {
       if (!box) problems.push(`(no ${id})`);
       else if (box.left < -0.5 || box.right > innerWidth + 0.5 || box.top < -0.5) problems.push(`${id} leaves the screen`);
-      else if (box.width < 32 || box.height < 32) problems.push(`${id} is ${Math.round(box.width)}x${Math.round(box.height)}`);
+      else if (id !== "tv-logo-home" && (box.width < 32 || box.height < 32)) problems.push(`${id} is ${Math.round(box.width)}x${Math.round(box.height)}`);
     }
     if (document.documentElement.scrollWidth > innerWidth) problems.push("(the page scrolls sideways)");
     return { problems, boxes: boxes.flatMap(([id, box]) => (box ? [{ id, x: box.x, y: box.y, width: box.width, height: box.height }] : [])) };
   }, ids);
 
-async function fitsInCorner(page: Page, ids: string[]) {
-  const { problems, boxes } = await cornerProblems(page, ids);
+async function fitsInCorner(page: Page, ids: string[], ifShown: string[] = []) {
+  const shown: string[] = [];
+  for (const id of ifShown) if ((await page.getByTestId(id).count()) > 0) shown.push(id);
+  const { problems, boxes } = await cornerProblems(page, [...ids, ...shown]);
   expect(problems).toEqual([]);
   for (const [at, one] of boxes.entries()) for (const other of boxes.slice(at + 1)) expect(apart(one, other), `${one.id} and ${other.id} overlap`).toBe(true);
 }
@@ -187,6 +189,14 @@ test.describe("the list of chats on the phone", () => {
         return out;
       });
     await expect.poll(lost, { timeout: 3_000 }).toEqual([]);
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("chats-page")).toHaveCount(0);
+
+    const tv = await openTv(browser);
+    await ann.page.getByTestId("code-input").fill(await readPairingCode(tv));
+    await expect(ann.page.getByTestId("tv-online")).toHaveClass(/\bok\b/);
+    await expect(ann.page.getByTestId("chats-button")).toBeVisible();
+    await fitsInCorner(ann.page, ["menu", "chats-button", "bell-button", "account-button"], ["fullscreen-toggle"]);
   });
 });
 
@@ -227,7 +237,9 @@ test.describe("the list of chats on a phone showing the TV's pages", () => {
     await expect(rows.nth(0).getByTestId("tv-chats-count")).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-chats-badge")).toHaveCount(0);
 
-    await ann.page.keyboard.press("Escape");
+    const back = ann.page.getByTestId("tv-chats-back");
+    await expect(back).toBeInViewport();
+    await back.click();
     await expect(ann.page.getByTestId("tv-chats-page")).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-browse")).toBeVisible();
     await expect(ann.page.getByTestId("tv-chats")).toBeVisible();
@@ -261,5 +273,36 @@ test.describe("the list of chats on a phone showing the TV's pages", () => {
     await tv.reload();
     await expect(tv.getByTestId("tv-bell")).toBeVisible();
     await expect(tv.getByTestId("tv-chats")).toHaveCount(0);
+  });
+
+  test("fits the narrowest phone with the longest name: on Home the account is its picture alone; on a page with its own Back the chip makes room and the bell counts the messages, until the screen is wide enough", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await handHeld(browser, "Wilhelmin", { width: 320, height: 640 });
+    expect(ann.name.length).toBeGreaterThanOrEqual(15);
+    const bob = await remote(browser, "Bob");
+    const cy = await remote(browser, "Cy");
+    await befriend(ann, bob);
+    await befriend(ann, cy);
+    await writes(bob, ann, "Hello Ann");
+    await look(ann.page);
+    await expect(ann.page.getByTestId("tv-chats-badge")).toHaveText("1");
+    await expect(ann.page.getByTestId("tv-bell-badge")).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-account-chip").locator("span")).toBeHidden();
+    const corner = ["tv-logo-home", "tv-chats", "tv-bell", "tv-account-chip"];
+    await fitsInCorner(ann.page, corner, ["fullscreen-toggle"]);
+
+    await openProfilePlace(ann.page, "friends");
+    await expect(ann.page.getByTestId("tv-page-back")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-chats")).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-bell-badge")).toHaveText("1");
+    await fitsInCorner(ann.page, ["tv-logo-home", "tv-page-back", "tv-bell", "tv-account-chip"], ["fullscreen-toggle"]);
+
+    await ann.page.setViewportSize({ width: 360, height: 740 });
+    await expect(ann.page.getByTestId("tv-chats")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-bell-badge")).toHaveCount(0);
+    await fitsInCorner(ann.page, [...corner, "tv-page-back"], ["fullscreen-toggle"]);
+    await ann.page.getByTestId("tv-chats").click();
+    await expect(ann.page.getByTestId("tv-chats-row")).toHaveCount(2);
+    await expect(ann.page.getByTestId("tv-chats-back")).toBeInViewport();
   });
 });
