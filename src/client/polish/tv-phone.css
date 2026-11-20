@@ -430,8 +430,10 @@
   :root[data-ui="polish"] .tv { --poster: 120px; --card: 216px; }
 }
 @media (max-width: 380px) {
-  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] { justify-content: center; min-width: var(--tap); padding-right: 4px; }
-  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] > span { display: none; }
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"],
+  :root[data-ui="polish"] .tv .tv-browse-corner[data-chats="true"] .tv-account-chip { justify-content: center; min-width: var(--tap); padding-right: 4px; }
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] > span,
+  :root[data-ui="polish"] .tv .tv-browse-corner[data-chats="true"] .tv-account-chip > span { display: none; }
 }
 :root[data-ui="polish"][data-tier="lite"] .tv { --t-fast: 0s; --t-base: 0s; --lift: 0 0 #0000; }
 :root[data-ui="polish"][data-tier="lite"] .tv-row, :root[data-ui="polish"][data-tier="lite"] .tv-hero-text, :root[data-ui="polish"][data-tier="lite"] .tv-detail-text, :root[data-ui="polish"][data-tier="lite"] .tv-hero-poster, :root[data-ui="polish"][data-tier="lite"] .tv-skeleton, :root[data-ui="polish"][data-tier="lite"] .tv img[data-late][data-in], :root[data-ui="polish"][data-tier="lite"] .tv-starting-art { animation: none !important; }

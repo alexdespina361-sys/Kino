@@ -213,6 +213,27 @@ describe("writing and reading", () => {
   });
 });
 
+describe("the list of chats", () => {
+  it("is each friend's last message for a profile of one's own with friends on, and reading it marks nothing as seen", async () => {
+    const world = await friends();
+    const { alex, sam, chat } = world;
+    const stranger = person(world, "stranger");
+    const off = person(world, "off", { friends: false });
+    const list = (who: Person, of: Person = who) => who.call("GET", `/api/profiles/${of.id}/chats`);
+    expect((await world.app.inject({ method: "GET", url: `/api/profiles/${alex.id}/chats` })).statusCode).toBe(401);
+    expect((await list(stranger, alex)).statusCode).toBe(404);
+    expect((await list(off)).data).toEqual({ error: "friends_off" });
+    expect((await list(alex)).data).toEqual({ talks: [] });
+    await write(sam, alex, "one");
+    await write(sam, alex, "two");
+    const answer = await list(alex);
+    expect(answer.statusCode).toBe(200);
+    expect(answer.data).toEqual({ talks: [{ friend: sam.id, last: { id: expect.any(Number), at: world.clock.now, mine: false, text: "two" }, unread: 2 }] });
+    expect(chat.unread(alex.id)).toEqual([{ friend: sam.id, count: 2, at: world.clock.now }]);
+    expect((await list(sam)).data.talks[0]).toMatchObject({ friend: alex.id, unread: 0, last: { mine: true, text: "two" } });
+  });
+});
+
 describe("what has been looked at", () => {
   it("is everything that a page asked for: reading the chat clears what waited, and a poll that finds no news does not bring it back", async () => {
     const { alex, sam, chat, clock } = await friends();

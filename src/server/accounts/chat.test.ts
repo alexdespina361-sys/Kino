@@ -333,6 +333,56 @@ describe("what waits to be read", () => {
   });
 });
 
+describe("the list of chats", () => {
+  it("is each friend's last message, the newest chat first, with what is not read yet", () => {
+    const { chat, clock } = trio();
+    value(chat.send("sam", "alex", "one"));
+    clock.now += 1000;
+    value(chat.send("robin", "alex", "hello"));
+    clock.now += 1000;
+    value(chat.send("sam", "alex", "two"));
+    clock.now += 1000;
+    value(chat.send("alex", "robin", "hi robin"));
+    const talks = chat.talks("alex");
+    expect(talks.map((talk) => [talk.friend, talk.last.text, talk.last.mine, talk.unread])).toEqual([
+      ["robin", "hi robin", true, 0],
+      ["sam", "two", false, 2],
+    ]);
+    expect(talks[0]!.last.at).toBe(clock.now);
+    expect(chat.talks("sam").map((talk) => [talk.friend, talk.last.text, talk.last.mine, talk.unread])).toEqual([["alex", "two", true, 0]]);
+  });
+
+  it("changes nothing: what was seen, what reached the friend and the ticks stay as they were", () => {
+    const { chat, written } = trio();
+    value(chat.send("sam", "alex", "one"));
+    written.clear();
+    const before = value(chat.read("sam", "alex"));
+    chat.talks("alex");
+    chat.talks("alex");
+    expect(written.size).toBe(0);
+    expect(value(chat.read("sam", "alex"))).toEqual(before);
+    expect(chat.talks("alex")[0]!.unread).toBe(1);
+    expect(chat.unread("alex", false)).toHaveLength(1);
+  });
+
+  it("says a muted chat is muted, keeps out friends no more and chats with nothing in them", () => {
+    const { chat, friends } = trio();
+    value(chat.send("sam", "alex", "one"));
+    value(chat.mute("alex", "sam", true));
+    value(chat.mute("alex", "robin", true));
+    expect(chat.talks("alex")).toEqual([{ friend: "sam", last: expect.objectContaining({ text: "one", mine: false }), unread: 1, muted: true }]);
+    friends.delete(pair("alex", "sam"));
+    expect(chat.talks("alex")).toEqual([]);
+  });
+
+  it("gives the sticker of a personal sticker", () => {
+    const { chat } = trio();
+    const id = "A".repeat(22);
+    value(chat.sendSticker("sam", "alex", id));
+    expect(chat.talks("alex")[0]!.last).toMatchObject({ sticker: id });
+  });
+});
+
 describe("muting a friend", () => {
   it("stops the notices and nothing else: the messages come and the chat can be read, and the friend is not told", () => {
     const { chat } = trio();

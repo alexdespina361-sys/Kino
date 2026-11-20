@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useAccount } from "../account/AccountProvider";
+import { chatWaiting } from "../chat/notices";
 import { hasNewActivity } from "./bell";
 import { useFriends } from "./FriendsProvider";
 import { useTitleNotices } from "../titleNotices/notices";
@@ -33,7 +34,7 @@ const remember = (profileId: string, at: number) => {
   listeners.forEach((listener) => listener());
 };
 
-export function useBell() {
+export function useBell(chatsApart = false) {
   const account = useAccount();
   const friends = useFriends();
   const profileId = account.me && account.profile ? account.profile.id : undefined;
@@ -57,5 +58,6 @@ export function useBell() {
 
   const titles = useTitleNotices();
   const on = (friends.on || titles.items.length > 0) && profileId !== undefined;
-  return { on, badge: on ? friends.attention + titles.unread : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen, seen };
+  const chats = chatsApart ? chatWaiting(friends.state).length : 0;
+  return { on, badge: on ? friends.attention - chats + titles.unread : 0, fresh: on && seen > 0 && friends.state !== null && hasNewActivity(friends.state, seen), markSeen, seen };
 }

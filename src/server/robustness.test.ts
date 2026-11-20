@@ -453,6 +453,7 @@ const SPECS: Record<string, Spec> = {
   "POST /api/profiles/:id/friends/plans/:itemId/decline": { params: { ...profile, itemId: (w) => w.plan }, ok: [204, 404] },
   "POST /api/profiles/:id/friends/inbox/read": { params: profile, ok: [204] },
   "DELETE /api/profiles/:id/friends/inbox/:itemId": { params: { ...profile, itemId: (w) => w.inbox }, ok: [204, 404] },
+  "GET /api/profiles/:id/chats": { params: profile },
   "GET /api/profiles/:id/friends/:fid/chat": { params: withFriend },
   "POST /api/profiles/:id/friends/:fid/chat": { params: withFriend, body: () => ({ text: "hello again" }) },
   "DELETE /api/profiles/:id/friends/:fid/chat/:n": { params: { ...withFriend, n: (w) => w.line }, ok: [200, 404] },

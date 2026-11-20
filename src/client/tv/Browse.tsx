@@ -44,7 +44,8 @@ import { isCompact, useCompact, useFlatHand } from "./compact";
 import { episodeRows, SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { dayOf, LATEST, useNews } from "../changelog/news";
-import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
+import { AccountChip, BackButton, BellChip, ChatsChip, Screen } from "./Idle";
+import { chatsApart } from "../chat/apart";
 import { actionForKey } from "./keys";
 import { useBackFirst } from "./dpad";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyForChildren, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
@@ -369,6 +370,7 @@ function NewsTv({ onClose, onSeen }: { onClose: () => void; onSeen: () => void }
 }
 
 const TvChat = later(() => import("./TvChat").then((module) => module.TvChat));
+const TvChats = later(() => import("../chat/ChatsTv").then((module) => module.ChatsTv));
 
 export interface PlayOptions {
   startAt?: number;
@@ -445,6 +447,18 @@ function useNarrowColumns(posters: boolean): number {
   }, [posters]);
   return columns;
 }
+const CHATS_BESIDE_BACK_PX = 360;
+
+function useWidthFrom(px: number): boolean {
+  const read = () => innerWidth >= px;
+  const [from, setFrom] = useState(read);
+  useEffect(() => {
+    const update = () => setFrom(read());
+    addEventListener("resize", update);
+    return () => removeEventListener("resize", update);
+  }, [px]);
+  return from;
+}
 function usePageWidth(): number {
   const read = () => pageWidth(innerWidth, innerHeight, document.documentElement.dataset.fit === "desk");
   const [width, setWidth] = useState(read);
@@ -476,7 +490,8 @@ type Overlay =
   | { kind: "friendRequest"; person: Person; back: Target }
   | { kind: "plan"; id: string; back: Target }
   | { kind: "planPick"; friend: string; back: Target }
-  | { kind: "chat"; friend: string; back: Target }
+  | { kind: "chat"; friend: string; back: Target; chats?: Target }
+  | { kind: "chats"; back: Target }
   | { kind: "bell"; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
@@ -608,6 +623,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const narrowCategoryColumns = useNarrowColumns(false);
   const narrow = narrowColumns > 0;
   const wide = usePageWidth();
+  const roomBesideBack = useWidthFrom(CHATS_BESIDE_BACK_PX);
   const resultColumns = narrowColumns || columnsFor(wide, RESULT_COLUMNS, PITCH_EM.poster);
   const [library, setLibrary] = useState<Library | null>(remembered.library);
   const [libraryStatus, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
@@ -765,7 +781,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (grownFor !== rowsKey) startTransition(() => setGrownFor(rowsKey));
   }, [rowsKey, grownFor]);
   useEffect(() => {
-    if (status === "ready" && allRowsDrawn) warmLater([TvChat.preload, loadQrMaker]);
+    if (status === "ready" && allRowsDrawn) warmLater(phone ? [TvChat.preload, TvChats.preload, loadQrMaker] : [TvChat.preload, loadQrMaker]);
   }, [status, allRowsDrawn]);
   const drawnRows = allRowsDrawn ? homeRows : homeRows.slice(0, startRow + FIRST_ROWS);
   const farFrom = Math.max(startRow, focused && rowsPage ? homeRows.findIndex((row) => row.title === focused.label) : -1) + FIRST_ROWS;
@@ -942,9 +958,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const canSignIn = accountStatus === "ready";
   const showAccount = accountStatus !== "loading";
   const showBell = canSignIn && bell.on;
+  const chatsApartHere = phone && showBell && friends.on && chatsApart(friends.state);
+  const chatsGone = overlay?.kind === "chats" && (!showBell || !friends.on || (friends.state !== null && !chatsApartHere));
+  useEffect(() => {
+    if (chatsGone) closeOverlay();
+  }, [chatsGone]);
   const wayBack = view.kind !== "friend" && isProfilePage(view) ? backOf(view) : null;
+  const chatsHere = chatsApartHere && (!wayBack || roomBesideBack);
   const lead = wayBack ? 1 : 0;
-  const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0);
+  const bellCol = lead + (chatsHere ? 1 : 0);
+  const accountCol = bellCol + (showBell ? 1 : 0);
+  const topButtons = accountCol + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0);
   const signedIn = Boolean(me && profile);
   const places = few ? (child ? [phonePlace] : [partyPlace, phonePlace]) : [];
   const connectGoogle = canConnectGoogle && signedIn && !childLock.locked ? () => withGoogle("link") : undefined;
@@ -1881,11 +1905,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             {notice || ownNotice}
           </p>
         )}
-        <div className="tv-browse-corner">
+        <div className="tv-browse-corner" data-chats={chatsHere ? "true" : undefined}>
           {wayBack && <BackButton onClick={() => choose(wayBack)} testId="tv-page-back" col={0} />}
-          {showBell && <BellChip onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: lead } })} col={lead} />}
-          {showAccount && <AccountChip onOpen={() => choose({ kind: "profile" })} current={isProfilePage(view)} zone col={lead + (showBell ? 1 : 0)} />}
-          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) }} />
+          {chatsHere && <ChatsChip onOpen={() => setOverlay({ kind: "chats", back: { zone: "top", row: 0, col: lead } })} col={lead} />}
+          {showBell && <BellChip chatsApart={chatsHere} onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: bellCol } })} col={bellCol} />}
+          {showAccount && <AccountChip onOpen={() => choose({ kind: "profile" })} current={isProfilePage(view)} zone col={accountCol} />}
+          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": accountCol + (showAccount ? 1 : 0) }} />
         </div>
       </header>
 
@@ -2333,12 +2358,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           key={overlay.friend}
           friendId={overlay.friend}
           narrow={narrow}
-          onClose={closeOverlay}
-          onOpenTitle={(entry) => openDetail({ entry: resumable(entry, progress), label: t(entry.kind === "series" ? "tv.series" : "tv.movies") })}
+          onClose={overlay.chats ? () => setOverlay({ kind: "chats", back: overlay.chats! }) : closeOverlay}
+          onOpenTitle={(entry) => {
+            if (overlay.chats) setOverlay(null);
+            openDetail({ entry: resumable(entry, progress), label: t(entry.kind === "series" ? "tv.series" : "tv.movies") });
+          }}
         />
       )}
+      {overlay?.kind === "chats" && <TvChats onOpen={(friend) => setOverlay({ kind: "chat", friend, back: overlay.back, chats: overlay.back })} onClose={closeOverlay} />}
       {overlay?.kind === "bell" && (
         <NotificationsTv
+          chatsApart={chatsHere}
           onPress={(entry) => {
             setOverlay(null);
             press({ entry: resumable(entry, progress), label: t("bell.title") }, overlay.back);

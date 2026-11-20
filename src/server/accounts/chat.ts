@@ -11,6 +11,7 @@ import {
   type ChatLine,
   type ChatNotice,
   type ChatReaction,
+  type ChatTalk,
   type ChatTextProblem,
   type ChatThread,
 } from "../../shared";
@@ -323,6 +324,26 @@ export class ChatBook {
       if (newest && !doc.muted.includes(me)) waiting.push({ friend, count: fresh.length, at: newest.at });
     }
     return waiting.sort((x, y) => y.at - x.at);
+  }
+
+  talks(me: string): ChatTalk[] {
+    const talks: ChatTalk[] = [];
+    for (const key of [...(this.of.get(me) ?? [])]) {
+      const doc = this.chats.get(key);
+      if (!doc || !this.tidy(key, doc)) continue;
+      const friend = doc.a === me ? doc.b : doc.a;
+      const last = doc.lines.at(-1);
+      if (!last || !this.host.areFriends(me, friend)) continue;
+      const seen = doc.seen[me] ?? 0;
+      const unread = doc.lines.filter((line) => line.from === friend && line.n > seen).length;
+      talks.push({
+        friend,
+        last: { id: last.n, at: last.at, mine: last.from === me, text: last.text, ...(last.s ? { sticker: last.s } : {}) },
+        unread,
+        ...(doc.muted.includes(me) ? { muted: true } : {}),
+      });
+    }
+    return talks.sort((x, y) => y.last.at - x.last.at);
   }
 
   dropChat(a: string, b: string): void {

@@ -16,6 +16,7 @@ import { ShownTitle } from "../shared/Shown";
 import { BELL_TITLES, entryOfNotice, noticeLine, useTitleNotices } from "../titleNotices/notices";
 import { useCleared } from "../friends/useCleared";
 import { useClearChat } from "../chat/useClearChat";
+import { withoutChat } from "../chat/apart";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
 import { CopyCode } from "../shared/CopyLink";
@@ -652,14 +653,14 @@ function BellLine({
   );
 }
 
-export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (entry: Entry) => void; onFriends: () => void; onClose: () => void }) {
+export function NotificationsTv({ onPress, onFriends, onClose, chatsApart = false }: { onPress: (entry: Entry) => void; onFriends: () => void; onClose: () => void; chatsApart?: boolean }) {
   const t = useT();
   const friends = useFriends();
   const { markSeen, seen } = useBell();
   const [seenBefore] = useState(seen);
   const { cleared, clear } = useCleared();
   const clearChat = useClearChat();
-  const { waiting, joined, lately, more } = bellRows(friends.state, Date.now(), cleared, seenBefore);
+  const { waiting, joined, lately, more } = bellRows(chatsApart && friends.state ? withoutChat(friends.state) : friends.state, Date.now(), cleared, seenBefore);
   const titles = useTitleNotices();
   const fresh = titles.items.slice(0, BELL_TITLES).map((notice): BellRow => ({ entry: entryOfNotice(notice), heading: notice.title, detail: noticeLine(notice), notice: notice.id }));
   const page = useRef<HTMLDivElement>(null);

@@ -1,10 +1,11 @@
-import { ChatMuteSchema, ChatReportPreviewSchema, ChatThreadSchema, type ChatReaction } from "../../shared";
+import { ChatMuteSchema, ChatReportPreviewSchema, ChatTalksSchema, ChatThreadSchema, type ChatReaction } from "../../shared";
 import { ask, request } from "../account/api";
 
 const base = (profileId: string, friendId: string) => `/api/profiles/${encodeURIComponent(profileId)}/friends/${encodeURIComponent(friendId)}/chat`;
 const answering = (replyTo: number | undefined) => (replyTo === undefined ? {} : { replyTo });
 
 export const chatApi = {
+  talks: (profileId: string) => ask(ChatTalksSchema, "GET", `/api/profiles/${encodeURIComponent(profileId)}/chats`),
   read: (profileId: string, friendId: string, since?: number) => ask(ChatThreadSchema, "GET", `${base(profileId, friendId)}${since === undefined ? "" : `?since=${since}&reactions=1`}`),
   send: (profileId: string, friendId: string, text: string, replyTo?: number) => ask(ChatThreadSchema, "POST", base(profileId, friendId), { text, ...answering(replyTo) }),
   sendSticker: (profileId: string, friendId: string, id: string, replyTo?: number) => ask(ChatThreadSchema, "POST", `${base(profileId, friendId)}/sticker`, { id, ...answering(replyTo) }),

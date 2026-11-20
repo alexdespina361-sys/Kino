@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
+import { chatWaiting } from "../chat/notices";
+import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
 import { useT } from "../i18n";
 import { useHandHeldBack } from "../shared/backButton";
 import { formatCode } from "../shared/format";
 import { enterFullscreen, useFullscreen } from "../shared/fullscreen";
-import { BellIcon, CheckIcon, ChevronLeftIcon, UserIcon } from "../shared/icons";
+import { BellIcon, CheckIcon, ChevronLeftIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { controlLink, pairLink } from "../shared/launch";
 import { Logo } from "../shared/Logo";
 import { RoleSwitch } from "../shared/RoleSwitch";
@@ -65,9 +67,33 @@ export function BackButton({ onClick, testId, label, autoFocus = false, col }: {
   );
 }
 
-export function BellChip({ onOpen, col }: { onOpen: () => void; col: number }) {
+export function ChatsChip({ onOpen, col }: { onOpen: () => void; col: number }) {
   const t = useT();
-  const bell = useBell();
+  const friends = useFriends();
+  const count = chatWaiting(friends.state).length;
+  return (
+    <button
+      className="tv-corner-button tv-bell tv-chats"
+      onClick={onOpen}
+      data-zone="top"
+      data-row={0}
+      data-col={col}
+      data-testid="tv-chats"
+      aria-label={count > 0 ? t("chats.ariaCount", { count }) : t("chats.title")}
+    >
+      <UsersIcon />
+      {count > 0 && (
+        <b className="tv-bell-badge" data-testid="tv-chats-badge">
+          {count > 9 ? "9+" : count}
+        </b>
+      )}
+    </button>
+  );
+}
+
+export function BellChip({ onOpen, col, chatsApart = false }: { onOpen: () => void; col: number; chatsApart?: boolean }) {
+  const t = useT();
+  const bell = useBell(chatsApart);
   if (!bell.on) return null;
   return (
     <button

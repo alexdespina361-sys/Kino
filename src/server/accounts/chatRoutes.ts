@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ChatMuteSchema, ChatReactSchema, ChatReportSchema, ChatSendSchema, friendChoices, isStickerId, StickerSendSchema, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
+import { ChatMuteSchema, ChatReactSchema, ChatReportSchema, ChatSendSchema, friendChoices, isStickerId, StickerSendSchema, tagLabel, type ChatReportPreview, type ChatTalks, type ChatThread } from "../../shared";
 import type { ChatBook, ChatError, ChatOutcome } from "./chat";
 import type { FriendRouteHelpers } from "./friendRoutes";
 import { DayCount, RateLimiter } from "./rateLimit";
@@ -71,7 +71,7 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
 
   const base = "/api/profiles/:id/friends/:fid/chat";
 
-  function asker(request: Asked, reply: FastifyReply, limiter: RateLimiter): { accountId: string; profileId: string; friendId: string } | undefined {
+  function owner(request: FastifyRequest & { params: { id: string } }, reply: FastifyReply, limiter: RateLimiter): { accountId: string; profileId: string } | undefined {
     const auth = helpers.authenticate(request);
     if (!auth) return void helpers.signedOut(reply);
     const profileId = request.params.id;
@@ -80,12 +80,24 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (wait > 0) return void helpers.tooMany(reply, wait);
     limiter.hit(auth.accountId);
     if (!friendChoices(store.settingsOf(profileId)).friends) return void reply.code(STATUS.friends_off).send({ error: "friends_off" });
-    return { accountId: auth.accountId, profileId, friendId: request.params.fid };
+    return { accountId: auth.accountId, profileId };
+  }
+
+  function asker(request: Asked, reply: FastifyReply, limiter: RateLimiter): { accountId: string; profileId: string; friendId: string } | undefined {
+    const me = owner(request, reply, limiter);
+    return me && { ...me, friendId: request.params.fid };
   }
 
   const refuse = (reply: FastifyReply, error: ChatError | "changed", waitMs?: number) =>
     error === "rate_limited" ? helpers.tooMany(reply, waitMs ?? MINUTE) : reply.code(STATUS[error]).send({ error });
   const fail = (reply: FastifyReply, outcome: Extract<ChatOutcome<unknown>, { ok: false }>) => refuse(reply, outcome.error, outcome.waitMs);
+
+  app.get<{ Params: { id: string } }>("/api/profiles/:id/chats", async (request, reply) => {
+    const me = owner(request, reply, readsByAccount);
+    if (!me) return reply;
+    const answer: ChatTalks = { talks: chat.talks(me.profileId) };
+    return reply.send(answer);
+  });
 
   app.get<{ Params: { id: string; fid: string }; Querystring: { since?: string; reactions?: string } }>(base, async (request, reply) => {
     const me = asker(request, reply, readsByAccount);
